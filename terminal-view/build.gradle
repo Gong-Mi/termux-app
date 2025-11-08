@@ -43,7 +43,7 @@ afterEvaluate {
             // Creates a Maven publication called "release".
             release(MavenPublication) {
                 from components.release
-                groupId = 'com.termux'
+                groupId = 'com.termux.hg'
                 artifactId = 'terminal-view'
                 version = '0.118.0'
                 artifact(sourceJar)

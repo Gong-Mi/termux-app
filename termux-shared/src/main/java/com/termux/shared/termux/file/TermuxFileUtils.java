@@ -1,23 +1,23 @@
-package com.termux.shared.termux.file;
+package com.termux.hg.shared.termux.file;
 
-import static com.termux.shared.termux.TermuxConstants.TERMUX_PREFIX_DIR_PATH;
+import static com.termux.hg.shared.termux.TermuxConstants.TERMUX_PREFIX_DIR_PATH;
 
 import android.content.Context;
 import android.os.Environment;
 
 import androidx.annotation.NonNull;
 
-import com.termux.shared.file.FileUtils;
-import com.termux.shared.logger.Logger;
-import com.termux.shared.markdown.MarkdownUtils;
-import com.termux.shared.shell.command.ExecutionCommand;
-import com.termux.shared.errors.Error;
-import com.termux.shared.file.FileUtilsErrno;
-import com.termux.shared.termux.shell.command.environment.TermuxShellEnvironment;
-import com.termux.shared.shell.command.runner.app.AppShell;
-import com.termux.shared.android.AndroidUtils;
-import com.termux.shared.termux.TermuxConstants;
-import com.termux.shared.termux.TermuxUtils;
+import com.termux.hg.shared.file.FileUtils;
+import com.termux.hg.shared.logger.Logger;
+import com.termux.hg.shared.markdown.MarkdownUtils;
+import com.termux.hg.shared.shell.command.ExecutionCommand;
+import com.termux.hg.shared.errors.Error;
+import com.termux.hg.shared.file.FileUtilsErrno;
+import com.termux.hg.shared.termux.shell.command.environment.TermuxShellEnvironment;
+import com.termux.hg.shared.shell.command.runner.app.AppShell;
+import com.termux.hg.shared.android.AndroidUtils;
+import com.termux.hg.shared.termux.TermuxConstants;
+import com.termux.hg.shared.termux.TermuxUtils;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -238,10 +238,10 @@ public class TermuxFileUtils {
      * https://unix.stackexchange.com/a/571959
      *
      *
-     * Also note that running `/system/bin/ls -lhd /data/user/0/com.termux` as secondary user will result
-     * in `ls: /data/user/0/com.termux: Permission denied` where `0` is primary user id but running
-     * `/system/bin/ls -lhd /data/user/10/com.termux` will result in
-     * `drwx------ 6 u10_a149 u10_a149 4.0K 2021-xx-xx xx:xx /data/user/10/com.termux` where `10` is
+     * Also note that running `/system/bin/ls -lhd /data/user/0/com.termux.hg` as secondary user will result
+     * in `ls: /data/user/0/com.termux.hg: Permission denied` where `0` is primary user id but running
+     * `/system/bin/ls -lhd /data/user/10/com.termux.hg` will result in
+     * `drwx------ 6 u10_a149 u10_a149 4.0K 2021-xx-xx xx:xx /data/user/10/com.termux.hg` where `10` is
      * secondary user id. So can't stat directory (not contents) of primary user from secondary user
      * but can the other way around. However, this is happening on android 10 avd, but not on android
      * 11 avd.

@@ -1,6 +1,6 @@
-package com.termux.app.api.file;
+package com.termux.hg.app.api.file;
 
-import com.termux.app.api.file.FileReceiverActivity;
+import com.termux.hg.app.api.file.FileReceiverActivity;
 
 import org.junit.Assert;
 import org.junit.Test;

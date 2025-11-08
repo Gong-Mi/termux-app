@@ -1,4 +1,4 @@
-package com.termux.app.api.file;
+package com.termux.hg.app.api.file;
 
 import android.content.Context;
 import android.content.Intent;
@@ -10,21 +10,21 @@ import android.util.Patterns;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
-import com.termux.R;
-import com.termux.shared.android.PackageUtils;
-import com.termux.shared.data.DataUtils;
-import com.termux.shared.data.IntentUtils;
-import com.termux.shared.net.uri.UriUtils;
-import com.termux.shared.interact.MessageDialogUtils;
-import com.termux.shared.net.uri.UriScheme;
-import com.termux.shared.termux.interact.TextInputDialogUtils;
-import com.termux.shared.termux.TermuxConstants;
-import com.termux.shared.termux.TermuxConstants.TERMUX_APP;
-import com.termux.shared.termux.TermuxConstants.TERMUX_APP.TERMUX_SERVICE;
-import com.termux.app.TermuxService;
-import com.termux.shared.logger.Logger;
-import com.termux.shared.termux.settings.properties.TermuxAppSharedProperties;
-import com.termux.shared.termux.settings.properties.TermuxPropertyConstants;
+import com.termux.hg.R;
+import com.termux.hg.shared.android.PackageUtils;
+import com.termux.hg.shared.data.DataUtils;
+import com.termux.hg.shared.data.IntentUtils;
+import com.termux.hg.shared.net.uri.UriUtils;
+import com.termux.hg.shared.interact.MessageDialogUtils;
+import com.termux.hg.shared.net.uri.UriScheme;
+import com.termux.hg.shared.termux.interact.TextInputDialogUtils;
+import com.termux.hg.shared.termux.TermuxConstants;
+import com.termux.hg.shared.termux.TermuxConstants.TERMUX_APP;
+import com.termux.hg.shared.termux.TermuxConstants.TERMUX_APP.TERMUX_SERVICE;
+import com.termux.hg.app.TermuxService;
+import com.termux.hg.shared.logger.Logger;
+import com.termux.hg.shared.termux.settings.properties.TermuxAppSharedProperties;
+import com.termux.hg.shared.termux.settings.properties.TermuxPropertyConstants;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;

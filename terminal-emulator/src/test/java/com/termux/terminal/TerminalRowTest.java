@@ -1,4 +1,4 @@
-package com.termux.terminal;
+package com.termux.hg.terminal;
 
 import junit.framework.TestCase;
 

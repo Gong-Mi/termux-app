@@ -1,17 +1,17 @@
-package com.termux.shared.termux.settings.preferences;
+package com.termux.hg.shared.termux.settings.preferences;
 
 import android.content.Context;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.termux.shared.logger.Logger;
-import com.termux.shared.android.PackageUtils;
-import com.termux.shared.settings.preferences.AppSharedPreferences;
-import com.termux.shared.settings.preferences.SharedPreferenceUtils;
-import com.termux.shared.termux.TermuxUtils;
-import com.termux.shared.termux.settings.preferences.TermuxPreferenceConstants.TERMUX_BOOT_APP;
-import com.termux.shared.termux.TermuxConstants;
+import com.termux.hg.shared.logger.Logger;
+import com.termux.hg.shared.android.PackageUtils;
+import com.termux.hg.shared.settings.preferences.AppSharedPreferences;
+import com.termux.hg.shared.settings.preferences.SharedPreferenceUtils;
+import com.termux.hg.shared.termux.TermuxUtils;
+import com.termux.hg.shared.termux.settings.preferences.TermuxPreferenceConstants.TERMUX_BOOT_APP;
+import com.termux.hg.shared.termux.TermuxConstants;
 
 public class TermuxBootAppSharedPreferences extends AppSharedPreferences {
 

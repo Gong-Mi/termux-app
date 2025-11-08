@@ -1,13 +1,13 @@
-package com.termux.shared.shell.command.environment;
+package com.termux.hg.shared.shell.command.environment;
 
-import static com.termux.shared.shell.command.environment.UnixShellEnvironment.*;
+import static com.termux.hg.shared.shell.command.environment.UnixShellEnvironment.*;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.termux.shared.errors.Error;
-import com.termux.shared.file.FileUtils;
-import com.termux.shared.logger.Logger;
+import com.termux.hg.shared.errors.Error;
+import com.termux.hg.shared.file.FileUtils;
+import com.termux.hg.shared.logger.Logger;
 
 import java.util.ArrayList;
 import java.util.Collections;

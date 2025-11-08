@@ -1,4 +1,4 @@
-package com.termux.view;
+package com.termux.hg.view;
 
 import android.content.Context;
 import android.util.AttributeSet;

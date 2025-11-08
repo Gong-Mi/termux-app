@@ -1,4 +1,4 @@
-package com.termux.shared.view;
+package com.termux.hg.shared.view;
 
 import android.app.Activity;
 import android.content.Context;
@@ -14,7 +14,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.RequiresApi;
 import androidx.core.view.WindowInsetsCompat;
 
-import com.termux.shared.logger.Logger;
+import com.termux.hg.shared.logger.Logger;
 
 public class KeyboardUtils {
 

@@ -1,12 +1,12 @@
-package com.termux.shared.net.uri;
+package com.termux.hg.shared.net.uri;
 
 import android.net.Uri;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.termux.shared.data.DataUtils;
-import com.termux.shared.file.FileUtils;
+import com.termux.hg.shared.data.DataUtils;
+import com.termux.hg.shared.file.FileUtils;
 
 public class UriUtils {
 

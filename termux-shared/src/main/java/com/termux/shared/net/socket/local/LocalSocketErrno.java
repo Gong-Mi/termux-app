@@ -1,6 +1,6 @@
-package com.termux.shared.net.socket.local;
+package com.termux.hg.shared.net.socket.local;
 
-import com.termux.shared.errors.Errno;
+import com.termux.hg.shared.errors.Errno;
 
 public class LocalSocketErrno extends Errno {
 

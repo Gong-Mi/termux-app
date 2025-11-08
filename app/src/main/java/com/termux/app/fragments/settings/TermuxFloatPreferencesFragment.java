@@ -1,4 +1,4 @@
-package com.termux.app.fragments.settings;
+package com.termux.hg.app.fragments.settings;
 
 import android.content.Context;
 import android.os.Bundle;
@@ -8,8 +8,8 @@ import androidx.preference.PreferenceDataStore;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceManager;
 
-import com.termux.R;
-import com.termux.shared.termux.settings.preferences.TermuxFloatAppSharedPreferences;
+import com.termux.hg.R;
+import com.termux.hg.shared.termux.settings.preferences.TermuxFloatAppSharedPreferences;
 
 @Keep
 public class TermuxFloatPreferencesFragment extends PreferenceFragmentCompat {

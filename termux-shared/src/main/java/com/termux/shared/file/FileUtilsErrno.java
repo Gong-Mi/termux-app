@@ -1,6 +1,6 @@
-package com.termux.shared.file;
+package com.termux.hg.shared.file;
 
-import com.termux.shared.errors.Errno;
+import com.termux.hg.shared.errors.Errno;
 
 import java.util.HashMap;
 import java.util.Map;

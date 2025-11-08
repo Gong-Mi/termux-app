@@ -1,4 +1,4 @@
-package com.termux.shared.interact;
+package com.termux.hg.shared.interact;
 
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -10,8 +10,8 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 
-import com.termux.shared.R;
-import com.termux.shared.logger.Logger;
+import com.termux.hg.shared.R;
+import com.termux.hg.shared.logger.Logger;
 
 public class MessageDialogUtils {
 

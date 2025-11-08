@@ -1,9 +1,9 @@
-package com.termux.shared.net.url;
+package com.termux.hg.shared.net.url;
 
 import androidx.annotation.Nullable;
 
-import com.termux.shared.data.DataUtils;
-import com.termux.shared.logger.Logger;
+import com.termux.hg.shared.data.DataUtils;
+import com.termux.hg.shared.logger.Logger;
 
 import java.net.MalformedURLException;
 import java.net.URL;

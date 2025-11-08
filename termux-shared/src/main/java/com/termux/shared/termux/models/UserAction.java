@@ -1,4 +1,4 @@
-package com.termux.shared.termux.models;
+package com.termux.hg.shared.termux.models;
 
 public enum UserAction {
 

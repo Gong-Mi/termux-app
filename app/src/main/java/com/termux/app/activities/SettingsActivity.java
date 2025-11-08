@@ -1,4 +1,4 @@
-package com.termux.app.activities;
+package com.termux.hg.app.activities;
 
 import android.content.Context;
 import android.os.Bundle;
@@ -9,22 +9,22 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
 
-import com.termux.R;
-import com.termux.shared.activities.ReportActivity;
-import com.termux.shared.file.FileUtils;
-import com.termux.shared.models.ReportInfo;
-import com.termux.app.models.UserAction;
-import com.termux.shared.interact.ShareUtils;
-import com.termux.shared.android.PackageUtils;
-import com.termux.shared.termux.settings.preferences.TermuxAPIAppSharedPreferences;
-import com.termux.shared.termux.settings.preferences.TermuxFloatAppSharedPreferences;
-import com.termux.shared.termux.settings.preferences.TermuxTaskerAppSharedPreferences;
-import com.termux.shared.termux.settings.preferences.TermuxWidgetAppSharedPreferences;
-import com.termux.shared.android.AndroidUtils;
-import com.termux.shared.termux.TermuxConstants;
-import com.termux.shared.termux.TermuxUtils;
-import com.termux.shared.activity.media.AppCompatActivityUtils;
-import com.termux.shared.theme.NightMode;
+import com.termux.hg.R;
+import com.termux.hg.shared.activities.ReportActivity;
+import com.termux.hg.shared.file.FileUtils;
+import com.termux.hg.shared.models.ReportInfo;
+import com.termux.hg.app.models.UserAction;
+import com.termux.hg.shared.interact.ShareUtils;
+import com.termux.hg.shared.android.PackageUtils;
+import com.termux.hg.shared.termux.settings.preferences.TermuxAPIAppSharedPreferences;
+import com.termux.hg.shared.termux.settings.preferences.TermuxFloatAppSharedPreferences;
+import com.termux.hg.shared.termux.settings.preferences.TermuxTaskerAppSharedPreferences;
+import com.termux.hg.shared.termux.settings.preferences.TermuxWidgetAppSharedPreferences;
+import com.termux.hg.shared.android.AndroidUtils;
+import com.termux.hg.shared.termux.TermuxConstants;
+import com.termux.hg.shared.termux.TermuxUtils;
+import com.termux.hg.shared.activity.media.AppCompatActivityUtils;
+import com.termux.hg.shared.theme.NightMode;
 
 public class SettingsActivity extends AppCompatActivity {
 
@@ -42,7 +42,7 @@ public class SettingsActivity extends AppCompatActivity {
                 .commit();
         }
 
-        AppCompatActivityUtils.setToolbar(this, com.termux.shared.R.id.toolbar);
+        AppCompatActivityUtils.setToolbar(this, com.termux.hg.shared.R.id.toolbar);
         AppCompatActivityUtils.setShowBackButtonInActionBar(this, true);
     }
 

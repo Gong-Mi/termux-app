@@ -24,7 +24,7 @@
  * questions.
  */
 
-package com.termux.shared.file.filesystem;
+package com.termux.hg.shared.file.filesystem;
 
 /**
  * Defines the bits for use with the {@link FileAttributes#permissions()
