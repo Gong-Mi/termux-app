@@ -21,6 +21,12 @@ jobs:
       - name: Clone repository
         uses: actions/checkout@v4
 
+      - name: Set up Java 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+
       - name: Build APKs
         shell: bash {0}
         env:
