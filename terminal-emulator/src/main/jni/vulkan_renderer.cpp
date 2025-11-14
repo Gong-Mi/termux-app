@@ -388,7 +388,7 @@ void drawFrame() {
 
 extern "C" {
     JNIEXPORT void JNICALL
-    Java_com_termux_view_VulkanTerminalView_nativeInit(JNIEnv* env, jobject thiz) {
+    Java_com_termux_hg_view_VulkanTerminalView_nativeInit(JNIEnv* env, jobject thiz) {
         try {
             initVulkan();
             pickPhysicalDevice();
@@ -399,7 +399,7 @@ extern "C" {
     }
 
     JNIEXPORT void JNICALL
-    Java_com_termux_view_VulkanTerminalView_nativeSetSurface(JNIEnv* env, jobject thiz, jobject surface) {
+    Java_com_termux_hg_view_VulkanTerminalView_nativeSetSurface(JNIEnv* env, jobject thiz, jobject surface) {
         try {
             if (surface != nullptr) {
                 ANativeWindow* window = ANativeWindow_fromSurface(env, surface);
@@ -426,13 +426,13 @@ extern "C" {
     }
 
     JNIEXPORT void JNICALL
-    Java_com_termux_view_VulkanTerminalView_nativeDestroy(JNIEnv* env, jobject thiz) {
+    Java_com_termux_hg_view_VulkanTerminalView_nativeDestroy(JNIEnv* env, jobject thiz) {
         g_ctx.running = false;
         cleanup();
     }
 
     JNIEXPORT void JNICALL
-    Java_com_termux_view_VulkanTerminalView_nativeRender(JNIEnv* env, jobject thiz) {
+    Java_com_termux_hg_view_VulkanTerminalView_nativeRender(JNIEnv* env, jobject thiz) {
         if (g_ctx.running) {
             try {
                 drawFrame();
