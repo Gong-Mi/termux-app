@@ -28,7 +28,7 @@ android {
 
         implementation project(":terminal-view")
 
-        implementation "com.termux.hg:termux-am-library:v2.0.0"
+        implementation "com.github.termux:termux-am-library:v2.0.0"
     }
 
     defaultConfig {
