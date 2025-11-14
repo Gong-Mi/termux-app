@@ -7,7 +7,7 @@ import android.content.Context;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.termux.hg.am.Am;
+import com.termux.am.Am;
 import com.termux.hg.shared.R;
 import com.termux.hg.shared.android.PackageUtils;
 import com.termux.hg.shared.android.PermissionUtils;
