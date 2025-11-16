@@ -8,6 +8,7 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Typeface;
+import android.opengl.GLSurfaceView;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -135,6 +136,12 @@ public final class TerminalView extends View {
 
     public TerminalView(Context context, AttributeSet attributes) { // NO_UCD (unused code)
         super(context, attributes);
+
+        // Use GLES 2.0 as it's widely supported.
+        setEGLContextClientVersion(2);
+        // Set the Renderer for drawing on the GLSurfaceView
+        setRenderer(new TerminalRendererGLES());
+
         mGestureRecognizer = new GestureAndScaleRecognizer(context, new GestureAndScaleRecognizer.Listener() {
 
             boolean scrolledWithFinger;
@@ -512,14 +519,21 @@ public final class TerminalView extends View {
      * @param textSize the new font size, in density-independent pixels.
      */
     public void setTextSize(int textSize) {
-        mRenderer = new TerminalRenderer(textSize, mRenderer == null ? Typeface.MONOSPACE : mRenderer.mTypeface);
+        // TODO: This is a temporary hack to allow compilation.
+        // The font metrics logic needs to be moved to the new GLES renderer.
+        if (mRenderer == null) {
+            mRenderer = new TerminalRenderer(textSize, Typeface.MONOSPACE);
+        }
         updateSize();
     }
 
     public void setTypeface(Typeface newTypeface) {
-        mRenderer = new TerminalRenderer(mRenderer.mTextSize, newTypeface);
-        updateSize();
-        invalidate();
+        // TODO: This is a temporary hack.
+        // The typeface logic needs to be implemented in the new GLES renderer.
+        mClient.logInfo(LOG_TAG, "setTypeface is temporarily disabled during GLES migration.");
+        // mRenderer = new TerminalRenderer(mRenderer.mTextSize, newTypeface);
+        // updateSize();
+        // invalidate();
     }
 
     @Override
@@ -1003,23 +1017,7 @@ public final class TerminalView extends View {
         }
     }
 
-    @Override
-    protected void onDraw(Canvas canvas) {
-        if (mEmulator == null) {
-            canvas.drawColor(0XFF000000);
-        } else {
-            // render the terminal view and highlight any selected text
-            int[] sel = mDefaultSelectors;
-            if (mTextSelectionCursorController != null) {
-                mTextSelectionCursorController.getSelectors(sel);
-            }
 
-            mRenderer.render(mEmulator, canvas, mTopRow, sel[0], sel[1], sel[2], sel[3]);
-
-            // render the text selection handles
-            renderTextSelection();
-        }
-    }
 
     public TerminalSession getCurrentSession() {
         return mTermSession;
