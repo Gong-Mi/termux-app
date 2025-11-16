@@ -174,8 +174,13 @@ public final class TerminalBuffer {
      * @return The row corresponding to the input argument in the private coordinate system.
      */
     public int externalToInternalRow(int externalRow) {
-        if (externalRow < -mActiveTranscriptRows || externalRow > mScreenRows)
-            throw new IllegalArgumentException("extRow=" + externalRow + ", mScreenRows=" + mScreenRows + ", mActiveTranscriptRows=" + mActiveTranscriptRows);
+        if (externalRow < -mActiveTranscriptRows) {
+            // Clamp to the top of the transcript history
+            externalRow = -mActiveTranscriptRows;
+        } else if (externalRow >= mScreenRows) {
+            // Clamp to the bottom of the screen
+            externalRow = mScreenRows - 1;
+        }
         final int internalRow = mScreenFirstRow + externalRow;
         return (internalRow < 0) ? (mTotalRows + internalRow) : (internalRow % mTotalRows);
     }
@@ -419,8 +424,19 @@ public final class TerminalBuffer {
      */
     public void blockCopy(int sx, int sy, int w, int h, int dx, int dy) {
         if (w == 0) return;
-        if (sx < 0 || sx + w > mColumns || sy < 0 || sy + h > mScreenRows || dx < 0 || dx + w > mColumns || dy < 0 || dy + h > mScreenRows)
-            throw new IllegalArgumentException();
+
+        // Make parameter ranges sane.
+        // E.g. when deleting the last line of a scrolling region.
+        // sx may be out of bounds if the user has a prompt string with combining characters.
+        if (sx < 0) { sx = 0; }
+        if (sy < 0) { sy = 0; }
+        if (dx < 0) { dx = 0; }
+        if (dy < 0) { dy = 0; }
+        if (sx + w > mColumns) { w = mColumns - sx; }
+        if (dx + w > mColumns) { w = mColumns - dx; } // Use same width for src and dest.
+        if (sy + h > mScreenRows) { h = mScreenRows - sy; }
+        if (dy + h > mScreenRows) { h = mScreenRows - dy; } // Use same height for src and dest.
+
         boolean copyingUp = sy > dy;
         for (int y = 0; y < h; y++) {
             int y2 = copyingUp ? y : (h - (y + 1));
@@ -435,10 +451,11 @@ public final class TerminalBuffer {
      * of characters.
      */
     public void blockSet(int sx, int sy, int w, int h, int val, long style) {
-        if (sx < 0 || sx + w > mColumns || sy < 0 || sy + h > mScreenRows) {
-            throw new IllegalArgumentException(
-                "Illegal arguments! blockSet(" + sx + ", " + sy + ", " + w + ", " + h + ", " + val + ", " + mColumns + ", " + mScreenRows + ")");
-        }
+        if (sx < 0) { sx = 0; }
+        if (sy < 0) { sy = 0; }
+        if (sx + w > mColumns) { w = mColumns - sx; }
+        if (sy + h > mScreenRows) { h = mScreenRows - sy; }
+
         for (int y = 0; y < h; y++)
             for (int x = 0; x < w; x++)
                 setChar(sx + x, sy + y, val, style);
@@ -449,8 +466,10 @@ public final class TerminalBuffer {
     }
 
     public void setChar(int column, int row, int codePoint, long style) {
-        if (row  < 0 || row >= mScreenRows || column < 0 || column >= mColumns)
-            throw new IllegalArgumentException("TerminalBuffer.setChar(): row=" + row + ", column=" + column + ", mScreenRows=" + mScreenRows + ", mColumns=" + mColumns);
+        if (row < 0) { row = 0; }
+        if (row >= mScreenRows) { row = mScreenRows - 1; }
+        if (column < 0) { column = 0; }
+        if (column >= mColumns) { column = mColumns - 1; }
         row = externalToInternalRow(row);
         allocateFullLineIfNecessary(row).setChar(column, codePoint, style);
     }

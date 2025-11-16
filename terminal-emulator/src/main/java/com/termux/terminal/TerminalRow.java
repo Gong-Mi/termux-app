@@ -50,16 +50,32 @@ public final class TerminalRow {
     /** If this row might contain chars with width != 1, used for deactivating fast path */
     boolean mHasNonOneWidthOrSurrogateChars;
 
+    /**
+     * A map from column index to character index in the {@link #mText} array.
+     * The column index is the key, and the character index is the value.
+     * This is used to avoid expensive linear scans when locating columns.
+     */
+    private int[] mColumnMap;
+
+    /**
+     * A flag indicating whether the {@link #mColumnMap} is up-to-date.
+     * If this is true, the map needs to be rebuilt before use.
+     */
+    private boolean mColumnMapDirty;
+
     /** Construct a blank row (containing only whitespace, ' ') with a specified style. */
     public TerminalRow(int columns, long style) {
         mColumns = columns;
         mText = new char[(int) (SPARE_CAPACITY_FACTOR * columns)];
         mStyle = new long[columns];
+        mColumnMap = new int[columns + 1];
+        mColumnMapDirty = true;
         clear(style);
     }
 
     /** NOTE: The sourceX2 is exclusive. */
     public void copyInterval(TerminalRow line, int sourceX1, int sourceX2, int destinationX) {
+        mColumnMapDirty = true;
         mHasNonOneWidthOrSurrogateChars |= line.mHasNonOneWidthOrSurrogateChars;
         final int x1 = line.findStartOfColumn(sourceX1);
         final int x2 = line.findStartOfColumn(sourceX2);
@@ -88,43 +104,42 @@ public final class TerminalRow {
         return mSpaceUsed;
     }
 
+    private void rebuildColumnMap() {
+        if (!mColumnMapDirty) return;
+
+        int currentCharIndex = 0;
+        int currentColumn = 0;
+        mColumnMap[0] = 0;
+
+        while (currentColumn < mColumns && currentCharIndex < mSpaceUsed) {
+            int codePoint = Character.codePointAt(mText, currentCharIndex);
+            int charWidth = WcWidth.width(codePoint);
+            int codePointLen = Character.charCount(codePoint);
+
+            if (charWidth > 0) {
+                // This will not handle wide chars crossing the boundary correctly, but that is a pre-existing problem.
+                for (int i = 1; i <= charWidth; i++) {
+                    if (currentColumn + i <= mColumns) {
+                        mColumnMap[currentColumn + i] = currentCharIndex + codePointLen;
+                    }
+                }
+                currentColumn += charWidth;
+            }
+            currentCharIndex += codePointLen;
+        }
+
+        // Fill the rest of the map for columns that are off the end.
+        for (int i = currentColumn; i <= mColumns; i++) {
+            mColumnMap[i] = mSpaceUsed;
+        }
+
+        mColumnMapDirty = false;
+    }
+
     /** Note that the column may end of second half of wide character. */
     public int findStartOfColumn(int column) {
-        if (column == mColumns) return getSpaceUsed();
-
-        int currentColumn = 0;
-        int currentCharIndex = 0;
-        while (true) { // 0<2 1 < 2
-            int newCharIndex = currentCharIndex;
-            char c = mText[newCharIndex++]; // cci=1, cci=2
-            boolean isHigh = Character.isHighSurrogate(c);
-            int codePoint = isHigh ? Character.toCodePoint(c, mText[newCharIndex++]) : c;
-            int wcwidth = WcWidth.width(codePoint); // 1, 2
-            if (wcwidth > 0) {
-                currentColumn += wcwidth;
-                if (currentColumn == column) {
-                    while (newCharIndex < mSpaceUsed) {
-                        // Skip combining chars.
-                        if (Character.isHighSurrogate(mText[newCharIndex])) {
-                            if (WcWidth.width(Character.toCodePoint(mText[newCharIndex], mText[newCharIndex + 1])) <= 0) {
-                                newCharIndex += 2;
-                            } else {
-                                break;
-                            }
-                        } else if (WcWidth.width(mText[newCharIndex]) <= 0) {
-                            newCharIndex++;
-                        } else {
-                            break;
-                        }
-                    }
-                    return newCharIndex;
-                } else if (currentColumn > column) {
-                    // Wide column going past end.
-                    return currentCharIndex;
-                }
-            }
-            currentCharIndex = newCharIndex;
-        }
+        rebuildColumnMap();
+        return mColumnMap[column];
     }
 
     private boolean wideDisplayCharacterStartingAt(int column) {
@@ -146,10 +161,12 @@ public final class TerminalRow {
         Arrays.fill(mStyle, style);
         mSpaceUsed = (short) mColumns;
         mHasNonOneWidthOrSurrogateChars = false;
+        mColumnMapDirty = true;
     }
 
     // https://github.com/steven676/Android-Terminal-Emulator/commit/9a47042620bec87617f0b4f5d50568535668fe26
     public void setChar(int columnToSet, int codePoint, long style) {
+        mColumnMapDirty = true;
         if (columnToSet  < 0 || columnToSet >= mStyle.length)
             throw new IllegalArgumentException("TerminalRow.setChar(): columnToSet=" + columnToSet + ", codePoint=" + codePoint + ", style=" + style);
 

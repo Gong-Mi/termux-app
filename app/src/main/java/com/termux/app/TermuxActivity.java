@@ -309,6 +309,9 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         if (mIsInvalidState) return;
 
+        if (mTerminalView != null)
+            mTerminalView.onResume();
+
         if (mTermuxTerminalSessionActivityClient != null)
             mTermuxTerminalSessionActivityClient.onResume();
 
@@ -321,6 +324,20 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         mIsOnResumeAfterOnCreate = false;
     }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+
+        Logger.logVerbose(LOG_TAG, "onPause");
+
+        if (mIsInvalidState) return;
+
+        if (mTerminalView != null)
+            mTerminalView.onPause();
+
+    }
+
 
     @Override
     protected void onStop() {

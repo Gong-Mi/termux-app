@@ -44,7 +44,7 @@ import com.termux.terminal.TerminalSession;
 import com.termux.view.textselection.TextSelectionCursorController;
 
 /** View displaying and interacting with a {@link TerminalSession}. */
-public final class TerminalView extends View {
+public final class TerminalView extends GLSurfaceView {
 
     /** Log terminal view key and IME events. */
     private static boolean TERMINAL_VIEW_KEY_LOGGING_ENABLED = false;
@@ -54,7 +54,7 @@ public final class TerminalView extends View {
     /** Our terminal emulator whose session is {@link #mTermSession}. */
     public TerminalEmulator mEmulator;
 
-    public TerminalRenderer mRenderer;
+    public TerminalRendererGLES mRenderer;
 
     public TerminalViewClient mClient;
 
@@ -140,7 +140,8 @@ public final class TerminalView extends View {
         // Use GLES 2.0 as it's widely supported.
         setEGLContextClientVersion(2);
         // Set the Renderer for drawing on the GLSurfaceView
-        setRenderer(new TerminalRendererGLES());
+        mRenderer = new TerminalRendererGLES(14, Typeface.MONOSPACE);
+        setRenderer(mRenderer);
 
         mGestureRecognizer = new GestureAndScaleRecognizer(context, new GestureAndScaleRecognizer.Listener() {
 
@@ -519,21 +520,20 @@ public final class TerminalView extends View {
      * @param textSize the new font size, in density-independent pixels.
      */
     public void setTextSize(int textSize) {
-        // TODO: This is a temporary hack to allow compilation.
-        // The font metrics logic needs to be moved to the new GLES renderer.
-        if (mRenderer == null) {
-            mRenderer = new TerminalRenderer(textSize, Typeface.MONOSPACE);
-        }
-        updateSize();
+        queueEvent(() -> {
+            if (mRenderer == null) return;
+            mRenderer.updateFont(textSize, mRenderer.mTypeface);
+            post(this::updateSize);
+        });
     }
 
     public void setTypeface(Typeface newTypeface) {
-        // TODO: This is a temporary hack.
-        // The typeface logic needs to be implemented in the new GLES renderer.
-        mClient.logInfo(LOG_TAG, "setTypeface is temporarily disabled during GLES migration.");
-        // mRenderer = new TerminalRenderer(mRenderer.mTextSize, newTypeface);
-        // updateSize();
-        // invalidate();
+        queueEvent(() -> {
+            if (mRenderer == null) return;
+            mRenderer.updateFont(mRenderer.mTextSize, newTypeface);
+            post(this::updateSize);
+            postInvalidate();
+        });
     }
 
     @Override
@@ -1005,6 +1005,7 @@ public final class TerminalView extends View {
         if (mEmulator == null || (newColumns != mEmulator.mColumns || newRows != mEmulator.mRows)) {
             mTermSession.updateSize(newColumns, newRows, (int) mRenderer.getFontWidth(), mRenderer.getFontLineSpacing());
             mEmulator = mTermSession.getEmulator();
+            mRenderer.setEmulator(mEmulator);
             mClient.onEmulatorSet();
 
             // Update mTerminalCursorBlinkerRunnable inner class mEmulator on session change
