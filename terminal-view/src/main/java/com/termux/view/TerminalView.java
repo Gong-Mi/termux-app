@@ -54,7 +54,7 @@ public final class TerminalView extends GLSurfaceView {
     /** Our terminal emulator whose session is {@link #mTermSession}. */
     public TerminalEmulator mEmulator;
 
-    public TerminalRenderer mRenderer;
+    public TerminalRendererGLES mRenderer;
 
     public TerminalViewClient mClient;
 
@@ -140,7 +140,8 @@ public final class TerminalView extends GLSurfaceView {
         // Use GLES 2.0 as it's widely supported.
         setEGLContextClientVersion(2);
         // Set the Renderer for drawing on the GLSurfaceView
-        setRenderer(new TerminalRendererGLES());
+        mRenderer = new TerminalRendererGLES(14, Typeface.MONOSPACE);
+        setRenderer(mRenderer);
 
         mGestureRecognizer = new GestureAndScaleRecognizer(context, new GestureAndScaleRecognizer.Listener() {
 
@@ -519,21 +520,16 @@ public final class TerminalView extends GLSurfaceView {
      * @param textSize the new font size, in density-independent pixels.
      */
     public void setTextSize(int textSize) {
-        // TODO: This is a temporary hack to allow compilation.
-        // The font metrics logic needs to be moved to the new GLES renderer.
-        if (mRenderer == null) {
-            mRenderer = new TerminalRenderer(textSize, Typeface.MONOSPACE);
-        }
+        mRenderer = new TerminalRendererGLES(textSize, mRenderer.mTypeface);
+        setRenderer(mRenderer);
         updateSize();
     }
 
     public void setTypeface(Typeface newTypeface) {
-        // TODO: This is a temporary hack.
-        // The typeface logic needs to be implemented in the new GLES renderer.
-        mClient.logInfo(LOG_TAG, "setTypeface is temporarily disabled during GLES migration.");
-        // mRenderer = new TerminalRenderer(mRenderer.mTextSize, newTypeface);
-        // updateSize();
-        // invalidate();
+        mRenderer = new TerminalRendererGLES(mRenderer.mTextSize, newTypeface);
+        setRenderer(mRenderer);
+        updateSize();
+        invalidate();
     }
 
     @Override
@@ -1005,6 +1001,7 @@ public final class TerminalView extends GLSurfaceView {
         if (mEmulator == null || (newColumns != mEmulator.mColumns || newRows != mEmulator.mRows)) {
             mTermSession.updateSize(newColumns, newRows, (int) mRenderer.getFontWidth(), mRenderer.getFontLineSpacing());
             mEmulator = mTermSession.getEmulator();
+            mRenderer.setEmulator(mEmulator);
             mClient.onEmulatorSet();
 
             // Update mTerminalCursorBlinkerRunnable inner class mEmulator on session change
