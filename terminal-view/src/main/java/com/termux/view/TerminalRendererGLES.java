@@ -72,6 +72,7 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
         int mFontAscent = (int) Math.ceil(paint.ascent());
         mFontLineSpacingAndAscent = mFontLineSpacing + mFontAscent;
         mFontWidth = paint.measureText("X");
+        Log.d(TAG, "mFontWidth: " + mFontWidth + ", mFontLineSpacing: " + mFontLineSpacing);
     }
 
     public void setEmulator(TerminalEmulator emulator) {
