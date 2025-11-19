@@ -23,7 +23,7 @@ import javax.microedition.khronos.opengles.GL10;
 
 public class TerminalRendererGLES implements GLSurfaceView.Renderer {
 
-    private static final String TAG = "TerminalRendererGLES";
+    private static final String TAG = "TermuxDebug";
 
     private final String vertexShaderCode =
         "attribute vec4 a_Position;      \n" +
@@ -64,6 +64,7 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
     private int mHeight;
 
     public TerminalRendererGLES(int textSize, Typeface typeface) {
+        Log.d("TermuxDebug", "TerminalRendererGLES constructor");
         mTextSize = textSize;
         mTypeface = typeface;
 
@@ -78,6 +79,7 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
     }
 
     public void updateFont(int textSize, Typeface typeface) {
+        Log.d("TermuxDebug", "updateFont - textSize: " + textSize + ", typeface: " + typeface.getFamilyName());
         mTextSize = textSize;
         mTypeface = typeface;
 
@@ -98,6 +100,7 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
     }
 
     private void createFontTexture() {
+        Log.d("TermuxDebug", "createFontTexture");
         int[] textureIds = new int[1];
         GLES20.glGenTextures(1, textureIds, 0);
         mTextureId = textureIds[0];
@@ -131,6 +134,7 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
     }
 
     private void generateMesh() {
+        Log.d("TermuxDebug", "generateMesh");
         if (mEmulator == null) return;
 
         int columns = mEmulator.mColumns;
@@ -237,7 +241,7 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
     public void onSurfaceCreated(GL10 unused, EGLConfig config) {
         // Set the background frame color to black.
         GLES20.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-        Log.d(TAG, "onSurfaceCreated");
+        Log.d("TermuxDebug", "onSurfaceCreated");
 
         int vertexShader = loadShader(GLES20.GL_VERTEX_SHADER, vertexShaderCode);
         int fragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER, fragmentShaderCode);
@@ -255,12 +259,13 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
         mWidth = width;
         mHeight = height;
         GLES20.glViewport(0, 0, width, height);
-        Log.d(TAG, "onSurfaceChanged: " + width + "x" + height);
+        Log.d("TermuxDebug", "onSurfaceChanged: " + width + "x" + height);
     }
 
     @Override
     public void onDrawFrame(GL10 unused) {
         if (mEmulator == null) return;
+        Log.d("TermuxDebug", "onDrawFrame");
 
         generateMesh();
 

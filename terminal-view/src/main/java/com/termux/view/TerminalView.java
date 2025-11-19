@@ -17,6 +17,7 @@ import android.text.Editable;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.view.ActionMode;
 import android.view.HapticFeedbackConstants;
 import android.view.InputDevice;
@@ -136,6 +137,7 @@ public final class TerminalView extends GLSurfaceView {
 
     public TerminalView(Context context, AttributeSet attributes) { // NO_UCD (unused code)
         super(context, attributes);
+        Log.d("TermuxDebug", "TerminalView constructor");
 
         // Use GLES 2.0 as it's widely supported.
         setEGLContextClientVersion(2);
@@ -296,6 +298,7 @@ public final class TerminalView extends GLSurfaceView {
      * @param session The {@link TerminalSession} this view will be displaying.
      */
     public boolean attachSession(TerminalSession session) {
+        Log.d("TermuxDebug", "attachSession");
         if (session == mTermSession) return false;
         mTopRow = 0;
 
@@ -520,6 +523,7 @@ public final class TerminalView extends GLSurfaceView {
      * @param textSize the new font size, in density-independent pixels.
      */
     public void setTextSize(int textSize) {
+        Log.d("TermuxDebug", "setTextSize: " + textSize);
         queueEvent(() -> {
             if (mRenderer == null) return;
             mRenderer.updateFont(textSize, mRenderer.mTypeface);
@@ -528,6 +532,7 @@ public final class TerminalView extends GLSurfaceView {
     }
 
     public void setTypeface(Typeface newTypeface) {
+        Log.d("TermuxDebug", "setTypeface: " + newTypeface);
         queueEvent(() -> {
             if (mRenderer == null) return;
             mRenderer.updateFont(mRenderer.mTextSize, newTypeface);
@@ -989,6 +994,7 @@ public final class TerminalView extends GLSurfaceView {
      */
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        Log.d("TermuxDebug", "onSizeChanged: w=" + w + ", h=" + h + ", oldw=" + oldw + ", oldh=" + oldh);
         updateSize();
     }
 
@@ -1449,6 +1455,19 @@ public final class TerminalView extends GLSurfaceView {
             mTextSelectionCursorController.onDetached();
         }
     }
+
+    @Override
+    public void onPause() {
+        Log.d("TermuxDebug", "TerminalView onPause");
+        super.onPause();
+    }
+
+    @Override
+    public void onResume() {
+        Log.d("TermuxDebug", "TerminalView onResume");
+        super.onResume();
+    }
+
 
 
 
