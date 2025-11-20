@@ -69,227 +69,247 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
     private static final int ATLAS_TEXTURE_HEIGHT = 1024;
     private int mAtlasNextX = 0;
     private int mAtlasNextY = 0;
-    private int mAtlasLineHeight = 0;
-    private final Map<Character, GlyphMetrics> mGlyphCache = new HashMap<>();
-
-    private static class GlyphMetrics {
-        public final float width;
-        public final android.graphics.RectF texCoords;
-
-        GlyphMetrics(float width, android.graphics.RectF texCoords) {
-            this.width = width;
-            this.texCoords = texCoords;
+        private int mAtlasLineHeight = 0;
+        private final Map<Integer, GlyphMetrics> mGlyphCache = new HashMap<>();
+    
+        private static class GlyphMetrics {
+            public final float width;
+            public final android.graphics.RectF texCoords;
+    
+            GlyphMetrics(float width, android.graphics.RectF texCoords) {
+                this.width = width;
+                this.texCoords = texCoords;
+            }
         }
-    }
-
-    public TerminalRendererGLES(int textSize, Typeface typeface) {
-        Log.d("TermuxDebug", "TerminalRendererGLES constructor");
-        mTextSize = textSize;
-        mTypeface = typeface;
-
-        Paint paint = new Paint();
-        paint.setTypeface(typeface);
-        paint.setTextSize(textSize);
-
-        mFontLineSpacing = (int) Math.ceil(paint.getFontSpacing());
-        int mFontAscent = (int) Math.ceil(paint.ascent());
-        mFontLineSpacingAndAscent = mFontLineSpacing + mFontAscent;
-        mFontWidth = paint.measureText("X");
-    }
-
-    public void updateFont(int textSize, Typeface typeface) {
-        Log.d("TermuxDebug", "updateFont - textSize: " + textSize + ", typeface: " + typeface.toString());
-        mTextSize = textSize;
-        mTypeface = typeface;
-
-        Paint paint = new Paint();
-        paint.setTypeface(typeface);
-        paint.setTextSize(textSize);
-
-        mFontLineSpacing = (int) Math.ceil(paint.getFontSpacing());
-        int mFontAscent = (int) Math.ceil(paint.ascent());
-        mFontLineSpacingAndAscent = mFontLineSpacing + mFontAscent;
-        mFontWidth = paint.measureText("X");
-    }
-
-    public void setEmulator(TerminalEmulator emulator) {
-        mEmulator = emulator;
-    }
-
-    private void initTextureAtlas() {
-        mGlyphCache.clear();
-        mAtlasNextX = 0;
-        mAtlasNextY = 0;
-        mAtlasLineHeight = 0;
-
-        int[] textureIds = new int[1];
-        GLES20.glGenTextures(1, textureIds, 0);
-        mAtlasTextureId = textureIds[0];
-
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mAtlasTextureId);
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_NEAREST);
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_NEAREST);
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE);
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);
-
-        Bitmap bitmap = Bitmap.createBitmap(ATLAS_TEXTURE_WIDTH, ATLAS_TEXTURE_HEIGHT, Bitmap.Config.ALPHA_8);
-        GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0);
-        bitmap.recycle();
-    }
-
-    private GlyphMetrics getGlyphMetrics(char c) {
-        if (mGlyphCache.containsKey(c)) {
-            return mGlyphCache.get(c);
+    
+        public TerminalRendererGLES(int textSize, Typeface typeface) {
+            Log.d("TermuxDebug", "TerminalRendererGLES constructor");
+            mTextSize = textSize;
+            mTypeface = typeface;
+    
+            Paint paint = new Paint();
+            paint.setTypeface(typeface);
+            paint.setTextSize(textSize);
+    
+            mFontLineSpacing = (int) Math.ceil(paint.getFontSpacing());
+            int mFontAscent = (int) Math.ceil(paint.ascent());
+            mFontLineSpacingAndAscent = mFontLineSpacing + mFontAscent;
+            mFontWidth = paint.measureText("X");
         }
-
-        // The character is not in the cache. Render it to the texture atlas.
-        Paint paint = new Paint();
-        paint.setTypeface(mTypeface);
-        paint.setTextSize(mTextSize);
-        paint.setAntiAlias(true);
-        paint.setColor(0xFFFFFFFF);
-
-        float charWidth = paint.measureText(String.valueOf(c));
-        int charWidthInt = (int) Math.ceil(charWidth);
-        int charHeightInt = mFontLineSpacing;
-
-        if (mAtlasNextX + charWidthInt > ATLAS_TEXTURE_WIDTH) {
+    
+        public void updateFont(int textSize, Typeface typeface) {
+            Log.d("TermuxDebug", "updateFont - textSize: " + textSize + ", typeface: " + typeface.toString());
+            mTextSize = textSize;
+            mTypeface = typeface;
+    
+            Paint paint = new Paint();
+            paint.setTypeface(typeface);
+            paint.setTextSize(textSize);
+    
+            mFontLineSpacing = (int) Math.ceil(paint.getFontSpacing());
+            int mFontAscent = (int) Math.ceil(paint.ascent());
+            mFontLineSpacingAndAscent = mFontLineSpacing + mFontAscent;
+            mFontWidth = paint.measureText("X");
+        }
+    
+        public void setEmulator(TerminalEmulator emulator) {
+            mEmulator = emulator;
+        }
+    
+        private void initTextureAtlas() {
+            mGlyphCache.clear();
             mAtlasNextX = 0;
-            mAtlasNextY += mAtlasLineHeight;
+            mAtlasNextY = 0;
             mAtlasLineHeight = 0;
+    
+            int[] textureIds = new int[1];
+            GLES20.glGenTextures(1, textureIds, 0);
+            mAtlasTextureId = textureIds[0];
+    
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mAtlasTextureId);
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_NEAREST);
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_NEAREST);
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE);
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);
+    
+            Bitmap bitmap = Bitmap.createBitmap(ATLAS_TEXTURE_WIDTH, ATLAS_TEXTURE_HEIGHT, Bitmap.Config.ALPHA_8);
+            GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0);
+            bitmap.recycle();
         }
-
-        // FIXME: Check if we are out of atlas space.
-        if (mAtlasLineHeight < charHeightInt) {
-            mAtlasLineHeight = charHeightInt;
+    
+        private GlyphMetrics getGlyphMetrics(int codePoint) {
+            if (mGlyphCache.containsKey(codePoint)) {
+                return mGlyphCache.get(codePoint);
+            }
+    
+            // The character is not in the cache. Render it to the texture atlas.
+            Paint paint = new Paint();
+            paint.setTypeface(mTypeface);
+            paint.setTextSize(mTextSize);
+            paint.setAntiAlias(true);
+            paint.setColor(0xFFFFFFFF);
+    
+            String charString = new String(Character.toChars(codePoint));
+            float charWidth = paint.measureText(charString);
+            int charWidthInt = (int) Math.ceil(charWidth);
+            int charHeightInt = mFontLineSpacing;
+    
+            if (mAtlasNextX + charWidthInt > ATLAS_TEXTURE_WIDTH) {
+                mAtlasNextX = 0;
+                mAtlasNextY += mAtlasLineHeight;
+                mAtlasLineHeight = 0;
+            }
+    
+            // FIXME: Check if we are out of atlas space.
+            if (mAtlasLineHeight < charHeightInt) {
+                mAtlasLineHeight = charHeightInt;
+            }
+    
+            Bitmap glyphBitmap = Bitmap.createBitmap(charWidthInt, charHeightInt, Bitmap.Config.ALPHA_8);
+            Canvas canvas = new Canvas(glyphBitmap);
+            canvas.drawText(charString, 0, mFontLineSpacingAndAscent - mFontLineSpacing, paint);
+    
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mAtlasTextureId);
+            GLUtils.texSubImage2D(GLES20.GL_TEXTURE_2D, 0, mAtlasNextX, mAtlasNextY, glyphBitmap);
+            glyphBitmap.recycle();
+    
+            float u1 = mAtlasNextX / (float) ATLAS_TEXTURE_WIDTH;
+            float v1 = mAtlasNextY / (float) ATLAS_TEXTURE_HEIGHT;
+            float u2 = (mAtlasNextX + charWidth) / (float) ATLAS_TEXTURE_WIDTH;
+            float v2 = (mAtlasNextY + charHeightInt) / (float) ATLAS_TEXTURE_HEIGHT;
+            android.graphics.RectF texCoords = new android.graphics.RectF(u1, v1, u2, v2);
+    
+            GlyphMetrics metrics = new GlyphMetrics(charWidth, texCoords);
+            mGlyphCache.put(codePoint, metrics);
+    
+            mAtlasNextX += charWidthInt;
+    
+            return metrics;
         }
-
-        Bitmap glyphBitmap = Bitmap.createBitmap(charWidthInt, charHeightInt, Bitmap.Config.ALPHA_8);
-        Canvas canvas = new Canvas(glyphBitmap);
-        canvas.drawText(String.valueOf(c), 0, mFontLineSpacingAndAscent - mFontLineSpacing, paint);
-
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mAtlasTextureId);
-        GLUtils.texSubImage2D(GLES20.GL_TEXTURE_2D, 0, mAtlasNextX, mAtlasNextY, glyphBitmap);
-        glyphBitmap.recycle();
-
-        float u1 = mAtlasNextX / (float) ATLAS_TEXTURE_WIDTH;
-        float v1 = mAtlasNextY / (float) ATLAS_TEXTURE_HEIGHT;
-        float u2 = (mAtlasNextX + charWidth) / (float) ATLAS_TEXTURE_WIDTH;
-        float v2 = (mAtlasNextY + charHeightInt) / (float) ATLAS_TEXTURE_HEIGHT;
-        android.graphics.RectF texCoords = new android.graphics.RectF(u1, v1, u2, v2);
-
-        GlyphMetrics metrics = new GlyphMetrics(charWidth, texCoords);
-        mGlyphCache.put(c, metrics);
-
-        mAtlasNextX += charWidthInt;
-
-        return metrics;
-    }
-
-
-    private void generateMesh() {
-        if (mEmulator == null) return;
-
-        synchronized (mEmulator) {
-            if (mEmulator.getScreen() == null || mEmulator.mColors == null || mEmulator.mColors.mCurrentColors == null) {
-                if (mVertexBuffer != null) mVertexBuffer.clear();
-                if (mTextureBuffer != null) mTextureBuffer.clear();
-                if (mColorBuffer != null) mColorBuffer.clear();
-                return;
-            }
-
-            int columns = mEmulator.mColumns;
-            int rows = mEmulator.mRows;
-
-            if (columns <= 0 || rows <= 0) return;
-
-            int numCharacters = columns * rows;
-            int numVertices = numCharacters * 6;
-
-            if (mVertexBuffer == null || mVertexBuffer.capacity() < numVertices * 3) {
-                mVertexBuffer = ByteBuffer.allocateDirect(numVertices * 3 * 4)
-                    .order(ByteOrder.nativeOrder()).asFloatBuffer();
-            }
-            if (mTextureBuffer == null || mTextureBuffer.capacity() < numVertices * 2) {
-                mTextureBuffer = ByteBuffer.allocateDirect(numVertices * 2 * 4)
-                    .order(ByteOrder.nativeOrder()).asFloatBuffer();
-            }
-            if (mColorBuffer == null || mColorBuffer.capacity() < numVertices * 4) {
-                mColorBuffer = ByteBuffer.allocateDirect(numVertices * 4 * 4)
-                    .order(ByteOrder.nativeOrder()).asFloatBuffer();
-            }
-
-            mVertexBuffer.clear();
-            mTextureBuffer.clear();
-            mColorBuffer.clear();
-
-            TerminalBuffer screen = mEmulator.getScreen();
-            int[] palette = mEmulator.mColors.mCurrentColors;
-            float currentX;
-
-            for (int row = 0; row < rows; row++) {
-                currentX = 0;
-                TerminalRow line = screen.allocateFullLineIfNecessary(screen.externalToInternalRow(row));
-                for (int col = 0; col < columns; col++) {
-                    char c = line.mText[col];
-                    if (c == 0) c = ' ';
-
-                    GlyphMetrics metrics = getGlyphMetrics(c);
-                    if (metrics == null) continue;
-
-                    long style = line.getStyle(col);
-                    int foreColor = TextStyle.decodeForeColor(style);
-
-                    int color;
-                    if ((style & TextStyle.CHARACTER_ATTRIBUTE_TRUECOLOR_FOREGROUND) == 0) {
-                        if (foreColor >= 0 && foreColor < palette.length) {
-                            color = palette[foreColor];
-                        } else {
-                            color = palette[TextStyle.COLOR_INDEX_FOREGROUND];
-                        }
-                    } else {
-                        color = foreColor;
-                    }
-
-                    float x1_norm = (currentX / (float) mWidth) * 2.0f - 1.0f;
-                    float y1_norm = -(((row * mFontLineSpacing) / (float) mHeight) * 2.0f - 1.0f);
-                    float x2_norm = ((currentX + metrics.width) / (float) mWidth) * 2.0f - 1.0f;
-                    float y2_norm = y1_norm - (mFontLineSpacing / (float) mHeight) * 2.0f;
-
-                    mVertexBuffer.put(x1_norm); mVertexBuffer.put(y2_norm); mVertexBuffer.put(0.0f);
-                    mVertexBuffer.put(x1_norm); mVertexBuffer.put(y1_norm); mVertexBuffer.put(0.0f);
-                    mVertexBuffer.put(x2_norm); mVertexBuffer.put(y1_norm); mVertexBuffer.put(0.0f);
-                    mVertexBuffer.put(x2_norm); mVertexBuffer.put(y1_norm); mVertexBuffer.put(0.0f);
-                    mVertexBuffer.put(x2_norm); mVertexBuffer.put(y2_norm); mVertexBuffer.put(0.0f);
-                    mVertexBuffer.put(x1_norm); mVertexBuffer.put(y2_norm); mVertexBuffer.put(0.0f);
-
-                    mTextureBuffer.put(metrics.texCoords.left); mTextureBuffer.put(metrics.texCoords.bottom);
-                    mTextureBuffer.put(metrics.texCoords.left); mTextureBuffer.put(metrics.texCoords.top);
-                    mTextureBuffer.put(metrics.texCoords.right); mTextureBuffer.put(metrics.texCoords.top);
-                    mTextureBuffer.put(metrics.texCoords.right); mTextureBuffer.put(metrics.texCoords.top);
-                    mTextureBuffer.put(metrics.texCoords.right); mTextureBuffer.put(metrics.texCoords.bottom);
-                    mTextureBuffer.put(metrics.texCoords.left); mTextureBuffer.put(metrics.texCoords.bottom);
-
-                    float red = ((color >> 16) & 0xFF) / 255.0f;
-                    float green = ((color >> 8) & 0xFF) / 255.0f;
-                    float blue = (color & 0xFF) / 255.0f;
-
-                    for(int i = 0; i < 6; i++) {
-                        mColorBuffer.put(red);
-                        mColorBuffer.put(green);
-                        mColorBuffer.put(blue);
-                        mColorBuffer.put(1.0f);
-                    }
-
-                    currentX += metrics.width;
+    
+        private void generateMesh() {
+            if (mEmulator == null) return;
+    
+            synchronized (mEmulator) {
+                if (mEmulator.getScreen() == null || mEmulator.mColors == null || mEmulator.mColors.mCurrentColors == null) {
+                    if (mVertexBuffer != null) mVertexBuffer.clear();
+                    if (mTextureBuffer != null) mTextureBuffer.clear();
+                    if (mColorBuffer != null) mColorBuffer.clear();
+                    return;
                 }
+    
+                final int columns = mEmulator.mColumns;
+                final int rows = mEmulator.mRows;
+    
+                if (columns <= 0 || rows <= 0) return;
+    
+                int numCharacters = columns * rows;
+                int numVertices = numCharacters * 6;
+    
+                if (mVertexBuffer == null || mVertexBuffer.capacity() < numVertices * 3) {
+                    mVertexBuffer = ByteBuffer.allocateDirect(numVertices * 3 * 4)
+                        .order(ByteOrder.nativeOrder()).asFloatBuffer();
+                }
+                if (mTextureBuffer == null || mTextureBuffer.capacity() < numVertices * 2) {
+                    mTextureBuffer = ByteBuffer.allocateDirect(numVertices * 2 * 4)
+                        .order(ByteOrder.nativeOrder()).asFloatBuffer();
+                }
+                if (mColorBuffer == null || mColorBuffer.capacity() < numVertices * 4) {
+                    mColorBuffer = ByteBuffer.allocateDirect(numVertices * 4 * 4)
+                        .order(ByteOrder.nativeOrder()).asFloatBuffer();
+                }
+    
+                mVertexBuffer.clear();
+                mTextureBuffer.clear();
+                mColorBuffer.clear();
+    
+                final TerminalBuffer screen = mEmulator.getScreen();
+                final int[] palette = mEmulator.mColors.mCurrentColors;
+                final float columnWidth = mFontWidth;
+    
+                for (int row = 0; row < rows; row++) {
+                    TerminalRow line = screen.allocateFullLineIfNecessary(screen.externalToInternalRow(row));
+                    final char[] text = line.mText;
+    
+                    for (int col = 0; col < columns; ) {
+                        char highSurrogate = text[col];
+                        int codePoint = highSurrogate;
+                        if (Character.isHighSurrogate(highSurrogate) && col + 1 < columns) {
+                            char lowSurrogate = text[col + 1];
+                            if (Character.isLowSurrogate(lowSurrogate)) {
+                                codePoint = Character.toCodePoint(highSurrogate, lowSurrogate);
+                            }
+                        }
+                        
+                        int wcwidth = WcWidth.width(codePoint);
+                        if (codePoint == 0 || wcwidth == 0) {
+                            col++;
+                            continue;
+                        }
+    
+                        if (col + wcwidth > columns) {
+                            col++;
+                            continue;
+                        }
+    
+                        GlyphMetrics metrics = getGlyphMetrics(codePoint);
+                        if (metrics == null) {
+                            col += wcwidth;
+                            continue;
+                        }
+    
+                        long style = line.getStyle(col);
+                        int foreColor = TextStyle.decodeForeColor(style);
+    
+                        int color;
+                        if ((style & TextStyle.CHARACTER_ATTRIBUTE_TRUECOLOR_FOREGROUND) == 0) {
+                            if (foreColor >= 0 && foreColor < palette.length) {
+                                color = palette[foreColor];
+                            } else {
+                                color = palette[TextStyle.COLOR_INDEX_FOREGROUND];
+                            }
+                        } else {
+                            color = foreColor;
+                        }
+    
+                        float x1_norm = (col * columnWidth / (float) mWidth) * 2.0f - 1.0f;
+                        float y1_norm = -(((row * mFontLineSpacing) / (float) mHeight) * 2.0f - 1.0f);
+                        float x2_norm = ((col + wcwidth) * columnWidth / (float) mWidth) * 2.0f - 1.0f;
+                        float y2_norm = y1_norm - (mFontLineSpacing / (float) mHeight) * 2.0f;
+    
+                        mVertexBuffer.put(x1_norm); mVertexBuffer.put(y2_norm); mVertexBuffer.put(0.0f);
+                        mVertexBuffer.put(x1_norm); mVertexBuffer.put(y1_norm); mVertexBuffer.put(0.0f);
+                        mVertexBuffer.put(x2_norm); mVertexBuffer.put(y1_norm); mVertexBuffer.put(0.0f);
+                        mVertexBuffer.put(x2_norm); mVertexBuffer.put(y1_norm); mVertexBuffer.put(0.0f);
+                        mVertexBuffer.put(x2_norm); mVertexBuffer.put(y2_norm); mVertexBuffer.put(0.0f);
+                        mVertexBuffer.put(x1_norm); mVertexBuffer.put(y2_norm); mVertexBuffer.put(0.0f);
+                        
+                        mTextureBuffer.put(metrics.texCoords.left); mTextureBuffer.put(metrics.texCoords.bottom);
+                        mTextureBuffer.put(metrics.texCoords.left); mTextureBuffer.put(metrics.texCoords.top);
+                        mTextureBuffer.put(metrics.texCoords.right); mTextureBuffer.put(metrics.texCoords.top);
+                        mTextureBuffer.put(metrics.texCoords.right); mTextureBuffer.put(metrics.texCoords.top);
+                        mTextureBuffer.put(metrics.texCoords.right); mTextureBuffer.put(metrics.texCoords.bottom);
+                        mTextureBuffer.put(metrics.texCoords.left); mTextureBuffer.put(metrics.texCoords.bottom);
+    
+                        float red = ((color >> 16) & 0xFF) / 255.0f;
+                        float green = ((color >> 8) & 0xFF) / 255.0f;
+                        float blue = (color & 0xFF) / 255.0f;
+    
+                        for(int i = 0; i < 6; i++) {
+                            mColorBuffer.put(red);
+                            mColorBuffer.put(green);
+                            mColorBuffer.put(blue);
+                            mColorBuffer.put(1.0f);
+                        }
+                        col += wcwidth;
+                    }
+                }
+    
+                mVertexBuffer.position(0);
+                mTextureBuffer.position(0);
+                mColorBuffer.position(0);
             }
-
-            mVertexBuffer.position(0);
-            mTextureBuffer.position(0);
-            mColorBuffer.position(0);
         }
-    }
 
     private static int loadShader(int type, String shaderCode){
         int shader = GLES20.glCreateShader(type);
