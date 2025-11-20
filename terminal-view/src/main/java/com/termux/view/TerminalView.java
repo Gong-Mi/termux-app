@@ -140,7 +140,7 @@ public final class TerminalView extends GLSurfaceView {
         Log.d("TermuxDebug", "TerminalView constructor");
 
         // Use GLES 2.0 as it's widely supported.
-        setEGLContextClientVersion(2);
+        setEGLContextClientVersion(3);
         // Set the Renderer for drawing on the GLSurfaceView
         mRenderer = new TerminalRendererGLES(14, Typeface.MONOSPACE);
         setRenderer(mRenderer);

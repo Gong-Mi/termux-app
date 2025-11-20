@@ -23,7 +23,7 @@ import javax.microedition.khronos.opengles.GL10;
 
 public class TerminalRendererGLES implements GLSurfaceView.Renderer {
 
-    private static final String TAG = "TermuxDebug";
+    private static final String TAG = TerminalRendererGLES.class.getSimpleName();
 
     private final String vertexShaderCode =
         "attribute vec4 a_Position;      \n" +
@@ -143,25 +143,32 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
             return;
         }
 
-        int columns = mEmulator.mColumns;
-        int rows = mEmulator.mRows;
-
+        Log.d(TAG, "generateMesh - columns: " + columns + ", rows: " + rows);
         int numCharacters = columns * rows;
+        Log.d(TAG, "generateMesh - numCharacters: " + numCharacters);
         int numVertices = numCharacters * 6;
+        Log.d(TAG, "generateMesh - numVertices: " + numVertices);
 
         if (mVertexBuffer == null || mVertexBuffer.capacity() < numVertices * 3) {
             mVertexBuffer = ByteBuffer.allocateDirect(numVertices * 3 * 4)
                 .order(ByteOrder.nativeOrder()).asFloatBuffer();
+            Log.d(TAG, "generateMesh - Reallocated mVertexBuffer. New capacity: " + (mVertexBuffer != null ? mVertexBuffer.capacity() : "null"));
         }
         if (mTextureBuffer == null || mTextureBuffer.capacity() < numVertices * 2) {
             mTextureBuffer = ByteBuffer.allocateDirect(numVertices * 2 * 4)
                 .order(ByteOrder.nativeOrder()).asFloatBuffer();
+            Log.d(TAG, "generateMesh - Reallocated mTextureBuffer. New capacity: " + (mTextureBuffer != null ? mTextureBuffer.capacity() : "null"));
         }
         if (mColorBuffer == null || mColorBuffer.capacity() < numVertices * 4) {
             mColorBuffer = ByteBuffer.allocateDirect(numVertices * 4 * 4)
                 .order(ByteOrder.nativeOrder()).asFloatBuffer();
+            Log.d(TAG, "generateMesh - Reallocated mColorBuffer. New capacity: " + (mColorBuffer != null ? mColorBuffer.capacity() : "null"));
         }
 
+        if (mVertexBuffer == null || mTextureBuffer == null || mColorBuffer == null) {
+            Log.e(TAG, "generateMesh - Failed to allocate one or more buffers.");
+            return;
+        }
 
         mVertexBuffer.clear();
         mTextureBuffer.clear();
@@ -222,12 +229,19 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
                 float green = ((color >> 8) & 0xFF) / 255.0f;
                 float blue = (color & 0xFF) / 255.0f;
 
+                // Log buffer state before putting color data
+                if (mColorBuffer != null) {
+                    Log.d(TAG, "generateMesh - mColorBuffer.position(): " + mColorBuffer.position() + ", mColorBuffer.limit(): " + mColorBuffer.limit() + ", mColorBuffer.capacity(): " + mColorBuffer.capacity());
+                } else {
+                    Log.e(TAG, "generateMesh - mColorBuffer is null before color data put.");
+                    return; // Prevent NullPointerException
+                }
+
                 for(int i = 0; i < 6; i++) {
                     mColorBuffer.put(red);
                     mColorBuffer.put(green);
                     mColorBuffer.put(blue);
                     mColorBuffer.put(1.0f);
-                }
             }
         }
 
@@ -247,17 +261,25 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
     public void onSurfaceCreated(GL10 unused, EGLConfig config) {
         // Set the background frame color to black.
         GLES20.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-        Log.d("TermuxDebug", "onSurfaceCreated");
+        checkGlError("glClearColor");
+        Log.d(TAG, "onSurfaceCreated");
 
         int vertexShader = loadShader(GLES20.GL_VERTEX_SHADER, vertexShaderCode);
+        checkGlError("loadShader(vertex)");
         int fragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER, fragmentShaderCode);
+        checkGlError("loadShader(fragment)");
 
         mProgram = GLES20.glCreateProgram();
+        checkGlError("glCreateProgram");
         GLES20.glAttachShader(mProgram, vertexShader);
+        checkGlError("glAttachShader(vertex)");
         GLES20.glAttachShader(mProgram, fragmentShader);
+        checkGlError("glAttachShader(fragment)");
         GLES20.glLinkProgram(mProgram);
+        checkGlError("glLinkProgram");
 
         createFontTexture();
+        checkGlError("createFontTexture");
     }
 
     @Override
@@ -265,43 +287,63 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
         mWidth = width;
         mHeight = height;
         GLES20.glViewport(0, 0, width, height);
-        Log.d("TermuxDebug", "onSurfaceChanged: " + width + "x" + height);
+        checkGlError("glViewport");
+        Log.d(TAG, "onSurfaceChanged: " + width + "x" + height);
     }
 
     @Override
     public void onDrawFrame(GL10 unused) {
         if (mEmulator == null) return;
-        Log.d("TermuxDebug", "onDrawFrame");
+        Log.d(TAG, "onDrawFrame");
 
         generateMesh();
 
         // Redraw the background color
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
+        checkGlError("glClear");
         GLES20.glUseProgram(mProgram);
+        checkGlError("glUseProgram");
 
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+        checkGlError("glActiveTexture");
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mTextureId);
+        checkGlError("glBindTexture");
 
         int positionHandle = GLES20.glGetAttribLocation(mProgram, "a_Position");
+        checkGlError("glGetAttribLocation(a_Position)");
         GLES20.glEnableVertexAttribArray(positionHandle);
+        checkGlError("glEnableVertexAttribArray(positionHandle)");
         GLES20.glVertexAttribPointer(positionHandle, 3, GLES20.GL_FLOAT, false, 0, mVertexBuffer);
+        checkGlError("glVertexAttribPointer(positionHandle)");
 
         int texCoordHandle = GLES20.glGetAttribLocation(mProgram, "a_TexCoordinate");
+        checkGlError("glGetAttribLocation(a_TexCoordinate)");
         GLES20.glEnableVertexAttribArray(texCoordHandle);
+        checkGlError("glEnableVertexAttribArray(texCoordHandle)");
         GLES20.glVertexAttribPointer(texCoordHandle, 2, GLES20.GL_FLOAT, false, 0, mTextureBuffer);
+        checkGlError("glVertexAttribPointer(texCoordHandle)");
 
         int colorHandle = GLES20.glGetAttribLocation(mProgram, "a_Color");
+        checkGlError("glGetAttribLocation(a_Color)");
         GLES20.glEnableVertexAttribArray(colorHandle);
+        checkGlError("glEnableVertexAttribArray(colorHandle)");
         GLES20.glVertexAttribPointer(colorHandle, 4, GLES20.GL_FLOAT, false, 0, mColorBuffer);
+        checkGlError("glVertexAttribPointer(colorHandle)");
 
         int textureHandle = GLES20.glGetUniformLocation(mProgram, "u_Texture");
+        checkGlError("glGetUniformLocation(u_Texture)");
         GLES20.glUniform1i(textureHandle, 0);
+        checkGlError("glUniform1i");
 
         GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, mEmulator.mColumns * mEmulator.mRows * 6);
+        checkGlError("glDrawArrays");
 
         GLES20.glDisableVertexAttribArray(positionHandle);
+        checkGlError("glDisableVertexAttribArray(positionHandle)");
         GLES20.glDisableVertexAttribArray(texCoordHandle);
+        checkGlError("glDisableVertexAttribArray(texCoordHandle)");
         GLES20.glDisableVertexAttribArray(colorHandle);
+        checkGlError("glDisableVertexAttribArray(colorHandle)");
     }
 
     public float getFontWidth() {
@@ -310,5 +352,14 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
 
     public int getFontLineSpacing() {
         return mFontLineSpacing;
+    }
+
+    private void checkGlError(String glOperation) {
+        int error;
+        while ((error = GLES20.glGetError()) != GLES20.GL_NO_ERROR) {
+            Log.e(TAG, glOperation + ": glError " + error);
+            // Optionally, you can throw a RuntimeException here to crash the app
+            // and get a stack trace, but for now, just logging is fine.
+        }
     }
 }
