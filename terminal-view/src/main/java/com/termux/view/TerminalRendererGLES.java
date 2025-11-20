@@ -8,6 +8,9 @@ import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
 import android.opengl.GLUtils;
 import android.util.Log;
+import android.content.Context;
+import androidx.core.content.res.ResourcesCompat;
+import com.termux.view.R;
 
 import com.termux.terminal.TerminalBuffer;
 import com.termux.terminal.TerminalEmulator;
@@ -45,7 +48,8 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
         "varying vec2 v_TexCoordinate;   \n" +
         "varying vec4 v_Color;           \n" +
         "void main() {                   \n" +
-        "  gl_FragColor = texture2D(u_Texture, v_TexCoordinate) * v_Color; \n" +
+        "  float alpha = texture2D(u_Texture, v_TexCoordinate).a;\n" +
+        "  gl_FragColor = vec4(v_Color.rgb, alpha); \n" +
         "}                              \n";
 
     private int mProgram;
@@ -55,7 +59,7 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
     private FloatBuffer mColorBuffer;
 
     int mTextSize;
-    Typeface mTypeface;
+    final Typeface mTypeface;
     float mFontWidth;
     int mFontLineSpacing;
     int mFontLineSpacingAndAscent;
@@ -82,36 +86,36 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
             }
         }
     
-        public TerminalRendererGLES(int textSize, Typeface typeface) {
-            Log.d("TermuxDebug", "TerminalRendererGLES constructor");
-            mTextSize = textSize;
-            mTypeface = typeface;
-    
-            Paint paint = new Paint();
-            paint.setTypeface(typeface);
-            paint.setTextSize(textSize);
-    
-            mFontLineSpacing = (int) Math.ceil(paint.getFontSpacing());
-            int mFontAscent = (int) Math.ceil(paint.ascent());
-            mFontLineSpacingAndAscent = mFontLineSpacing + mFontAscent;
-            mFontWidth = paint.measureText("X");
-        }
-    
-        public void updateFont(int textSize, Typeface typeface) {
-            Log.d("TermuxDebug", "updateFont - textSize: " + textSize + ", typeface: " + typeface.toString());
-            mTextSize = textSize;
-            mTypeface = typeface;
-    
-            Paint paint = new Paint();
-            paint.setTypeface(typeface);
-            paint.setTextSize(textSize);
-    
-            mFontLineSpacing = (int) Math.ceil(paint.getFontSpacing());
-            int mFontAscent = (int) Math.ceil(paint.ascent());
-            mFontLineSpacingAndAscent = mFontLineSpacing + mFontAscent;
-            mFontWidth = paint.measureText("X");
-        }
-    
+            private final Context mContext;
+        
+            public TerminalRendererGLES(Context context, int textSize) {
+                Log.d("TermuxDebug", "TerminalRendererGLES constructor");
+                mContext = context;
+                mTextSize = textSize;
+                mTypeface = ResourcesCompat.getFont(mContext, R.font.dejavu_sans_mono);
+        
+                Paint paint = new Paint();
+                paint.setTypeface(mTypeface);
+                paint.setTextSize(textSize);
+        
+                mFontLineSpacing = (int) Math.ceil(paint.getFontSpacing());
+                int mFontAscent = (int) Math.ceil(paint.ascent());
+                mFontLineSpacingAndAscent = mFontLineSpacing + mFontAscent;
+                mFontWidth = paint.measureText("X");
+            }    
+            public void updateFont(int textSize) {
+                Log.d("TermuxDebug", "updateFont - textSize: " + textSize);
+                mTextSize = textSize;
+        
+                Paint paint = new Paint();
+                paint.setTypeface(mTypeface);
+                paint.setTextSize(textSize);
+        
+                mFontLineSpacing = (int) Math.ceil(paint.getFontSpacing());
+                int mFontAscent = (int) Math.ceil(paint.ascent());
+                mFontLineSpacingAndAscent = mFontLineSpacing + mFontAscent;
+                mFontWidth = paint.measureText("X");
+            }    
         public void setEmulator(TerminalEmulator emulator) {
             mEmulator = emulator;
         }
@@ -323,6 +327,12 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
         // Set the background frame color to black.
         GLES20.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         checkGlError("glClearColor");
+
+        GLES20.glEnable(GLES20.GL_BLEND);
+        checkGlError("glEnable(GL_BLEND)");
+        GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA);
+        checkGlError("glBlendFunc");
+
         Log.d(TAG, "onSurfaceCreated");
 
         int vertexShader = loadShader(GLES20.GL_VERTEX_SHADER, vertexShaderCode);

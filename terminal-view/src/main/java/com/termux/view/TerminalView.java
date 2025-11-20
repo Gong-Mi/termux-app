@@ -139,10 +139,10 @@ public final class TerminalView extends GLSurfaceView {
         super(context, attributes);
         Log.d("TermuxDebug", "TerminalView constructor");
 
-        // Use GLES 2.0 as it's widely supported.
-        setEGLContextClientVersion(3);
-        // Set the Renderer for drawing on the GLSurfaceView
-        mRenderer = new TerminalRendererGLES(14, Typeface.MONOSPACE);
+                // Use GLES 2.0 as it's widely supported.
+
+                setEGLContextClientVersion(3);        // Set the Renderer for drawing on the GLSurfaceView
+        mRenderer = new TerminalRendererGLES(context, 14);
         setRenderer(mRenderer);
 
         mGestureRecognizer = new GestureAndScaleRecognizer(context, new GestureAndScaleRecognizer.Listener() {
@@ -526,20 +526,12 @@ public final class TerminalView extends GLSurfaceView {
         Log.d("TermuxDebug", "setTextSize: " + textSize);
         queueEvent(() -> {
             if (mRenderer == null) return;
-            mRenderer.updateFont(textSize, mRenderer.mTypeface);
+            mRenderer.updateFont(textSize);
             post(this::updateSize);
         });
     }
 
-    public void setTypeface(Typeface newTypeface) {
-        Log.d("TermuxDebug", "setTypeface: " + newTypeface);
-        queueEvent(() -> {
-            if (mRenderer == null) return;
-            mRenderer.updateFont(mRenderer.mTextSize, newTypeface);
-            post(this::updateSize);
-            postInvalidate();
-        });
-    }
+
 
     @Override
     public boolean onCheckIsTextEditor() {
