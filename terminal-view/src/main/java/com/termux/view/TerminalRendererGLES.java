@@ -79,7 +79,7 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
     }
 
     public void updateFont(int textSize, Typeface typeface) {
-        Log.d("TermuxDebug", "updateFont - textSize: " + textSize + ", typeface: " + typeface.getFamilyName());
+        Log.d("TermuxDebug", "updateFont - textSize: " + textSize + ", typeface: " + typeface.toString());
         mTextSize = textSize;
         mTypeface = typeface;
 
