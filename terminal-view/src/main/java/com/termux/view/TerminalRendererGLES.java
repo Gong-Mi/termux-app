@@ -135,123 +135,21 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
 
     private void generateMesh() {
         Log.d("TermuxDebug", "generateMesh");
-        if (mEmulator == null || mEmulator.getScreen() == null || mEmulator.mColors == null || mEmulator.mColors.mCurrentColors == null) {
-            // If the emulator is not fully initialized, clear the buffers and return to prevent a crash.
-            if (mVertexBuffer != null) mVertexBuffer.clear();
-            if (mTextureBuffer != null) mTextureBuffer.clear();
-            if (mColorBuffer != null) mColorBuffer.clear();
-            return;
-        }
+        if (mEmulator == null) return; // Early exit if no emulator
 
-        int columns = mEmulator.mColumns;
-        int rows = mEmulator.mRows;
-
-        Log.d(TAG, "generateMesh - columns: " + columns + ", rows: " + rows);
-        int numCharacters = columns * rows;
-        Log.d(TAG, "generateMesh - numCharacters: " + numCharacters);
-        int numVertices = numCharacters * 6;
-        Log.d(TAG, "generateMesh - numVertices: " + numVertices);
-
-        if (mVertexBuffer == null || mVertexBuffer.capacity() < numVertices * 3) {
-            mVertexBuffer = ByteBuffer.allocateDirect(numVertices * 3 * 4)
-                .order(ByteOrder.nativeOrder()).asFloatBuffer();
-            Log.d(TAG, "generateMesh - Reallocated mVertexBuffer. New capacity: " + (mVertexBuffer != null ? mVertexBuffer.capacity() : "null"));
-        }
-        if (mTextureBuffer == null || mTextureBuffer.capacity() < numVertices * 2) {
-            mTextureBuffer = ByteBuffer.allocateDirect(numVertices * 2 * 4)
-                .order(ByteOrder.nativeOrder()).asFloatBuffer();
-            Log.d(TAG, "generateMesh - Reallocated mTextureBuffer. New capacity: " + (mTextureBuffer != null ? mTextureBuffer.capacity() : "null"));
-        }
-        if (mColorBuffer == null || mColorBuffer.capacity() < numVertices * 4) {
-            mColorBuffer = ByteBuffer.allocateDirect(numVertices * 4 * 4)
-                .order(ByteOrder.nativeOrder()).asFloatBuffer();
-            Log.d(TAG, "generateMesh - Reallocated mColorBuffer. New capacity: " + (mColorBuffer != null ? mColorBuffer.capacity() : "null"));
-        }
-
-        if (mVertexBuffer == null || mTextureBuffer == null || mColorBuffer == null) {
-            Log.e(TAG, "generateMesh - Failed to allocate one or more buffers.");
-            return;
-        }
-
-        mVertexBuffer.clear();
-        mTextureBuffer.clear();
-        mColorBuffer.clear();
-
-        TerminalBuffer screen = mEmulator.getScreen();
-        int[] palette = mEmulator.mColors.mCurrentColors;
-
-        for (int row = 0; row < rows; row++) {
-            TerminalRow line = screen.allocateFullLineIfNecessary(screen.externalToInternalRow(row));
-            for (int col = 0; col < columns; col++) {
-                char c = line.mText[col];
-                if (c == 0) c = ' '; // Replace null characters with spaces
-
-                long style = line.getStyle(col);
-                int foreColor = TextStyle.decodeForeColor(style);
-                int backColor = TextStyle.decodeBackColor(style);
-
-                int color;
-                if ((style & TextStyle.CHARACTER_ATTRIBUTE_TRUECOLOR_FOREGROUND) == 0) {
-                    if (foreColor >= 0 && foreColor < palette.length) {
-                        color = palette[foreColor];
-                    } else {
-                        // Fallback to default foreground color if index is out of bounds
-                        color = palette[TextStyle.COLOR_INDEX_FOREGROUND];
+        // Synchronize on the emulator to prevent concurrent modifications
+        // to the terminal state while we are reading from it.
+        synchronized (mEmulator) {
+            if (mEmulator.getScreen() == null || mEmulator.mColors == null || mEmu ... (2382 characters left) ... mColorBuffer.put(blue);
+                        mColorBuffer.put(1.0f);
                     }
-                } else {
-                    color = foreColor;
-                }
-
-                float x1 = (col * mFontWidth / (float) mWidth) * 2.0f - 1.0f;
-                float y1 = -(((row * mFontLineSpacing) / (float) mHeight) * 2.0f - 1.0f);
-                float x2 = x1 + (mFontWidth / (float) mWidth) * 2.0f;
-                float y2 = y1 - (mFontLineSpacing / (float) mHeight) * 2.0f;
-
-                mVertexBuffer.put(x1); mVertexBuffer.put(y2); mVertexBuffer.put(0.0f);
-                mVertexBuffer.put(x1); mVertexBuffer.put(y1); mVertexBuffer.put(0.0f);
-                mVertexBuffer.put(x2); mVertexBuffer.put(y1); mVertexBuffer.put(0.0f);
-
-                mVertexBuffer.put(x2); mVertexBuffer.put(y1); mVertexBuffer.put(0.0f);
-                mVertexBuffer.put(x2); mVertexBuffer.put(y2); mVertexBuffer.put(0.0f);
-                mVertexBuffer.put(x1); mVertexBuffer.put(y2); mVertexBuffer.put(0.0f);
-
-                float u1 = ((c - 32) * mFontWidth) / (mFontWidth * 95);
-                float v1 = 0.0f;
-                float u2 = u1 + (mFontWidth / (mFontWidth * 95));
-                float v2 = 1.0f;
-
-                mTextureBuffer.put(u1); mTextureBuffer.put(v1);
-                mTextureBuffer.put(u1); mTextureBuffer.put(v2);
-                mTextureBuffer.put(u2); mTextureBuffer.put(v2);
-
-                mTextureBuffer.put(u2); mTextureBuffer.put(v2);
-                mTextureBuffer.put(u2); mTextureBuffer.put(v1);
-                mTextureBuffer.put(u1); mTextureBuffer.put(v1);
-
-                float red = ((color >> 16) & 0xFF) / 255.0f;
-                float green = ((color >> 8) & 0xFF) / 255.0f;
-                float blue = (color & 0xFF) / 255.0f;
-
-                // Log buffer state before putting color data
-                if (mColorBuffer != null) {
-                    Log.d(TAG, "generateMesh - mColorBuffer.position(): " + mColorBuffer.position() + ", mColorBuffer.limit(): " + mColorBuffer.limit() + ", mColorBuffer.capacity(): " + mColorBuffer.capacity());
-                } else {
-                    Log.e(TAG, "generateMesh - mColorBuffer is null before color data put.");
-                    return; // Prevent NullPointerException
-                }
-
-                for(int i = 0; i < 6; i++) {
-                    mColorBuffer.put(red);
-                    mColorBuffer.put(green);
-                    mColorBuffer.put(blue);
-                    mColorBuffer.put(1.0f);
                 }
             }
-        }
 
-        mVertexBuffer.position(0);
-        mTextureBuffer.position(0);
-        mColorBuffer.position(0);
+            mVertexBuffer.position(0);
+            mTextureBuffer.position(0);
+            mColorBuffer.position(0);
+        } // End of synchronized block
     }
 
     private static int loadShader(int type, String shaderCode){
