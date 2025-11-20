@@ -17,6 +17,8 @@ import com.termux.terminal.TextStyle;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
+import java.util.HashMap;
+import java.util.Map;
 
 import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
@@ -47,7 +49,6 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
         "}                              \n";
 
     private int mProgram;
-    private int mTextureId;
 
     private FloatBuffer mVertexBuffer;
     private FloatBuffer mTextureBuffer;
@@ -62,6 +63,24 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
     private TerminalEmulator mEmulator;
     private int mWidth;
     private int mHeight;
+
+    private int mAtlasTextureId;
+    private static final int ATLAS_TEXTURE_WIDTH = 1024;
+    private static final int ATLAS_TEXTURE_HEIGHT = 1024;
+    private int mAtlasNextX = 0;
+    private int mAtlasNextY = 0;
+    private int mAtlasLineHeight = 0;
+    private final Map<Character, GlyphMetrics> mGlyphCache = new HashMap<>();
+
+    private static class GlyphMetrics {
+        public final float width;
+        public final android.graphics.RectF texCoords;
+
+        GlyphMetrics(float width, android.graphics.RectF texCoords) {
+            this.width = width;
+            this.texCoords = texCoords;
+        }
+    }
 
     public TerminalRendererGLES(int textSize, Typeface typeface) {
         Log.d("TermuxDebug", "TerminalRendererGLES constructor");
@@ -91,167 +110,185 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
         int mFontAscent = (int) Math.ceil(paint.ascent());
         mFontLineSpacingAndAscent = mFontLineSpacing + mFontAscent;
         mFontWidth = paint.measureText("X");
-
-        createFontTexture();
     }
 
     public void setEmulator(TerminalEmulator emulator) {
         mEmulator = emulator;
     }
 
-    private void createFontTexture() {
-        Log.d("TermuxDebug", "createFontTexture");
+    private void initTextureAtlas() {
+        mGlyphCache.clear();
+        mAtlasNextX = 0;
+        mAtlasNextY = 0;
+        mAtlasLineHeight = 0;
+
         int[] textureIds = new int[1];
         GLES20.glGenTextures(1, textureIds, 0);
-        mTextureId = textureIds[0];
+        mAtlasTextureId = textureIds[0];
 
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mTextureId);
-
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mAtlasTextureId);
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_NEAREST);
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_NEAREST);
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE);
         GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);
 
-        int textureWidth = (int) (mFontWidth * 95); // ASCII 32-126
-        int textureHeight = mFontLineSpacing;
-
-        Bitmap bitmap = Bitmap.createBitmap(textureWidth, textureHeight, Bitmap.Config.ALPHA_8);
-        Canvas canvas = new Canvas(bitmap);
-        canvas.drawColor(0x00000000); // Transparent background
-
-        Paint paint = new Paint();
-        paint.setTypeface(mTypeface);
-        paint.setTextSize(mTextSize);
-        paint.setColor(0xFFFFFFFF); // White text
-
-        for (int i = 32; i < 127; i++) {
-            char c = (char) i;
-            canvas.drawText(String.valueOf(c), (i - 32) * mFontWidth, mFontLineSpacingAndAscent - mFontLineSpacing, paint);
-        }
-
+        Bitmap bitmap = Bitmap.createBitmap(ATLAS_TEXTURE_WIDTH, ATLAS_TEXTURE_HEIGHT, Bitmap.Config.ALPHA_8);
         GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0);
         bitmap.recycle();
     }
 
+    private GlyphMetrics getGlyphMetrics(char c) {
+        if (mGlyphCache.containsKey(c)) {
+            return mGlyphCache.get(c);
+        }
+
+        // The character is not in the cache. Render it to the texture atlas.
+        Paint paint = new Paint();
+        paint.setTypeface(mTypeface);
+        paint.setTextSize(mTextSize);
+        paint.setAntiAlias(true);
+        paint.setColor(0xFFFFFFFF);
+
+        float charWidth = paint.measureText(String.valueOf(c));
+        int charWidthInt = (int) Math.ceil(charWidth);
+        int charHeightInt = mFontLineSpacing;
+
+        if (mAtlasNextX + charWidthInt > ATLAS_TEXTURE_WIDTH) {
+            mAtlasNextX = 0;
+            mAtlasNextY += mAtlasLineHeight;
+            mAtlasLineHeight = 0;
+        }
+
+        // FIXME: Check if we are out of atlas space.
+        if (mAtlasLineHeight < charHeightInt) {
+            mAtlasLineHeight = charHeightInt;
+        }
+
+        Bitmap glyphBitmap = Bitmap.createBitmap(charWidthInt, charHeightInt, Bitmap.Config.ALPHA_8);
+        Canvas canvas = new Canvas(glyphBitmap);
+        canvas.drawText(String.valueOf(c), 0, mFontLineSpacingAndAscent - mFontLineSpacing, paint);
+
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mAtlasTextureId);
+        GLUtils.texSubImage2D(GLES20.GL_TEXTURE_2D, 0, mAtlasNextX, mAtlasNextY, glyphBitmap);
+        glyphBitmap.recycle();
+
+        float u1 = mAtlasNextX / (float) ATLAS_TEXTURE_WIDTH;
+        float v1 = mAtlasNextY / (float) ATLAS_TEXTURE_HEIGHT;
+        float u2 = (mAtlasNextX + charWidth) / (float) ATLAS_TEXTURE_WIDTH;
+        float v2 = (mAtlasNextY + charHeightInt) / (float) ATLAS_TEXTURE_HEIGHT;
+        android.graphics.RectF texCoords = new android.graphics.RectF(u1, v1, u2, v2);
+
+        GlyphMetrics metrics = new GlyphMetrics(charWidth, texCoords);
+        mGlyphCache.put(c, metrics);
+
+        mAtlasNextX += charWidthInt;
+
+        return metrics;
+    }
+
+
     private void generateMesh() {
-        Log.d("TermuxDebug", "generateMesh");
-        if (mEmulator == null || mEmulator.getScreen() == null || mEmulator.mColors == null || mEmulator.mColors.mCurrentColors == null) {
-            // If the emulator is not fully initialized, clear the buffers and return to prevent a crash.
-            if (mVertexBuffer != null) mVertexBuffer.clear();
-            if (mTextureBuffer != null) mTextureBuffer.clear();
-            if (mColorBuffer != null) mColorBuffer.clear();
-            return;
-        }
+        if (mEmulator == null) return;
 
-        int columns = mEmulator.mColumns;
-        int rows = mEmulator.mRows;
+        synchronized (mEmulator) {
+            if (mEmulator.getScreen() == null || mEmulator.mColors == null || mEmulator.mColors.mCurrentColors == null) {
+                if (mVertexBuffer != null) mVertexBuffer.clear();
+                if (mTextureBuffer != null) mTextureBuffer.clear();
+                if (mColorBuffer != null) mColorBuffer.clear();
+                return;
+            }
 
-        Log.d(TAG, "generateMesh - columns: " + columns + ", rows: " + rows);
-        int numCharacters = columns * rows;
-        Log.d(TAG, "generateMesh - numCharacters: " + numCharacters);
-        int numVertices = numCharacters * 6;
-        Log.d(TAG, "generateMesh - numVertices: " + numVertices);
+            int columns = mEmulator.mColumns;
+            int rows = mEmulator.mRows;
 
-        if (mVertexBuffer == null || mVertexBuffer.capacity() < numVertices * 3) {
-            mVertexBuffer = ByteBuffer.allocateDirect(numVertices * 3 * 4)
-                .order(ByteOrder.nativeOrder()).asFloatBuffer();
-            Log.d(TAG, "generateMesh - Reallocated mVertexBuffer. New capacity: " + (mVertexBuffer != null ? mVertexBuffer.capacity() : "null"));
-        }
-        if (mTextureBuffer == null || mTextureBuffer.capacity() < numVertices * 2) {
-            mTextureBuffer = ByteBuffer.allocateDirect(numVertices * 2 * 4)
-                .order(ByteOrder.nativeOrder()).asFloatBuffer();
-            Log.d(TAG, "generateMesh - Reallocated mTextureBuffer. New capacity: " + (mTextureBuffer != null ? mTextureBuffer.capacity() : "null"));
-        }
-        if (mColorBuffer == null || mColorBuffer.capacity() < numVertices * 4) {
-            mColorBuffer = ByteBuffer.allocateDirect(numVertices * 4 * 4)
-                .order(ByteOrder.nativeOrder()).asFloatBuffer();
-            Log.d(TAG, "generateMesh - Reallocated mColorBuffer. New capacity: " + (mColorBuffer != null ? mColorBuffer.capacity() : "null"));
-        }
+            if (columns <= 0 || rows <= 0) return;
 
-        if (mVertexBuffer == null || mTextureBuffer == null || mColorBuffer == null) {
-            Log.e(TAG, "generateMesh - Failed to allocate one or more buffers.");
-            return;
-        }
+            int numCharacters = columns * rows;
+            int numVertices = numCharacters * 6;
 
-        mVertexBuffer.clear();
-        mTextureBuffer.clear();
-        mColorBuffer.clear();
+            if (mVertexBuffer == null || mVertexBuffer.capacity() < numVertices * 3) {
+                mVertexBuffer = ByteBuffer.allocateDirect(numVertices * 3 * 4)
+                    .order(ByteOrder.nativeOrder()).asFloatBuffer();
+            }
+            if (mTextureBuffer == null || mTextureBuffer.capacity() < numVertices * 2) {
+                mTextureBuffer = ByteBuffer.allocateDirect(numVertices * 2 * 4)
+                    .order(ByteOrder.nativeOrder()).asFloatBuffer();
+            }
+            if (mColorBuffer == null || mColorBuffer.capacity() < numVertices * 4) {
+                mColorBuffer = ByteBuffer.allocateDirect(numVertices * 4 * 4)
+                    .order(ByteOrder.nativeOrder()).asFloatBuffer();
+            }
 
-        TerminalBuffer screen = mEmulator.getScreen();
-        int[] palette = mEmulator.mColors.mCurrentColors;
+            mVertexBuffer.clear();
+            mTextureBuffer.clear();
+            mColorBuffer.clear();
 
-        for (int row = 0; row < rows; row++) {
-            TerminalRow line = screen.allocateFullLineIfNecessary(screen.externalToInternalRow(row));
-            for (int col = 0; col < columns; col++) {
-                char c = line.mText[col];
-                if (c == 0) c = ' '; // Replace null characters with spaces
+            TerminalBuffer screen = mEmulator.getScreen();
+            int[] palette = mEmulator.mColors.mCurrentColors;
+            float currentX;
 
-                long style = line.getStyle(col);
-                int foreColor = TextStyle.decodeForeColor(style);
-                int backColor = TextStyle.decodeBackColor(style);
+            for (int row = 0; row < rows; row++) {
+                currentX = 0;
+                TerminalRow line = screen.allocateFullLineIfNecessary(screen.externalToInternalRow(row));
+                for (int col = 0; col < columns; col++) {
+                    char c = line.mText[col];
+                    if (c == 0) c = ' ';
 
-                int color;
-                if ((style & TextStyle.CHARACTER_ATTRIBUTE_TRUECOLOR_FOREGROUND) == 0) {
-                    if (foreColor >= 0 && foreColor < palette.length) {
-                        color = palette[foreColor];
+                    GlyphMetrics metrics = getGlyphMetrics(c);
+                    if (metrics == null) continue;
+
+                    long style = line.getStyle(col);
+                    int foreColor = TextStyle.decodeForeColor(style);
+
+                    int color;
+                    if ((style & TextStyle.CHARACTER_ATTRIBUTE_TRUECOLOR_FOREGROUND) == 0) {
+                        if (foreColor >= 0 && foreColor < palette.length) {
+                            color = palette[foreColor];
+                        } else {
+                            color = palette[TextStyle.COLOR_INDEX_FOREGROUND];
+                        }
                     } else {
-                        // Fallback to default foreground color if index is out of bounds
-                        color = palette[TextStyle.COLOR_INDEX_FOREGROUND];
+                        color = foreColor;
                     }
-                } else {
-                    color = foreColor;
-                }
 
-                float x1 = (col * mFontWidth / (float) mWidth) * 2.0f - 1.0f;
-                float y1 = -(((row * mFontLineSpacing) / (float) mHeight) * 2.0f - 1.0f);
-                float x2 = x1 + (mFontWidth / (float) mWidth) * 2.0f;
-                float y2 = y1 - (mFontLineSpacing / (float) mHeight) * 2.0f;
+                    float x1_norm = (currentX / (float) mWidth) * 2.0f - 1.0f;
+                    float y1_norm = -(((row * mFontLineSpacing) / (float) mHeight) * 2.0f - 1.0f);
+                    float x2_norm = ((currentX + metrics.width) / (float) mWidth) * 2.0f - 1.0f;
+                    float y2_norm = y1_norm - (mFontLineSpacing / (float) mHeight) * 2.0f;
 
-                mVertexBuffer.put(x1); mVertexBuffer.put(y2); mVertexBuffer.put(0.0f);
-                mVertexBuffer.put(x1); mVertexBuffer.put(y1); mVertexBuffer.put(0.0f);
-                mVertexBuffer.put(x2); mVertexBuffer.put(y1); mVertexBuffer.put(0.0f);
+                    mVertexBuffer.put(x1_norm); mVertexBuffer.put(y2_norm); mVertexBuffer.put(0.0f);
+                    mVertexBuffer.put(x1_norm); mVertexBuffer.put(y1_norm); mVertexBuffer.put(0.0f);
+                    mVertexBuffer.put(x2_norm); mVertexBuffer.put(y1_norm); mVertexBuffer.put(0.0f);
+                    mVertexBuffer.put(x2_norm); mVertexBuffer.put(y1_norm); mVertexBuffer.put(0.0f);
+                    mVertexBuffer.put(x2_norm); mVertexBuffer.put(y2_norm); mVertexBuffer.put(0.0f);
+                    mVertexBuffer.put(x1_norm); mVertexBuffer.put(y2_norm); mVertexBuffer.put(0.0f);
 
-                mVertexBuffer.put(x2); mVertexBuffer.put(y1); mVertexBuffer.put(0.0f);
-                mVertexBuffer.put(x2); mVertexBuffer.put(y2); mVertexBuffer.put(0.0f);
-                mVertexBuffer.put(x1); mVertexBuffer.put(y2); mVertexBuffer.put(0.0f);
+                    mTextureBuffer.put(metrics.texCoords.left); mTextureBuffer.put(metrics.texCoords.bottom);
+                    mTextureBuffer.put(metrics.texCoords.left); mTextureBuffer.put(metrics.texCoords.top);
+                    mTextureBuffer.put(metrics.texCoords.right); mTextureBuffer.put(metrics.texCoords.top);
+                    mTextureBuffer.put(metrics.texCoords.right); mTextureBuffer.put(metrics.texCoords.top);
+                    mTextureBuffer.put(metrics.texCoords.right); mTextureBuffer.put(metrics.texCoords.bottom);
+                    mTextureBuffer.put(metrics.texCoords.left); mTextureBuffer.put(metrics.texCoords.bottom);
 
-                float u1 = ((c - 32) * mFontWidth) / (mFontWidth * 95);
-                float v1 = 0.0f;
-                float u2 = u1 + (mFontWidth / (mFontWidth * 95));
-                float v2 = 1.0f;
+                    float red = ((color >> 16) & 0xFF) / 255.0f;
+                    float green = ((color >> 8) & 0xFF) / 255.0f;
+                    float blue = (color & 0xFF) / 255.0f;
 
-                mTextureBuffer.put(u1); mTextureBuffer.put(v1);
-                mTextureBuffer.put(u1); mTextureBuffer.put(v2);
-                mTextureBuffer.put(u2); mTextureBuffer.put(v2);
+                    for(int i = 0; i < 6; i++) {
+                        mColorBuffer.put(red);
+                        mColorBuffer.put(green);
+                        mColorBuffer.put(blue);
+                        mColorBuffer.put(1.0f);
+                    }
 
-                mTextureBuffer.put(u2); mTextureBuffer.put(v2);
-                mTextureBuffer.put(u2); mTextureBuffer.put(v1);
-                mTextureBuffer.put(u1); mTextureBuffer.put(v1);
-
-                float red = ((color >> 16) & 0xFF) / 255.0f;
-                float green = ((color >> 8) & 0xFF) / 255.0f;
-                float blue = (color & 0xFF) / 255.0f;
-
-                // Log buffer state before putting color data
-                if (mColorBuffer != null) {
-                    Log.d(TAG, "generateMesh - mColorBuffer.position(): " + mColorBuffer.position() + ", mColorBuffer.limit(): " + mColorBuffer.limit() + ", mColorBuffer.capacity(): " + mColorBuffer.capacity());
-                } else {
-                    Log.e(TAG, "generateMesh - mColorBuffer is null before color data put.");
-                    return; // Prevent NullPointerException
-                }
-
-                for(int i = 0; i < 6; i++) {
-                    mColorBuffer.put(red);
-                    mColorBuffer.put(green);
-                    mColorBuffer.put(blue);
-                    mColorBuffer.put(1.0f);
+                    currentX += metrics.width;
                 }
             }
-        }
 
-        mVertexBuffer.position(0);
-        mTextureBuffer.position(0);
-        mColorBuffer.position(0);
+            mVertexBuffer.position(0);
+            mTextureBuffer.position(0);
+            mColorBuffer.position(0);
+        }
     }
 
     private static int loadShader(int type, String shaderCode){
@@ -282,8 +319,8 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
         GLES20.glLinkProgram(mProgram);
         checkGlError("glLinkProgram");
 
-        createFontTexture();
-        checkGlError("createFontTexture");
+        initTextureAtlas();
+        checkGlError("initTextureAtlas");
     }
 
     @Override
@@ -298,7 +335,6 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
     @Override
     public void onDrawFrame(GL10 unused) {
         if (mEmulator == null) return;
-        Log.d(TAG, "onDrawFrame");
 
         generateMesh();
 
@@ -310,7 +346,7 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
 
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
         checkGlError("glActiveTexture");
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mTextureId);
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mAtlasTextureId);
         checkGlError("glBindTexture");
 
         int positionHandle = GLES20.glGetAttribLocation(mProgram, "a_Position");
