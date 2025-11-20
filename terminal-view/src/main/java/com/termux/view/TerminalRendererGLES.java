@@ -16,6 +16,7 @@ import com.termux.terminal.TerminalBuffer;
 import com.termux.terminal.TerminalEmulator;
 import com.termux.terminal.TerminalRow;
 import com.termux.terminal.TextStyle;
+import com.termux.terminal.WcWidth;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
