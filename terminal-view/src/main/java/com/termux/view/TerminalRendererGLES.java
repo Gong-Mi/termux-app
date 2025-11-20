@@ -135,7 +135,13 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
 
     private void generateMesh() {
         Log.d("TermuxDebug", "generateMesh");
-        if (mEmulator == null) return;
+        if (mEmulator == null || mEmulator.getScreen() == null || mEmulator.mColors == null || mEmulator.mColors.mCurrentColors == null) {
+            // If the emulator is not fully initialized, clear the buffers and return to prevent a crash.
+            if (mVertexBuffer != null) mVertexBuffer.clear();
+            if (mTextureBuffer != null) mTextureBuffer.clear();
+            if (mColorBuffer != null) mColorBuffer.clear();
+            return;
+        }
 
         int columns = mEmulator.mColumns;
         int rows = mEmulator.mRows;
