@@ -143,6 +143,9 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
             return;
         }
 
+        int columns = mEmulator.mColumns;
+        int rows = mEmulator.mRows;
+
         Log.d(TAG, "generateMesh - columns: " + columns + ", rows: " + rows);
         int numCharacters = columns * rows;
         Log.d(TAG, "generateMesh - numCharacters: " + numCharacters);
@@ -242,6 +245,7 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
                     mColorBuffer.put(green);
                     mColorBuffer.put(blue);
                     mColorBuffer.put(1.0f);
+                }
             }
         }
 
