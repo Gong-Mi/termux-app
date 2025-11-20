@@ -9,7 +9,7 @@ import android.opengl.GLSurfaceView;
 import android.opengl.GLUtils;
 import android.util.Log;
 import android.content.Context;
-import androidx.core.content.res.ResourcesCompat;
+
 import com.termux.view.R;
 
 import com.termux.terminal.TerminalBuffer;
@@ -92,7 +92,7 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
                 Log.d("TermuxDebug", "TerminalRendererGLES constructor");
                 mContext = context;
                 mTextSize = textSize;
-                mTypeface = ResourcesCompat.getFont(mContext, R.font.dejavu_sans_mono);
+                mTypeface = Typeface.createFromAsset(mContext.getAssets(), "font/dejavu_sans_mono.ttf");
         
                 Paint paint = new Paint();
                 paint.setTypeface(mTypeface);
