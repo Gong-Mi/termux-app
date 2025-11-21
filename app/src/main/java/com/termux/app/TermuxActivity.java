@@ -309,8 +309,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         if (mIsInvalidState) return;
 
-        if (mTerminalView != null)
+        if (mTerminalView != null) {
             mTerminalView.onResume();
+            mTerminalView.requestLayout();
+        }
 
         if (mTermuxTerminalSessionActivityClient != null)
             mTermuxTerminalSessionActivityClient.onResume();

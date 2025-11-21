@@ -156,6 +156,11 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
         int charWidthInt = (int) Math.ceil(charWidth);
         int charHeightInt = mFontLineSpacing;
 
+        if (charHeightInt > ATLAS_TEXTURE_HEIGHT) {
+            Log.e(TAG, "Glyph is too tall for the texture atlas. Glyph height: " + charHeightInt + ", atlas height: " + ATLAS_TEXTURE_HEIGHT);
+            return null;
+        }
+
         if (mAtlasNextX + charWidthInt > ATLAS_TEXTURE_WIDTH) {
             mAtlasNextX = 0;
             mAtlasNextY += mAtlasLineHeight;
