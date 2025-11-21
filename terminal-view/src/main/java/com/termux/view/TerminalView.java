@@ -142,7 +142,7 @@ public final class TerminalView extends GLSurfaceView {
         // Use GLES 2.0 as it's widely supported.
         setEGLContextClientVersion(2);
         // Set the Renderer for drawing on the GLSurfaceView
-        mRenderer = new TerminalRendererGLES(14, Typeface.MONOSPACE);
+        mRenderer = new TerminalRendererGLES(14, FontManager.getTypeface(context));
         setRenderer(mRenderer);
 
         mGestureRecognizer = new GestureAndScaleRecognizer(context, new GestureAndScaleRecognizer.Listener() {
