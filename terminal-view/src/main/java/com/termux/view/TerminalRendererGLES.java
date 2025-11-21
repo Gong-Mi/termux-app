@@ -162,7 +162,13 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
             mAtlasLineHeight = 0;
         }
 
-        // FIXME: Check if we are out of atlas space.
+        // Check if we are out of atlas space. If so, clear the atlas and start over.
+        if (mAtlasNextY + charHeightInt > ATLAS_TEXTURE_HEIGHT) {
+            initTextureAtlas();
+            // The current glyph is not in the cache, so we can safely call the function again.
+            return getGlyphMetrics(codePoint);
+        }
+
         if (mAtlasLineHeight < charHeightInt) {
             mAtlasLineHeight = charHeightInt;
         }
