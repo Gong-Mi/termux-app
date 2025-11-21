@@ -248,6 +248,10 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
                             codePoint = Character.toCodePoint(highSurrogate, lowSurrogate);
                         }
                     }
+
+                    if (row == 0) {
+                        Log.d("TermuxDebug", "generateMesh: Processing row 0, col " + col + ", codePoint: " + codePoint + " ('" + new String(Character.toChars(codePoint)) + "')");
+                    }
                     
                     int wcwidth = WcWidth.width(codePoint);
                     if (codePoint == 0 || wcwidth == 0) {
