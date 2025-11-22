@@ -505,6 +505,7 @@ public final class TerminalView extends GLSurfaceView {
 
         mEmulator.clearScrollCounter();
 
+        requestRender();
         invalidate();
         if (mAccessibilityEnabled) setContentDescription(getText());
     }

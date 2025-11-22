@@ -507,6 +507,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         // Set termux terminal view
         mTerminalView = findViewById(R.id.terminal_view);
+        mTerminalView.setRenderMode(TerminalView.RENDERMODE_WHEN_DIRTY);
         mTerminalView.setTerminalViewClient(mTermuxTerminalViewClient);
 
         if (mTermuxTerminalViewClient != null)
