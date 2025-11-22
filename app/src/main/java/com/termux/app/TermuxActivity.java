@@ -415,17 +415,26 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         if (mTermuxService.isTermuxSessionsEmpty()) {
             if (mIsVisible) {
+                Logger.logDebug(LOG_TAG, "Calling TermuxInstaller.setupBootstrapIfNeeded()");
                 TermuxInstaller.setupBootstrapIfNeeded(TermuxActivity.this, () -> {
-                    if (mTermuxService == null) return; // Activity might have been destroyed.
+                    Logger.logDebug(LOG_TAG, "TermuxInstaller.setupBootstrapIfNeeded() whenDone runnable started.");
+                    if (mTermuxService == null) {
+                        Logger.logDebug(LOG_TAG, "mTermuxService is null in whenDone runnable. Activity might have been destroyed.");
+                        return; // Activity might have been destroyed.
+                    }
                     try {
                         boolean launchFailsafe = false;
                         if (intent != null && intent.getExtras() != null) {
                             launchFailsafe = intent.getExtras().getBoolean(TERMUX_ACTIVITY.EXTRA_FAILSAFE_SESSION, false);
                         }
+                        Logger.logDebug(LOG_TAG, "Calling mTermuxTerminalSessionActivityClient.addNewSession(launchFailsafe=" + launchFailsafe + ", null)");
                         mTermuxTerminalSessionActivityClient.addNewSession(launchFailsafe, null);
+                        Logger.logDebug(LOG_TAG, "mTermuxTerminalSessionActivityClient.addNewSession() called.");
                     } catch (WindowManager.BadTokenException e) {
+                        Logger.logError(LOG_TAG, "WindowManager.BadTokenException in whenDone runnable: " + e.getMessage());
                         // Activity finished - ignore.
                     }
+                    Logger.logDebug(LOG_TAG, "TermuxInstaller.setupBootstrapIfNeeded() whenDone runnable finished.");
                 });
             } else {
                 // The service connected while not in foreground - just bail out.

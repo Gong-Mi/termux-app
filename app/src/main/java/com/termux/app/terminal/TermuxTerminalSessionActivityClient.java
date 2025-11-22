@@ -362,10 +362,15 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     }
 
     public void addNewSession(boolean isFailSafe, String sessionName) {
+        Logger.logDebug(LOG_TAG, "addNewSession called: isFailSafe=" + isFailSafe + ", sessionName=" + sessionName);
         TermuxService service = mActivity.getTermuxService();
-        if (service == null) return;
+        if (service == null) {
+            Logger.logDebug(LOG_TAG, "TermuxService is null in addNewSession.");
+            return;
+        }
 
         if (service.getTermuxSessionsSize() >= MAX_SESSIONS) {
+            Logger.logDebug(LOG_TAG, "Max sessions reached: " + service.getTermuxSessionsSize());
             new AlertDialog.Builder(mActivity).setTitle(R.string.title_max_terminals_reached).setMessage(R.string.msg_max_terminals_reached)
                 .setPositiveButton(android.R.string.ok, null).show();
         } else {
@@ -378,11 +383,17 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
                 workingDirectory = currentSession.getCwd();
             }
 
+            Logger.logDebug(LOG_TAG, "Calling service.createTermuxSession(..., workingDirectory=" + workingDirectory + ", isFailSafe=" + isFailSafe + ", sessionName=" + sessionName + ")");
             TermuxSession newTermuxSession = service.createTermuxSession(null, null, null, workingDirectory, isFailSafe, sessionName);
-            if (newTermuxSession == null) return;
+            if (newTermuxSession == null) {
+                Logger.logError(LOG_TAG, "Failed to create new TermuxSession.");
+                return;
+            }
+            Logger.logDebug(LOG_TAG, "New TermuxSession created: " + newTermuxSession.getTerminalSession().mSessionName);
 
             TerminalSession newTerminalSession = newTermuxSession.getTerminalSession();
             setCurrentSession(newTerminalSession);
+            Logger.logDebug(LOG_TAG, "setCurrentSession called with newTerminalSession: " + newTerminalSession.mSessionName);
 
             mActivity.getDrawer().closeDrawers();
         }
