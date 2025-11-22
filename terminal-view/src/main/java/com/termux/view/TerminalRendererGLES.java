@@ -187,7 +187,7 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
 
         Bitmap glyphBitmap = Bitmap.createBitmap(charWidthInt, charHeightInt, Bitmap.Config.ALPHA_8);
         Canvas canvas = new Canvas(glyphBitmap);
-        canvas.drawText(charString, 0, mFontLineSpacingAndAscent - mFontLineSpacing, paint);
+        canvas.drawText(charString, 0, mFontLineSpacingAndAscent - mFontLineSpacing, mTextPaint);
 
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, mAtlasTextureId);
         GLUtils.texSubImage2D(GLES20.GL_TEXTURE_2D, 0, mAtlasNextX, mAtlasNextY, glyphBitmap);
