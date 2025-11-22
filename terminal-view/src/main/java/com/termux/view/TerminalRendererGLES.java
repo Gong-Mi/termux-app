@@ -62,6 +62,8 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
     int mFontLineSpacing;
     int mFontLineSpacingAndAscent;
 
+    private Paint mTextPaint; // NEW MEMBER VARIABLE
+
     private TerminalEmulator mEmulator;
     private int mWidth;
     private int mHeight;
@@ -89,21 +91,29 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
         mTextSize = textSize;
         mTypeface = typeface;
 
-        Paint paint = new Paint();
-        paint.setTypeface(typeface);
-        paint.setTextSize(textSize);
+        mTextPaint = new Paint(); // Initialize member variable
+        mTextPaint.setTypeface(typeface);
+        mTextPaint.setTextSize(textSize);
 
-        mFontLineSpacing = (int) Math.ceil(paint.getFontSpacing());
-        int mFontAscent = (int) Math.ceil(paint.ascent());
+        mFontLineSpacing = (int) Math.ceil(mTextPaint.getFontSpacing());
+        int mFontAscent = (int) Math.ceil(mTextPaint.ascent());
         mFontLineSpacingAndAscent = mFontLineSpacing + mFontAscent;
-        mFontWidth = paint.measureText("X");
+        mFontWidth = mTextPaint.measureText("X"); // Use member variable
     }
 
     public void updateFont(int textSize, Typeface typeface) {
-        mFontLineSpacing = (int) Math.ceil(paint.getFontSpacing());
-        int mFontAscent = (int) Math.ceil(paint.ascent());
+        // Log.d("TermuxDebug", "updateFont - textSize: " + textSize + ", typeface: " + typeface.toString()); // Existing log
+        mTextSize = textSize;
+        mTypeface = typeface;
+
+        // Use member variable mTextPaint
+        mTextPaint.setTypeface(typeface);
+        mTextPaint.setTextSize(textSize);
+
+        mFontLineSpacing = (int) Math.ceil(mTextPaint.getFontSpacing());
+        int mFontAscent = (int) Math.ceil(mTextPaint.ascent());
         mFontLineSpacingAndAscent = mFontLineSpacing + mFontAscent;
-        mFontWidth = paint.measureText("X");
+        mFontWidth = mTextPaint.measureText("X");
 
         // NEW LOGS for font metrics
         Log.d("TermuxDebug", "updateFont - mFontWidth: " + mFontWidth +
@@ -142,14 +152,14 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
         }
 
         // The character is not in the cache. Render it to the texture atlas.
-        Paint paint = new Paint();
-        paint.setTypeface(mTypeface);
-        paint.setTextSize(mTextSize);
-        paint.setAntiAlias(true);
-        paint.setColor(0xFFFFFFFF);
+        // Use mTextPaint, do not create a new Paint object
+        mTextPaint.setTypeface(mTypeface);
+        mTextPaint.setTextSize(mTextSize);
+        mTextPaint.setAntiAlias(true);
+        mTextPaint.setColor(0xFFFFFFFF); // Ensure white for alpha texture generation
 
         String charString = new String(Character.toChars(codePoint));
-        float charWidth = paint.measureText(charString);
+        float charWidth = mTextPaint.measureText(charString); // Use member variable
         int charWidthInt = (int) Math.ceil(charWidth);
         int charHeightInt = mFontLineSpacing;
 
