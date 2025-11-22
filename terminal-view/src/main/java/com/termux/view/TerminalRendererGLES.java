@@ -100,18 +100,15 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
     }
 
     public void updateFont(int textSize, Typeface typeface) {
-        Log.d("TermuxDebug", "updateFont - textSize: " + textSize + ", typeface: " + typeface.toString());
-        mTextSize = textSize;
-        mTypeface = typeface;
-
-        Paint paint = new Paint();
-        paint.setTypeface(typeface);
-        paint.setTextSize(textSize);
-
         mFontLineSpacing = (int) Math.ceil(paint.getFontSpacing());
         int mFontAscent = (int) Math.ceil(paint.ascent());
         mFontLineSpacingAndAscent = mFontLineSpacing + mFontAscent;
         mFontWidth = paint.measureText("X");
+
+        // NEW LOGS for font metrics
+        Log.d("TermuxDebug", "updateFont - mFontWidth: " + mFontWidth +
+                             ", mFontLineSpacing: " + mFontLineSpacing +
+                             ", mFontLineSpacingAndAscent: " + mFontLineSpacingAndAscent);
     }
 
     public void setEmulator(TerminalEmulator emulator) {

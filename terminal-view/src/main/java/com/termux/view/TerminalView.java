@@ -524,21 +524,31 @@ public final class TerminalView extends GLSurfaceView {
      * @param textSize the new font size, in density-independent pixels.
      */
     public void setTextSize(int textSize) {
-        Log.d("TermuxDebug", "setTextSize: " + textSize);
+        // Log.d("TermuxDebug", "setTextSize: " + textSize); // Existing log
+        mClient.logDebug(LOG_TAG, "setTextSize: Called with textSize=" + textSize); // NEW LOG
         queueEvent(() -> {
-            if (mRenderer == null) return;
+            if (mRenderer == null) {
+                mClient.logDebug(LOG_TAG, "setTextSize: mRenderer is null."); // NEW LOG
+                return;
+            }
             mRenderer.updateFont(textSize, mRenderer.mTypeface);
             post(this::updateSize);
+            mClient.logDebug(LOG_TAG, "setTextSize: updateFont and updateSize called."); // NEW LOG
         });
     }
 
     public void setTypeface(Typeface newTypeface) {
-        Log.d("TermuxDebug", "setTypeface: " + newTypeface);
+        // Log.d("TermuxDebug", "setTypeface: " + newTypeface); // Existing log
+        mClient.logDebug(LOG_TAG, "setTypeface: Called with newTypeface=" + (newTypeface != null ? newTypeface.toString() : "null")); // NEW LOG
         queueEvent(() -> {
-            if (mRenderer == null) return;
+            if (mRenderer == null) {
+                mClient.logDebug(LOG_TAG, "setTypeface: mRenderer is null."); // NEW LOG
+                return;
+            }
             mRenderer.updateFont(mRenderer.mTextSize, newTypeface);
             post(this::updateSize);
             postInvalidate();
+            mClient.logDebug(LOG_TAG, "setTypeface: updateFont and updateSize/postInvalidate called."); // NEW LOG
         });
     }
 
