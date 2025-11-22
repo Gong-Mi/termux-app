@@ -196,6 +196,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        Logger.logDebug(LOG_TAG, "TermuxActivity: onCreate entered"); // NEW LOG
         Logger.logDebug(LOG_TAG, "onCreate");
         mIsOnResumeAfterOnCreate = true;
 
@@ -404,6 +405,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
      */
     @Override
     public void onServiceConnected(ComponentName componentName, IBinder service) {
+        Logger.logDebug(LOG_TAG, "TermuxActivity: onServiceConnected entered"); // NEW LOG
         Logger.logDebug(LOG_TAG, "onServiceConnected");
 
         mTermuxService = ((TermuxService.LocalBinder) service).service;
