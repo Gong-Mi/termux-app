@@ -377,7 +377,7 @@ public class TerminalRendererGLES implements GLSurfaceView.Renderer {
 
     @Override
     public void onDrawFrame(GL10 unused) {
-        if (mEmulator == null) return;
+        if (mEmulator == null || mWidth <= 0 || mHeight <= 0) return;
 
         generateMesh();
 
