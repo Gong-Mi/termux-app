@@ -1,6 +1,7 @@
 package com.termux.terminal;
 
 import android.graphics.Color;
+import java.util.Random; // Import Random class
 
 /** Current terminal colors (if different from default). */
 public final class TerminalColors {
@@ -14,6 +15,8 @@ public final class TerminalColors {
      */
     public final int[] mCurrentColors = new int[TextStyle.NUM_INDEXED_COLORS];
 
+    private final Random mRandom = new Random(); // Initialize Random object
+
     /** Create a new instance with default colors from the theme. */
     public TerminalColors() {
         reset();
@@ -21,12 +24,38 @@ public final class TerminalColors {
 
     /** Reset a particular indexed color with the default color from the color theme. */
     public void reset(int index) {
+        // If we want random colors, let's keep it consistent.
+        // For now, only randomize in the main reset()
         mCurrentColors[index] = COLOR_SCHEME.mDefaultColors[index];
     }
 
     /** Reset all indexed colors with the default color from the color theme. */
     public void reset() {
-        System.arraycopy(COLOR_SCHEME.mDefaultColors, 0, mCurrentColors, 0, TextStyle.NUM_INDEXED_COLORS);
+        // Generate random colors for the primary foreground and background
+        int randomRedForeground = mRandom.nextInt(256);
+        int randomGreenForeground = mRandom.nextInt(256);
+        int randomBlueForeground = mRandom.nextInt(256);
+
+        int randomRedBackground, randomGreenBackground, randomBlueBackground;
+
+        // Ensure background is sufficiently different from foreground
+        do {
+            randomRedBackground = mRandom.nextInt(256);
+            randomGreenBackground = mRandom.nextInt(256);
+            randomBlueBackground = mRandom.nextInt(256);
+        } while (Math.abs(randomRedForeground - randomRedBackground) < 50 &&
+                 Math.abs(randomGreenForeground - randomGreenBackground) < 50 &&
+                 Math.abs(randomBlueForeground - randomBlueBackground) < 50); // Make sure there's enough contrast
+
+        mCurrentColors[TextStyle.COLOR_INDEX_FOREGROUND] = Color.rgb(randomRedForeground, randomGreenForeground, randomBlueForeground);
+        mCurrentColors[TextStyle.COLOR_INDEX_BACKGROUND] = Color.rgb(randomRedBackground, randomGreenBackground, randomBlueBackground);
+
+        // For other colors, we can either randomize them too or just keep them consistent for now
+        // For simplicity, let's make other basic colors randomly distinct from background/foreground
+        for (int i = 0; i < TextStyle.NUM_INDEXED_COLORS; i++) {
+            if (i == TextStyle.COLOR_INDEX_FOREGROUND || i == TextStyle.COLOR_INDEX_BACKGROUND) continue;
+            mCurrentColors[i] = Color.rgb(mRandom.nextInt(256), mRandom.nextInt(256), mRandom.nextInt(256));
+        }
     }
 
     /**
