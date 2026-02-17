@@ -118,7 +118,9 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     public void onTextChanged(@NonNull TerminalSession changedSession) {
         if (!mActivity.isVisible()) return;
 
-        if (mActivity.getCurrentSession() == changedSession) mActivity.getTerminalView().onScreenUpdated();
+        if (mActivity.getCurrentSession() == changedSession) {
+            mActivity.runOnUiThread(() -> mActivity.getTerminalView().onScreenUpdated());
+        }
     }
 
     @Override
@@ -138,7 +140,7 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     }
 
     @Override
-    public void onSessionFinished(@NonNull TerminalSession finishedSession) {
+    public void onSessionFinished(@NonNull final TerminalSession finishedSession) {
         TermuxService service = mActivity.getTermuxService();
 
         if (service == null || service.wantsToStop()) {
@@ -209,9 +211,7 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
                 BellHandler.getInstance(mActivity).doBell();
                 break;
             case TermuxPropertyConstants.IVALUE_BELL_BEHAVIOUR_BEEP:
-                loadBellSoundPool();
-                if (mBellSoundPool != null)
-                    mBellSoundPool.play(mBellSoundId, 1.f, 1.f, 1, 0, 1.f);
+                getBellSoundPool().play(mBellSoundId, 1.f, 1.f, 1, 0, 1.f);
                 break;
             case TermuxPropertyConstants.IVALUE_BELL_BEHAVIOUR_IGNORE:
                 // Ignore the bell character.
@@ -235,7 +235,7 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
         // If cursor is to enabled now, then start cursor blinking if blinking is enabled
         // otherwise stop cursor blinking
-        mActivity.getTerminalView().setTerminalCursorBlinkerState(enabled, false);
+        mActivity.runOnUiThread(() -> mActivity.getTerminalView().setTerminalCursorBlinkerState(enabled, false));
     }
 
     @Override
