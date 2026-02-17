@@ -211,7 +211,8 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
                 BellHandler.getInstance(mActivity).doBell();
                 break;
             case TermuxPropertyConstants.IVALUE_BELL_BEHAVIOUR_BEEP:
-                getBellSoundPool().play(mBellSoundId, 1.f, 1.f, 1, 0, 1.f);
+                if (mBellSoundPool != null)
+                    mBellSoundPool.play(mBellSoundId, 1.f, 1.f, 1, 0, 1.f);
                 break;
             case TermuxPropertyConstants.IVALUE_BELL_BEHAVIOUR_IGNORE:
                 // Ignore the bell character.
