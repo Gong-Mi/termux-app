@@ -178,16 +178,18 @@ public class TermuxTerminalSessionClient extends TermuxTerminalSessionClientBase
     public void onCopyTextToClipboard(TerminalSession session, String text) {
         if (!mActivity.isVisible()) return;
 
-        ShareUtils.copyTextToClipboard(mActivity, text);
+        mActivity.runOnUiThread(() -> ShareUtils.copyTextToClipboard(mActivity, text));
     }
 
     @Override
     public void onPasteTextFromClipboard(TerminalSession session) {
         if (!mActivity.isVisible()) return;
 
-        String text = ShareUtils.getTextStringFromClipboardIfSet(mActivity, true);
-        if (text != null)
-            mActivity.getTerminalView().mEmulator.paste(text);
+        mActivity.runOnUiThread(() -> {
+            String text = ShareUtils.getTextStringFromClipboardIfSet(mActivity, true);
+            if (text != null)
+                mActivity.getTerminalView().mEmulator.paste(text);
+        });
     }
 
     @Override
@@ -271,15 +273,17 @@ public class TermuxTerminalSessionClient extends TermuxTerminalSessionClientBase
     public void setCurrentSession(TerminalSession session) {
         if (session == null) return;
 
-        if (mActivity.getTerminalView().attachSession(session)) {
-            // notify about switched session if not already displaying the session
-            notifyOfSessionChange();
-        }
+        mActivity.runOnUiThread(() -> {
+            if (mActivity.getTerminalView().attachSession(session)) {
+                // notify about switched session if not already displaying the session
+                notifyOfSessionChange();
+            }
 
-        // We call the following even when the session is already being displayed since config may
-        // be stale, like current session not selected or scrolled to.
-        checkAndScrollToSession(session);
-        updateBackgroundColor();
+            // We call the following even when the session is already being displayed since config may
+            // be stale, like current session not selected or scrolled to.
+            checkAndScrollToSession(session);
+            updateBackgroundColor();
+        });
     }
 
     void notifyOfSessionChange() {
@@ -429,12 +433,15 @@ public class TermuxTerminalSessionClient extends TermuxTerminalSessionClientBase
 
         final int indexOfSession = service.getIndexOfSession(session);
         if (indexOfSession < 0) return;
-        final ListView termuxSessionsListView = mActivity.findViewById(R.id.terminal_sessions_list);
-        if (termuxSessionsListView == null) return;
 
-        termuxSessionsListView.setItemChecked(indexOfSession, true);
-        // Delay is necessary otherwise sometimes scroll to newly added session does not happen
-        termuxSessionsListView.postDelayed(() -> termuxSessionsListView.smoothScrollToPosition(indexOfSession), 1000);
+        mActivity.runOnUiThread(() -> {
+            final ListView termuxSessionsListView = mActivity.findViewById(R.id.terminal_sessions_list);
+            if (termuxSessionsListView == null) return;
+
+            termuxSessionsListView.setItemChecked(indexOfSession, true);
+            // Delay is necessary otherwise sometimes scroll to newly added session does not happen
+            termuxSessionsListView.postDelayed(() -> termuxSessionsListView.smoothScrollToPosition(indexOfSession), 1000);
+        });
     }
 
 
@@ -486,10 +493,12 @@ public class TermuxTerminalSessionClient extends TermuxTerminalSessionClientBase
 
     public void updateBackgroundColor() {
         if (!mActivity.isVisible()) return;
-        TerminalSession session = mActivity.getCurrentSession();
-        if (session != null && session.getEmulator() != null) {
-            mActivity.getWindow().getDecorView().setBackgroundColor(session.getEmulator().mColors.mCurrentColors[TextStyle.COLOR_INDEX_BACKGROUND]);
-        }
+        mActivity.runOnUiThread(() -> {
+            TerminalSession session = mActivity.getCurrentSession();
+            if (session != null && session.getEmulator() != null) {
+                mActivity.getWindow().getDecorView().setBackgroundColor(session.getEmulator().mColors.mCurrentColors[TextStyle.COLOR_INDEX_BACKGROUND]);
+            }
+        });
     }
 
 }
