@@ -11,6 +11,7 @@ import android.graphics.Typeface;
 import android.media.AudioAttributes;
 import android.media.SoundPool;
 import android.text.TextUtils;
+import android.view.Choreographer;
 import android.widget.ListView;
 
 import androidx.annotation.NonNull;
@@ -47,6 +48,8 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     private SoundPool mBellSoundPool;
 
     private int mBellSoundId;
+
+    private boolean mRedrawPending = false;
 
     private static final String LOG_TAG = "TermuxTerminalSessionActivityClient";
 
@@ -119,7 +122,15 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         if (!mActivity.isVisible()) return;
 
         if (mActivity.getCurrentSession() == changedSession) {
-            mActivity.runOnUiThread(() -> mActivity.getTerminalView().onScreenUpdated());
+            if (!mRedrawPending) {
+                mRedrawPending = true;
+                mActivity.runOnUiThread(() -> {
+                    Choreographer.getInstance().postFrameCallback(frameTimeNanos -> {
+                        mRedrawPending = false;
+                        mActivity.getTerminalView().onScreenUpdated();
+                    });
+                });
+            }
         }
     }
 
