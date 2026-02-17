@@ -2,6 +2,8 @@ package com.termux.terminal;
 
 import android.annotation.SuppressLint;
 import android.os.Handler;
+import android.os.HandlerThread;
+import android.os.Looper;
 import android.os.Message;
 import android.system.ErrnoException;
 import android.system.Os;
@@ -69,6 +71,8 @@ public final class TerminalSession extends TerminalOutput {
     public String mSessionName;
 
     final Handler mMainThreadHandler = new MainThreadHandler();
+    private final HandlerThread mEmulatorThread = new HandlerThread("TermEmulator[pid=" + mHandle + "]");
+    private Handler mEmulatorHandler;
 
     private final String mShellPath;
     private final String mCwd;
@@ -123,6 +127,9 @@ public final class TerminalSession extends TerminalOutput {
     public void initializeEmulator(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
         mEmulator = new TerminalEmulator(this, columns, rows, cellWidthPixels, cellHeightPixels, mTranscriptRows, mClient);
 
+        mEmulatorThread.start();
+        mEmulatorHandler = new EmulatorHandler(mEmulatorThread.getLooper());
+
         int[] processId = new int[1];
         mTerminalFileDescriptor = JNI.createSubprocess(mShellPath, mCwd, mArgs, mEnv, processId, rows, columns, cellWidthPixels, cellHeightPixels);
         mShellPid = processId[0];
@@ -139,7 +146,7 @@ public final class TerminalSession extends TerminalOutput {
                         int read = termIn.read(buffer);
                         if (read == -1) return;
                         if (!mProcessToTerminalIOQueue.write(buffer, 0, read)) return;
-                        mMainThreadHandler.sendEmptyMessage(MSG_NEW_INPUT);
+                        mEmulatorHandler.sendEmptyMessage(MSG_NEW_INPUT);
                     }
                 } catch (Exception e) {
                     // Ignore, just shutting down.
@@ -252,6 +259,7 @@ public final class TerminalSession extends TerminalOutput {
         // Stop the reader and writer threads, and close the I/O streams
         mTerminalToProcessIOQueue.close();
         mProcessToTerminalIOQueue.close();
+        mEmulatorThread.quit();
         JNI.close(mTerminalFileDescriptor);
     }
 
@@ -335,18 +343,11 @@ public final class TerminalSession extends TerminalOutput {
 
     @SuppressLint("HandlerLeak")
     class MainThreadHandler extends Handler {
-
-        final byte[] mReceiveBuffer = new byte[4 * 1024];
-
         @Override
         public void handleMessage(Message msg) {
-            int bytesRead = mProcessToTerminalIOQueue.read(mReceiveBuffer, false);
-            if (bytesRead > 0) {
-                mEmulator.append(mReceiveBuffer, bytesRead);
+            if (msg.what == MSG_NEW_INPUT) {
                 notifyScreenUpdate();
-            }
-
-            if (msg.what == MSG_PROCESS_EXITED) {
+            } else if (msg.what == MSG_PROCESS_EXITED) {
                 int exitCode = (Integer) msg.obj;
                 cleanupResources(exitCode);
 
@@ -367,7 +368,25 @@ public final class TerminalSession extends TerminalOutput {
                 mClient.onSessionFinished(TerminalSession.this);
             }
         }
+    }
 
+    class EmulatorHandler extends Handler {
+        private final byte[] mReceiveBuffer = new byte[4 * 1024];
+
+        EmulatorHandler(Looper looper) {
+            super(looper);
+        }
+
+        @Override
+        public void handleMessage(Message msg) {
+            if (msg.what == MSG_NEW_INPUT) {
+                int bytesRead = mProcessToTerminalIOQueue.read(mReceiveBuffer, false);
+                if (bytesRead > 0) {
+                    mEmulator.append(mReceiveBuffer, bytesRead);
+                    mMainThreadHandler.sendEmptyMessage(MSG_NEW_INPUT);
+                }
+            }
+        }
     }
 
 }
