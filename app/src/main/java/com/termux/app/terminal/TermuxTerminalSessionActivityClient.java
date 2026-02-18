@@ -513,29 +513,38 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
 
     public void checkForFontAndColors() {
-        try {
-            File colorsFile = TermuxConstants.TERMUX_COLOR_PROPERTIES_FILE;
-            File fontFile = TermuxConstants.TERMUX_FONT_FILE;
+        new Thread(() -> {
+            try {
+                File colorsFile = TermuxConstants.TERMUX_COLOR_PROPERTIES_FILE;
+                File fontFile = TermuxConstants.TERMUX_FONT_FILE;
 
-            final Properties props = new Properties();
-            if (colorsFile.isFile()) {
-                try (InputStream in = new FileInputStream(colorsFile)) {
-                    props.load(in);
+                final Properties props = new Properties();
+                if (colorsFile.isFile()) {
+                    try (InputStream in = new FileInputStream(colorsFile)) {
+                        props.load(in);
+                    }
                 }
-            }
 
-            TerminalColors.COLOR_SCHEME.updateWith(props);
-            TerminalSession session = mActivity.getCurrentSession();
-            if (session != null && session.getEmulator() != null) {
-                session.getEmulator().mColors.reset();
-            }
-            updateBackgroundColor();
+                TerminalColors.COLOR_SCHEME.updateWith(props);
 
-            final Typeface newTypeface = (fontFile.exists() && fontFile.length() > 0) ? Typeface.createFromFile(fontFile) : Typeface.MONOSPACE;
-            mActivity.getTerminalView().setTypeface(newTypeface);
-        } catch (Exception e) {
-            Logger.logStackTraceWithMessage(LOG_TAG, "Error in checkForFontAndColors()", e);
-        }
+                final Typeface newTypeface = (fontFile.exists() && fontFile.length() > 0) ? Typeface.createFromFile(fontFile) : Typeface.MONOSPACE;
+
+                mActivity.runOnUiThread(() -> {
+                    try {
+                        TerminalSession session = mActivity.getCurrentSession();
+                        if (session != null && session.getEmulator() != null) {
+                            session.getEmulator().mColors.reset();
+                        }
+                        updateBackgroundColor();
+                        mActivity.getTerminalView().setTypeface(newTypeface);
+                    } catch (Exception e) {
+                        Logger.logStackTraceWithMessage(LOG_TAG, "Error updating UI in checkForFontAndColors()", e);
+                    }
+                });
+            } catch (Exception e) {
+                Logger.logStackTraceWithMessage(LOG_TAG, "Error in checkForFontAndColors()", e);
+            }
+        }).start();
     }
 
     public void updateBackgroundColor() {

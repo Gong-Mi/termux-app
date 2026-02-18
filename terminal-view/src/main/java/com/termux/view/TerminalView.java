@@ -1320,21 +1320,21 @@ public final class TerminalView extends View {
         }
 
         public void run() {
-            try {
-                if (mEmulator != null) {
-                    // Toggle the blink state and then invalidate() the view so
-                    // that onDraw() is called, which then calls TerminalRenderer.render()
-                    // which checks with TerminalEmulator.shouldCursorBeVisible() to decide whether
-                    // to draw the cursor or not
-                    mCursorVisible = !mCursorVisible;
-                    //mClient.logVerbose(LOG_TAG, "Toggling cursor blink state to " + mCursorVisible);
-                    mEmulator.setCursorBlinkState(mCursorVisible);
-                    invalidate();
-                }
-            } finally {
-                // Recall the Runnable after mBlinkRate milliseconds to toggle the blink state
-                mTerminalCursorBlinkerHandler.postDelayed(this, mBlinkRate);
+            if (mEmulator == null || this != mTerminalCursorBlinkerRunnable) {
+                return;
             }
+
+            // Toggle the blink state and then invalidate() the view so
+            // that onDraw() is called, which then calls TerminalRenderer.render()
+            // which checks with TerminalEmulator.shouldCursorBeVisible() to decide whether
+            // to draw the cursor or not
+            mCursorVisible = !mCursorVisible;
+            //mClient.logVerbose(LOG_TAG, "Toggling cursor blink state to " + mCursorVisible);
+            mEmulator.setCursorBlinkState(mCursorVisible);
+            invalidate();
+
+            // Recall the Runnable after mBlinkRate milliseconds to toggle the blink state
+            mTerminalCursorBlinkerHandler.postDelayed(this, mBlinkRate);
         }
     }
 
@@ -1440,6 +1440,8 @@ public final class TerminalView extends View {
     @Override
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
+
+        stopTerminalCursorBlinker();
 
         if (mTextSelectionCursorController != null) {
             // Might solve the following exception
