@@ -275,6 +275,15 @@ public final class TerminalView extends View {
 
     @Override
     public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
+        if (mClient.isTerminalViewSelected()) {
+            if (mClient.shouldEnforceCharBasedInput()) {
+                outAttrs.inputType = InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
+            } else {
+                outAttrs.inputType = InputType.TYPE_NULL;
+            }
+        } else {
+            outAttrs.inputType = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_NORMAL;
+        }
         outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN;
         return new BaseInputConnection(this, true) {
             @Override public boolean commitText(CharSequence text, int newCursorPosition) {
