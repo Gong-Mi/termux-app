@@ -91,7 +91,13 @@ public final class TerminalView extends View {
 
     private final boolean mAccessibilityEnabled;
     private static final String LOG_TAG = "TerminalView";
+
+    /** The {@link KeyEvent} is generated from a virtual keyboard, like manually with the {@link KeyEvent#KeyEvent(int, int)} constructor. */
+    public final static int KEY_EVENT_SOURCE_VIRTUAL_KEYBOARD = -1;
     public final static int KEY_EVENT_SOURCE_SOFT_KEYBOARD = 0;
+
+    public static final int TERMINAL_CURSOR_BLINK_RATE_MIN = 100;
+    public static final int TERMINAL_CURSOR_BLINK_RATE_MAX = 2000;
 
     public TerminalView(Context context, AttributeSet attributes) {
         super(context, attributes);
