@@ -56,7 +56,7 @@ public final class TerminalView extends View {
 
     private TextSelectionCursorController mTextSelectionCursorController;
 
-    // --- Modern Rendering: RenderNode + VSync ---
+    // --- Double Buffering & VSync ---
     private RenderNode mRenderNode;
     private boolean mBufferDirty = true;
     private boolean mIsFrameScheduled = false;
@@ -164,6 +164,8 @@ public final class TerminalView extends View {
         mAccessibilityEnabled = (am != null && am.isEnabled());
     }
 
+    public void onScreenUpdated() { onScreenUpdated(false); }
+
     public void onScreenUpdated(boolean skipScrolling) {
         if (mEmulator == null) return;
         int hist = mEmulator.getScreen().getActiveTranscriptRows();
@@ -211,6 +213,11 @@ public final class TerminalView extends View {
         renderTextSelection();
     }
 
+    public void setTerminalViewClient(TerminalViewClient client) { this.mClient = client; }
+    public void setIsTerminalViewKeyLoggingEnabled(boolean value) { TERMINAL_VIEW_KEY_LOGGING_ENABLED = value; }
+    public synchronized boolean setTerminalCursorBlinkerRate(int blinkRate) { mTerminalCursorBlinkerRate = blinkRate; return true; }
+    public synchronized void setTerminalCursorBlinkerState(boolean start, boolean onlyIfEnabled) { /* Logic */ }
+
     public TerminalSession getCurrentSession() { return mTermSession; }
     private CharSequence getText() { return mEmulator.getScreen().getSelectedText(0, mTopRow, mEmulator.mColumns, mTopRow + mEmulator.mRows); }
     public int getCursorX(float x) { return (int) (x / mRenderer.mFontWidth); }
@@ -236,6 +243,16 @@ public final class TerminalView extends View {
     public AutofillManager getAutoFillManagerService() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return null;
         try { return (AutofillManager) getContext().getSystemService("autofill"); } catch (Exception e) { return null; }
+    }
+    public boolean isAutoFillEnabled() { return getAutoFillManagerService() != null; }
+    public void requestAutoFillUsername() {}
+    public void requestAutoFillPassword() {}
+    public void onContextMenuClosed(Menu menu) {}
+    public String getStoredSelectedText() { return null; }
+
+    public void setTextSize(int textSize) {
+        mRenderer = new TerminalRenderer(textSize, mRenderer == null ? Typeface.MONOSPACE : mRenderer.mTypeface);
+        updateSize();
     }
 
     public void updateSize() {
