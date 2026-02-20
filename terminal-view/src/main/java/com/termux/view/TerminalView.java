@@ -56,7 +56,7 @@ public final class TerminalView extends View {
 
     private TextSelectionCursorController mTextSelectionCursorController;
 
-    // --- Double Buffering & VSync ---
+    // --- Modern Rendering: RenderNode + VSync ---
     private RenderNode mRenderNode;
     private boolean mBufferDirty = true;
     private boolean mIsFrameScheduled = false;
@@ -92,7 +92,6 @@ public final class TerminalView extends View {
     private final boolean mAccessibilityEnabled;
     private static final String LOG_TAG = "TerminalView";
 
-    /** The {@link KeyEvent} is generated from a virtual keyboard, like manually with the {@link KeyEvent#KeyEvent(int, int)} constructor. */
     public final static int KEY_EVENT_SOURCE_VIRTUAL_KEYBOARD = -1;
     public final static int KEY_EVENT_SOURCE_SOFT_KEYBOARD = 0;
 
@@ -274,10 +273,30 @@ public final class TerminalView extends View {
                 for (int i = 0; i < text.length(); i++) {
                     int cp = Character.toCodePoint(text.charAt(i), (i+1 < text.length()) ? text.charAt(i+1) : 0);
                     if (Character.isSupplementaryCodePoint(cp)) i++;
-                    mTermSession.writeCodePoint(mClient.readAltKey(), cp);
+                    inputCodePoint(KEY_EVENT_SOURCE_SOFT_KEYBOARD, cp, false, mClient.readAltKey());
                 }
             }
         };
+    }
+
+    public void inputCodePoint(int eventSource, int codePoint, boolean controlDownFromEvent, boolean leftAltDownFromEvent) {
+        if (mTermSession == null) return;
+        if (mEmulator != null) mEmulator.setCursorBlinkState(true);
+        final boolean controlDown = controlDownFromEvent || mClient.readControlKey();
+        final boolean altDown = leftAltDownFromEvent || mClient.readAltKey();
+        if (mClient.onCodePoint(codePoint, controlDown, mTermSession)) return;
+        if (controlDown) {
+            if (codePoint >= 'a' && codePoint <= 'z') codePoint = codePoint - 'a' + 1;
+            else if (codePoint >= 'A' && codePoint <= 'Z') codePoint = codePoint - 'A' + 1;
+            else if (codePoint == ' ' || codePoint == '2') codePoint = 0;
+            else if (codePoint == '[' || codePoint == '3') codePoint = 27;
+            else if (codePoint == '\\' || codePoint == '4') codePoint = 28;
+            else if (codePoint == ']' || codePoint == '5') codePoint = 29;
+            else if (codePoint == '^' || codePoint == '6') codePoint = 30;
+            else if (codePoint == '_' || codePoint == '7' || codePoint == '/') codePoint = 31;
+            else if (codePoint == '8') codePoint = 127;
+        }
+        if (codePoint > -1) mTermSession.writeCodePoint(altDown, codePoint);
     }
 
     void doScroll(MotionEvent event, int rowsDown) {
@@ -300,15 +319,12 @@ public final class TerminalView extends View {
         return new int[] { column, row };
     }
 
-    public void updateFloatingToolbarVisibility(MotionEvent event) {
-        // Placeholder to satisfy dependencies, logic can be implemented if floating toolbar is restored
-    }
+    public void updateFloatingToolbarVisibility(MotionEvent event) {}
 
     @Override protected void onSizeChanged(int w, int h, int ow, int oh) { updateSize(); }
     public void setTypeface(Typeface t) { mRenderer = new TerminalRenderer(mRenderer.mTextSize, t); updateSize(); invalidate(); }
     @Override public boolean onCheckIsTextEditor() { return true; }
     @Override public boolean isOpaque() { return true; }
-    
     private void renderTextSelection() { if (mTextSelectionCursorController != null) mTextSelectionCursorController.render(); }
     public boolean isSelectingText() { return mTextSelectionCursorController != null && mTextSelectionCursorController.isActive(); }
     public void startTextSelectionMode(MotionEvent e) { if (requestFocus()) { mTextSelectionCursorController.show(e); mBufferDirty = true; invalidate(); } }
@@ -317,8 +333,15 @@ public final class TerminalView extends View {
 
     private class TerminalCursorBlinkerRunnable implements Runnable {
         private TerminalEmulator mEmulator;
+        private boolean mCursorVisible = false;
         public void setEmulator(TerminalEmulator emulator) { mEmulator = emulator; }
-        @Override public void run() { /* Logic simplified for now */ }
+        @Override public void run() {
+            if (mEmulator == null || this != mTerminalCursorBlinkerRunnable) return;
+            mCursorVisible = !mCursorVisible;
+            mEmulator.setCursorBlinkState(mCursorVisible);
+            mBufferDirty = true; invalidate();
+            mTerminalCursorBlinkerHandler.postDelayed(this, mTerminalCursorBlinkerRate);
+        }
     }
 
     @Override
