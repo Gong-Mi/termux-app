@@ -230,7 +230,7 @@ public final class TerminalView extends View {
 
     public AutofillManager getAutoFillManagerService() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return null;
-        try { return (AutofillManager) getContext().getSystemService(Context.AUTOFILL_MANAGER_SERVICE); } catch (Exception e) { return null; }
+        try { return (AutofillManager) getContext().getSystemService("autofill"); } catch (Exception e) { return null; }
     }
 
     public void updateSize() {
