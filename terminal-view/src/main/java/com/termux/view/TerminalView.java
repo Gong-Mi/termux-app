@@ -80,8 +80,8 @@ public final class TerminalView extends View {
     float mScaleFactor = 1.f;
     final GestureAndScaleRecognizer mGestureRecognizer;
     final Scroller mScroller;
-    float mScrollRemainder; // 必须保留，用于平滑滚动计算
-    int mCombiningAccent;   // 必须保留，用于组合字符输入
+    float mScrollRemainder;
+    int mCombiningAccent;
     
     @RequiresApi(api = Build.VERSION_CODES.O)
     private int mAutoFillType = AUTOFILL_TYPE_NONE;
@@ -111,7 +111,13 @@ public final class TerminalView extends View {
                 scrolledWithFinger = false;
                 return false;
             }
-            @Override public boolean onSingleTapUp(MotionEvent event) { if (mEmulator == null) return true; if (isSelectingText()) { stopTextSelectionMode(); return true; } requestFocus(); mClient.onSingleTapUp(event); return true; }
+            @Override public boolean onSingleTapUp(MotionEvent event) { 
+                if (mEmulator == null) return true; 
+                if (isSelectingText()) { stopTextSelectionMode(); return true; } 
+                requestFocus(); 
+                mClient.onSingleTapUp(event); 
+                return true; 
+            }
             @Override public boolean onScroll(MotionEvent e, float dx, float dy) { 
                 if (mEmulator == null) return true;
                 if (mEmulator.isMouseTrackingActive() && e.isFromSource(InputDevice.SOURCE_MOUSE)) sendMouseEventCode(e, TerminalEmulator.MOUSE_LEFT_BUTTON_MOVED, true);
@@ -224,7 +230,7 @@ public final class TerminalView extends View {
 
     public AutofillManager getAutoFillManagerService() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return null;
-        try { return getContext().getSystemService(AutofillManager.class); } catch (Exception e) { return null; }
+        try { return (AutofillManager) getContext().getSystemService(Context.AUTOFILL_MANAGER_SERVICE); } catch (Exception e) { return null; }
     }
 
     public void updateSize() {
@@ -236,7 +242,9 @@ public final class TerminalView extends View {
             mTermSession.updateSize(cols, rows, (int) mRenderer.getFontWidth(), mRenderer.getFontLineSpacing());
             mEmulator = mTermSession.getEmulator();
             mClient.onEmulatorSet();
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && mRenderNode != null) mRenderNode.setPosition(0, 0, w, h);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && mRenderNode != null) {
+                mRenderNode.setPosition(0, 0, w, h);
+            }
             mTopRow = 0; scrollTo(0, 0); mBufferDirty = true; invalidate();
         }
     }
@@ -275,18 +283,42 @@ public final class TerminalView extends View {
     }
 
     void sendMouseEventCode(MotionEvent e, int b, boolean p) {
-        int col = (int) (e.getX() / mRenderer.mFontWidth);
-        int row = (int) ((e.getY() - mRenderer.mFontLineSpacingAndAscent) / mRenderer.mFontLineSpacing);
-        mEmulator.sendMouseEvent(b, col + 1, row + 1, p);
+        int[] pos = getColumnAndRow(e, false);
+        mEmulator.sendMouseEvent(b, pos[0] + 1, pos[1] + 1, p);
+    }
+
+    public int[] getColumnAndRow(MotionEvent event, boolean relativeToScroll) {
+        int column = (int) (event.getX() / mRenderer.mFontWidth);
+        int row = (int) ((event.getY() - mRenderer.mFontLineSpacingAndAscent) / mRenderer.mFontLineSpacing);
+        if (relativeToScroll) row += mTopRow;
+        return new int[] { column, row };
+    }
+
+    public void updateFloatingToolbarVisibility(MotionEvent event) {
+        // Placeholder to satisfy dependencies, logic can be implemented if floating toolbar is restored
     }
 
     @Override protected void onSizeChanged(int w, int h, int ow, int oh) { updateSize(); }
     public void setTypeface(Typeface t) { mRenderer = new TerminalRenderer(mRenderer.mTextSize, t); updateSize(); invalidate(); }
     @Override public boolean onCheckIsTextEditor() { return true; }
     @Override public boolean isOpaque() { return true; }
+    
     private void renderTextSelection() { if (mTextSelectionCursorController != null) mTextSelectionCursorController.render(); }
+    public boolean isSelectingText() { return mTextSelectionCursorController != null && mTextSelectionCursorController.isActive(); }
     public void startTextSelectionMode(MotionEvent e) { if (requestFocus()) { mTextSelectionCursorController.show(e); mBufferDirty = true; invalidate(); } }
     public void stopTextSelectionMode() { if (mTextSelectionCursorController != null && mTextSelectionCursorController.hide()) { mBufferDirty = true; invalidate(); } }
     private void decrementYTextSelectionCursors(int d) { if (mTextSelectionCursorController != null) mTextSelectionCursorController.decrementYTextSelectionCursors(d); }
-    @Override protected void onDetachedFromWindow() { super.onDetachedFromWindow(); if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && mRenderNode != null) mRenderNode.discardDisplayList(); Choreographer.getInstance().removeFrameCallback(mFrameCallback); }
+
+    private class TerminalCursorBlinkerRunnable implements Runnable {
+        private TerminalEmulator mEmulator;
+        public void setEmulator(TerminalEmulator emulator) { mEmulator = emulator; }
+        @Override public void run() { /* Logic simplified for now */ }
+    }
+
+    @Override
+    protected void onDetachedFromWindow() { 
+        super.onDetachedFromWindow(); 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && mRenderNode != null) mRenderNode.discardDisplayList(); 
+        Choreographer.getInstance().removeFrameCallback(mFrameCallback); 
+    }
 }
