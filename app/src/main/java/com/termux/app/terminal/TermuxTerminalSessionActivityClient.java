@@ -11,6 +11,7 @@ import android.graphics.Typeface;
 import android.media.AudioAttributes;
 import android.media.SoundPool;
 import android.text.TextUtils;
+import android.view.Choreographer;
 import android.widget.ListView;
 
 import androidx.annotation.NonNull;
@@ -47,6 +48,8 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     private SoundPool mBellSoundPool;
 
     private int mBellSoundId;
+
+    private boolean mRedrawPending = false;
 
     private static final String LOG_TAG = "TermuxTerminalSessionActivityClient";
 
@@ -118,25 +121,37 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     public void onTextChanged(@NonNull TerminalSession changedSession) {
         if (!mActivity.isVisible()) return;
 
-        if (mActivity.getCurrentSession() == changedSession) mActivity.getTerminalView().onScreenUpdated();
+        if (mActivity.getCurrentSession() == changedSession) {
+            if (!mRedrawPending) {
+                mRedrawPending = true;
+                mActivity.runOnUiThread(() -> {
+                    Choreographer.getInstance().postFrameCallback(frameTimeNanos -> {
+                        mRedrawPending = false;
+                        mActivity.getTerminalView().onScreenUpdated();
+                    });
+                });
+            }
+        }
     }
 
     @Override
     public void onTitleChanged(@NonNull TerminalSession updatedSession) {
         if (!mActivity.isVisible()) return;
 
-        if (updatedSession != mActivity.getCurrentSession()) {
-            // Only show toast for other sessions than the current one, since the user
-            // probably consciously caused the title change to change in the current session
-            // and don't want an annoying toast for that.
-            mActivity.showToast(toToastTitle(updatedSession), true);
-        }
+        mActivity.runOnUiThread(() -> {
+            if (updatedSession != mActivity.getCurrentSession()) {
+                // Only show toast for other sessions than the current one, since the user
+                // probably consciously caused the title change to change in the current session
+                // and don't want an annoying toast for that.
+                mActivity.showToast(toToastTitle(updatedSession), true);
+            }
 
-        termuxSessionListNotifyUpdated();
+            termuxSessionListNotifyUpdated();
+        });
     }
 
     @Override
-    public void onSessionFinished(@NonNull TerminalSession finishedSession) {
+    public void onSessionFinished(@NonNull final TerminalSession finishedSession) {
         TermuxService service = mActivity.getTermuxService();
 
         if (service == null || service.wantsToStop()) {
@@ -184,16 +199,18 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     public void onCopyTextToClipboard(@NonNull TerminalSession session, String text) {
         if (!mActivity.isVisible()) return;
 
-        ShareUtils.copyTextToClipboard(mActivity, text);
+        mActivity.runOnUiThread(() -> ShareUtils.copyTextToClipboard(mActivity, text));
     }
 
     @Override
     public void onPasteTextFromClipboard(@Nullable TerminalSession session) {
         if (!mActivity.isVisible()) return;
 
-        String text = ShareUtils.getTextStringFromClipboardIfSet(mActivity, true);
-        if (text != null)
-            mActivity.getTerminalView().mEmulator.paste(text);
+        mActivity.runOnUiThread(() -> {
+            String text = ShareUtils.getTextStringFromClipboardIfSet(mActivity, true);
+            if (text != null)
+                mActivity.getTerminalView().mEmulator.paste(text);
+        });
     }
 
     @Override
@@ -205,7 +222,6 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
                 BellHandler.getInstance(mActivity).doBell();
                 break;
             case TermuxPropertyConstants.IVALUE_BELL_BEHAVIOUR_BEEP:
-                loadBellSoundPool();
                 if (mBellSoundPool != null)
                     mBellSoundPool.play(mBellSoundId, 1.f, 1.f, 1, 0, 1.f);
                 break;
@@ -231,7 +247,7 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
         // If cursor is to enabled now, then start cursor blinking if blinking is enabled
         // otherwise stop cursor blinking
-        mActivity.getTerminalView().setTerminalCursorBlinkerState(enabled, false);
+        mActivity.runOnUiThread(() -> mActivity.getTerminalView().setTerminalCursorBlinkerState(enabled, false));
     }
 
     @Override
@@ -293,15 +309,17 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     public void setCurrentSession(TerminalSession session) {
         if (session == null) return;
 
-        if (mActivity.getTerminalView().attachSession(session)) {
-            // notify about switched session if not already displaying the session
-            notifyOfSessionChange();
-        }
+        mActivity.runOnUiThread(() -> {
+            if (mActivity.getTerminalView().attachSession(session)) {
+                // notify about switched session if not already displaying the session
+                notifyOfSessionChange();
+            }
 
-        // We call the following even when the session is already being displayed since config may
-        // be stale, like current session not selected or scrolled to.
-        checkAndScrollToSession(session);
-        updateBackgroundColor();
+            // We call the following even when the session is already being displayed since config may
+            // be stale, like current session not selected or scrolled to.
+            checkAndScrollToSession(session);
+            updateBackgroundColor();
+        });
     }
 
     void notifyOfSessionChange() {
@@ -462,12 +480,15 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
         final int indexOfSession = service.getIndexOfSession(session);
         if (indexOfSession < 0) return;
-        final ListView termuxSessionsListView = mActivity.findViewById(R.id.terminal_sessions_list);
-        if (termuxSessionsListView == null) return;
 
-        termuxSessionsListView.setItemChecked(indexOfSession, true);
-        // Delay is necessary otherwise sometimes scroll to newly added session does not happen
-        termuxSessionsListView.postDelayed(() -> termuxSessionsListView.smoothScrollToPosition(indexOfSession), 1000);
+        mActivity.runOnUiThread(() -> {
+            final ListView termuxSessionsListView = mActivity.findViewById(R.id.terminal_sessions_list);
+            if (termuxSessionsListView == null) return;
+
+            termuxSessionsListView.setItemChecked(indexOfSession, true);
+            // Delay is necessary otherwise sometimes scroll to newly added session does not happen
+            termuxSessionsListView.postDelayed(() -> termuxSessionsListView.smoothScrollToPosition(indexOfSession), 1000);
+        });
     }
 
 
@@ -492,37 +513,49 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
 
     public void checkForFontAndColors() {
-        try {
-            File colorsFile = TermuxConstants.TERMUX_COLOR_PROPERTIES_FILE;
-            File fontFile = TermuxConstants.TERMUX_FONT_FILE;
+        new Thread(() -> {
+            try {
+                File colorsFile = TermuxConstants.TERMUX_COLOR_PROPERTIES_FILE;
+                File fontFile = TermuxConstants.TERMUX_FONT_FILE;
 
-            final Properties props = new Properties();
-            if (colorsFile.isFile()) {
-                try (InputStream in = new FileInputStream(colorsFile)) {
-                    props.load(in);
+                final Properties props = new Properties();
+                if (colorsFile.isFile()) {
+                    try (InputStream in = new FileInputStream(colorsFile)) {
+                        props.load(in);
+                    }
                 }
-            }
 
-            TerminalColors.COLOR_SCHEME.updateWith(props);
-            TerminalSession session = mActivity.getCurrentSession();
-            if (session != null && session.getEmulator() != null) {
-                session.getEmulator().mColors.reset();
-            }
-            updateBackgroundColor();
+                TerminalColors.COLOR_SCHEME.updateWith(props);
 
-            final Typeface newTypeface = (fontFile.exists() && fontFile.length() > 0) ? Typeface.createFromFile(fontFile) : Typeface.MONOSPACE;
-            mActivity.getTerminalView().setTypeface(newTypeface);
-        } catch (Exception e) {
-            Logger.logStackTraceWithMessage(LOG_TAG, "Error in checkForFontAndColors()", e);
-        }
+                final Typeface newTypeface = (fontFile.exists() && fontFile.length() > 0) ? Typeface.createFromFile(fontFile) : Typeface.MONOSPACE;
+
+                mActivity.runOnUiThread(() -> {
+                    try {
+                        TerminalSession session = mActivity.getCurrentSession();
+                        if (session != null && session.getEmulator() != null) {
+                            session.getEmulator().mColors.reset();
+                        }
+                        updateBackgroundColor();
+                        mActivity.getTerminalView().setTypeface(newTypeface);
+                    } catch (Exception e) {
+                        Logger.logStackTraceWithMessage(LOG_TAG, "Error updating UI in checkForFontAndColors()", e);
+                    }
+                });
+            } catch (Exception e) {
+                Logger.logStackTraceWithMessage(LOG_TAG, "Error in checkForFontAndColors()", e);
+            }
+        }).start();
     }
 
     public void updateBackgroundColor() {
         if (!mActivity.isVisible()) return;
-        TerminalSession session = mActivity.getCurrentSession();
-        if (session != null && session.getEmulator() != null) {
-            mActivity.getWindow().getDecorView().setBackgroundColor(session.getEmulator().mColors.mCurrentColors[TextStyle.COLOR_INDEX_BACKGROUND]);
-        }
+
+        mActivity.runOnUiThread(() -> {
+            TerminalSession session = mActivity.getCurrentSession();
+            if (session != null && session.getEmulator() != null) {
+                mActivity.getWindow().getDecorView().setBackgroundColor(session.getEmulator().mColors.mCurrentColors[TextStyle.COLOR_INDEX_BACKGROUND]);
+            }
+        });
     }
 
 }

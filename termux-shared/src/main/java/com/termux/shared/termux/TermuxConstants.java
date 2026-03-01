@@ -2,6 +2,7 @@ package com.termux.shared.termux;
 
 import android.annotation.SuppressLint;
 import android.content.Intent;
+import android.os.Process;
 
 import com.termux.shared.shell.command.ExecutionCommand;
 import com.termux.shared.shell.command.ExecutionCommand.Runner;
@@ -578,7 +579,17 @@ public final class TermuxConstants {
 
     /** Termux app internal private app data directory path */
     @SuppressLint("SdCardPath")
-    public static final String TERMUX_INTERNAL_PRIVATE_APP_DATA_DIR_PATH = "/data/data/" + TERMUX_PACKAGE_NAME; // Default: "/data/data/com.termux"
+    public static final String TERMUX_INTERNAL_PRIVATE_APP_DATA_DIR_PATH = getInternalPrivateAppDataDirPath();
+
+    private static String getInternalPrivateAppDataDirPath() {
+        int uid = Process.myUid();
+        int userId = uid / 100000;
+        if (userId == 0)
+            return "/data/data/" + TERMUX_PACKAGE_NAME; // Default: "/data/data/com.termux"
+        else
+            return "/data/user/" + userId + "/" + TERMUX_PACKAGE_NAME;
+    }
+
     /** Termux app internal private app data directory */
     public static final File TERMUX_INTERNAL_PRIVATE_APP_DATA_DIR = new File(TERMUX_INTERNAL_PRIVATE_APP_DATA_DIR_PATH);
 
