@@ -191,41 +191,41 @@ public class TermuxFileUtils {
      * is owned by `system` user and is normally created at app install or update time and not at app startup.
      *
      * Note that the path returned by {@link Context#getFilesDir()} may
-     * be under `/data/user/[id]/[package_name]` instead of `/data/data/[package_name]`
+     * be under `/data/user/[id]/[package_name]` instead of `/data/user/0/[package_name]`
      * defined by default by {@link TermuxConstants#TERMUX_FILES_DIR_PATH} where id will be 0 for
      * primary user and a higher number for other users/profiles. If app is running under work profile
      * or secondary user, then {@link TermuxConstants#TERMUX_FILES_DIR_PATH} will not be accessible
-     * and will not be automatically created, unless there is a bind mount from `/data/data` to
+     * and will not be automatically created, unless there is a bind mount from `/data/user/0` to
      * `/data/user/[id]`, ideally in the right namespace.
      * https://source.android.com/devices/tech/admin/multi-user
      *
      *
-     * On Android version `<=10`, the `/data/user/0` is a symlink to `/data/data` directory.
+     * On Android version `<=10`, the `/data/user/0` is a symlink to `/data/user/0` directory.
      * https://cs.android.com/android/platform/superproject/+/android-10.0.0_r47:system/core/rootdir/init.rc;l=589
      * {@code
-     * symlink /data/data /data/user/0
+     * symlink /data/user/0 /data/user/0
      * }
      *
      * {@code
-     * /system/bin/ls -lhd /data/data /data/user/0
-     * drwxrwx--x 179 system system 8.0K 2021-xx-xx xx:xx /data/data
-     * lrwxrwxrwx   1 root   root     10 2021-xx-xx xx:xx /data/user/0 -> /data/data
+     * /system/bin/ls -lhd /data/user/0 /data/user/0
+     * drwxrwx--x 179 system system 8.0K 2021-xx-xx xx:xx /data/user/0
+     * lrwxrwxrwx   1 root   root     10 2021-xx-xx xx:xx /data/user/0 -> /data/user/0
      * }
      *
-     * On Android version `>=11`, the `/data/data` directory is bind mounted at `/data/user/0`.
+     * On Android version `>=11`, the `/data/user/0` directory is bind mounted at `/data/user/0`.
      * https://cs.android.com/android/platform/superproject/+/android-11.0.0_r40:system/core/rootdir/init.rc;l=705
      * https://cs.android.com/android/_/android/platform/system/core/+/3cca270e95ca8d8bc8b800e2b5d7da1825fd7100
      * {@code
-     * # Unlink /data/user/0 if we previously symlink it to /data/data
+     * # Unlink /data/user/0 if we previously symlink it to /data/user/0
      * rm /data/user/0
      *
-     * # Bind mount /data/user/0 to /data/data
+     * # Bind mount /data/user/0 to /data/user/0
      * mkdir /data/user/0 0700 system system encryption=None
-     * mount none /data/data /data/user/0 bind rec
+     * mount none /data/user/0 /data/user/0 bind rec
      * }
      *
      * {@code
-     * /system/bin/grep -E '( /data )|( /data/data )|( /data/user/[0-9]+ )' /proc/self/mountinfo 2>&1 | /system/bin/grep -v '/data_mirror' 2>&1
+     * /system/bin/grep -E '( /data )|( /data/user/0 )|( /data/user/[0-9]+ )' /proc/self/mountinfo 2>&1 | /system/bin/grep -v '/data_mirror' 2>&1
      * 87 32 253:5 / /data rw,nosuid,nodev,noatime shared:27 - ext4 /dev/block/dm-5 rw,seclabel,resgid=1065,errors=panic
      * 91 87 253:5 /data /data/user/0 rw,nosuid,nodev,noatime shared:27 - ext4 /dev/block/dm-5 rw,seclabel,resgid=1065,errors=panic
      * }
@@ -360,7 +360,7 @@ public class TermuxFileUtils {
         statScript
             .append("echo 'ls info:'\n")
             .append("/system/bin/ls -lhdZ")
-            .append(" '/data/data'")
+            .append(" '/data/user/0'")
             .append(" '/data/user/0'")
             .append(" '" + TermuxConstants.TERMUX_INTERNAL_PRIVATE_APP_DATA_DIR_PATH + "'")
             .append(" '/data/user/0/" + TermuxConstants.TERMUX_PACKAGE_NAME + "'")
@@ -374,7 +374,7 @@ public class TermuxFileUtils {
             .append(" '" + TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH + "/login'")
             .append(" 2>&1")
             .append("\necho; echo 'mount info:'\n")
-            .append("/system/bin/grep -E '( /data )|( /data/data )|( /data/user/[0-9]+ )' /proc/self/mountinfo 2>&1 | /system/bin/grep -v '/data_mirror' 2>&1");
+            .append("/system/bin/grep -E '( /data )|( /data/user/0 )|( /data/user/[0-9]+ )' /proc/self/mountinfo 2>&1 | /system/bin/grep -v '/data_mirror' 2>&1");
 
         // Run script
         ExecutionCommand executionCommand = new ExecutionCommand(-1, "/system/bin/sh", null,

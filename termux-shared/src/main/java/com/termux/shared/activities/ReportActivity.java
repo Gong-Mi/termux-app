@@ -390,7 +390,7 @@ public class ReportActivity extends AppCompatActivity {
 
     @NotNull
     private static String getReportInfoDirectoryPath(Context context) {
-        // Canonicalize to solve /data/data and /data/user/0 issues when comparing with reportInfoFilePath
+        // Canonicalize to solve /data/user/0 and /data/user/0 issues when comparing with reportInfoFilePath
         return FileUtils.getCanonicalPath(context.getCacheDir().getAbsolutePath(), null) + "/" + CACHE_DIR_BASENAME;
     }
 
