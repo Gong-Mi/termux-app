@@ -125,6 +125,44 @@ public final class TerminalView extends View {
 
     private final boolean mAccessibilityEnabled;
 
+    private long mLastInvalidateTime = 0;
+    private long mMinInvalidateInterval = 16; // Default to ~60 FPS
+
+    private void updateRefreshRate(Context context) {
+        try {
+            float refreshRate;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                refreshRate = context.getDisplay().getRefreshRate();
+            } else {
+                android.view.WindowManager wm = (android.view.WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
+                refreshRate = wm.getDefaultDisplay().getRefreshRate();
+            }
+            if (refreshRate > 0) {
+                mMinInvalidateInterval = (long) (1000 / refreshRate);
+            }
+        } catch (Exception e) {
+            mMinInvalidateInterval = 16;
+        }
+    }
+
+    @Override
+    public void invalidate() {
+        long currentTime = SystemClock.elapsedRealtime();
+        if (currentTime - mLastInvalidateTime >= mMinInvalidateInterval) {
+            mLastInvalidateTime = currentTime;
+            super.invalidate();
+        }
+    }
+
+    @Override
+    public void invalidate(int l, int t, int r, int b) {
+        long currentTime = SystemClock.elapsedRealtime();
+        if (currentTime - mLastInvalidateTime >= mMinInvalidateInterval) {
+            mLastInvalidateTime = currentTime;
+            super.invalidate(l, t, r, b);
+        }
+    }
+
     /** The {@link KeyEvent} is generated from a virtual keyboard, like manually with the {@link KeyEvent#KeyEvent(int, int)} constructor. */
     public final static int KEY_EVENT_SOURCE_VIRTUAL_KEYBOARD = KeyCharacterMap.VIRTUAL_KEYBOARD; // -1
 
@@ -135,6 +173,7 @@ public final class TerminalView extends View {
 
     public TerminalView(Context context, AttributeSet attributes) { // NO_UCD (unused code)
         super(context, attributes);
+        updateRefreshRate(context);
         mGestureRecognizer = new GestureAndScaleRecognizer(context, new GestureAndScaleRecognizer.Listener() {
 
             boolean scrolledWithFinger;
@@ -512,20 +551,12 @@ public final class TerminalView extends View {
      * @param textSize the new font size, in density-independent pixels.
      */
     public void setTextSize(int textSize) {
-<<<<<<< HEAD
         mRenderer = new TerminalRenderer(textSize, mRenderer == null ? Typeface.MONOSPACE : mRenderer.mTypeface);
-=======
-        mRenderer.updateFont(textSize, mRenderer.mTypeface);
->>>>>>> 9e3d43c8 (feat: upgrade to Gradle 9.2.0 and AGP 8.4.2, fix GLES renderer crashes)
         updateSize();
     }
 
     public void setTypeface(Typeface newTypeface) {
-<<<<<<< HEAD
         mRenderer = new TerminalRenderer(mRenderer.mTextSize, newTypeface);
-=======
-        mRenderer.updateFont(mRenderer.mTextSize, newTypeface);
->>>>>>> 9e3d43c8 (feat: upgrade to Gradle 9.2.0 and AGP 8.4.2, fix GLES renderer crashes)
         updateSize();
         invalidate();
     }
@@ -988,8 +1019,24 @@ public final class TerminalView extends View {
         updateSize();
     }
 
+    private long mLastUpdateSizeTime = 0;
+    private static final long UPDATE_SIZE_DEBOUNCE_MS = 50;
+
+    private final Runnable mUpdateSizeRunnable = this::updateSizeInternal;
+
     /** Check if the terminal size in rows and columns should be updated. */
     public void updateSize() {
+        long currentTime = SystemClock.elapsedRealtime();
+        if (currentTime - mLastUpdateSizeTime < UPDATE_SIZE_DEBOUNCE_MS) {
+            removeCallbacks(mUpdateSizeRunnable);
+            postDelayed(mUpdateSizeRunnable, UPDATE_SIZE_DEBOUNCE_MS);
+            return;
+        }
+        mLastUpdateSizeTime = currentTime;
+        updateSizeInternal();
+    }
+
+    private void updateSizeInternal() {
         int viewWidth = getWidth();
         int viewHeight = getHeight();
         if (viewWidth == 0 || viewHeight == 0 || mTermSession == null) return;
@@ -1332,17 +1379,23 @@ public final class TerminalView extends View {
         public void run() {
             try {
                 if (mEmulator != null) {
-                    // Toggle the blink state and then invalidate() the view so
-                    // that onDraw() is called, which then calls TerminalRenderer.render()
-                    // which checks with TerminalEmulator.shouldCursorBeVisible() to decide whether
-                    // to draw the cursor or not
                     mCursorVisible = !mCursorVisible;
-                    //mClient.logVerbose(LOG_TAG, "Toggling cursor blink state to " + mCursorVisible);
                     mEmulator.setCursorBlinkState(mCursorVisible);
-                    invalidate();
+                    
+                    // Optimize: only invalidate the cursor area
+                    int cursorX = mEmulator.getCursorCol();
+                    int cursorY = mEmulator.getCursorRow();
+                    if (cursorY >= mTopRow && cursorY < mTopRow + mEmulator.mRows) {
+                        float left = cursorX * mRenderer.mFontWidth;
+                        float top = (cursorY - mTopRow) * mRenderer.mFontLineSpacing;
+                        float right = left + mRenderer.mFontWidth * 2; // Support double-width chars
+                        float bottom = top + mRenderer.mFontLineSpacing;
+                        invalidate((int) left, (int) top, (int) right, (int) bottom);
+                    } else {
+                        invalidate(); // Fallback
+                    }
                 }
             } finally {
-                // Recall the Runnable after mBlinkRate milliseconds to toggle the blink state
                 mTerminalCursorBlinkerHandler.postDelayed(this, mBlinkRate);
             }
         }

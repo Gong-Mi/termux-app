@@ -67,7 +67,8 @@ android {
 
         externalNativeBuild {
             ndkBuild {
-                cFlags "-std=c11", "-Wall", "-Wextra", "-Werror", "-Os", "-fno-stack-protector", "-Wl,--gc-sections"
+                cFlags "-std=c11", "-Wall", "-Wextra", "-Werror", "-O3", "-fno-stack-protector", "-Wl,--gc-sections"
+                arguments "APP_LDFLAGS=-Wl,-z,max-page-size=16384"
             }
         }
 
@@ -129,7 +130,7 @@ android {
 
     packaging {
         jniLibs {
-            useLegacyPackaging true
+            useLegacyPackaging false
         }
     }
 

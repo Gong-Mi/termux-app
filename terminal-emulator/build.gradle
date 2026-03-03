@@ -2,14 +2,8 @@ apply plugin: 'com.android.library'
 apply plugin: 'maven-publish'
 
 android {
-<<<<<<< HEAD
-    namespace "com.termux.emulator"
-
-    compileSdkVersion project.properties.compileSdkVersion.toInteger()
-=======
     namespace "com.termux.terminal"
     compileSdk project.properties.compileSdkVersion.toInteger()
->>>>>>> 9e3d43c8 (feat: upgrade to Gradle 9.2.0 and AGP 8.4.2, fix GLES renderer crashes)
     ndkVersion = System.getenv("JITPACK_NDK_VERSION") ?: project.properties.ndkVersion
 
     defaultConfig {
@@ -18,7 +12,8 @@ android {
 
         externalNativeBuild {
             ndkBuild {
-                cFlags "-std=c11", "-Wall", "-Wextra", "-Werror", "-Os", "-fno-stack-protector", "-Wl,--gc-sections"
+                cFlags "-std=c11", "-Wall", "-Wextra", "-Werror", "-O3", "-fno-stack-protector", "-Wl,--gc-sections"
+                arguments "APP_LDFLAGS=-Wl,-z,max-page-size=16384"
             }
         }
 
@@ -50,15 +45,7 @@ android {
     }
 
     publishing {
-<<<<<<< HEAD
-        multipleVariants {
-            withSourcesJar()
-            withJavadocJar()
-            allVariants()
-        }
-=======
         singleVariant("release")
->>>>>>> 9e3d43c8 (feat: upgrade to Gradle 9.2.0 and AGP 8.4.2, fix GLES renderer crashes)
     }
 }
 
@@ -75,11 +62,7 @@ dependencies {
 
 task sourceJar(type: Jar) {
     from android.sourceSets.main.java.srcDirs
-<<<<<<< HEAD
-    archiveClassifier = "sources"
-=======
     archiveClassifier.set("sources")
->>>>>>> 9e3d43c8 (feat: upgrade to Gradle 9.2.0 and AGP 8.4.2, fix GLES renderer crashes)
 }
 
 afterEvaluate {
@@ -87,7 +70,7 @@ afterEvaluate {
         publications {
             // Creates a Maven publication called "release".
             release(MavenPublication) {
-                from components.default
+                from components.release
                 groupId = 'com.termux'
                 artifactId = 'terminal-emulator'
                 version = '0.118.0'

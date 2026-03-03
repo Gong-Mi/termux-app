@@ -498,8 +498,18 @@ public final class TerminalEmulator {
      * @param length the number of bytes in the array to process
      */
     public void append(byte[] buffer, int length) {
-        for (int i = 0; i < length; i++)
+        // Process in smaller chunks to avoid JIT OSR storms (identified by simpleperf)
+        final int chunkSize = 1024;
+        for (int i = 0; i < length; i += chunkSize) {
+            int end = Math.min(i + chunkSize, length);
+            processChunk(buffer, i, end);
+        }
+    }
+
+    private void processChunk(byte[] buffer, int start, int end) {
+        for (int i = start; i < end; i++) {
             processByte(buffer[i]);
+        }
     }
 
     private void processByte(byte byteToProcess) {

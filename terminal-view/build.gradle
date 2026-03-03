@@ -3,11 +3,7 @@ apply plugin: 'maven-publish'
 
 android {
     namespace "com.termux.view"
-<<<<<<< HEAD
-    compileSdkVersion project.properties.compileSdkVersion.toInteger()
-=======
     compileSdk project.properties.compileSdkVersion.toInteger()
->>>>>>> 9e3d43c8 (feat: upgrade to Gradle 9.2.0 and AGP 8.4.2, fix GLES renderer crashes)
 
     dependencies {
         implementation "androidx.annotation:annotation:1.9.0"
@@ -33,15 +29,7 @@ android {
     }
 
     publishing {
-<<<<<<< HEAD
-        multipleVariants {
-            withSourcesJar()
-            withJavadocJar()
-            allVariants()
-        }
-=======
         singleVariant("release")
->>>>>>> 9e3d43c8 (feat: upgrade to Gradle 9.2.0 and AGP 8.4.2, fix GLES renderer crashes)
     }
 }
 
@@ -51,11 +39,7 @@ dependencies {
 
 task sourceJar(type: Jar) {
     from android.sourceSets.main.java.srcDirs
-<<<<<<< HEAD
-    archiveClassifier = "sources"
-=======
     archiveClassifier.set("sources")
->>>>>>> 9e3d43c8 (feat: upgrade to Gradle 9.2.0 and AGP 8.4.2, fix GLES renderer crashes)
 }
 
 afterEvaluate {
@@ -63,7 +47,7 @@ afterEvaluate {
         publications {
             // Creates a Maven publication called "release".
             release(MavenPublication) {
-                from components.default
+                from components.release
                 groupId = 'com.termux'
                 artifactId = 'terminal-view'
                 version = '0.118.0'
@@ -72,4 +56,3 @@ afterEvaluate {
         }
     }
 }
-

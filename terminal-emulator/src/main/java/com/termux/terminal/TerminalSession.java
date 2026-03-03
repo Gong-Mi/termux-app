@@ -139,7 +139,9 @@ public final class TerminalSession extends TerminalOutput {
                         int read = termIn.read(buffer);
                         if (read == -1) return;
                         if (!mProcessToTerminalIOQueue.write(buffer, 0, read)) return;
-                        mMainThreadHandler.sendEmptyMessage(MSG_NEW_INPUT);
+                        if (!mMainThreadHandler.hasMessages(MSG_NEW_INPUT)) {
+                            mMainThreadHandler.sendEmptyMessage(MSG_NEW_INPUT);
+                        }
                     }
                 } catch (Exception e) {
                     // Ignore, just shutting down.
@@ -340,9 +342,15 @@ public final class TerminalSession extends TerminalOutput {
 
         @Override
         public void handleMessage(Message msg) {
-            int bytesRead = mProcessToTerminalIOQueue.read(mReceiveBuffer, false);
-            if (bytesRead > 0) {
+            int totalBytesRead = 0;
+            int bytesRead;
+            while ((bytesRead = mProcessToTerminalIOQueue.read(mReceiveBuffer, false)) > 0) {
                 mEmulator.append(mReceiveBuffer, bytesRead);
+                totalBytesRead += bytesRead;
+                // If we've processed a reasonable amount of data, stop to let the UI thread breathe
+                if (totalBytesRead > 32 * 1024) break;
+            }
+            if (totalBytesRead > 0) {
                 notifyScreenUpdate();
             }
 

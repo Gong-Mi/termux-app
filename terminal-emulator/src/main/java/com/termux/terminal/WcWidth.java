@@ -510,8 +510,24 @@ public final class WcWidth {
         return false;
     }
 
+    private static final int[] WIDTH_CACHE = new int[256];
+    static {
+        for (int i = 0; i < 256; i++) WIDTH_CACHE[i] = -1;
+    }
+
     /** Return the terminal display width of a code point: 0, 1 || 2. */
     public static int width(int ucs) {
+        if (ucs < 256) {
+            int cached = WIDTH_CACHE[ucs];
+            if (cached != -1) return cached;
+            int w = calculateWidth(ucs);
+            WIDTH_CACHE[ucs] = w;
+            return w;
+        }
+        return calculateWidth(ucs);
+    }
+
+    private static int calculateWidth(int ucs) {
         if (ucs == 0 ||
             ucs == 0x034F ||
             (0x200B <= ucs && ucs <= 0x200F) ||

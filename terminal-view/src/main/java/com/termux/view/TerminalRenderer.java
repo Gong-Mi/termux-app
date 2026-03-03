@@ -32,10 +32,23 @@ public final class TerminalRenderer {
     final int mFontLineSpacingAndAscent;
 
     private final float[] asciiMeasures = new float[127];
+    private static final java.util.HashMap<Integer, Float> mUnicodeMeasureCache = new java.util.HashMap<>();
+    private static int sLastCacheTextSize = -1;
+    private static Typeface sLastCacheTypeface = null;
+
+    // Performance tracking: only re-render if something changed.
+    private int mLastRows = -1;
+    private int mLastCols = -1;
 
     public TerminalRenderer(int textSize, Typeface typeface) {
         mTextSize = textSize;
         mTypeface = typeface;
+
+        if (sLastCacheTextSize != textSize || sLastCacheTypeface != typeface) {
+            mUnicodeMeasureCache.clear();
+            sLastCacheTextSize = textSize;
+            sLastCacheTypeface = typeface;
+        }
 
         mTextPaint.setTypeface(typeface);
         mTextPaint.setAntiAlias(true);
@@ -51,6 +64,15 @@ public final class TerminalRenderer {
             sb.setCharAt(0, (char) i);
             asciiMeasures[i] = mTextPaint.measureText(sb, 0, 1);
         }
+    }
+
+    private float getCodePointWidth(int codePoint, char[] line, int index, int count) {
+        if (codePoint < asciiMeasures.length) return asciiMeasures[codePoint];
+        Float cached = mUnicodeMeasureCache.get(codePoint);
+        if (cached != null) return cached;
+        float width = mTextPaint.measureText(line, index, count);
+        mUnicodeMeasureCache.put(codePoint, width);
+        return width;
     }
 
     /** Render the terminal to a canvas with at a specified row scroll, and an optional rectangular selection. */
@@ -70,6 +92,9 @@ public final class TerminalRenderer {
             canvas.drawColor(palette[TextStyle.COLOR_INDEX_FOREGROUND], PorterDuff.Mode.SRC);
 
         float heightOffset = mFontLineSpacingAndAscent;
+        int lastInternalRow = -1;
+        TerminalRow lineObject = null;
+
         for (int row = topRow; row < endRow; row++) {
             heightOffset += mFontLineSpacing;
 
@@ -80,7 +105,12 @@ public final class TerminalRenderer {
                 selx2 = (row == selectionY2) ? selectionX2 : mEmulator.mColumns;
             }
 
-            TerminalRow lineObject = screen.allocateFullLineIfNecessary(screen.externalToInternalRow(row));
+            int internalRow = screen.externalToInternalRow(row);
+            if (internalRow != lastInternalRow) {
+                lineObject = screen.allocateFullLineIfNecessary(internalRow);
+                lastInternalRow = internalRow;
+            }
+            
             final char[] line = lineObject.mText;
             final int charsUsedInLine = lineObject.getSpaceUsed();
 
@@ -107,8 +137,7 @@ public final class TerminalRenderer {
                 // This could happen for some fonts which are not truly monospace, or for more exotic characters such as
                 // smileys which android font renders as wide.
                 // If this is detected, we draw this code point scaled to match what wcwidth() expects.
-                final float measuredCodePointWidth = (codePoint < asciiMeasures.length) ? asciiMeasures[codePoint] : mTextPaint.measureText(line,
-                    currentCharIndex, charsForCodePoint);
+                final float measuredCodePointWidth = getCodePointWidth(codePoint, line, currentCharIndex, charsForCodePoint);
                 final boolean fontWidthMismatch = Math.abs(measuredCodePointWidth / mFontWidth - codePointWcWidth) > 0.01;
 
                 if (style != lastRunStyle || insideCursor != lastRunInsideCursor || insideSelection != lastRunInsideSelection || fontWidthMismatch || lastRunFontWidthMismatch) {
