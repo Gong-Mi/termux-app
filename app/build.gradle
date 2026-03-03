@@ -14,9 +14,13 @@ ext {
 
 android {
     namespace "com.termux"
-
-    compileSdkVersion project.properties.compileSdkVersion.toInteger()
+    compileSdk project.properties.compileSdkVersion.toInteger()
     ndkVersion = System.getenv("JITPACK_NDK_VERSION") ?: project.properties.ndkVersion
+
+    buildFeatures {
+        buildConfig true
+    }
+
     def appVersionName = System.getenv("TERMUX_APP_VERSION_NAME") ?: ""
     def apkVersionTag = System.getenv("TERMUX_APK_VERSION_TAG") ?: ""
     def splitAPKsForDebugBuilds = System.getenv("TERMUX_SPLIT_APKS_FOR_DEBUG_BUILDS") ?: "1"
@@ -41,8 +45,9 @@ android {
     }
 
     defaultConfig {
-        minSdkVersion project.properties.minSdkVersion.toInteger()
-        targetSdkVersion project.properties.targetSdkVersion.toInteger()
+        applicationId "com.termux"
+        minSdk project.properties.minSdkVersion.toInteger()
+        targetSdk project.properties.targetSdkVersion.toInteger()
         versionCode 118
         versionName "0.118.0"
 
@@ -122,7 +127,7 @@ android {
         }
     }
 
-    packagingOptions {
+    packaging {
         jniLibs {
             useLegacyPackaging true
         }
@@ -132,23 +137,19 @@ android {
         variant.outputs.all { output ->
             if (variant.buildType.name == "debug") {
                 def abi = output.getFilter(com.android.build.OutputFile.ABI)
-                outputFileName = new File("termux-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "debug") + "_" + (abi ? abi : "universal") + ".apk")
+                outputFileName = "termux-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "debug") + "_" + (abi ? abi : "universal") + ".apk"
             } else if (variant.buildType.name == "release") {
                 def abi = output.getFilter(com.android.build.OutputFile.ABI)
-                outputFileName = new File("termux-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "release") + "_" + (abi ? abi : "universal") + ".apk")
+                outputFileName = "termux-app_" + (apkVersionTag ? apkVersionTag : project.ext.packageVariant + "-" + "release") + "_" + (abi ? abi : "universal") + ".apk"
             }
         }
-    }
-
-    buildFeatures {
-        buildConfig true
     }
 }
 
 dependencies {
     testImplementation "junit:junit:4.13.2"
     testImplementation "org.robolectric:robolectric:4.10"
-    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:1.1.5"
+    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.0.4"
 }
 
 task versionName {

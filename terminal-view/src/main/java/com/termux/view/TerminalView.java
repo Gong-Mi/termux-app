@@ -512,12 +512,20 @@ public final class TerminalView extends View {
      * @param textSize the new font size, in density-independent pixels.
      */
     public void setTextSize(int textSize) {
+<<<<<<< HEAD
         mRenderer = new TerminalRenderer(textSize, mRenderer == null ? Typeface.MONOSPACE : mRenderer.mTypeface);
+=======
+        mRenderer.updateFont(textSize, mRenderer.mTypeface);
+>>>>>>> 9e3d43c8 (feat: upgrade to Gradle 9.2.0 and AGP 8.4.2, fix GLES renderer crashes)
         updateSize();
     }
 
     public void setTypeface(Typeface newTypeface) {
+<<<<<<< HEAD
         mRenderer = new TerminalRenderer(mRenderer.mTextSize, newTypeface);
+=======
+        mRenderer.updateFont(mRenderer.mTextSize, newTypeface);
+>>>>>>> 9e3d43c8 (feat: upgrade to Gradle 9.2.0 and AGP 8.4.2, fix GLES renderer crashes)
         updateSize();
         invalidate();
     }
