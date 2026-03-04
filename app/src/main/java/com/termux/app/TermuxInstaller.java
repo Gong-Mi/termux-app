@@ -104,9 +104,11 @@ final class TermuxInstaller {
 
         // If prefix directory exists, even if its a symlink to a valid directory and symlink is not broken/dangling
         if (FileUtils.directoryFileExists(TERMUX_PREFIX_DIR_PATH, true)) {
+            Logger.logInfo(LOG_TAG, "Prefix directory exists at: " + TERMUX_PREFIX_DIR_PATH);
             if (TermuxFileUtils.isTermuxPrefixDirectoryEmpty()) {
                 Logger.logInfo(LOG_TAG, "The termux prefix directory \"" + TERMUX_PREFIX_DIR_PATH + "\" exists but is empty or only contains specific unimportant files.");
             } else {
+                Logger.logInfo(LOG_TAG, "Prefix not empty, skipping bootstrap.");
                 whenDone.run();
                 return;
             }

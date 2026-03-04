@@ -127,6 +127,12 @@ public final class TerminalView extends View {
 
     private long mLastInvalidateTime = 0;
     private long mMinInvalidateInterval = 16; // Default to ~60 FPS
+    private boolean mInvalidatePending = false;
+
+    private final Runnable mInvalidateRunnable = () -> {
+        mInvalidatePending = false;
+        invalidate();
+    };
 
     private void updateRefreshRate(Context context) {
         try {
@@ -148,19 +154,22 @@ public final class TerminalView extends View {
     @Override
     public void invalidate() {
         long currentTime = SystemClock.elapsedRealtime();
-        if (currentTime - mLastInvalidateTime >= mMinInvalidateInterval) {
+        long timeSinceLast = currentTime - mLastInvalidateTime;
+        
+        if (timeSinceLast >= mMinInvalidateInterval) {
             mLastInvalidateTime = currentTime;
+            mInvalidatePending = false;
+            removeCallbacks(mInvalidateRunnable);
             super.invalidate();
+        } else if (!mInvalidatePending) {
+            mInvalidatePending = true;
+            postDelayed(mInvalidateRunnable, mMinInvalidateInterval - timeSinceLast);
         }
     }
 
     @Override
     public void invalidate(int l, int t, int r, int b) {
-        long currentTime = SystemClock.elapsedRealtime();
-        if (currentTime - mLastInvalidateTime >= mMinInvalidateInterval) {
-            mLastInvalidateTime = currentTime;
-            super.invalidate(l, t, r, b);
-        }
+        invalidate();
     }
 
     /** The {@link KeyEvent} is generated from a virtual keyboard, like manually with the {@link KeyEvent#KeyEvent(int, int)} constructor. */

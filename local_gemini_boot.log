@@ -1,0 +1,934 @@
+=== Sample 1 ===
+--- CPU ---
+28779 u0_a654       0 -20  11G 100M  39M R  137   0.4   0:00.78 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654      -2 -20  16G 268M 166M S  0.0   1.1   0:02.72 com.termux
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12380                          46708
+         Native Heap:    21848                          28744
+           TOTAL PSS:   109007            TOTAL RSS:   293993       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:45:51.623  6102 14642 E SuggestManager: openApp name = com.termux
+03-04 20:45:51.633  4105 30865 E RecentAppsManager: com.termux can't be added to recent list!!
+03-04 20:45:51.639  4105 30865 E SystemUtils: appIsTopAndXSpace: package com.termux, result false
+03-04 20:45:51.784 12088 28482 E com.termux: Failed to query component interface for required system resources: 6
+03-04 20:45:51.885 12088 12088 E com.termux: [perfctl] 12088 12088 FPSGO ver:-1
+03-04 20:45:51.886 12088 12088 E com.termux: [perfctl] 0 0 0 0
+03-04 20:45:56.008  1283  1283 E vendor.xiaomi.hardware.micharge-service: Failed to open node /sys/class/power_supply/wireless/reverse_chg_mode
+03-04 20:45:57.285 12088 28465 E com.termux: FrameInsert open fail: No such file or directory
+03-04 20:46:14.760 16965 17105 E NTKernel: [E] direct_node_storage.cc(196)::GetDirectSessionInfo no no data! gid:,cid:7425135
+03-04 20:46:14.760 16965 17105 E NTKernel: [E] direct_node_storage.cc(196)::GetDirectSessionInfo no no data! gid:,cid:7425135
+03-04 20:46:14.771 16965 17105 E NTKernel: [E] direct_node_storage.cc(196)::GetDirectSessionInfo no no data! gid:92757701653863008,cid:
+03-04 20:46:15.918  4625  4878 E MiuiConfigNetConnectController : empty last pop
+03-04 20:46:16.145  4625  4878 E MiuiConfigNetConnectController : empty last pop
+03-04 20:46:16.171  4625  4878 E MiuiConfigNetConnectController : empty last pop
+03-04 20:46:19.761 16965 17105 E NTKernel: [E] guild_group_member_local_search_db_mgr.cc(90)::InsertRecords [GGMLS]->records is empty
+=== Sample 2 ===
+--- CPU ---
+28779 u0_a654       0 -20  14G 233M  47M S  7.4   1.0   0:02.92 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654       0 -20  16G 259M 166M S  0.0   1.1   0:02.77 com.termux
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12096                          37944
+         Native Heap:    21756                          28652
+           TOTAL PSS:    99772            TOTAL RSS:   285013       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:45:51.623  6102 14642 E SuggestManager: openApp name = com.termux
+03-04 20:45:51.633  4105 30865 E RecentAppsManager: com.termux can't be added to recent list!!
+03-04 20:45:51.639  4105 30865 E SystemUtils: appIsTopAndXSpace: package com.termux, result false
+03-04 20:45:51.784 12088 28482 E com.termux: Failed to query component interface for required system resources: 6
+03-04 20:45:51.885 12088 12088 E com.termux: [perfctl] 12088 12088 FPSGO ver:-1
+03-04 20:45:51.886 12088 12088 E com.termux: [perfctl] 0 0 0 0
+03-04 20:45:56.008  1283  1283 E vendor.xiaomi.hardware.micharge-service: Failed to open node /sys/class/power_supply/wireless/reverse_chg_mode
+03-04 20:45:57.285 12088 28465 E com.termux: FrameInsert open fail: No such file or directory
+03-04 20:46:14.760 16965 17105 E NTKernel: [E] direct_node_storage.cc(196)::GetDirectSessionInfo no no data! gid:,cid:7425135
+03-04 20:46:14.760 16965 17105 E NTKernel: [E] direct_node_storage.cc(196)::GetDirectSessionInfo no no data! gid:,cid:7425135
+03-04 20:46:14.771 16965 17105 E NTKernel: [E] direct_node_storage.cc(196)::GetDirectSessionInfo no no data! gid:92757701653863008,cid:
+03-04 20:46:15.918  4625  4878 E MiuiConfigNetConnectController : empty last pop
+03-04 20:46:16.145  4625  4878 E MiuiConfigNetConnectController : empty last pop
+03-04 20:46:16.171  4625  4878 E MiuiConfigNetConnectController : empty last pop
+03-04 20:46:19.761 16965 17105 E NTKernel: [E] guild_group_member_local_search_db_mgr.cc(90)::InsertRecords [GGMLS]->records is empty
+=== Sample 3 ===
+--- CPU ---
+12088 u0_a654       0 -20  16G 259M 166M R 11.1   1.1   0:02.83 com.termux
+28862 u0_a654       0 -20  14G 337M  47M S  3.7   1.5   0:04.52 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  14G 232M  47M S  0.0   1.0   0:02.98 node /data/user/0/com.termux/files/usr/bin/gemini
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12116                          37776
+         Native Heap:    21388                          28284
+           TOTAL PSS:    99494            TOTAL RSS:   284737       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:45:51.623  6102 14642 E SuggestManager: openApp name = com.termux
+03-04 20:45:51.633  4105 30865 E RecentAppsManager: com.termux can't be added to recent list!!
+03-04 20:45:51.639  4105 30865 E SystemUtils: appIsTopAndXSpace: package com.termux, result false
+03-04 20:45:51.784 12088 28482 E com.termux: Failed to query component interface for required system resources: 6
+03-04 20:45:51.885 12088 12088 E com.termux: [perfctl] 12088 12088 FPSGO ver:-1
+03-04 20:45:51.886 12088 12088 E com.termux: [perfctl] 0 0 0 0
+03-04 20:45:56.008  1283  1283 E vendor.xiaomi.hardware.micharge-service: Failed to open node /sys/class/power_supply/wireless/reverse_chg_mode
+03-04 20:45:57.285 12088 28465 E com.termux: FrameInsert open fail: No such file or directory
+03-04 20:46:14.760 16965 17105 E NTKernel: [E] direct_node_storage.cc(196)::GetDirectSessionInfo no no data! gid:,cid:7425135
+03-04 20:46:14.760 16965 17105 E NTKernel: [E] direct_node_storage.cc(196)::GetDirectSessionInfo no no data! gid:,cid:7425135
+03-04 20:46:14.771 16965 17105 E NTKernel: [E] direct_node_storage.cc(196)::GetDirectSessionInfo no no data! gid:92757701653863008,cid:
+03-04 20:46:15.918  4625  4878 E MiuiConfigNetConnectController : empty last pop
+03-04 20:46:16.145  4625  4878 E MiuiConfigNetConnectController : empty last pop
+03-04 20:46:16.171  4625  4878 E MiuiConfigNetConnectController : empty last pop
+03-04 20:46:19.761 16965 17105 E NTKernel: [E] guild_group_member_local_search_db_mgr.cc(90)::InsertRecords [GGMLS]->records is empty
+=== Sample 4 ===
+--- CPU ---
+28862 u0_a654       0 -20  20G 357M  48M S  0.0   1.5   0:05.50 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  14G 232M  47M S  0.0   1.0   0:02.98 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654       0 -20  16G 259M 167M S  0.0   1.1   0:03.64 com.termux
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12460                          38120
+         Native Heap:    20752                          27648
+           TOTAL PSS:    99265            TOTAL RSS:   284689       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:45:51.623  6102 14642 E SuggestManager: openApp name = com.termux
+03-04 20:45:51.633  4105 30865 E RecentAppsManager: com.termux can't be added to recent list!!
+03-04 20:45:51.639  4105 30865 E SystemUtils: appIsTopAndXSpace: package com.termux, result false
+03-04 20:45:51.784 12088 28482 E com.termux: Failed to query component interface for required system resources: 6
+03-04 20:45:51.885 12088 12088 E com.termux: [perfctl] 12088 12088 FPSGO ver:-1
+03-04 20:45:51.886 12088 12088 E com.termux: [perfctl] 0 0 0 0
+03-04 20:45:56.008  1283  1283 E vendor.xiaomi.hardware.micharge-service: Failed to open node /sys/class/power_supply/wireless/reverse_chg_mode
+03-04 20:45:57.285 12088 28465 E com.termux: FrameInsert open fail: No such file or directory
+03-04 20:46:14.760 16965 17105 E NTKernel: [E] direct_node_storage.cc(196)::GetDirectSessionInfo no no data! gid:,cid:7425135
+03-04 20:46:14.760 16965 17105 E NTKernel: [E] direct_node_storage.cc(196)::GetDirectSessionInfo no no data! gid:,cid:7425135
+03-04 20:46:14.771 16965 17105 E NTKernel: [E] direct_node_storage.cc(196)::GetDirectSessionInfo no no data! gid:92757701653863008,cid:
+03-04 20:46:15.918  4625  4878 E MiuiConfigNetConnectController : empty last pop
+03-04 20:46:16.145  4625  4878 E MiuiConfigNetConnectController : empty last pop
+03-04 20:46:16.171  4625  4878 E MiuiConfigNetConnectController : empty last pop
+03-04 20:46:19.761 16965 17105 E NTKernel: [E] guild_group_member_local_search_db_mgr.cc(90)::InsertRecords [GGMLS]->records is empty
+=== Sample 5 ===
+--- CPU ---
+12088 u0_a654       0 -20  16G 261M 169M R  114   1.1   0:06.34 com.termux
+28862 u0_a654       0 -20  20G 206M  48M S 14.7   0.9   0:06.45 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  14G 232M  47M S  0.0   1.0   0:02.98 node /data/user/0/com.termux/files/usr/bin/gemini
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    13268                          38928
+         Native Heap:    20500                          27396
+           TOTAL PSS:   101514            TOTAL RSS:   288217       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:45:51.623  6102 14642 E SuggestManager: openApp name = com.termux
+03-04 20:45:51.633  4105 30865 E RecentAppsManager: com.termux can't be added to recent list!!
+03-04 20:45:51.639  4105 30865 E SystemUtils: appIsTopAndXSpace: package com.termux, result false
+03-04 20:45:51.784 12088 28482 E com.termux: Failed to query component interface for required system resources: 6
+03-04 20:45:51.885 12088 12088 E com.termux: [perfctl] 12088 12088 FPSGO ver:-1
+03-04 20:45:51.886 12088 12088 E com.termux: [perfctl] 0 0 0 0
+03-04 20:45:56.008  1283  1283 E vendor.xiaomi.hardware.micharge-service: Failed to open node /sys/class/power_supply/wireless/reverse_chg_mode
+03-04 20:45:57.285 12088 28465 E com.termux: FrameInsert open fail: No such file or directory
+03-04 20:46:14.760 16965 17105 E NTKernel: [E] direct_node_storage.cc(196)::GetDirectSessionInfo no no data! gid:,cid:7425135
+03-04 20:46:14.760 16965 17105 E NTKernel: [E] direct_node_storage.cc(196)::GetDirectSessionInfo no no data! gid:,cid:7425135
+03-04 20:46:14.771 16965 17105 E NTKernel: [E] direct_node_storage.cc(196)::GetDirectSessionInfo no no data! gid:92757701653863008,cid:
+03-04 20:46:15.918  4625  4878 E MiuiConfigNetConnectController : empty last pop
+03-04 20:46:16.145  4625  4878 E MiuiConfigNetConnectController : empty last pop
+03-04 20:46:16.171  4625  4878 E MiuiConfigNetConnectController : empty last pop
+03-04 20:46:19.761 16965 17105 E NTKernel: [E] guild_group_member_local_search_db_mgr.cc(90)::InsertRecords [GGMLS]->records is empty
+=== Sample 6 ===
+--- CPU ---
+12088 u0_a654       0 -20  16G 263M 169M R  140   1.1   0:13.64 com.termux
+28862 u0_a654       0 -20  20G 215M  48M S 25.9   0.9   0:07.40 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  14G 232M  47M S  0.0   1.0   0:02.98 node /data/user/0/com.termux/files/usr/bin/gemini
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    14652                          40312
+         Native Heap:    20700                          27592
+           TOTAL PSS:   102035            TOTAL RSS:   288733       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:45:51.639  4105 30865 E SystemUtils: appIsTopAndXSpace: package com.termux, result false
+03-04 20:45:51.784 12088 28482 E com.termux: Failed to query component interface for required system resources: 6
+03-04 20:45:51.885 12088 12088 E com.termux: [perfctl] 12088 12088 FPSGO ver:-1
+03-04 20:45:51.886 12088 12088 E com.termux: [perfctl] 0 0 0 0
+03-04 20:45:56.008  1283  1283 E vendor.xiaomi.hardware.micharge-service: Failed to open node /sys/class/power_supply/wireless/reverse_chg_mode
+03-04 20:45:57.285 12088 28465 E com.termux: FrameInsert open fail: No such file or directory
+03-04 20:46:14.760 16965 17105 E NTKernel: [E] direct_node_storage.cc(196)::GetDirectSessionInfo no no data! gid:,cid:7425135
+03-04 20:46:14.760 16965 17105 E NTKernel: [E] direct_node_storage.cc(196)::GetDirectSessionInfo no no data! gid:,cid:7425135
+03-04 20:46:14.771 16965 17105 E NTKernel: [E] direct_node_storage.cc(196)::GetDirectSessionInfo no no data! gid:92757701653863008,cid:
+03-04 20:46:15.918  4625  4878 E MiuiConfigNetConnectController : empty last pop
+03-04 20:46:16.145  4625  4878 E MiuiConfigNetConnectController : empty last pop
+03-04 20:46:16.171  4625  4878 E MiuiConfigNetConnectController : empty last pop
+03-04 20:46:19.761 16965 17105 E NTKernel: [E] guild_group_member_local_search_db_mgr.cc(90)::InsertRecords [GGMLS]->records is empty
+03-04 20:46:44.190 12088 28465 E LB      : fail to open node: Permission denied
+03-04 20:46:44.190 12088 28465 E LB      : fail to open node: No such file or directory
+=== Sample 7 ===
+--- CPU ---
+12088 u0_a654       0 -20  16G 266M 171M R  111   1.1   0:20.78 com.termux
+28862 u0_a654       0 -20  20G 217M  48M S 18.5   0.9   0:09.13 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  14G 232M  47M S  0.0   1.0   0:02.98 node /data/user/0/com.termux/files/usr/bin/gemini
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    14984                          40644
+         Native Heap:    21276                          28168
+           TOTAL PSS:   105292            TOTAL RSS:   292053       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:45:51.639  4105 30865 E SystemUtils: appIsTopAndXSpace: package com.termux, result false
+03-04 20:45:51.784 12088 28482 E com.termux: Failed to query component interface for required system resources: 6
+03-04 20:45:51.885 12088 12088 E com.termux: [perfctl] 12088 12088 FPSGO ver:-1
+03-04 20:45:51.886 12088 12088 E com.termux: [perfctl] 0 0 0 0
+03-04 20:45:56.008  1283  1283 E vendor.xiaomi.hardware.micharge-service: Failed to open node /sys/class/power_supply/wireless/reverse_chg_mode
+03-04 20:45:57.285 12088 28465 E com.termux: FrameInsert open fail: No such file or directory
+03-04 20:46:14.760 16965 17105 E NTKernel: [E] direct_node_storage.cc(196)::GetDirectSessionInfo no no data! gid:,cid:7425135
+03-04 20:46:14.760 16965 17105 E NTKernel: [E] direct_node_storage.cc(196)::GetDirectSessionInfo no no data! gid:,cid:7425135
+03-04 20:46:14.771 16965 17105 E NTKernel: [E] direct_node_storage.cc(196)::GetDirectSessionInfo no no data! gid:92757701653863008,cid:
+03-04 20:46:15.918  4625  4878 E MiuiConfigNetConnectController : empty last pop
+03-04 20:46:16.145  4625  4878 E MiuiConfigNetConnectController : empty last pop
+03-04 20:46:16.171  4625  4878 E MiuiConfigNetConnectController : empty last pop
+03-04 20:46:19.761 16965 17105 E NTKernel: [E] guild_group_member_local_search_db_mgr.cc(90)::InsertRecords [GGMLS]->records is empty
+03-04 20:46:44.190 12088 28465 E LB      : fail to open node: Permission denied
+03-04 20:46:44.190 12088 28465 E LB      : fail to open node: No such file or directory
+=== Sample 8 ===
+--- CPU ---
+12088 u0_a654      20   0  16G 261M 168M S 30.7   1.1   0:24.52 com.termux
+28862 u0_a654       0 -20  20G 232M  48M S 26.9   1.0   0:10.42 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  14G 232M  47M S  0.0   1.0   0:02.98 node /data/user/0/com.termux/files/usr/bin/gemini
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    13664                          39312
+         Native Heap:    20216                          27108
+           TOTAL PSS:    83844            TOTAL RSS:   270536       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:47:00.174  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:00.191  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:00.207  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:00.224  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:00.240  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:00.257  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:00.273  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:00.290  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:00.307  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:00.324  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:00.340  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:00.357  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:00.373  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:00.390  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:00.407  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 9 ===
+--- CPU ---
+28862 u0_a654       0 -20  20G 233M  48M S 37.0   1.0   0:11.62 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654      20   0  16G 260M 168M S 33.3   1.1   0:25.97 com.termux
+28779 u0_a654       0 -20  14G 232M  47M S  0.0   1.0   0:02.98 node /data/user/0/com.termux/files/usr/bin/gemini
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12212                          37860
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82388            TOTAL RSS:   269080       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:47:05.694  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:05.711  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:05.728  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:05.744  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:05.761  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:05.777  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:05.794  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:05.827  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:05.861  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:05.894  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:05.910  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:05.944  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:05.977  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:05.993  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:06.010  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 10 ===
+--- CPU ---
+28862 u0_a654       0 -20  20G 233M  48M S 48.1   1.0   0:12.85 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654      20   0  16G 260M 168M S 22.2   1.1   0:27.69 com.termux
+28779 u0_a654       0 -20  14G 232M  47M S  0.0   1.0   0:02.98 node /data/user/0/com.termux/files/usr/bin/gemini
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12220                          37868
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82396            TOTAL RSS:   269088       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:47:11.365  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:11.381  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:11.398  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:11.414  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:11.431  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:11.448  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:11.464  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:11.480  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:11.497  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:11.514  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:11.547  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:11.563  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:11.581  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:11.614  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:11.647  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 11 ===
+--- CPU ---
+12088 u0_a654      20   0  16G 260M 168M R 25.9   1.1   0:29.07 com.termux
+28862 u0_a654       0 -20  20G 260M  48M S 18.5   1.1   0:14.47 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  14G 232M  47M S  0.0   1.0   0:02.98 node /data/user/0/com.termux/files/usr/bin/gemini
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12220                          37868
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82397            TOTAL RSS:   269088       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:47:16.902  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:16.918  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:16.934  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:16.968  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:17.001  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:17.034  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:17.051  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:17.084  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:17.117  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:17.151  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:17.167  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:17.184  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:17.201  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:17.218  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:17.251  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 12 ===
+--- CPU ---
+12088 u0_a654      20   0  16G 260M 168M S 25.9   1.1   0:30.53 com.termux
+28862 u0_a654       0 -20  20G 260M  48M S 18.5   1.1   0:15.72 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  14G 232M  47M S  0.0   1.0   0:02.98 node /data/user/0/com.termux/files/usr/bin/gemini
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12228                          37876
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82412            TOTAL RSS:   269104       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:47:22.555  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:22.572  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:22.589  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:22.621  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:22.655  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:22.688  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:22.721  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:22.737  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:22.755  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:22.787  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:22.821  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:22.838  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:22.871  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:22.904  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:22.937  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 13 ===
+--- CPU ---
+12088 u0_a654      20   0  16G 260M 168M R 25.9   1.1   0:31.95 com.termux
+28862 u0_a654       0 -20  20G 268M  48M S 18.5   1.1   0:17.04 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  14G 232M  47M S  0.0   1.0   0:02.98 node /data/user/0/com.termux/files/usr/bin/gemini
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12240                          37888
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82424            TOTAL RSS:   269116       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:47:28.357  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:28.374  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:28.390  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:28.407  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:28.423  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:28.440  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:28.457  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:28.473  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:28.490  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:28.507  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:28.523  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:28.540  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:28.557  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:28.573  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:28.590  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 14 ===
+--- CPU ---
+28862 u0_a654       0 -20  20G 268M  48M S 22.2   1.1   0:18.51 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654      20   0  16G 260M 168M S 22.2   1.1   0:33.49 com.termux
+28779 u0_a654       0 -20  14G 232M  47M S  0.0   1.0   0:02.98 node /data/user/0/com.termux/files/usr/bin/gemini
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12248                          37896
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82433            TOTAL RSS:   269124       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:47:33.895  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:33.911  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:33.928  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:33.945  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:33.961  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:33.977  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:34.011  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:34.044  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:34.078  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:34.110  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:34.127  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:34.144  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:34.177  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:34.194  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:34.227  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 15 ===
+--- CPU ---
+28862 u0_a654       0 -20  20G 270M  48M S 37.0   1.2   0:19.84 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654      20   0  16G 260M 168M R 25.9   1.1   0:34.86 com.termux
+28779 u0_a654       0 -20  14G 232M  47M S  0.0   1.0   0:02.98 node /data/user/0/com.termux/files/usr/bin/gemini
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12260                          37908
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82445            TOTAL RSS:   269136       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:47:39.614  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:39.647  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:39.681  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:39.697  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:39.713  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:39.729  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:39.746  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:39.763  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:39.780  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:39.796  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:39.813  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:39.830  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:39.846  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:39.863  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:39.879  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 16 ===
+--- CPU ---
+12088 u0_a654      20   0  16G 260M 168M S 29.6   1.1   0:36.43 com.termux
+28862 u0_a654       0 -20  20G 272M  48M S 25.9   1.2   0:21.08 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  14G 232M  47M S  0.0   1.0   0:02.98 node /data/user/0/com.termux/files/usr/bin/gemini
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12260                          37908
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82444            TOTAL RSS:   269136       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:47:45.184  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:45.217  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:45.233  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:45.250  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:45.267  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:45.283  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:45.299  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:45.333  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:45.366  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:45.400  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:45.432  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:45.466  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:45.482  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:45.499  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:45.532  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 17 ===
+--- CPU ---
+28862 u0_a654       0 -20  20G 323M  48M S  0.0   1.4   0:22.49 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  14G 232M  47M S  0.0   1.0   0:02.98 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654      20   0  16G 260M 168M S  0.0   1.1   0:37.22 com.termux
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12268                          37916
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82453            TOTAL RSS:   269144       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:47:50.819  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:50.836  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:50.851  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:50.869  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:50.902  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:50.934  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:50.968  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:51.002  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:51.034  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:51.067  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:51.084  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:51.117  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:51.151  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:51.168  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:51.184  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 18 ===
+--- CPU ---
+28862 u0_a654       0 -20  20G 315M  48M S  0.0   1.4   0:22.50 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  14G 232M  47M S  0.0   1.0   0:02.98 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654      20   0  16G 260M 168M S  0.0   1.1   0:37.26 com.termux
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12268                          37916
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82453            TOTAL RSS:   269144       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:47:56.538  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:56.572  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:56.588  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:56.604  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:56.621  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:56.655  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:56.688  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:56.704  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:56.721  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:56.754  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:56.787  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:56.821  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:56.854  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:56.870  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:47:56.903  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 19 ===
+--- CPU ---
+28862 u0_a654       0 -20  20G 203M  48M S  0.0   0.9   0:22.97 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  14G 232M  47M S  0.0   1.0   0:02.98 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654      20   0  16G 260M 168M S  0.0   1.1   0:37.31 com.termux
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12268                          37916
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82452            TOTAL RSS:   269144       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:48:02.262  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:02.278  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:02.294  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:02.311  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:02.328  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:02.345  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:02.361  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:02.378  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:02.394  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:02.412  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:02.428  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:02.462  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:02.477  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:02.511  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:02.544  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 20 ===
+--- CPU ---
+28862 u0_a654       0 -20  20G 203M  48M S  0.0   0.9   0:22.97 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  13G 180M  47M S  0.0   0.8   0:03.25 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654      20   0  16G 260M 168M S  0.0   1.1   0:37.35 com.termux
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12268                          37916
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82452            TOTAL RSS:   269144       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:48:07.862  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:07.879  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:07.911  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:07.929  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:07.961  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:07.977  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:08.012  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:08.027  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:08.044  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:08.078  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:08.111  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:08.145  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:08.178  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:08.195  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:08.228  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 21 ===
+--- CPU ---
+28862 u0_a654       0 -20  20G 203M  48M S  0.0   0.9   0:22.97 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  13G 180M  47M S  0.0   0.8   0:03.25 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654      20   0  16G 260M 168M S  0.0   1.1   0:37.40 com.termux
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12268                          37916
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82452            TOTAL RSS:   269144       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:48:13.661  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:13.678  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:13.695  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:13.711  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:13.728  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:13.745  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:13.761  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:13.778  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:13.795  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:13.811  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:13.828  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:13.845  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:13.862  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:13.878  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:13.895  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 22 ===
+--- CPU ---
+28862 u0_a654       0 -20  20G 203M  48M S  0.0   0.9   0:22.97 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  13G 180M  47M S  0.0   0.8   0:03.25 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654      20   0  16G 260M 168M S  0.0   1.1   0:37.42 com.termux
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12268                          37916
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82452            TOTAL RSS:   269144       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:48:19.262  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:19.279  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:19.295  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:19.312  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:19.329  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:19.345  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:19.361  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:19.378  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:19.395  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:19.412  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:19.429  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:19.461  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:19.495  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:19.529  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:19.562  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 23 ===
+--- CPU ---
+12088 u0_a654      20   0  16G 260M 168M S  3.7   1.1   0:37.47 com.termux
+28862 u0_a654       0 -20  20G 203M  48M S  0.0   0.9   0:22.97 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  13G 180M  47M S  0.0   0.8   0:03.25 node /data/user/0/com.termux/files/usr/bin/gemini
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12268                          37916
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82401            TOTAL RSS:   269144       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:48:24.827  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:24.860  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:24.893  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:24.927  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:24.959  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:24.992  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:25.026  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:25.041  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:25.058  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:25.075  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:25.108  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:25.141  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:25.175  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:25.208  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:25.241  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 24 ===
+--- CPU ---
+28862 u0_a654       0 -20  20G 203M  48M S  0.0   0.9   0:22.97 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  13G 180M  47M S  0.0   0.8   0:03.25 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654      20   0  16G 260M 168M S  0.0   1.1   0:37.52 com.termux
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12268                          37916
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82393            TOTAL RSS:   269144       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:48:30.530  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:30.563  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:30.597  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:30.612  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:30.628  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:30.645  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:30.678  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:30.712  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:30.745  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:30.778  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:30.812  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:30.845  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:30.861  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:30.894  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:30.928  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 25 ===
+--- CPU ---
+28862 u0_a654       0 -20  20G 203M  48M S  0.0   0.9   0:22.97 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  13G 180M  47M S  0.0   0.8   0:03.25 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654      20   0  16G 260M 168M S  0.0   1.1   0:37.58 com.termux
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12272                          37920
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82377            TOTAL RSS:   269148       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:48:36.251  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:36.266  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:36.284  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:36.316  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:36.350  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:36.384  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:36.416  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:36.432  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:36.466  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:36.482  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:36.500  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:36.532  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:36.566  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:36.599  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:36.632  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 26 ===
+--- CPU ---
+28862 u0_a654       0 -20  20G 203M  48M S  0.0   0.9   0:22.97 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  13G 180M  47M S  0.0   0.8   0:03.25 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654      20   0  16G 260M 168M S  0.0   1.1   0:37.63 com.termux
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12268                          37916
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82373            TOTAL RSS:   269144       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:48:41.955  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:41.989  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:42.004  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:42.038  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:42.054  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:42.071  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:42.105  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:42.138  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:42.170  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:42.204  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:42.237  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:42.254  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:42.270  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:42.287  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:42.320  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 27 ===
+--- CPU ---
+28862 u0_a654       0 -20  20G 203M  48M S  0.0   0.9   0:22.97 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  13G 180M  47M S  0.0   0.8   0:03.25 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654      20   0  16G 260M 168M S  0.0   1.1   0:37.67 com.termux
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12268                          37916
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82373            TOTAL RSS:   269144       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:48:47.743  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:47.759  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:47.776  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:47.809  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:47.826  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:47.842  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:47.859  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:47.892  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:47.925  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:47.941  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:47.958  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:47.992  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:48.025  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:48.042  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:48.059  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 28 ===
+--- CPU ---
+28862 u0_a654       0 -20  20G 203M  48M S  0.0   0.9   0:22.97 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  13G 180M  47M S  0.0   0.8   0:03.25 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654      20   0  16G 260M 168M S  0.0   1.1   0:37.72 com.termux
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12268                          37916
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82373            TOTAL RSS:   269144       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:48:53.413  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:53.430  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:53.464  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:53.480  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:53.497  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:53.530  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:53.563  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:53.579  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:53.596  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:53.630  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:53.646  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:53.680  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:53.712  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:53.746  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:53.764  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 29 ===
+--- CPU ---
+28862 u0_a654       0 -20  20G 203M  48M S  0.0   0.9   0:22.97 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  13G 180M  47M S  0.0   0.8   0:03.25 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654      20   0  16G 260M 168M S  0.0   1.1   0:37.76 com.termux
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12268                          37916
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82373            TOTAL RSS:   269144       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:48:59.101  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:59.134  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:59.150  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:59.167  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:59.200  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:59.217  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:59.250  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:59.266  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:59.283  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:59.317  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:59.350  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:59.366  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:59.383  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:59.417  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:48:59.467  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 30 ===
+--- CPU ---
+28862 u0_a654       0 -20  20G 203M  48M S  0.0   0.9   0:22.97 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  13G 180M  47M S  0.0   0.8   0:03.25 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654      20   0  16G 260M 168M S  0.0   1.1   0:37.81 com.termux
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12268                          37916
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82373            TOTAL RSS:   269144       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:49:04.771  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:04.787  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:04.820  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:04.853  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:04.886  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:04.919  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:04.952  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:04.969  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:05.002  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:05.036  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:05.069  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:05.102  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:05.135  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:05.168  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:05.185  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 31 ===
+--- CPU ---
+28862 u0_a654       0 -20  20G 203M  48M S  0.0   0.9   0:22.97 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  13G 180M  47M S  0.0   0.8   0:03.25 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654      20   0  16G 260M 168M S  0.0   1.1   0:37.86 com.termux
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12268                          37916
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82373            TOTAL RSS:   269144       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:49:10.638  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:10.671  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:10.704  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:10.737  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:10.755  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:10.771  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:10.788  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:10.804  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:10.820  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:10.837  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:10.854  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:10.871  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:10.887  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:10.904  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:10.920  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 32 ===
+--- CPU ---
+28862 u0_a654       0 -20  20G 203M  48M S  0.0   0.9   0:22.97 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  13G 180M  47M S  0.0   0.8   0:03.25 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654      20   0  16G 260M 168M S  0.0   1.1   0:37.90 com.termux
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12268                          37916
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82373            TOTAL RSS:   269144       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:49:16.358  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:16.374  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:16.390  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:16.421  4625  4878 E MiuiConfigNetConnectController : empty last pop
+03-04 20:49:16.423  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:16.457  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:16.474  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:16.491  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:16.524  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:16.557  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:16.574  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:16.590  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:16.607  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:16.640  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:16.673  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 33 ===
+--- CPU ---
+28862 u0_a654       0 -20  20G 203M  48M S  0.0   0.9   0:22.97 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  13G 180M  47M S  0.0   0.8   0:03.25 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654      20   0  16G 260M 168M S  0.0   1.1   0:37.94 com.termux
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12268                          37916
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82373            TOTAL RSS:   269144       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:49:22.060  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:22.094  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:22.127  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:22.143  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:22.176  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:22.193  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:22.210  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:22.244  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:22.276  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:22.293  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:22.309  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:22.343  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:22.376  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:22.393  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:22.409  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 34 ===
+--- CPU ---
+28862 u0_a654       0 -20  20G 203M  48M S  0.0   0.9   0:22.97 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  13G 180M  47M S  0.0   0.8   0:03.25 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654      20   0  16G 260M 168M S  0.0   1.1   0:37.99 com.termux
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12268                          37916
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82373            TOTAL RSS:   269144       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:49:27.747  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:27.781  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:27.813  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:27.829  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:27.847  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:27.879  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:27.896  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:27.912  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:27.929  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:27.963  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:27.997  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:28.029  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:28.046  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:28.063  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:28.096  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 35 ===
+--- CPU ---
+28862 u0_a654       0 -20  20G 203M  48M S  0.0   0.9   0:22.97 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  13G 180M  47M S  0.0   0.8   0:03.25 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654      20   0  16G 260M 168M S  0.0   1.1   0:38.03 com.termux
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12272                          37920
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82377            TOTAL RSS:   269148       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:49:33.450  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:33.466  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:33.500  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:33.533  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:33.566  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:33.599  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:33.632  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:33.665  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:33.682  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:33.698  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:33.715  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:33.748  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:33.782  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:33.815  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:33.848  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+=== Sample 36 ===
+--- CPU ---
+28862 u0_a654       0 -20  20G 203M  48M S  0.0   0.9   0:22.97 node /data/user/0/com.termux/files/usr/bin/gemini
+28779 u0_a654       0 -20  13G 180M  47M S  0.0   0.8   0:03.25 node /data/user/0/com.termux/files/usr/bin/gemini
+12088 u0_a654      20   0  16G 260M 168M S  0.0   1.1   0:38.07 com.termux
+ 1000 root         20   0    0    0    0 S  0.0   0.0   0:00.00 [mi_asap_release_inode]
+--- MEM ---
+           Java Heap:    12268                          37916
+         Native Heap:    20220                          27112
+           TOTAL PSS:    82373            TOTAL RSS:   269144       TOTAL SWAP PSS:       10
+--- LOG ---
+03-04 20:49:39.268  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:39.284  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:39.301  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:39.318  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:39.334  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:39.350  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:39.384  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:39.417  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:39.450  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:39.484  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:39.500  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:39.516  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:39.534  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:39.550  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0
+03-04 20:49:39.566  1331  1331 E MI-SF   : operator(): check layer failed layer name 37d6e1a SurfaceView[tv.danmaku.bili/com.bilibili.ship.theseus.detail.UnitedBizDetailsActivity](BLAST)#1881, snapshot->croppedBufferSize.isValid()=1, snapshot->croppedBufferSize.isEmpty()=0, snapshot->isContentOpaque()=0

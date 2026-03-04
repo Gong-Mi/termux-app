@@ -491,6 +491,9 @@ public final class TerminalEmulator {
             mTabStop[i] = (i & 7) == 0 && i != 0;
     }
 
+    /** The lock object for terminal buffer data. */
+    public final Object mDataLock = new Object();
+
     /**
      * Accept bytes (typically from the pseudo-teletype) and process them.
      *
@@ -498,11 +501,13 @@ public final class TerminalEmulator {
      * @param length the number of bytes in the array to process
      */
     public void append(byte[] buffer, int length) {
-        // Process in smaller chunks to avoid JIT OSR storms (identified by simpleperf)
-        final int chunkSize = 1024;
-        for (int i = 0; i < length; i += chunkSize) {
-            int end = Math.min(i + chunkSize, length);
-            processChunk(buffer, i, end);
+        synchronized (mDataLock) {
+            // Process in smaller chunks to avoid JIT OSR storms (identified by simpleperf)
+            final int chunkSize = 1024;
+            for (int i = 0; i < length; i += chunkSize) {
+                int end = Math.min(i + chunkSize, length);
+                processChunk(buffer, i, end);
+            }
         }
     }
 
