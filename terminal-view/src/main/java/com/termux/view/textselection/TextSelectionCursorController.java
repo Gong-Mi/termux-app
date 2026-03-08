@@ -192,10 +192,10 @@ public class TextSelectionCursorController implements CursorController {
 
             @Override
             public void onGetContentRect(ActionMode mode, View view, Rect outRect) {
-                int x1 = Math.round(mSelX1 * terminalView.mRenderer.getFontWidth());
-                int x2 = Math.round(mSelX2 * terminalView.mRenderer.getFontWidth());
-                int y1 = Math.round((mSelY1 - 1 - terminalView.getTopRow()) * terminalView.mRenderer.getFontLineSpacing());
-                int y2 = Math.round((mSelY2 + 1 - terminalView.getTopRow()) * terminalView.mRenderer.getFontLineSpacing());
+                int x1 = terminalView.getPointX(mSelX1);
+                int x2 = terminalView.getPointX(mSelX2);
+                int y1 = terminalView.getPointY(mSelY1 - 1);
+                int y2 = terminalView.getPointY(mSelY2 + 1);
 
                 if (x1 > x2) {
                     int tmp = x1;
