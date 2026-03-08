@@ -573,6 +573,21 @@ public final class TerminalEmulator {
         }
     }
 
+    /**
+     * 获取终端指定行的内容，返回实际复制的字符数
+     * @return 实际复制的字符数（line.mText 中有效数据的长度）
+     */
+    public int getRowContentWithLength(int row, char[] destText, long[] destStyle) {
+        TerminalRow line = mScreen.allocateFullLineIfNecessary(mScreen.externalToInternalRow(row));
+        if (line != null) {
+            int copyLength = Math.min(line.mText.length, destText.length);
+            System.arraycopy(line.mText, 0, destText, 0, copyLength);
+            System.arraycopy(line.mStyle, 0, destStyle, 0, Math.min(line.mStyle.length, destStyle.length));
+            return line.mSpaceUsed;
+        }
+        return 0;
+    }
+
     @Override
     protected void finalize() throws Throwable {
         // Rust 引擎目前不用于解析输入，所以不需要清理

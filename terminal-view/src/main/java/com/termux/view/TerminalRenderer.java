@@ -103,9 +103,12 @@ public final class TerminalRenderer {
             canvas.drawColor(palette[TextStyle.COLOR_INDEX_FOREGROUND], PorterDuff.Mode.SRC);
 
         float heightOffset = mFontLineSpacingAndAscent;
-        
+
         // 预分配缓冲区，减少行循环内的内存抖动
-        char[] lineText = new char[columns * 2]; // 考虑代理对
+        // 使用与 TerminalRow 相同的 SPARE_CAPACITY_FACTOR (1.5f) 计算缓冲区大小
+        // 参考：TerminalRow.java: mText = new char[(int) (SPARE_CAPACITY_FACTOR * columns)]
+        final int spareCapacityFactor = 3 / 2; // 1.5f 的整数表示
+        char[] lineText = new char[(columns * spareCapacityFactor + 1) / 2 * 2]; // 确保是偶数，考虑代理对
         long[] lineStyles = new long[columns];
 
         for (int row = topRow; row < endRow; row++) {
@@ -118,9 +121,9 @@ public final class TerminalRenderer {
                 selx2 = (row == selectionY2) ? selectionX2 : columns;
             }
 
-            // 关键：从 Emulator 拉取内容（优先从 Rust 引擎拉取）
-            mEmulator.getRowContent(row, lineText, lineStyles);
-            
+            // 关键：从 Emulator 拉取内容，获取实际字符数用于边界检查
+            int lineTextLength = mEmulator.getRowContentWithLength(row, lineText, lineStyles);
+
             long lastRunStyle = 0;
             boolean lastRunInsideCursor = false;
             boolean lastRunInsideSelection = false;
@@ -132,8 +135,29 @@ public final class TerminalRenderer {
 
             float lastRunScaleFactor = 1.0f;
             for (int column = 0; column < columns; ) {
+                // 边界检查：防止 currentCharIndex 超出实际数据范围
+                if (currentCharIndex >= lineTextLength || currentCharIndex >= lineText.length) {
+                    // 如果已到达行尾，绘制剩余的 run 并退出
+                    if (lastRunStartColumn != -1) {
+                        drawTextRun(canvas, lineText, palette, heightOffset, lastRunStartColumn, lastRunStartIndex, currentCharIndex,
+                            lastRunInsideCursor, lastRunInsideSelection, lastRunStyle, cursorShape, measuredWidthForRun, lastRunScaleFactor);
+                    }
+                    break;
+                }
+
                 final char charAtIndex = lineText[currentCharIndex];
                 final boolean charIsHighsurrogate = Character.isHighSurrogate(charAtIndex);
+                
+                // 边界检查：确保不会访问超出数组范围的字符
+                if (charIsHighsurrogate && currentCharIndex + 1 >= lineTextLength) {
+                    // 不完整的代理对，视为无效字符，跳过
+                    if (lastRunStartColumn != -1) {
+                        drawTextRun(canvas, lineText, palette, heightOffset, lastRunStartColumn, lastRunStartIndex, currentCharIndex,
+                            lastRunInsideCursor, lastRunInsideSelection, lastRunStyle, cursorShape, measuredWidthForRun, lastRunScaleFactor);
+                    }
+                    break;
+                }
+                
                 final int charsForCodePoint = charIsHighsurrogate ? 2 : 1;
                 final int codePoint = charIsHighsurrogate ? Character.toCodePoint(charAtIndex, lineText[currentCharIndex + 1]) : charAtIndex;
                 final int codePointWcWidth = WcWidth.width(codePoint);
