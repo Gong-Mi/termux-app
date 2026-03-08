@@ -510,25 +510,32 @@ public final class WcWidth {
         return false;
     }
 
+    private static final byte[] WIDTH_CACHE = new byte[2048]; // Cache first 2K codepoints
+    static {
+        for (int i = 0; i < 2048; i++) WIDTH_CACHE[i] = (byte) calculateWidthInternal(i);
+    }
+
     /** Return the terminal display width of a code point: 0, 1 || 2. */
     public static int width(int ucs) {
-        if (ucs == 0 ||
-            ucs == 0x034F ||
-            (0x200B <= ucs && ucs <= 0x200F) ||
-            ucs == 0x2028 ||
-            ucs == 0x2029 ||
-            (0x202A <= ucs && ucs <= 0x202E) ||
-            (0x2060 <= ucs && ucs <= 0x2063)) {
+        if (ucs < 2048) return WIDTH_CACHE[ucs];
+        if (JNI.sNativeLibrariesLoaded) {
+            try {
+                return widthRust(ucs);
+            } catch (UnsatisfiedLinkError | Exception e) {
+                // Fallback if JNI call fails
+            }
+        }
+        return calculateWidthInternal(ucs);
+    }
+
+    private static native int widthRust(int ucs);
+
+    private static int calculateWidthInternal(int ucs) {
+        if (ucs == 0 || ucs == 0x034F || (ucs >= 0x200B && ucs <= 0x200F) || ucs == 0x2028 || ucs == 0x2029 || (ucs >= 0x202A && ucs <= 0x202E) || (ucs >= 0x2060 && ucs <= 0x2063)) {
             return 0;
         }
-
-        // C0/C1 control characters
-        // Termux change: Return 0 instead of -1.
-        if (ucs < 32 || (0x07F <= ucs && ucs < 0x0A0)) return 0;
-
-        // combining characters with zero width
+        if (ucs < 32 || (ucs >= 0x07F && ucs < 0x0A0)) return 0;
         if (intable(ZERO_WIDTH, ucs)) return 0;
-
         return intable(WIDE_EASTASIAN, ucs) ? 2 : 1;
     }
 

@@ -4,53 +4,19 @@ import java.util.Arrays;
 
 /**
  * A row in a terminal, composed of a fixed number of cells.
- * <p>
- * The text in the row is stored in a char[] array, {@link #mText}, for quick access during rendering.
  */
 public final class TerminalRow {
 
     private static final float SPARE_CAPACITY_FACTOR = 1.5f;
-
-    /**
-     * Max combining characters that can exist in a column, that are separate from the base character
-     * itself. Any additional combining characters will be ignored and not added to the column.
-     *
-     * There does not seem to be limit in unicode standard for max number of combination characters
-     * that can be combined but such characters are primarily under 10.
-     *
-     * "Section 3.6 Combination" of unicode standard contains combining characters info.
-     * - https://www.unicode.org/versions/Unicode15.0.0/ch03.pdf
-     * - https://en.wikipedia.org/wiki/Combining_character#Unicode_ranges
-     * - https://stackoverflow.com/questions/71237212/what-is-the-maximum-number-of-unicode-combined-characters-that-may-be-needed-to
-     *
-     * UAX15-D3 Stream-Safe Text Format limits to max 30 combining characters.
-     * > The value of 30 is chosen to be significantly beyond what is required for any linguistic or technical usage.
-     * > While it would have been feasible to chose a smaller number, this value provides a very wide margin,
-     * > yet is well within the buffer size limits of practical implementations.
-     * - https://unicode.org/reports/tr15/#Stream_Safe_Text_Format
-     * - https://stackoverflow.com/a/11983435/14686958
-     *
-     * We choose the value 15 because it should be enough for terminal based applications and keep
-     * the memory usage low for a terminal row, won't affect performance or cause terminal to
-     * lag or hang, and will keep malicious applications from causing harm. The value can be
-     * increased if ever needed for legitimate applications.
-     */
     private static final int MAX_COMBINING_CHARACTERS_PER_COLUMN = 15;
 
-    /** The number of columns in this terminal row. */
     private final int mColumns;
-    /** The text filling this terminal row. */
     public char[] mText;
-    /** The number of java chars used in {@link #mText}. */
     private short mSpaceUsed;
-    /** If this row has been line wrapped due to text output at the end of line. */
     boolean mLineWrap;
-    /** The style bits of each cell in the row. See {@link TextStyle}. */
-    final long[] mStyle;
-    /** If this row might contain chars with width != 1, used for deactivating fast path */
-    boolean mHasNonOneWidthOrSurrogateChars;
+    public final long[] mStyle;
+    public boolean mHasNonOneWidthOrSurrogateChars;
 
-    /** Construct a blank row (containing only whitespace, ' ') with a specified style. */
     public TerminalRow(int columns, long style) {
         mColumns = columns;
         mText = new char[(int) (SPARE_CAPACITY_FACTOR * columns)];
@@ -58,7 +24,6 @@ public final class TerminalRow {
         clear(style);
     }
 
-    /** NOTE: The sourceX2 is exclusive. */
     public void copyInterval(TerminalRow line, int sourceX1, int sourceX2, int destinationX) {
         mHasNonOneWidthOrSurrogateChars |= line.mHasNonOneWidthOrSurrogateChars;
         final int x1 = line.findStartOfColumn(sourceX1);
@@ -70,7 +35,6 @@ public final class TerminalRow {
             char sourceChar = sourceChars[i];
             int codePoint = Character.isHighSurrogate(sourceChar) ? Character.toCodePoint(sourceChar, sourceChars[++i]) : sourceChar;
             if (startingFromSecondHalfOfWideChar) {
-                // Just treat copying second half of wide char as copying whitespace.
                 codePoint = ' ';
                 startingFromSecondHalfOfWideChar = false;
             }
@@ -84,51 +48,37 @@ public final class TerminalRow {
         }
     }
 
-    public int getSpaceUsed() {
-        return mSpaceUsed;
-    }
+    public int getSpaceUsed() { return mSpaceUsed; }
 
-    /** Note that the column may end of second half of wide character. */
-    public int findStartOfColumn(int column) {
-        if (column == mColumns) return getSpaceUsed();
-
+    public final int findStartOfColumn(int column) {
+        if (column == mColumns) return mSpaceUsed;
         int currentColumn = 0;
         int currentCharIndex = 0;
-        while (true) { // 0<2 1 < 2
+        while (currentCharIndex < mSpaceUsed) {
             int newCharIndex = currentCharIndex;
-            char c = mText[newCharIndex++]; // cci=1, cci=2
-            boolean isHigh = Character.isHighSurrogate(c);
-            int codePoint = isHigh ? Character.toCodePoint(c, mText[newCharIndex++]) : c;
-            int wcwidth = WcWidth.width(codePoint); // 1, 2
+            char c = mText[newCharIndex++];
+            int codePoint = Character.isHighSurrogate(c) ? Character.toCodePoint(c, mText[newCharIndex++]) : c;
+            int wcwidth = WcWidth.width(codePoint);
             if (wcwidth > 0) {
                 currentColumn += wcwidth;
                 if (currentColumn == column) {
                     while (newCharIndex < mSpaceUsed) {
-                        // Skip combining chars.
-                        if (Character.isHighSurrogate(mText[newCharIndex])) {
-                            if (WcWidth.width(Character.toCodePoint(mText[newCharIndex], mText[newCharIndex + 1])) <= 0) {
-                                newCharIndex += 2;
-                            } else {
-                                break;
-                            }
-                        } else if (WcWidth.width(mText[newCharIndex]) <= 0) {
-                            newCharIndex++;
-                        } else {
-                            break;
-                        }
+                        char nc = mText[newCharIndex];
+                        int ncp = Character.isHighSurrogate(nc) ? Character.toCodePoint(nc, mText[newCharIndex+1]) : nc;
+                        if (WcWidth.width(ncp) <= 0) newCharIndex += (ncp > 65535 ? 2 : 1);
+                        else break;
                     }
                     return newCharIndex;
-                } else if (currentColumn > column) {
-                    // Wide column going past end.
-                    return currentCharIndex;
-                }
+                } else if (currentColumn > column) return currentCharIndex;
             }
             currentCharIndex = newCharIndex;
         }
+        return currentCharIndex;
     }
 
-    private boolean wideDisplayCharacterStartingAt(int column) {
+    public final boolean wideDisplayCharacterStartingAt(int column) {
         for (int currentCharIndex = 0, currentColumn = 0; currentCharIndex < mSpaceUsed; ) {
+            int oldCharIndex = currentCharIndex;
             char c = mText[currentCharIndex++];
             int codePoint = Character.isHighSurrogate(c) ? Character.toCodePoint(c, mText[currentCharIndex++]) : c;
             int wcwidth = WcWidth.width(codePoint);
@@ -148,136 +98,104 @@ public final class TerminalRow {
         mHasNonOneWidthOrSurrogateChars = false;
     }
 
-    // https://github.com/steven676/Android-Terminal-Emulator/commit/9a47042620bec87617f0b4f5d50568535668fe26
-    public void setChar(int columnToSet, int codePoint, long style) {
-        if (columnToSet  < 0 || columnToSet >= mStyle.length)
-            throw new IllegalArgumentException("TerminalRow.setChar(): columnToSet=" + columnToSet + ", codePoint=" + codePoint + ", style=" + style);
-
+    public final void setChar(int columnToSet, final int codePoint, final long style) {
+        if (columnToSet < 0 || columnToSet >= mColumns) return;
         mStyle[columnToSet] = style;
-
-        final int newCodePointDisplayWidth = WcWidth.width(codePoint);
-
-        // Fast path when we don't have any chars with width != 1
+        final int newWidth = WcWidth.width(codePoint);
         if (!mHasNonOneWidthOrSurrogateChars) {
-            if (codePoint >= Character.MIN_SUPPLEMENTARY_CODE_POINT || newCodePointDisplayWidth != 1) {
-                mHasNonOneWidthOrSurrogateChars = true;
-            } else {
+            if (newWidth == 1 && codePoint < 65536) {
                 mText[columnToSet] = (char) codePoint;
                 return;
             }
+            mHasNonOneWidthOrSurrogateChars = true;
         }
+        setCharInternal(columnToSet, codePoint, style, newWidth);
+    }
 
-        final boolean newIsCombining = newCodePointDisplayWidth <= 0;
-
-        boolean wasExtraColForWideChar = (columnToSet > 0) && wideDisplayCharacterStartingAt(columnToSet - 1);
-
-        if (newIsCombining) {
-            // When standing at second half of wide character and inserting combining:
-            if (wasExtraColForWideChar) columnToSet--;
-        } else {
-            // Check if we are overwriting the second half of a wide character starting at the previous column:
-            if (wasExtraColForWideChar) setChar(columnToSet - 1, ' ', style);
-            // Check if we are overwriting the first half of a wide character starting at the next column:
-            boolean overwritingWideCharInNextColumn = newCodePointDisplayWidth == 2 && wideDisplayCharacterStartingAt(columnToSet + 1);
-            if (overwritingWideCharInNextColumn) setChar(columnToSet + 1, ' ', style);
-        }
-
-        char[] text = mText;
-        final int oldStartOfColumnIndex = findStartOfColumn(columnToSet);
-        final int oldCodePointDisplayWidth = WcWidth.width(text, oldStartOfColumnIndex);
-
-        // Get the number of elements in the mText array this column uses now
-        int oldCharactersUsedForColumn;
-        if (columnToSet + oldCodePointDisplayWidth < mColumns) {
-            int oldEndOfColumnIndex = findStartOfColumn(columnToSet + oldCodePointDisplayWidth);
-            oldCharactersUsedForColumn = oldEndOfColumnIndex - oldStartOfColumnIndex;
-        } else {
-            // Last character.
-            oldCharactersUsedForColumn = mSpaceUsed - oldStartOfColumnIndex;
-        }
-
-        // If MAX_COMBINING_CHARACTERS_PER_COLUMN already exist in column, then ignore adding additional combining characters.
-        if (newIsCombining) {
-            int combiningCharsCount = WcWidth.zeroWidthCharsCount(mText, oldStartOfColumnIndex, oldStartOfColumnIndex + oldCharactersUsedForColumn);
-            if (combiningCharsCount >= MAX_COMBINING_CHARACTERS_PER_COLUMN)
-                return;
-        }
-
-        // Find how many chars this column will need
-        int newCharactersUsedForColumn = Character.charCount(codePoint);
-        if (newIsCombining) {
-            // Combining characters are added to the contents of the column instead of overwriting them, so that they
-            // modify the existing contents.
-            // FIXME: Unassigned characters also get width=0.
-            newCharactersUsedForColumn += oldCharactersUsedForColumn;
-        }
-
-        int oldNextColumnIndex = oldStartOfColumnIndex + oldCharactersUsedForColumn;
-        int newNextColumnIndex = oldStartOfColumnIndex + newCharactersUsedForColumn;
-
-        final int javaCharDifference = newCharactersUsedForColumn - oldCharactersUsedForColumn;
-        if (javaCharDifference > 0) {
-            // Shift the rest of the line right.
-            int oldCharactersAfterColumn = mSpaceUsed - oldNextColumnIndex;
-            if (mSpaceUsed + javaCharDifference > text.length) {
-                // We need to grow the array
-                char[] newText = new char[text.length + mColumns];
-                System.arraycopy(text, 0, newText, 0, oldNextColumnIndex);
-                System.arraycopy(text, oldNextColumnIndex, newText, newNextColumnIndex, oldCharactersAfterColumn);
-                mText = text = newText;
-            } else {
-                System.arraycopy(text, oldNextColumnIndex, text, newNextColumnIndex, oldCharactersAfterColumn);
+    /** 批量设置 ASCII 字符，仅在确定目标区域为单宽度字符且无组合字符时使用 */
+    public final void setChars(int columnStart, byte[] buffer, int offset, int length, long style) {
+        if (columnStart < 0 || columnStart + length > mColumns) return;
+        
+        // 批量更新样式
+        Arrays.fill(mStyle, columnStart, columnStart + length, style);
+        
+        if (!mHasNonOneWidthOrSurrogateChars) {
+            // 最快路径：直接拷贝字节到字符数组
+            for (int i = 0; i < length; i++) {
+                mText[columnStart + i] = (char) (buffer[offset + i] & 0xFF);
             }
-        } else if (javaCharDifference < 0) {
-            // Shift the rest of the line left.
-            System.arraycopy(text, oldNextColumnIndex, text, newNextColumnIndex, mSpaceUsed - oldNextColumnIndex);
+            return;
         }
-        mSpaceUsed += javaCharDifference;
+        
+        // 如果行内已有复杂字符，则回退到逐个处理以保持内部变长存储的正确性
+        for (int i = 0; i < length; i++) {
+            setChar(columnStart + i, buffer[offset + i] & 0xFF, style);
+        }
+    }
 
-        // Store char. A combining character is stored at the end of the existing contents so that it modifies them:
-        //noinspection ResultOfMethodCallIgnored - since we already now how many java chars is used.
-        Character.toChars(codePoint, text, oldStartOfColumnIndex + (newIsCombining ? oldCharactersUsedForColumn : 0));
+    private void setCharInternal(int columnToSet, int codePoint, long style, int newWidth) {
+        final boolean newIsCombining = newWidth <= 0;
+        boolean wasWide = (columnToSet > 0) && wideDisplayCharacterStartingAt(columnToSet - 1);
+        if (newIsCombining) { if (wasWide) columnToSet--; }
+        else {
+            if (wasWide) setChar(columnToSet - 1, ' ', style);
+            if (newWidth == 2 && wideDisplayCharacterStartingAt(columnToSet + 1)) setChar(columnToSet + 1, ' ', style);
+        }
+        final int oldStart = findStartOfColumn(columnToSet);
+        final int oldWidth = WcWidth.width(mText, oldStart);
+        int oldUsed = (columnToSet + oldWidth < mColumns) ? (findStartOfColumn(columnToSet + oldWidth) - oldStart) : (mSpaceUsed - oldStart);
+        if (newIsCombining && WcWidth.zeroWidthCharsCount(mText, oldStart, oldStart + oldUsed) >= MAX_COMBINING_CHARACTERS_PER_COLUMN) return;
+        final int newUsed = Character.charCount(codePoint) + (newIsCombining ? oldUsed : 0);
+        final int diff = newUsed - oldUsed;
+        if (diff > 0) {
+            if (mSpaceUsed + diff > mText.length) {
+                char[] nt = new char[mText.length + mColumns];
+                System.arraycopy(mText, 0, nt, 0, oldStart + oldUsed);
+                System.arraycopy(mText, oldStart + oldUsed, nt, oldStart + newUsed, mSpaceUsed - (oldStart + oldUsed));
+                mText = nt;
+            } else System.arraycopy(mText, oldStart + oldUsed, mText, oldStart + newUsed, mSpaceUsed - (oldStart + oldUsed));
+        } else if (diff < 0) System.arraycopy(mText, oldStart + oldUsed, mText, oldStart + newUsed, mSpaceUsed - (oldStart + oldUsed));
+        mSpaceUsed += diff;
+        Character.toChars(codePoint, mText, oldStart + (newIsCombining ? oldUsed : 0));
+        if (oldWidth == 2 && newWidth == 1) insertSpaceAt(oldStart + newUsed);
+        else if (oldWidth == 1 && newWidth == 2) handleWideOverwrite(columnToSet, oldStart + newUsed);
+    }
 
-        if (oldCodePointDisplayWidth == 2 && newCodePointDisplayWidth == 1) {
-            // Replace second half of wide char with a space. Which mean that we actually add a ' ' java character.
-            if (mSpaceUsed + 1 > text.length) {
-                char[] newText = new char[text.length + mColumns];
-                System.arraycopy(text, 0, newText, 0, newNextColumnIndex);
-                System.arraycopy(text, newNextColumnIndex, newText, newNextColumnIndex + 1, mSpaceUsed - newNextColumnIndex);
-                mText = text = newText;
-            } else {
-                System.arraycopy(text, newNextColumnIndex, text, newNextColumnIndex + 1, mSpaceUsed - newNextColumnIndex);
-            }
-            text[newNextColumnIndex] = ' ';
+    private void insertSpaceAt(int index) {
+        if (mSpaceUsed + 1 > mText.length) {
+            char[] nt = new char[mText.length + mColumns];
+            System.arraycopy(mText, 0, nt, 0, index);
+            System.arraycopy(mText, index, nt, index + 1, mSpaceUsed - index);
+            mText = nt;
+        } else System.arraycopy(mText, index, mText, index + 1, mSpaceUsed - index);
+        mText[index] = ' ';
+        mSpaceUsed++;
+    }
 
-            ++mSpaceUsed;
-        } else if (oldCodePointDisplayWidth == 1 && newCodePointDisplayWidth == 2) {
-            if (columnToSet == mColumns - 1) {
-                throw new IllegalArgumentException("Cannot put wide character in last column");
-            } else if (columnToSet == mColumns - 2) {
-                // Truncate the line to the second part of this wide char:
-                mSpaceUsed = (short) newNextColumnIndex;
-            } else {
-                // Overwrite the contents of the next column, which mean we actually remove java characters. Due to the
-                // check at the beginning of this method we know that we are not overwriting a wide char.
-                int newNextNextColumnIndex = newNextColumnIndex + (Character.isHighSurrogate(mText[newNextColumnIndex]) ? 2 : 1);
-                int nextLen = newNextNextColumnIndex - newNextColumnIndex;
+    private void handleWideOverwrite(int col, int idx) {
+        if (col >= mColumns - 1) return;
+        if (col == mColumns - 2) mSpaceUsed = (short) idx;
+        else {
+            int nidx = idx;
+            // 跳过要被覆盖的列起始字符及其所有组合字符
+            nidx += (Character.isHighSurrogate(mText[nidx]) ? 2 : 1);
+            while (nidx < mSpaceUsed && WcWidth.width(mText, nidx) <= 0)
+                nidx += (Character.isHighSurrogate(mText[nidx]) ? 2 : 1);
 
-                // Shift the array leftwards.
-                System.arraycopy(text, newNextNextColumnIndex, text, newNextColumnIndex, mSpaceUsed - newNextNextColumnIndex);
-                mSpaceUsed -= nextLen;
-            }
+            System.arraycopy(mText, nidx, mText, idx, mSpaceUsed - nidx);
+            mSpaceUsed -= (nidx - idx);
         }
     }
 
     boolean isBlank() {
-        for (int charIndex = 0, charLen = getSpaceUsed(); charIndex < charLen; charIndex++)
-            if (mText[charIndex] != ' ') return false;
+        for (int i = 0; i < mSpaceUsed; i++) if (mText[i] != ' ') return false;
         return true;
     }
 
-    public final long getStyle(int column) {
-        return mStyle[column];
-    }
+    public final long getStyle(int column) { return mStyle[column]; }
 
+    /** 在 Native 批量写入后调用，以同步 Java 层的状态 */
+    public final void updateStatusAfterBatchWrite() {
+        mSpaceUsed = (short) mColumns;
+    }
 }
