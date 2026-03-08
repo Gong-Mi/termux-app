@@ -1002,6 +1002,53 @@ fn test_ris_reset() {
     assert_eq!(engine.state.auto_wrap, true, "Auto wrap should be enabled after RIS");
 }
 
+/// 验证 DECALN (ESC # 8) - ✅ PASS
+#[test]
+fn test_decaln_screen_align() {
+    let mut engine = TerminalEngine::new(10, 5, 100);
+
+    // 先写入一些文本
+    engine.process_bytes(b"Hello");
+
+    // ESC # 8 - DECALN 屏幕对齐测试
+    engine.process_bytes(b"\x1b#8");
+
+    // 验证整个屏幕被 'E' 填充
+    let mut text = [0u16; 10];
+    for row in 0..5 {
+        engine.state.copy_row_text(row, &mut text);
+        for col in 0..10 {
+            assert_eq!(text[col], 'E' as u16, "Screen[{},{}] should be 'E'", row, col);
+        }
+    }
+
+    // 验证光标在左上角
+    assert_eq!(engine.state.cursor_x, 0, "Cursor X should be 0 after DECALN");
+    assert_eq!(engine.state.cursor_y, 0, "Cursor Y should be 0 after DECALN");
+}
+
+/// 验证 RI (ESC M) - ✅ PASS
+#[test]
+fn test_ri_reverse_index() {
+    let mut engine = TerminalEngine::new(80, 10, 100);
+
+    // 移动到底部
+    engine.process_bytes(b"\x1b[10;5H");
+    assert_eq!(engine.state.cursor_y, 9);
+    assert_eq!(engine.state.cursor_x, 4);
+
+    // ESC M - RI (反向索引)
+    engine.process_bytes(b"\x1bM");
+    assert_eq!(engine.state.cursor_y, 8, "Cursor Y should be 8 after RI");
+    assert_eq!(engine.state.cursor_x, 4, "Cursor X should be unchanged after RI");
+
+    // 在顶部边距时使用 RI 应该滚动
+    engine.process_bytes(b"\x1b[1;1H"); // 移动到 (0, 0)
+    engine.process_bytes(b"ABC"); // 写入一些文本
+    engine.process_bytes(b"\x1bM"); // 应该触发向下滚动
+    assert_eq!(engine.state.cursor_y, 0, "Cursor Y should be 0 after RI at top margin");
+}
+
 /// 验证后退制表 (CBT) - ✅ PASS
 #[test]
 fn test_cursor_backward_tab() {

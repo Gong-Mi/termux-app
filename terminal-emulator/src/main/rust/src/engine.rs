@@ -708,6 +708,37 @@ impl ScreenState {
         }
     }
 
+    /// RI - Reverse Index 滚动 (ESC M)
+    /// 当光标在顶部边距时，向下滚动并插入空白行
+    fn reverse_index_scroll(&mut self) {
+        // 向下滚动：将区域内所有行向下移动一行
+        for y in (self.top_margin + 1..self.bottom_margin).rev() {
+            let src_idx = self.external_to_internal_row(y - 1);
+            let dest_idx = self.external_to_internal_row(y);
+            let src_data = self.buffer[src_idx].clone();
+            self.buffer[dest_idx] = src_data;
+        }
+        // 清空顶部行
+        let clear_idx = self.external_to_internal_row(self.top_margin);
+        self.buffer[clear_idx].clear(0, self.cols as usize, self.current_style);
+    }
+
+    /// DECALN - 屏幕对齐测试 (ESC # 8)
+    /// 用字母 'E' 填充整个屏幕，用于测试屏幕对齐
+    fn decaln_screen_align(&mut self) {
+        for y in 0..self.rows as usize {
+            let idx = self.external_to_internal_row(y as i32);
+            let row = &mut self.buffer[idx];
+            for x in 0..row.text.len().min(self.cols as usize) {
+                row.text[x] = 'E';
+                row.styles[x] = STYLE_NORMAL;
+            }
+        }
+        // 移动光标到左上角
+        self.cursor_x = 0;
+        self.cursor_y = 0;
+    }
+
     /// 清除制表位 (TBC) - CSI {N} g
     fn clear_tab_stop(&mut self, mode: i32) {
         match mode {
@@ -1379,20 +1410,24 @@ impl<'a> Perform for PurePerformHandler<'a> {
         }
     }
 
-    fn esc_dispatch(&mut self, _intermediates: &[u8], _ignore: bool, byte: u8) {
-        match byte {
-            b'#' => {
-                // ESC # - 暂时忽略，由 Java 层处理
+    fn esc_dispatch(&mut self, intermediates: &[u8], _ignore: bool, byte: u8) {
+        match (intermediates, byte) {
+            // ESC # 8 - DECALN 屏幕对齐测试
+            (&[b'#'], b'8') => {
+                self.state.decaln_screen_align();
             }
-            b'(' => {
+            (&[b'#'], _) => {
+                // 其他 ESC # 序列，忽略
+            }
+            (&[], b'(') => {
                 // ESC ( - 设计 G0 字符集（行绘图）
                 // 由 Java 层处理
             }
-            b')' => {
+            (&[], b')') => {
                 // ESC ) - 设计 G1 字符集（行绘图）
                 // 由 Java 层处理
             }
-            b'6' => {
+            (&[], b'6') => {
                 // DECBI - Back Index (http://www.vt100.net/docs/vt510-rm/DECBI)
                 // 向左移动光标，如果在左边界则向左滚动并插入空白列
                 if self.state.cursor_x > self.state.left_margin {
@@ -1402,15 +1437,15 @@ impl<'a> Perform for PurePerformHandler<'a> {
                     self.state.back_index_scroll();
                 }
             }
-            b'7' => {
+            (&[], b'7') => {
                 // DECSC - 保存光标
                 self.state.save_cursor();
             }
-            b'8' => {
+            (&[], b'8') => {
                 // DECRC - 恢复光标
                 self.state.restore_cursor();
             }
-            b'9' => {
+            (&[], b'9') => {
                 // DECFI - Forward Index (http://www.vt100.net/docs/vt510-rm/DECFI)
                 // 向右移动光标，如果在右边界则向右滚动并插入空白列
                 if self.state.cursor_x < self.state.right_margin - 1 {
@@ -1420,7 +1455,7 @@ impl<'a> Perform for PurePerformHandler<'a> {
                     self.state.forward_index_scroll();
                 }
             }
-            b'c' => {
+            (&[], b'c') => {
                 // RIS - 重置到初始状态 (http://vt100.net/docs/vt510-rm/RIS)
                 // 完整重置：清屏、重置光标、重置样式、重置边距、重置制表位
                 self.state.cursor_x = 0;
@@ -1456,7 +1491,7 @@ impl<'a> Perform for PurePerformHandler<'a> {
                 self.state.leftright_margin_mode = false;
                 self.state.send_focus_events = false;
             }
-            b'D' => {
+            (&[], b'D') => {
                 // IND - 索引（换行）
                 if self.state.cursor_y < self.state.bottom_margin - 1 {
                     self.state.cursor_y += 1;
@@ -1464,7 +1499,7 @@ impl<'a> Perform for PurePerformHandler<'a> {
                     self.state.scroll_up();
                 }
             }
-            b'E' => {
+            (&[], b'E') => {
                 // NEL - 下一行
                 if self.state.cursor_y < self.state.bottom_margin - 1 {
                     self.state.cursor_y += 1;
@@ -1474,12 +1509,12 @@ impl<'a> Perform for PurePerformHandler<'a> {
                     self.state.cursor_x = self.state.left_margin;
                 }
             }
-            b'F' => {
+            (&[], b'F') => {
                 // 光标到左下角
                 self.state.cursor_x = self.state.left_margin;
                 self.state.cursor_y = self.state.bottom_margin - 1;
             }
-            b'H' => {
+            (&[], b'H') => {
                 // HTS - 设置制表位
                 if self.state.cursor_x >= 0
                     && (self.state.cursor_x as usize) < self.state.tab_stops.len()
@@ -1487,38 +1522,41 @@ impl<'a> Perform for PurePerformHandler<'a> {
                     self.state.tab_stops[self.state.cursor_x as usize] = true;
                 }
             }
-            b'M' => {
-                // RI - 反向索引
+            (&[], b'M') => {
+                // RI - 反向索引 (http://www.vt100.net/docs/vt100-ug/chapter3.html)
+                // 将活动位置移动到上一行的相同水平位置
+                // 如果活动位置在顶部边距，则执行向下滚动
                 if self.state.cursor_y > self.state.top_margin {
                     self.state.cursor_y -= 1;
                 } else {
-                    // 向下滚动区域（简化处理：暂时忽略）
+                    // 向下滚动区域
+                    self.state.reverse_index_scroll();
                 }
             }
-            b'N' => {
+            (&[], b'N') => {
                 // SS2 - 单移位 2，忽略
             }
-            b'0' => {
+            (&[], b'0') => {
                 // SS3 - 单移位 3，忽略
             }
-            b'P' => {
+            (&[], b'P') => {
                 // DCS - 设备控制字符串，由 Java 层处理
             }
-            b'=' => {
+            (&[], b'=') => {
                 // DECKPAM - 应用键盘模式
                 self.state.application_keypad = true;
             }
-            b'>' => {
+            (&[], b'>') => {
                 // DECKPNM - 数字键盘模式
                 self.state.application_keypad = false;
             }
-            b'[' => {
+            (&[], b'[') => {
                 // CSI - 由 vte 解析器处理
             }
-            b']' => {
+            (&[], b']') => {
                 // OSC - 由 Java 层处理
             }
-            b'_' => {
+            (&[], b'_') => {
                 // APC - 应用程序命令，由 Java 层处理
             }
             _ => self.unhandled_sequences.push(format!("ESC {:?}", byte)),
