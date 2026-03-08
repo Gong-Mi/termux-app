@@ -147,7 +147,7 @@ public final class TerminalRenderer {
 
                 final char charAtIndex = lineText[currentCharIndex];
                 final boolean charIsHighsurrogate = Character.isHighSurrogate(charAtIndex);
-                
+
                 // 边界检查：确保不会访问超出数组范围的字符
                 if (charIsHighsurrogate && currentCharIndex + 1 >= lineTextLength) {
                     // 不完整的代理对，视为无效字符，跳过
@@ -157,12 +157,26 @@ public final class TerminalRenderer {
                     }
                     break;
                 }
-                
+
                 final int charsForCodePoint = charIsHighsurrogate ? 2 : 1;
                 final int codePoint = charIsHighsurrogate ? Character.toCodePoint(charAtIndex, lineText[currentCharIndex + 1]) : charAtIndex;
                 final int codePointWcWidth = WcWidth.width(codePoint);
                 final boolean isWideChar = codePointWcWidth == 2;
                 final long style = lineStyles[column];
+                
+                // 调试日志：检测无效的 style 值
+                if (column < lineStyles.length && style != 0) {
+                    int fg = TextStyle.decodeForeColor(style);
+                    int bg = TextStyle.decodeBackColor(style);
+                    if (fg < 0 || fg >= 259 || bg < 0 || bg >= 259) {
+                        android.util.Log.e("Termux", "Invalid style detected in row!" +
+                            " row=" + (row - topRow) + " column=" + column +
+                            " style=0x" + Long.toHexString(style) +
+                            " decodedFg=" + fg + " decodedBg=" + bg +
+                            " lineTextLength=" + lineTextLength + " lineStyles.length=" + lineStyles.length);
+                        android.util.Log.e("Termux", "Invalid style stack", new Exception());
+                    }
+                }
 
                 final boolean insideCursor = column == cursorX || (isWideChar && (column + 1) == cursorX);
                 final boolean insideSelection = column >= selx1 && column <= selx2;
@@ -223,12 +237,54 @@ public final class TerminalRenderer {
         }
 
         // Map indexed colors to palette (non-truecolor)
-        if ((style & TextStyle.CHARACTER_ATTRIBUTE_TRUECOLOR_FOREGROUND) == 0) {
+        // After reverse video swap, the foreground/background may have swapped, so we need to check
+        // which original color (foreground or background) is now in each variable
+        boolean foregroundIsIndexedColor, backgroundIsIndexedColor;
+        
+        if (reverseVideoHere) {
+            // After swap: foreground was original background, background was original foreground
+            foregroundIsIndexedColor = (style & TextStyle.CHARACTER_ATTRIBUTE_TRUECOLOR_BACKGROUND) == 0;
+            backgroundIsIndexedColor = (style & TextStyle.CHARACTER_ATTRIBUTE_TRUECOLOR_FOREGROUND) == 0;
+        } else {
+            foregroundIsIndexedColor = (style & TextStyle.CHARACTER_ATTRIBUTE_TRUECOLOR_FOREGROUND) == 0;
+            backgroundIsIndexedColor = (style & TextStyle.CHARACTER_ATTRIBUTE_TRUECOLOR_BACKGROUND) == 0;
+        }
+        
+        // Process foreground color
+        if (foregroundIsIndexedColor) {
+            if (foregroundColor < 0 || foregroundColor >= palette.length) {
+                android.util.Log.e("Termux", "Invalid foreground color detected!" +
+                    " fg=" + foregroundColor + " palette.length=" + palette.length +
+                    " style=0x" + Long.toHexString(style) +
+                    " styleBinary=" + Long.toBinaryString(style) +
+                    " (style>>>40)=0x" + Long.toHexString(style >>> 40) +
+                    " startColumn=" + startColumn + " startIndex=" + startIndex + " endIndex=" + endIndex +
+                    " insideCursor=" + insideCursor + " insideSelection=" + insideSelection +
+                    " reverseVideoHere=" + reverseVideoHere);
+                android.util.Log.e("Termux", "Stack trace for invalid foreground color", new Exception());
+                foregroundColor = TextStyle.COLOR_INDEX_FOREGROUND;
+            }
             foregroundColor = palette[foregroundColor];
         }
-        if ((style & TextStyle.CHARACTER_ATTRIBUTE_TRUECOLOR_BACKGROUND) == 0) {
+        // else: truecolor, keep the ARGB value as-is
+        
+        // Process background color
+        if (backgroundIsIndexedColor) {
+            if (backgroundColor < 0 || backgroundColor >= palette.length) {
+                android.util.Log.e("Termux", "Invalid background color detected!" +
+                    " bg=" + backgroundColor + " palette.length=" + palette.length +
+                    " style=0x" + Long.toHexString(style) +
+                    " styleBinary=" + Long.toBinaryString(style) +
+                    " (style>>>16)=0x" + Long.toHexString(style >>> 16) +
+                    " startColumn=" + startColumn + " startIndex=" + startIndex + " endIndex=" + endIndex +
+                    " insideCursor=" + insideCursor + " insideSelection=" + insideSelection +
+                    " reverseVideoHere=" + reverseVideoHere);
+                android.util.Log.e("Termux", "Stack trace for invalid background color", new Exception());
+                backgroundColor = TextStyle.COLOR_INDEX_BACKGROUND;
+            }
             backgroundColor = palette[backgroundColor];
         }
+        // else: truecolor, keep the ARGB value as-is
 
         if (insideCursor) {
             backgroundColor = palette[TextStyle.COLOR_INDEX_CURSOR];
