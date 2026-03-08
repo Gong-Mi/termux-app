@@ -1,0 +1,21 @@
+[build]
+# 这些是全局 RUSTFLAGS，会在所有 cargo 构建（包括 Android/Linux 交叉编译）时生效。
+#
+# 1. -Wl,-z,max-page-size=16384: 
+#    强制 linker 按照 16KB 页大小对齐 ELF 段。
+#    这是兼容未来 Android 15+ 设备的强制要求，同时在流式数据加载时性能更优。
+#
+# 2. -C target-feature=-sve,-sve2,+neon: 
+#    强制关闭 SVE/SVE2，并确保 NEON 开启。
+#    为了防止现代 ARMv9 芯片在处理极宽向量时遭遇 Double Pumping 导致的性能倒挂和功耗降频。
+#
+rustflags = [
+    "-C", "link-arg=-Wl,-z,max-page-size=16384",
+    "-C", "target-feature=-sve,-sve2,+neon",
+]
+
+[profile.release]
+# 生产环境极限性能参数（在 Cargo.toml 中已配置，但为了完整性说明）
+# opt-level = 3
+# lto = true
+# codegen-units = 1
