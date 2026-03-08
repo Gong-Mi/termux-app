@@ -42,7 +42,7 @@ pub const STYLE_MASK_EFFECT: u64 = 0x7FF;           // 位 0-10 (11 位效果标
 pub const STYLE_MASK_BG: u64 = 0x1FF0000;           // 位 16-24 (9 位索引色背景)
 pub const STYLE_MASK_FG: u64 = 0x1FF0000000000;     // 位 40-48 (9 位索引色前景)
 
-// 真彩色标志位
+// 真彩色标志位（公开供测试使用）
 pub const STYLE_TRUECOLOR_FG: u64 = 1 << 9;         // 位 9 - 前景色使用 24 位真彩色
 pub const STYLE_TRUECOLOR_BG: u64 = 1 << 10;        // 位 10 - 背景色使用 24 位真彩色
 
@@ -98,6 +98,20 @@ pub const fn encode_style(fore_color: u64, back_color: u64, effect: u64) -> u64 
 /// 默认样式（与 Java TextStyle.NORMAL 一致）
 pub const STYLE_NORMAL: u64 = encode_style(COLOR_INDEX_FOREGROUND, COLOR_INDEX_BACKGROUND, 0);
 
+/// DECSET 标志位定义（与 Java DECSET_BIT_* 常量一致）
+pub const DECSET_BIT_APPLICATION_CURSOR_KEYS: i32 = 1;
+pub const DECSET_BIT_REVERSE_VIDEO: i32 = 1 << 1;
+pub const DECSET_BIT_ORIGIN_MODE: i32 = 1 << 2;
+pub const DECSET_BIT_AUTOWRAP: i32 = 1 << 3;
+pub const DECSET_BIT_CURSOR_ENABLED: i32 = 1 << 4;
+pub const DECSET_BIT_APPLICATION_KEYPAD: i32 = 1 << 5;
+pub const DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE: i32 = 1 << 6;
+pub const DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT: i32 = 1 << 7;
+pub const DECSET_BIT_SEND_FOCUS_EVENTS: i32 = 1 << 8;
+pub const DECSET_BIT_MOUSE_PROTOCOL_SGR: i32 = 1 << 9;
+pub const DECSET_BIT_BRACKETED_PASTE_MODE: i32 = 1 << 10;
+pub const DECSET_BIT_LEFTRIGHT_MARGIN_MODE: i32 = 1 << 11;
+
 pub struct ScreenState {
     pub rows: i32,
     pub cols: i32,
@@ -122,6 +136,12 @@ pub struct ScreenState {
     pub mouse_button_event: bool,
     pub bracketed_paste: bool,
     pub sgr_mouse: bool,
+    pub leftright_margin_mode: bool, // DECSET 69 - DECLRMM 左右边距模式
+    pub send_focus_events: bool,     // DECSET 1004 - 发送焦点事件
+
+    // DECSET 标志位（用于保存/恢复）
+    pub decset_flags: i32,
+    pub saved_decset_flags: i32, // 保存的光标 DECSET 标志
 
     // 制表位
     pub tab_stops: Vec<bool>,
@@ -175,6 +195,10 @@ impl ScreenState {
             mouse_button_event: false,
             bracketed_paste: false,
             sgr_mouse: false,
+            leftright_margin_mode: false, // DECSET 69 - 默认禁用左右边距模式
+            send_focus_events: false,     // DECSET 1004 - 默认不发送焦点事件
+            decset_flags: 0,              // 初始 DECSET 标志为 0
+            saved_decset_flags: 0,        // 保存的 DECSET 标志初始为 0
             tab_stops,
             buffer,
             screen_first_row: 0,
@@ -658,67 +682,140 @@ impl ScreenState {
 
     /// 完整的 SGR 处理（与 Java TextStyle 格式兼容）
     fn handle_sgr(&mut self, params: &Params) {
-        let mut iter = params.iter();
+        let params_vec: Vec<u16> = params.iter().flat_map(|p| p.iter().copied()).collect();
+        let mut i = 0;
 
         // 如果没有参数，默认为重置
-        let first_param = iter.next().and_then(|p| p.first()).copied();
-        if first_param.is_none() || first_param == Some(0) {
+        if params_vec.is_empty() {
             self.current_style = STYLE_NORMAL;
             return;
         }
 
-        // 重新迭代所有参数
-        for param in params {
-            for &val in param {
-                match val {
-                    0 => self.current_style = STYLE_NORMAL,                  // 重置
-                    1 => self.current_style |= EFFECT_BOLD,                  // 粗体
-                    2 => self.current_style |= EFFECT_DIM,                   // 淡色
-                    3 => self.current_style |= EFFECT_ITALIC,                // 斜体
-                    4 => self.current_style |= EFFECT_UNDERLINE,             // 下划线
-                    5 => self.current_style |= EFFECT_BLINK,                 // 闪烁
-                    7 => self.current_style |= EFFECT_REVERSE,               // 反显
-                    8 => self.current_style |= EFFECT_INVISIBLE,             // 隐藏
-                    9 => self.current_style |= EFFECT_STRIKETHROUGH,         // 删除线
-                    21 => self.current_style |= EFFECT_BOLD,                 // 双粗体（视为粗体）
-                    22 => self.current_style &= !(EFFECT_BOLD | EFFECT_DIM), // 正常强度
-                    23 => self.current_style &= !EFFECT_ITALIC,              // 非斜体
-                    24 => self.current_style &= !EFFECT_UNDERLINE,           // 非下划线
-                    25 => self.current_style &= !EFFECT_BLINK,               // 非闪烁
-                    27 => self.current_style &= !EFFECT_REVERSE,             // 非反显
-                    28 => self.current_style &= !EFFECT_INVISIBLE,           // 非隐藏
-                    29 => self.current_style &= !EFFECT_STRIKETHROUGH,       // 非删除线
-                    // 前景色 30-37（标准颜色 0-7）
-                    30..=37 => {
-                        self.current_style =
-                            (self.current_style & !STYLE_MASK_FG) | ((val as u64 - 30) << 40);
+        while i < params_vec.len() {
+            let code = params_vec[i];
+            match code {
+                0 => self.current_style = STYLE_NORMAL,                  // 重置
+                1 => self.current_style |= EFFECT_BOLD,                  // 粗体
+                2 => self.current_style |= EFFECT_DIM,                   // 淡色
+                3 => self.current_style |= EFFECT_ITALIC,                // 斜体
+                4 => {
+                    // 下划线（支持子参数）
+                    if i + 1 < params_vec.len() && params_vec.get(i + 1) == Some(&0) {
+                        // 子参数 0 表示无下划线
+                        self.current_style &= !EFFECT_UNDERLINE;
+                        i += 1;
+                    } else {
+                        self.current_style |= EFFECT_UNDERLINE;
                     }
-                    38 => { // 扩展前景色 (38;5;n 或 38;2;r;g;b)
-                        // 简化处理：跳过后续参数
-                    }
-                    39 => self.current_style &= !STYLE_MASK_FG, // 默认前景色
-                    // 背景色 40-47（标准颜色 0-7）
-                    40..=47 => {
-                        self.current_style =
-                            (self.current_style & !STYLE_MASK_BG) | ((val as u64 - 40) << 16);
-                    }
-                    48 => { // 扩展背景色 (48;5;n 或 48;2;r;g;b)
-                        // 简化处理：跳过后续参数
-                    }
-                    49 => self.current_style &= !STYLE_MASK_BG, // 默认背景色
-                    // 亮色前景色 90-97（高亮颜色 8-15）
-                    90..=97 => {
-                        self.current_style =
-                            (self.current_style & !STYLE_MASK_FG) | ((val as u64 - 90 + 8) << 40);
-                    }
-                    // 亮色背景色 100-107（高亮颜色 8-15）
-                    100..=107 => {
-                        self.current_style =
-                            (self.current_style & !STYLE_MASK_BG) | ((val as u64 - 100 + 8) << 16);
-                    }
-                    _ => {} // 忽略未知参数
                 }
+                5 => self.current_style |= EFFECT_BLINK,                 // 闪烁
+                7 => self.current_style |= EFFECT_REVERSE,               // 反显
+                8 => self.current_style |= EFFECT_INVISIBLE,             // 隐藏
+                9 => self.current_style |= EFFECT_STRIKETHROUGH,         // 删除线
+                21 => self.current_style |= EFFECT_BOLD,                 // 双粗体（视为粗体）
+                22 => self.current_style &= !(EFFECT_BOLD | EFFECT_DIM), // 正常强度
+                23 => self.current_style &= !EFFECT_ITALIC,              // 非斜体
+                24 => self.current_style &= !EFFECT_UNDERLINE,           // 非下划线
+                25 => self.current_style &= !EFFECT_BLINK,               // 非闪烁
+                27 => self.current_style &= !EFFECT_REVERSE,             // 非反显
+                28 => self.current_style &= !EFFECT_INVISIBLE,           // 非隐藏
+                29 => self.current_style &= !EFFECT_STRIKETHROUGH,       // 非删除线
+                30..=37 => {
+                    // 前景色 30-37（标准颜色 0-7）
+                    self.current_style =
+                        (self.current_style & !STYLE_MASK_FG) | ((code as u64 - 30) << 40);
+                }
+                38 => {
+                    // 扩展前景色 (38;5;n 或 38;2;r;g;b)
+                    if i + 1 < params_vec.len() {
+                        let mode = params_vec[i + 1];
+                        if mode == 5 && i + 2 < params_vec.len() {
+                            // 256 色索引
+                            let color = params_vec[i + 2];
+                            self.current_style = (self.current_style & !STYLE_MASK_FG)
+                                | ((color as u64 & 0x1FF) << 40);
+                            i += 2;  // 跳过 mode 和 color
+                        } else if mode == 2 && i + 4 < params_vec.len() {
+                            // 24 位真彩色 (38;2;R;G;B)
+                            let r = params_vec[i + 2] as u64;
+                            let g = params_vec[i + 3] as u64;
+                            let b = params_vec[i + 4] as u64;
+                            let truecolor = 0xff000000 | (r << 16) | (g << 8) | b;
+                            self.current_style = (self.current_style & !STYLE_MASK_FG)
+                                | STYLE_TRUECOLOR_FG
+                                | ((truecolor & 0x00ffffff) << 40);
+                            i += 4;  // 跳过 mode, r, g, b (i+=1 在循环末尾)
+                        }
+                    }
+                }
+                39 => {
+                    // 默认前景色
+                    self.current_style = (self.current_style & !STYLE_MASK_FG)
+                        | (COLOR_INDEX_FOREGROUND << 40);
+                }
+                40..=47 => {
+                    // 背景色 40-47（标准颜色 0-7）
+                    self.current_style =
+                        (self.current_style & !STYLE_MASK_BG) | ((code as u64 - 40) << 16);
+                }
+                48 => {
+                    // 扩展背景色 (48;5;n 或 48;2;r;g;b)
+                    if i + 1 < params_vec.len() {
+                        let mode = params_vec[i + 1];
+                        if mode == 5 && i + 2 < params_vec.len() {
+                            // 256 色索引
+                            let color = params_vec[i + 2];
+                            self.current_style = (self.current_style & !STYLE_MASK_BG)
+                                | ((color as u64 & 0x1FF) << 16);
+                            i += 2;  // 跳过 mode 和 color
+                        } else if mode == 2 && i + 4 < params_vec.len() {
+                            // 24 位真彩色 (48;2;R;G;B)
+                            let r = params_vec[i + 2] as u64;
+                            let g = params_vec[i + 3] as u64;
+                            let b = params_vec[i + 4] as u64;
+                            let truecolor = 0xff000000 | (r << 16) | (g << 8) | b;
+                            self.current_style = (self.current_style & !STYLE_MASK_BG)
+                                | STYLE_TRUECOLOR_BG
+                                | ((truecolor & 0x00ffffff) << 16);
+                            i += 4;  // 跳过 mode, r, g, b (i+=1 在循环末尾)
+                        }
+                    }
+                }
+                49 => {
+                    // 默认背景色
+                    self.current_style = (self.current_style & !STYLE_MASK_BG)
+                        | (COLOR_INDEX_BACKGROUND << 16);
+                }
+                58 => {
+                    // 下划线颜色 (58;5;n 或 58;2;r;g;b)
+                    // 注意：目前只解析，实际渲染时需要额外存储下划线颜色
+                    if i + 1 < params_vec.len() {
+                        let mode = params_vec[i + 1];
+                        if mode == 5 && i + 2 < params_vec.len() {
+                            // 256 色索引 - 目前存储在前景色位置作为临时方案
+                            i += 2;
+                        } else if mode == 2 && i + 4 < params_vec.len() {
+                            // 24 位真彩色
+                            i += 4;
+                        }
+                    }
+                }
+                59 => {
+                    // 默认下划线颜色
+                }
+                90..=97 => {
+                    // 亮色前景色 90-97（高亮颜色 8-15）
+                    self.current_style =
+                        (self.current_style & !STYLE_MASK_FG) | ((code as u64 - 90 + 8) << 40);
+                }
+                100..=107 => {
+                    // 亮色背景色 100-107（高亮颜色 8-15）
+                    self.current_style =
+                        (self.current_style & !STYLE_MASK_BG) | ((code as u64 - 100 + 8) << 16);
+                }
+                _ => {} // 忽略未知参数
             }
+            i += 1;
         }
     }
 
@@ -740,31 +837,104 @@ impl ScreenState {
         for param in params {
             for &val in param {
                 match val {
-                    1 => self.application_cursor_keys = set, // DECCKM - 应用光标键
-                    3 => { // DECCOLM - 列模式 (80/132)
-                        // 简化处理：忽略列切换
+                    1 => {
+                        // DECCKM - 应用光标键
+                        self.application_cursor_keys = set;
+                        self.update_decset_flag(DECSET_BIT_APPLICATION_CURSOR_KEYS, set);
+                    }
+                    3 => {
+                        // DECCOLM - 列模式 (80/132)
+                        // 简化处理：忽略列切换，只记录状态
                     }
                     5 => {
                         // DECSCNM - 反显模式
                         self.reverse_video = set;
+                        self.update_decset_flag(DECSET_BIT_REVERSE_VIDEO, set);
                     }
-                    6 => self.origin_mode = set, // DECOM - 原点模式
-                    7 => self.auto_wrap = set,   // DECAWM - 自动换行
-                    12 => {}                     // 本地回显（忽略）
+                    6 => {
+                        // DECOM - 原点模式
+                        self.origin_mode = set;
+                        self.update_decset_flag(DECSET_BIT_ORIGIN_MODE, set);
+                    }
+                    7 => {
+                        // DECAWM - 自动换行
+                        self.auto_wrap = set;
+                        self.update_decset_flag(DECSET_BIT_AUTOWRAP, set);
+                    }
+                    12 => {
+                        // 本地回显（忽略）
+                    }
                     25 => {
                         // DECTCEM - 光标可见性
                         self.cursor_enabled = set;
+                        self.update_decset_flag(DECSET_BIT_CURSOR_ENABLED, set);
                         self.report_cursor_visibility(set);
                     }
-                    66 => self.application_keypad = set, // DECNKM - 应用键盘
-                    1000 => self.mouse_tracking = set,   // 鼠标跟踪（按下&释放）
-                    1002 => self.mouse_button_event = set, // 鼠标按钮事件跟踪
-                    1004 => {}                           // 发送焦点事件（忽略）
-                    1006 => self.sgr_mouse = set,        // SGR 鼠标协议
-                    2004 => self.bracketed_paste = set,  // 括号粘贴模式
-                    _ => {}                              // 忽略未知模式
+                    66 => {
+                        // DECNKM - 应用键盘
+                        self.application_keypad = set;
+                        self.update_decset_flag(DECSET_BIT_APPLICATION_KEYPAD, set);
+                    }
+                    69 => {
+                        // DECLRMM - 左右边距模式
+                        self.leftright_margin_mode = set;
+                        self.update_decset_flag(DECSET_BIT_LEFTRIGHT_MARGIN_MODE, set);
+                    }
+                    1000 => {
+                        // 鼠标跟踪（按下&释放）
+                        // 鼠标模式互斥：设置 1000 时清除 1002
+                        if set {
+                            self.mouse_tracking = true;
+                            self.mouse_button_event = false;
+                            self.update_decset_flag(DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE, true);
+                            self.update_decset_flag(DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT, false);
+                        } else {
+                            self.mouse_tracking = false;
+                            self.update_decset_flag(DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE, false);
+                        }
+                    }
+                    1002 => {
+                        // 鼠标按钮事件跟踪
+                        // 鼠标模式互斥：设置 1002 时清除 1000
+                        if set {
+                            self.mouse_button_event = true;
+                            self.mouse_tracking = false;
+                            self.update_decset_flag(DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT, true);
+                            self.update_decset_flag(DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE, false);
+                        } else {
+                            self.mouse_button_event = false;
+                            self.update_decset_flag(DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT, false);
+                        }
+                    }
+                    1004 => {
+                        // 发送焦点事件
+                        self.send_focus_events = set;
+                        self.update_decset_flag(DECSET_BIT_SEND_FOCUS_EVENTS, set);
+                    }
+                    1006 => {
+                        // SGR 鼠标协议
+                        self.sgr_mouse = set;
+                        self.update_decset_flag(DECSET_BIT_MOUSE_PROTOCOL_SGR, set);
+                    }
+                    2004 => {
+                        // 括号粘贴模式
+                        self.bracketed_paste = set;
+                        self.update_decset_flag(DECSET_BIT_BRACKETED_PASTE_MODE, set);
+                    }
+                    _ => {
+                        // 忽略未知模式
+                    }
                 }
             }
+        }
+    }
+
+    /// 更新 DECSET 标志位
+    fn update_decset_flag(&mut self, bit: i32, set: bool) {
+        if set {
+            self.decset_flags |= bit;
+        } else {
+            self.decset_flags &= !bit;
         }
     }
 
@@ -782,11 +952,34 @@ impl ScreenState {
         self.cursor_y = if self.origin_mode { self.top_margin } else { 0 };
     }
 
+    /// 设置左右边距 (DECSLRM) - CSI $ P_left ; $ P_right s
+    fn set_left_right_margins(&mut self, left: i32, right: i32) {
+        // 只有在 DECLRMM 模式下才有效
+        if !self.leftright_margin_mode {
+            return;
+        }
+
+        // DECSLRM 使用 1-based 索引
+        let l = max(1, left) - 1;
+        let r = min(self.cols, max(l + 1, right));
+
+        self.left_margin = l;
+        self.right_margin = r;
+
+        // DECSLRM 移动光标到左上角
+        self.cursor_x = 0;
+        self.cursor_y = 0;
+    }
+
     /// 保存光标 (DECSC)
     fn save_cursor(&mut self) {
         self.saved_x = self.cursor_x;
         self.saved_y = self.cursor_y;
         self.saved_style = self.current_style;
+        // 保存 DECSET 标志（与 Java 端一致，只保存相关标志）
+        // 包括：AUTOWRAP, ORIGIN_MODE
+        let mask = DECSET_BIT_AUTOWRAP | DECSET_BIT_ORIGIN_MODE;
+        self.saved_decset_flags = self.decset_flags & mask;
     }
 
     /// 恢复光标 (DECRC)
@@ -794,6 +987,11 @@ impl ScreenState {
         self.cursor_x = self.saved_x;
         self.cursor_y = self.saved_y;
         self.current_style = self.saved_style;
+        // 恢复 DECSET 标志（只恢复 AUTOWRAP 和 ORIGIN_MODE）
+        let mask = DECSET_BIT_AUTOWRAP | DECSET_BIT_ORIGIN_MODE;
+        self.decset_flags = (self.decset_flags & !mask) | (self.saved_decset_flags & mask);
+        self.auto_wrap = (self.decset_flags & DECSET_BIT_AUTOWRAP) != 0;
+        self.origin_mode = (self.decset_flags & DECSET_BIT_ORIGIN_MODE) != 0;
     }
 
     pub fn copy_row_text(&self, row: usize, dest: &mut [u16]) {
@@ -1111,8 +1309,20 @@ impl<'a> Perform for PurePerformHandler<'a> {
             }
             's' => {
                 // DECSC - 保存光标 或 DECSLRM - 设置左右边距
-                // 简化处理：保存光标
-                self.state.save_cursor();
+                // 当 DECLRMM 启用时，DECSLRM 优先
+                if self.state.leftright_margin_mode {
+                    let mut iter = params.iter();
+                    let left = iter.next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+                    let right = iter
+                        .next()
+                        .and_then(|p| p.first())
+                        .copied()
+                        .unwrap_or(self.state.cols as u16) as i32;
+                    self.state.set_left_right_margins(left, right);
+                } else {
+                    // 否则保存光标
+                    self.state.save_cursor();
+                }
             }
             'u' => {
                 // DECRC - 恢复光标

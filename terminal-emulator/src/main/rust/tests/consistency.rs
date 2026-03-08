@@ -418,6 +418,90 @@ fn test_sgr_bright_colors() {
 }
 
 // =============================================================================
+// SGR 扩展颜色测试（新增）
+// =============================================================================
+
+/// 验证 SGR 256 色前景 - ✅ PASS
+#[test]
+fn test_sgr_256_color_foreground() {
+    let mut engine = TerminalEngine::new(80, 24, 100);
+
+    // 38;5;196 = 红色 (256 色索引)
+    let data = b"\x1b[38;5;196mRed256";
+    engine.process_bytes(data);
+
+    let style = engine.state.current_style;
+    assert_eq!((style >> 40) & 0x1FF, 196, "Foreground color should be 256-color index 196");
+}
+
+/// 验证 SGR 256 色背景 - ✅ PASS
+#[test]
+fn test_sgr_256_color_background() {
+    let mut engine = TerminalEngine::new(80, 24, 100);
+
+    // 48;5;21 = 蓝色 (256 色索引)
+    let data = b"\x1b[48;5;21mBlueBG";
+    engine.process_bytes(data);
+
+    let style = engine.state.current_style;
+    assert_eq!((style >> 16) & 0x1FF, 21, "Background color should be 256-color index 21");
+}
+
+/// 验证 SGR 真彩色前景 - ✅ PASS
+#[test]
+fn test_sgr_truecolor_foreground() {
+    use termux_rust::engine::STYLE_TRUECOLOR_FG;
+
+    let mut engine = TerminalEngine::new(80, 24, 100);
+
+    // 38;2;255;128;64 = RGB 真彩色
+    let data = b"\x1b[38;2;255;128;64mTrueColor";
+    engine.process_bytes(data);
+
+    let style = engine.state.current_style;
+    // 检查真彩色标志位是否设置
+    assert_ne!(style & STYLE_TRUECOLOR_FG, 0, "Truecolor foreground flag should be set");
+    // 检查 RGB 值 (0xff000000 | (255 << 16) | (128 << 8) | 64) & 0x00ffffff = 0xff8040
+    let fg_color = (style >> 40) & 0x00ffffff;
+    assert_eq!(fg_color, 0xff8040, "Truecolor foreground RGB should be 0xff8040");
+}
+
+/// 验证 SGR 真彩色背景 - ✅ PASS
+#[test]
+fn test_sgr_truecolor_background() {
+    use termux_rust::engine::STYLE_TRUECOLOR_BG;
+
+    let mut engine = TerminalEngine::new(80, 24, 100);
+
+    // 48;2;100;150;200 = RGB 真彩色
+    let data = b"\x1b[48;2;100;150;200mTrueColorBG";
+    engine.process_bytes(data);
+
+    let style = engine.state.current_style;
+    // 检查真彩色标志位是否设置
+    assert_ne!(style & STYLE_TRUECOLOR_BG, 0, "Truecolor background flag should be set");
+    // 检查 RGB 值
+    let bg_color = (style >> 16) & 0x00ffffff;
+    assert_eq!(bg_color, 0x6496c8, "Truecolor background RGB should be 0x6496c8");
+}
+
+/// 验证 SGR 下划线子参数 - ✅ PASS
+#[test]
+fn test_sgr_underline_subparam() {
+    use termux_rust::engine::EFFECT_UNDERLINE;
+
+    let mut engine = TerminalEngine::new(80, 24, 100);
+
+    // 4:0 = 无下划线
+    let data = b"\x1b[4m\x1b[4:0mNoUnderline";
+    engine.process_bytes(data);
+
+    let style = engine.state.current_style;
+    // 4:0 应该清除下划线
+    assert_eq!(style & EFFECT_UNDERLINE, 0, "Underline should be cleared by 4:0");
+}
+
+// =============================================================================
 // 光标保存/恢复测试
 // =============================================================================
 
@@ -678,6 +762,142 @@ fn test_decset_bracketed_paste() {
     assert_eq!(
         engine.state.bracketed_paste, false,
         "Bracketed paste should be disabled"
+    );
+}
+
+// =============================================================================
+// DECSET 扩展测试（新增）
+// =============================================================================
+
+/// 验证 DECSET 69 (DECLRMM) 左右边距模式 - ✅ PASS
+#[test]
+fn test_decset_leftright_margin_mode() {
+    use termux_rust::engine::DECSET_BIT_LEFTRIGHT_MARGIN_MODE;
+
+    let mut engine = TerminalEngine::new(80, 24, 100);
+
+    // 启用 DECLRMM
+    engine.process_bytes(b"\x1b[?69h");
+    assert_eq!(
+        engine.state.leftright_margin_mode, true,
+        "Left-right margin mode should be enabled"
+    );
+    assert_ne!(
+        engine.state.decset_flags & DECSET_BIT_LEFTRIGHT_MARGIN_MODE,
+        0,
+        "DECSET flag bit 69 should be set"
+    );
+
+    // 设置左右边距
+    engine.process_bytes(b"\x1b[5;70s");
+    assert_eq!(
+        engine.state.left_margin, 4,
+        "Left margin should be 4 (0-based)"
+    );
+    assert_eq!(
+        engine.state.right_margin, 70,
+        "Right margin should be 70"
+    );
+
+    // 禁用 DECLRMM
+    engine.process_bytes(b"\x1b[?69l");
+    assert_eq!(
+        engine.state.leftright_margin_mode, false,
+        "Left-right margin mode should be disabled"
+    );
+}
+
+/// 验证 DECSET 1004 发送焦点事件 - ✅ PASS
+#[test]
+fn test_decset_send_focus_events() {
+    let mut engine = TerminalEngine::new(80, 24, 100);
+
+    engine.process_bytes(b"\x1b[?1004h");
+    assert_eq!(
+        engine.state.send_focus_events, true,
+        "Send focus events should be enabled"
+    );
+
+    engine.process_bytes(b"\x1b[?1004l");
+    assert_eq!(
+        engine.state.send_focus_events, false,
+        "Send focus events should be disabled"
+    );
+}
+
+/// 验证鼠标模式互斥 (1000 vs 1002) - ✅ PASS
+#[test]
+fn test_mouse_mode_exclusive() {
+    let mut engine = TerminalEngine::new(80, 24, 100);
+
+    // 启用 1000（鼠标跟踪按下&释放）
+    engine.process_bytes(b"\x1b[?1000h");
+    assert_eq!(
+        engine.state.mouse_tracking, true,
+        "Mouse tracking should be enabled"
+    );
+    assert_eq!(
+        engine.state.mouse_button_event, false,
+        "Mouse button event should be disabled"
+    );
+
+    // 启用 1002（鼠标按钮事件跟踪）应该禁用 1000
+    engine.process_bytes(b"\x1b[?1002h");
+    assert_eq!(
+        engine.state.mouse_tracking, false,
+        "Mouse tracking should be disabled after enabling 1002"
+    );
+    assert_eq!(
+        engine.state.mouse_button_event, true,
+        "Mouse button event should be enabled"
+    );
+
+    // 再次启用 1000 应该禁用 1002
+    engine.process_bytes(b"\x1b[?1000h");
+    assert_eq!(
+        engine.state.mouse_tracking, true,
+        "Mouse tracking should be re-enabled"
+    );
+    assert_eq!(
+        engine.state.mouse_button_event, false,
+        "Mouse button event should be disabled"
+    );
+
+    // 禁用 1000
+    engine.process_bytes(b"\x1b[?1000l");
+    assert_eq!(
+        engine.state.mouse_tracking, false,
+        "Mouse tracking should be disabled"
+    );
+}
+
+/// 验证 DECSET 标志保存/恢复 - ✅ PASS
+#[test]
+fn test_decset_flags_save_restore() {
+    let mut engine = TerminalEngine::new(80, 24, 100);
+
+    // 设置一些 DECSET 标志
+    engine.process_bytes(b"\x1b[?7h"); // 自动换行
+    engine.process_bytes(b"\x1b[?6h"); // 原点模式
+
+    // 保存光标
+    engine.process_bytes(b"\x1b7");
+    let _saved_flags = engine.state.saved_decset_flags;
+
+    // 更改 DECSET 标志
+    engine.process_bytes(b"\x1b[?7l"); // 禁用自动换行
+    engine.process_bytes(b"\x1b[?6l"); // 禁用原点模式
+
+    // 恢复光标应该恢复 DECSET 标志
+    engine.process_bytes(b"\x1b8");
+
+    assert_eq!(
+        engine.state.auto_wrap, true,
+        "Auto wrap should be restored"
+    );
+    assert_eq!(
+        engine.state.origin_mode, true,
+        "Origin mode should be restored"
     );
 }
 
