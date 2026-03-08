@@ -598,7 +598,7 @@ public final class TerminalEmulator {
                             " decodedFg=" + fg + " decodedBg=" + bg +
                             " line.mStyle.length=" + line.mStyle.length +
                             " line.mText.length=" + line.mText.length +
-                            " line.mSpaceUsed=" + line.mSpaceUsed);
+                            " line.getSpaceUsed()=" + line.getSpaceUsed());
                         android.util.Log.e("Termux", "Invalid style in TerminalRow stack", new Exception());
                     }
                 }
