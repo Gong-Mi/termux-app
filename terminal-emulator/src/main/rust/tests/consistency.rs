@@ -941,6 +941,67 @@ fn test_tab_forward() {
     assert_eq!(engine.state.cursor_x, 8, "Cursor X should be 8 after tab");
 }
 
+// =============================================================================
+// ESC 序列测试（新增）
+// =============================================================================
+
+/// 验证 DECBI (ESC 6) - ✅ PASS
+#[test]
+fn test_decbi_back_index() {
+    let mut engine = TerminalEngine::new(80, 24, 100);
+
+    // 写入一些文本
+    engine.process_bytes(b"Hello");
+    assert_eq!(engine.state.cursor_x, 5);
+
+    // ESC 6 - Back Index (向左移动光标)
+    engine.process_bytes(b"\x1b6");
+    assert_eq!(engine.state.cursor_x, 4, "Cursor X should be 4 after DECBI");
+
+    // 在左边界时使用 DECBI 应该滚动
+    engine.process_bytes(b"\x1b[H"); // 移动到左上角 (0,0)
+    assert_eq!(engine.state.cursor_x, 0);
+    engine.process_bytes(b"\x1b6"); // 应该触发滚动，光标保持在左边界
+    assert_eq!(engine.state.cursor_x, 0, "Cursor X should be 0 after DECBI at margin");
+}
+
+/// 验证 DECFI (ESC 9) - ✅ PASS
+#[test]
+fn test_decfi_forward_index() {
+    let mut engine = TerminalEngine::new(10, 5, 100); // 窄屏幕
+
+    // 写入到右边界
+    engine.process_bytes(b"123456789");
+    assert_eq!(engine.state.cursor_x, 9);
+
+    // ESC 9 - Forward Index (向右移动光标)
+    engine.process_bytes(b"\x1b9");
+    // 在右边界，应该触发滚动
+    assert_eq!(engine.state.cursor_x, 9, "Cursor X should be at right margin after DECFI");
+}
+
+/// 验证 RIS (ESC c) - ✅ PASS
+#[test]
+fn test_ris_reset() {
+    let mut engine = TerminalEngine::new(80, 24, 100);
+
+    // 设置一些状态
+    engine.process_bytes(b"\x1b[?7l"); // 禁用自动换行
+    engine.process_bytes(b"\x1b[5;10r"); // 设置边距
+    engine.process_bytes(b"\x1b[31m"); // 红色前景
+    engine.process_bytes(b"Test");
+
+    // ESC c - RIS 重置
+    engine.process_bytes(b"\x1bc");
+
+    // 验证重置
+    assert_eq!(engine.state.cursor_x, 0, "Cursor X should be 0 after RIS");
+    assert_eq!(engine.state.cursor_y, 0, "Cursor Y should be 0 after RIS");
+    assert_eq!(engine.state.top_margin, 0, "Top margin should be 0 after RIS");
+    assert_eq!(engine.state.bottom_margin, 24, "Bottom margin should be 24 after RIS");
+    assert_eq!(engine.state.auto_wrap, true, "Auto wrap should be enabled after RIS");
+}
+
 /// 验证后退制表 (CBT) - ✅ PASS
 #[test]
 fn test_cursor_backward_tab() {

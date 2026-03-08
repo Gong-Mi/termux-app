@@ -661,6 +661,53 @@ impl ScreenState {
         self.cursor_y = self.top_margin;
     }
 
+    /// DECBI - Back Index 滚动 (ESC 6)
+    /// 当光标在左边界时，向左滚动并插入空白列
+    fn back_index_scroll(&mut self) {
+        // 向左滚动：将区域内所有列向右移动一列
+        for y in self.top_margin..self.bottom_margin {
+            let idx = self.external_to_internal_row(y);
+            let row = &mut self.buffer[idx];
+            
+            // 从右向左移动字符
+            for x in (1..self.cols as usize).rev() {
+                if x < row.text.len() {
+                    row.text[x] = row.text[x - 1];
+                    row.styles[x] = row.styles[x - 1];
+                }
+            }
+            // 第一列填充空格
+            if row.text.len() > 0 {
+                row.text[0] = ' ';
+                row.styles[0] = STYLE_NORMAL;
+            }
+        }
+    }
+
+    /// DECFI - Forward Index 滚动 (ESC 9)
+    /// 当光标在右边界时，向右滚动并插入空白列
+    fn forward_index_scroll(&mut self) {
+        // 向右滚动：将区域内所有列向左移动一列
+        for y in self.top_margin..self.bottom_margin {
+            let idx = self.external_to_internal_row(y);
+            let row = &mut self.buffer[idx];
+            
+            // 从左向右移动字符
+            for x in 0..(self.cols as usize - 1) {
+                if x < row.text.len() && x + 1 < row.text.len() {
+                    row.text[x] = row.text[x + 1];
+                    row.styles[x] = row.styles[x + 1];
+                }
+            }
+            // 最后一列填充空格
+            let last_col = (self.cols as usize - 1).min(row.text.len().saturating_sub(1));
+            if row.text.len() > last_col {
+                row.text[last_col] = ' ';
+                row.styles[last_col] = STYLE_NORMAL;
+            }
+        }
+    }
+
     /// 清除制表位 (TBC) - CSI {N} g
     fn clear_tab_stop(&mut self, mode: i32) {
         match mode {
@@ -1346,11 +1393,13 @@ impl<'a> Perform for PurePerformHandler<'a> {
                 // 由 Java 层处理
             }
             b'6' => {
-                // DECBI - Back Index
+                // DECBI - Back Index (http://www.vt100.net/docs/vt510-rm/DECBI)
+                // 向左移动光标，如果在左边界则向左滚动并插入空白列
                 if self.state.cursor_x > self.state.left_margin {
                     self.state.cursor_x -= 1;
                 } else {
-                    // 向左滚动（简化处理：暂时忽略）
+                    // 向左滚动：将区域内所有列向右移动一列
+                    self.state.back_index_scroll();
                 }
             }
             b'7' => {
@@ -1362,19 +1411,26 @@ impl<'a> Perform for PurePerformHandler<'a> {
                 self.state.restore_cursor();
             }
             b'9' => {
-                // DECFI - Forward Index
+                // DECFI - Forward Index (http://www.vt100.net/docs/vt510-rm/DECFI)
+                // 向右移动光标，如果在右边界则向右滚动并插入空白列
                 if self.state.cursor_x < self.state.right_margin - 1 {
                     self.state.cursor_x += 1;
                 } else {
-                    // 向右滚动（简化处理：暂时忽略）
+                    // 向右滚动：将区域内所有列向左移动一列
+                    self.state.forward_index_scroll();
                 }
             }
             b'c' => {
-                // RIS - 重置到初始状态
-                // 简化处理：重置光标和样式
+                // RIS - 重置到初始状态 (http://vt100.net/docs/vt510-rm/RIS)
+                // 完整重置：清屏、重置光标、重置样式、重置边距、重置制表位
                 self.state.cursor_x = 0;
                 self.state.cursor_y = 0;
                 self.state.current_style = STYLE_NORMAL;
+                // 清屏
+                for y in 0..self.state.rows as usize {
+                    let idx = self.state.external_to_internal_row(y as i32);
+                    self.state.buffer[idx].clear(0, self.state.cols as usize, STYLE_NORMAL);
+                }
                 // 重置所有制表位
                 for stop in &mut self.state.tab_stops {
                     *stop = false;
@@ -1384,6 +1440,21 @@ impl<'a> Perform for PurePerformHandler<'a> {
                 self.state.bottom_margin = self.state.rows;
                 self.state.left_margin = 0;
                 self.state.right_margin = self.state.cols;
+                // 重置 DECSET 标志
+                self.state.decset_flags = 0;
+                self.state.auto_wrap = true;
+                self.state.origin_mode = false;
+                self.state.cursor_enabled = true;
+                self.state.application_cursor_keys = false;
+                self.state.application_keypad = false;
+                self.state.reverse_video = false;
+                self.state.insert_mode = false;
+                self.state.bracketed_paste = false;
+                self.state.mouse_tracking = false;
+                self.state.mouse_button_event = false;
+                self.state.sgr_mouse = false;
+                self.state.leftright_margin_mode = false;
+                self.state.send_focus_events = false;
             }
             b'D' => {
                 // IND - 索引（换行）
