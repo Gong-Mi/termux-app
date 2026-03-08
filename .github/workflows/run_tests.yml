@@ -5,22 +5,98 @@ on:
     branches:
       - master
       - android-10
+    paths-ignore:
+      - '**.md'
+      - 'art/**'
   pull_request:
     branches:
       - master
       - android-10
+    paths-ignore:
+      - '**.md'
+      - 'art/**'
+  workflow_dispatch:
 
 jobs:
-  testing:
+  test:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+
     steps:
-    - name: Clone repository
-      uses: actions/checkout@v6
-    - name: Setup java 17
-      uses: actions/setup-java@v5
-      with:
-        distribution: 'temurin'
-        java-version: '17'
-    - name: Execute tests
-      run: |
-        ./gradlew test
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "terminal-emulator/src/main/rust -> target"
+
+      - name: Cache cargo-ndk
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-ndk
+          key: ${{ runner.os }}-cargo-ndk-3.5.0
+
+      - name: Install cargo-ndk
+        run: |
+          if ! command -v cargo-ndk &> /dev/null; then
+            cargo install cargo-ndk --version 3.5.0
+          fi
+
+      - name: Build Rust Libraries
+        run: |
+          cd terminal-emulator/src/main/rust
+          # 为 Android 架构编译 (单元测试通常只需要一个，但为了验证逻辑完整性建议全量或至少一个)
+          cargo ndk -t arm64-v8a -p 24 build --release
+
+          # 建立 jniLibs 目录并移动产物，供 Android 单元测试加载（如果需要）
+          mkdir -p ../jniLibs/arm64-v8a
+          cp target/aarch64-linux-android/release/libtermux_rust.so ../jniLibs/arm64-v8a/
+
+      - name: Run Rust Tests
+        run: |
+          cd terminal-emulator/src/main/rust
+          # 运行 Rust 原生一致性测试
+          cargo test --test consistency -- --test-threads=1
+
+      - name: Cache Gradle Wrapper
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-wrapper-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties') }}
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          cache-read-only: false
+
+      - name: Run Lint
+        run: ./gradlew lintDebug
+
+      - name: Run Unit Tests
+        run: ./gradlew testDebug
+
+      - name: Run Performance Tests
+        run: ./gradlew :terminal-emulator:testDebug --tests "com.termux.terminal.TerminalPerformanceTest"
+
+      - name: Upload Test Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            **/build/reports/tests/
+            **/build/reports/lint-results-debug.html
