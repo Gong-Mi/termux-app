@@ -101,17 +101,6 @@ public final class TerminalRow {
     public final void setChar(int columnToSet, final int codePoint, final long style) {
         if (columnToSet < 0 || columnToSet >= mColumns) return;
         
-        // 调试日志：检查设置的 style 值
-        int fg = TextStyle.decodeForeColor(style);
-        int bg = TextStyle.decodeBackColor(style);
-        if (fg < 0 || fg >= 259 || bg < 0 || bg >= 259) {
-            android.util.Log.e("Termux", "Invalid style set in TerminalRow.setChar!" +
-                " column=" + columnToSet + " codePoint=" + codePoint +
-                " style=0x" + Long.toHexString(style) +
-                " decodedFg=" + fg + " decodedBg=" + bg);
-            android.util.Log.e("Termux", "Invalid style setChar stack", new Exception());
-        }
-        
         mStyle[columnToSet] = style;
         final int newWidth = WcWidth.width(codePoint);
         if (!mHasNonOneWidthOrSurrogateChars) {

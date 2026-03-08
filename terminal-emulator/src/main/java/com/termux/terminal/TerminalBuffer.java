@@ -439,18 +439,6 @@ public final class TerminalBuffer {
             throw new IllegalArgumentException(
                 "Illegal arguments! blockSet(" + sx + ", " + sy + ", " + w + ", " + h + ", " + val + ", " + mColumns + ", " + mScreenRows + ")");
         }
-        
-        // 调试日志：检查 blockSet 的 style 参数
-        int fg = TextStyle.decodeForeColor(style);
-        int bg = TextStyle.decodeBackColor(style);
-        if (fg < 0 || fg >= 259 || bg < 0 || bg >= 259) {
-            android.util.Log.e("Termux", "Invalid style in TerminalBuffer.blockSet!" +
-                " sx=" + sx + " sy=" + sy + " w=" + w + " h=" + h + " val=" + val +
-                " style=0x" + Long.toHexString(style) +
-                " decodedFg=" + fg + " decodedBg=" + bg);
-            android.util.Log.e("Termux", "Invalid style blockSet stack", new Exception());
-        }
-        
         for (int y = 0; y < h; y++)
             for (int x = 0; x < w; x++)
                 setChar(sx + x, sy + y, val, style);
@@ -484,13 +472,6 @@ public final class TerminalBuffer {
                 int backColor = TextStyle.decodeBackColor(currentStyle);
                 int effect = TextStyle.decodeEffect(currentStyle);
                 
-                // 调试日志：检查 setOrClearEffect 解码的颜色
-                if (foreColor < 0 || foreColor >= 259 || backColor < 0 || backColor >= 259) {
-                    android.util.Log.e("Termux", "Invalid style in setOrClearEffect before!" +
-                        " x=" + x + " y=" + y +
-                        " style=0x" + Long.toHexString(currentStyle) +
-                        " decodedFg=" + foreColor + " decodedBg=" + backColor);
-                }
                 
                 if (reverse) {
                     // Clear out the bits to reverse and add them back in reversed:

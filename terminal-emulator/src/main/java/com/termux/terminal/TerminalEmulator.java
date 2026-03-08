@@ -585,25 +585,6 @@ public final class TerminalEmulator {
             int styleCopyLength = Math.min(line.mStyle.length, destStyle.length);
             System.arraycopy(line.mStyle, 0, destStyle, 0, styleCopyLength);
             
-            // 调试日志：检查从 TerminalRow 获取的 style 数据
-            for (int i = 0; i < styleCopyLength; i++) {
-                long style = destStyle[i];
-                if (style != 0) {
-                    int fg = TextStyle.decodeForeColor(style);
-                    int bg = TextStyle.decodeBackColor(style);
-                    if (fg < 0 || fg >= 259 || bg < 0 || bg >= 259) {
-                        android.util.Log.e("Termux", "Invalid style in TerminalRow!" +
-                            " row=" + row + " column=" + i +
-                            " style=0x" + Long.toHexString(style) +
-                            " decodedFg=" + fg + " decodedBg=" + bg +
-                            " line.mStyle.length=" + line.mStyle.length +
-                            " line.mText.length=" + line.mText.length +
-                            " line.getSpaceUsed()=" + line.getSpaceUsed());
-                        android.util.Log.e("Termux", "Invalid style in TerminalRow stack", new Exception());
-                    }
-                }
-            }
-            
             return line.getSpaceUsed();
         }
         return 0;
