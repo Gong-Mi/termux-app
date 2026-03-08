@@ -325,6 +325,9 @@ public final class TerminalEmulator {
         }
     }
 
+    /** 指向 Rust 引擎对象的原生指针 */
+    private long mRustEnginePtr;
+
     public TerminalEmulator(TerminalOutput session, int columns, int rows, int cellWidthPixels, int cellHeightPixels, Integer transcriptRows, TerminalSessionClient client) {
         mSession = session;
         mScreen = mMainBuffer = new TerminalBuffer(columns, getTerminalTranscriptRows(transcriptRows), rows);
@@ -334,8 +337,13 @@ public final class TerminalEmulator {
         mColumns = columns;
         mCellWidthPixels = cellWidthPixels;
         mCellHeightPixels = cellHeightPixels;
+
         mTabStop = new boolean[mColumns];
         reset();
+
+        // 注意：Rust 引擎目前不用于解析输入，因为它的 ANSI 序列处理尚未完整实现
+        // 保留 mRustEnginePtr 字段和 JNI 方法，以便将来完整实现后重新启用
+        mRustEnginePtr = 0;
     }
 
     public void updateTerminalSessionClient(TerminalSessionClient client) {
@@ -386,6 +394,8 @@ public final class TerminalEmulator {
     public void resize(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
         this.mCellWidthPixels = cellWidthPixels;
         this.mCellHeightPixels = cellHeightPixels;
+
+        // Rust 引擎目前不用于解析输入，所以不需要调整它的大小
 
         if (mRows == rows && mColumns == columns) {
             return;
@@ -491,15 +501,90 @@ public final class TerminalEmulator {
             mTabStop[i] = (i & 7) == 0 && i != 0;
     }
 
+    /** The lock object for terminal buffer data. */
+    public final Object mDataLock = new Object();
+
     /**
      * Accept bytes (typically from the pseudo-teletype) and process them.
      *
      * @param buffer a byte array containing the bytes to be processed
      * @param length the number of bytes in the array to process
      */
+    /** 性能测试开关：强制禁用 Rust 优化 */
+    public static boolean sForceDisableRust = false;
+
+    private static boolean sRustLibLoaded = JNI.sNativeLibrariesLoaded;
+
+    public static boolean isRustLibLoaded() {
+        return sRustLibLoaded;
+    }
+
     public void append(byte[] buffer, int length) {
-        for (int i = 0; i < length; i++)
+        synchronized (mDataLock) {
+            // 注意：FULL TAKEOVER 模式已暂时禁用，因为 Rust 引擎的 ANSI 序列处理尚未完整实现
+            // 目前只使用 processBatchRust 快速路径处理纯 ASCII 数据
+            //
+            // Rust 引擎优化状态：
+            // - processBatchRust: 已实现，用于快速处理 ASCII 批量数据
+            // - processEngineRust (FULL TAKEOVER): 已禁用，需要完整实现 ANSI 序列处理
+            //
+            // TODO: 当 Rust 引擎完整实现所有 ANSI 序列后，可以重新启用 FULL TAKEOVER 模式
+
+            int i = 0;
+            while (i < length) {
+                // 快速路径：当处于正常状态（非 UTF-8 多字节序列、非转义序列）时，使用 Rust 处理 ASCII 批量数据
+                if (sRustLibLoaded && !sForceDisableRust && mUtf8ToFollow == 0 && mEscapeState == ESC_NONE) {
+                    try {
+                        boolean useLineDrawing = mUseLineDrawingUsesG0 ? mUseLineDrawingG0 : mUseLineDrawingG1;
+                        int rustProcessed = processBatchRust(buffer, i, length - i, useLineDrawing);
+                        if (rustProcessed > 0) {
+                            writeBatch(buffer, i, rustProcessed);
+                            i += rustProcessed;
+                            continue;
+                        }
+                    } catch (UnsatisfiedLinkError | Exception e) {
+                        sRustLibLoaded = false;
+                    }
+                }
+                processByte(buffer[i++]);
+            }
+        }
+    }
+
+    /** Called from Rust via JNI to process a batch of ASCII characters. */
+    private void emitASCIIBatch(byte[] data, int offset, int length) {
+        // We can use our high-performance batch writer here
+        writeBatch(data, offset, length);
+    }
+
+    private static native int processBatchRust(byte[] buffer, int offset, int length, boolean useLineDrawing);
+    private static native void mapLineDrawingNative(byte[] src, int srcOffset, char[] dest, int length);
+    private static native void writeASCIIBatchNative(byte[] src, int srcOffset, char[] destText, long[] destStyle, int destOffset, int length, long style, boolean useLineDrawing);
+    
+    /** 带回调的 Rust 引擎创建（用于 Full Takeover 模式） */
+    private static native long createEngineRustWithCallback(int cols, int rows, int totalRows, Object callbackObj);
+
+    /** 获取终端指定行的内容，从 Java Buffer 读取 */
+    public void getRowContent(int row, char[] destText, long[] destStyle) {
+        TerminalRow line = mScreen.allocateFullLineIfNecessary(mScreen.externalToInternalRow(row));
+        if (line != null) {
+            System.arraycopy(line.mText, 0, destText, 0, Math.min(line.mText.length, destText.length));
+            System.arraycopy(line.mStyle, 0, destStyle, 0, Math.min(line.mStyle.length, destStyle.length));
+        }
+    }
+
+    @Override
+    protected void finalize() throws Throwable {
+        // Rust 引擎目前不用于解析输入，所以不需要清理
+        mRustEnginePtr = 0;
+        super.finalize();
+    }
+
+
+    private void processChunk(byte[] buffer, int start, int end) {
+        for (int i = start; i < end; i++) {
             processByte(buffer[i]);
+        }
     }
 
     private void processByte(byte byteToProcess) {
@@ -577,6 +662,10 @@ public final class TerminalEmulator {
             return;
         }
 
+        processCodePointInternal(b);
+    }
+
+    private void processCodePointInternal(int b) {
         switch (b) {
             case 0: // Null character (NUL, ^@). Do nothing.
                 break;
@@ -680,127 +769,7 @@ public final class TerminalEmulator {
                         doCsiBiggerThan(b);
                         break;
                     case ESC_CSI_DOLLAR:
-                        boolean originMode = isDecsetInternalBitSet(DECSET_BIT_ORIGIN_MODE);
-                        int effectiveTopMargin = originMode ? mTopMargin : 0;
-                        int effectiveBottomMargin = originMode ? mBottomMargin : mRows;
-                        int effectiveLeftMargin = originMode ? mLeftMargin : 0;
-                        int effectiveRightMargin = originMode ? mRightMargin : mColumns;
-                        switch (b) {
-                            case 'v': // ${CSI}${SRC_TOP}${SRC_LEFT}${SRC_BOTTOM}${SRC_RIGHT}${SRC_PAGE}${DST_TOP}${DST_LEFT}${DST_PAGE}$v"
-                                // Copy rectangular area (DECCRA - http://vt100.net/docs/vt510-rm/DECCRA):
-                                // "If Pbs is greater than Pts, or Pls is greater than Prs, the terminal ignores DECCRA.
-                                // The coordinates of the rectangular area are affected by the setting of origin mode (DECOM).
-                                // DECCRA is not affected by the page margins.
-                                // The copied text takes on the line attributes of the destination area.
-                                // If the value of Pt, Pl, Pb, or Pr exceeds the width or height of the active page, then the value
-                                // is treated as the width or height of that page.
-                                // If the destination area is partially off the page, then DECCRA clips the off-page data.
-                                // DECCRA does not change the active cursor position."
-                                int topSource = Math.min(getArg(0, 1, true) - 1 + effectiveTopMargin, mRows);
-                                int leftSource = Math.min(getArg(1, 1, true) - 1 + effectiveLeftMargin, mColumns);
-                                // Inclusive, so do not subtract one:
-                                int bottomSource = Math.min(Math.max(getArg(2, mRows, true) + effectiveTopMargin, topSource), mRows);
-                                int rightSource = Math.min(Math.max(getArg(3, mColumns, true) + effectiveLeftMargin, leftSource), mColumns);
-                                // int sourcePage = getArg(4, 1, true);
-                                int destionationTop = Math.min(getArg(5, 1, true) - 1 + effectiveTopMargin, mRows);
-                                int destinationLeft = Math.min(getArg(6, 1, true) - 1 + effectiveLeftMargin, mColumns);
-                                // int destinationPage = getArg(7, 1, true);
-                                int heightToCopy = Math.min(mRows - destionationTop, bottomSource - topSource);
-                                int widthToCopy = Math.min(mColumns - destinationLeft, rightSource - leftSource);
-                                mScreen.blockCopy(leftSource, topSource, widthToCopy, heightToCopy, destinationLeft, destionationTop);
-                                break;
-                            case '{': // ${CSI}${TOP}${LEFT}${BOTTOM}${RIGHT}${"
-                                // Selective erase rectangular area (DECSERA - http://www.vt100.net/docs/vt510-rm/DECSERA).
-                            case 'x': // ${CSI}${CHAR};${TOP}${LEFT}${BOTTOM}${RIGHT}$x"
-                                // Fill rectangular area (DECFRA - http://www.vt100.net/docs/vt510-rm/DECFRA).
-                            case 'z': // ${CSI}$${TOP}${LEFT}${BOTTOM}${RIGHT}$z"
-                                // Erase rectangular area (DECERA - http://www.vt100.net/docs/vt510-rm/DECERA).
-                                boolean erase = b != 'x';
-                                boolean selective = b == '{';
-                                // Only DECSERA keeps visual attributes, DECERA does not:
-                                boolean keepVisualAttributes = erase && selective;
-                                int argIndex = 0;
-                                int fillChar = erase ? ' ' : getArg(argIndex++, -1, true);
-                                // "Pch can be any value from 32 to 126 or from 160 to 255. If Pch is not in this range, then the
-                                // terminal ignores the DECFRA command":
-                                if ((fillChar >= 32 && fillChar <= 126) || (fillChar >= 160 && fillChar <= 255)) {
-                                    // "If the value of Pt, Pl, Pb, or Pr exceeds the width or height of the active page, the value
-                                    // is treated as the width or height of that page."
-                                    int top = Math.min(getArg(argIndex++, 1, true) + effectiveTopMargin, effectiveBottomMargin + 1);
-                                    int left = Math.min(getArg(argIndex++, 1, true) + effectiveLeftMargin, effectiveRightMargin + 1);
-                                    int bottom = Math.min(getArg(argIndex++, mRows, true) + effectiveTopMargin, effectiveBottomMargin);
-                                    int right = Math.min(getArg(argIndex, mColumns, true) + effectiveLeftMargin, effectiveRightMargin);
-                                    long style = getStyle();
-                                    for (int row = top - 1; row < bottom; row++)
-                                        for (int col = left - 1; col < right; col++)
-                                            if (!selective || (TextStyle.decodeEffect(mScreen.getStyleAt(row, col)) & TextStyle.CHARACTER_ATTRIBUTE_PROTECTED) == 0)
-                                                mScreen.setChar(col, row, fillChar, keepVisualAttributes ? mScreen.getStyleAt(row, col) : style);
-                                }
-                                break;
-                            case 'r': // "${CSI}${TOP}${LEFT}${BOTTOM}${RIGHT}${ATTRIBUTES}$r"
-                                // Change attributes in rectangular area (DECCARA - http://vt100.net/docs/vt510-rm/DECCARA).
-                            case 't': // "${CSI}${TOP}${LEFT}${BOTTOM}${RIGHT}${ATTRIBUTES}$t"
-                                // Reverse attributes in rectangular area (DECRARA - http://www.vt100.net/docs/vt510-rm/DECRARA).
-                                boolean reverse = b == 't';
-                                // FIXME: "coordinates of the rectangular area are affected by the setting of origin mode (DECOM)".
-                                int top = Math.min(getArg(0, 1, true) - 1, effectiveBottomMargin) + effectiveTopMargin;
-                                int left = Math.min(getArg(1, 1, true) - 1, effectiveRightMargin) + effectiveLeftMargin;
-                                int bottom = Math.min(getArg(2, mRows, true) + 1, effectiveBottomMargin - 1) + effectiveTopMargin;
-                                int right = Math.min(getArg(3, mColumns, true) + 1, effectiveRightMargin - 1) + effectiveLeftMargin;
-                                if (mArgIndex >= 4) {
-                                    if (mArgIndex >= mArgs.length) mArgIndex = mArgs.length - 1;
-                                    for (int i = 4; i <= mArgIndex; i++) {
-                                        int bits = 0;
-                                        boolean setOrClear = true; // True if setting, false if clearing.
-                                        switch (getArg(i, 0, false)) {
-                                            case 0: // Attributes off (no bold, no underline, no blink, positive image).
-                                                bits = (TextStyle.CHARACTER_ATTRIBUTE_BOLD | TextStyle.CHARACTER_ATTRIBUTE_UNDERLINE | TextStyle.CHARACTER_ATTRIBUTE_BLINK
-                                                    | TextStyle.CHARACTER_ATTRIBUTE_INVERSE);
-                                                if (!reverse) setOrClear = false;
-                                                break;
-                                            case 1: // Bold.
-                                                bits = TextStyle.CHARACTER_ATTRIBUTE_BOLD;
-                                                break;
-                                            case 4: // Underline.
-                                                bits = TextStyle.CHARACTER_ATTRIBUTE_UNDERLINE;
-                                                break;
-                                            case 5: // Blink.
-                                                bits = TextStyle.CHARACTER_ATTRIBUTE_BLINK;
-                                                break;
-                                            case 7: // Negative image.
-                                                bits = TextStyle.CHARACTER_ATTRIBUTE_INVERSE;
-                                                break;
-                                            case 22: // No bold.
-                                                bits = TextStyle.CHARACTER_ATTRIBUTE_BOLD;
-                                                setOrClear = false;
-                                                break;
-                                            case 24: // No underline.
-                                                bits = TextStyle.CHARACTER_ATTRIBUTE_UNDERLINE;
-                                                setOrClear = false;
-                                                break;
-                                            case 25: // No blink.
-                                                bits = TextStyle.CHARACTER_ATTRIBUTE_BLINK;
-                                                setOrClear = false;
-                                                break;
-                                            case 27: // Positive image.
-                                                bits = TextStyle.CHARACTER_ATTRIBUTE_INVERSE;
-                                                setOrClear = false;
-                                                break;
-                                        }
-                                        if (reverse && !setOrClear) {
-                                            // Reverse attributes in rectangular area ignores non-(1,4,5,7) bits.
-                                        } else {
-                                            mScreen.setOrClearEffect(bits, setOrClear, reverse, isDecsetInternalBitSet(DECSET_BIT_RECTANGULAR_CHANGEATTRIBUTE),
-                                                effectiveLeftMargin, effectiveRightMargin, top, left, bottom, right);
-                                        }
-                                    }
-                                } else {
-                                    // Do nothing.
-                                }
-                                break;
-                            default:
-                                unknownSequence(b);
-                        }
+                        doCsiDollar(b);
                         break;
                     case ESC_CSI_DOUBLE_QUOTE:
                         if (b == 'q') {
@@ -2608,10 +2577,203 @@ public final class TerminalEmulator {
         boolean mUseLineDrawingG0, mUseLineDrawingG1, mUseLineDrawingUsesG0 = true;
     }
 
+    private void doCsiDollar(int b) {
+        boolean originMode = isDecsetInternalBitSet(DECSET_BIT_ORIGIN_MODE);
+        int effectiveTopMargin = originMode ? mTopMargin : 0;
+        int effectiveBottomMargin = originMode ? mBottomMargin : mRows;
+        int effectiveLeftMargin = originMode ? mLeftMargin : 0;
+        int effectiveRightMargin = originMode ? mRightMargin : mColumns;
+        switch (b) {
+            case 'v': // ${CSI}${SRC_TOP}${SRC_LEFT}${SRC_BOTTOM}${SRC_RIGHT}${SRC_PAGE}${DST_TOP}${DST_LEFT}${DST_PAGE}$v"
+                // Copy rectangular area (DECCRA - http://vt100.net/docs/vt510-rm/DECCRA):
+                int topSource = Math.min(getArg(0, 1, true) - 1 + effectiveTopMargin, mRows);
+                int leftSource = Math.min(getArg(1, 1, true) - 1 + effectiveLeftMargin, mColumns);
+                // Inclusive, so do not subtract one:
+                int bottomSource = Math.min(Math.max(getArg(2, mRows, true) + effectiveTopMargin, topSource), mRows);
+                int rightSource = Math.min(Math.max(getArg(3, mColumns, true) + effectiveLeftMargin, leftSource), mColumns);
+                // int sourcePage = getArg(4, 1, true);
+                int destionationTop = Math.min(getArg(5, 1, true) - 1 + effectiveTopMargin, mRows);
+                int destinationLeft = Math.min(getArg(6, 1, true) - 1 + effectiveLeftMargin, mColumns);
+                // int destinationPage = getArg(7, 1, true);
+                int heightToCopy = Math.min(mRows - destionationTop, bottomSource - topSource);
+                int widthToCopy = Math.min(mColumns - destinationLeft, rightSource - leftSource);
+                mScreen.blockCopy(leftSource, topSource, widthToCopy, heightToCopy, destinationLeft, destionationTop);
+                break;
+            case '{': // ${CSI}${TOP}${LEFT}${BOTTOM}${RIGHT}${"
+                // Selective erase rectangular area (DECSERA - http://www.vt100.net/docs/vt510-rm/DECSERA).
+            case 'x': // ${CSI}${CHAR};${TOP}${LEFT}${BOTTOM}${RIGHT}$x"
+                // Fill rectangular area (DECFRA - http://www.vt100.net/docs/vt510-rm/DECFRA).
+            case 'z': // ${CSI}$${TOP}${LEFT}${BOTTOM}${RIGHT}$z"
+                // Erase rectangular area (DECERA - http://www.vt100.net/docs/vt510-rm/DECERA).
+                boolean erase = b != 'x';
+                boolean selective = b == '{';
+                // Only DECSERA keeps visual attributes, DECERA does not:
+                boolean keepVisualAttributes = erase && selective;
+                int argIndex = 0;
+                int fillChar = erase ? ' ' : getArg(argIndex++, -1, true);
+                // "Pch can be any value from 32 to 126 or from 160 to 255. If Pch is not in this range, then the
+                // terminal ignores the DECFRA command":
+                if ((fillChar >= 32 && fillChar <= 126) || (fillChar >= 160 && fillChar <= 255)) {
+                    // "If the value of Pt, Pl, Pb, or Pr exceeds the width or height of the active page, the value
+                    // is treated as the width or height of that page."
+                    int t = Math.min(getArg(argIndex++, 1, true) + effectiveTopMargin, effectiveBottomMargin + 1);
+                    int l = Math.min(getArg(argIndex++, 1, true) + effectiveLeftMargin, effectiveRightMargin + 1);
+                    int bt = Math.min(getArg(argIndex++, mRows, true) + effectiveTopMargin, effectiveBottomMargin);
+                    int r = Math.min(getArg(argIndex, mColumns, true) + effectiveLeftMargin, effectiveRightMargin);
+                    long style = getStyle();
+                    for (int row = t - 1; row < bt; row++)
+                        for (int col = l - 1; col < r; col++)
+                            if (!selective || (TextStyle.decodeEffect(mScreen.getStyleAt(row, col)) & TextStyle.CHARACTER_ATTRIBUTE_PROTECTED) == 0)
+                                mScreen.setChar(col, row, fillChar, keepVisualAttributes ? mScreen.getStyleAt(row, col) : style);
+                }
+                break;
+            case 'r': // "${CSI}${TOP}${LEFT}${BOTTOM}${RIGHT}${ATTRIBUTES}$r"
+                // Change attributes in rectangular area (DECCARA - http://vt100.net/docs/vt510-rm/DECCARA).
+            case 't': // "${CSI}${TOP}${LEFT}${BOTTOM}${RIGHT}${ATTRIBUTES}$t"
+                // Reverse attributes in rectangular area (DECRARA - http://www.vt100.net/docs/vt510-rm/DECRARA).
+                boolean reverse = b == 't';
+                // FIXME: "coordinates of the rectangular area are affected by the setting of origin mode (DECOM)".
+                int t = Math.min(getArg(0, 1, true) - 1, effectiveBottomMargin) + effectiveTopMargin;
+                int l = Math.min(getArg(1, 1, true) - 1, effectiveRightMargin) + effectiveLeftMargin;
+                int bt = Math.min(getArg(2, mRows, true) + 1, effectiveBottomMargin - 1) + effectiveTopMargin;
+                int r = Math.min(getArg(3, mColumns, true) + 1, effectiveRightMargin - 1) + effectiveLeftMargin;
+                if (mArgIndex >= 4) {
+                    if (mArgIndex >= mArgs.length) mArgIndex = mArgs.length - 1;
+                    for (int i = 4; i <= mArgIndex; i++) {
+                        int bits = 0;
+                        boolean setOrClear = true; // True if setting, false if clearing.
+                        switch (getArg(i, 0, false)) {
+                            case 0: // Attributes off (no bold, no underline, no blink, positive image).
+                                bits = (TextStyle.CHARACTER_ATTRIBUTE_BOLD | TextStyle.CHARACTER_ATTRIBUTE_UNDERLINE | TextStyle.CHARACTER_ATTRIBUTE_BLINK
+                                    | TextStyle.CHARACTER_ATTRIBUTE_INVERSE);
+                                if (!reverse) setOrClear = false;
+                                break;
+                            case 1: // Bold.
+                                bits = TextStyle.CHARACTER_ATTRIBUTE_BOLD;
+                                break;
+                            case 4: // Underline.
+                                bits = TextStyle.CHARACTER_ATTRIBUTE_UNDERLINE;
+                                break;
+                            case 5: // Blink.
+                                bits = TextStyle.CHARACTER_ATTRIBUTE_BLINK;
+                                break;
+                            case 7: // Negative image.
+                                bits = TextStyle.CHARACTER_ATTRIBUTE_INVERSE;
+                                break;
+                            case 22: // No bold.
+                                bits = TextStyle.CHARACTER_ATTRIBUTE_BOLD;
+                                setOrClear = false;
+                                break;
+                            case 24: // No underline.
+                                bits = TextStyle.CHARACTER_ATTRIBUTE_UNDERLINE;
+                                setOrClear = false;
+                                break;
+                            case 25: // No blink.
+                                bits = TextStyle.CHARACTER_ATTRIBUTE_BLINK;
+                                setOrClear = false;
+                                break;
+                            case 27: // Positive image.
+                                bits = TextStyle.CHARACTER_ATTRIBUTE_INVERSE;
+                                setOrClear = false;
+                                break;
+                        }
+                        if (reverse && !setOrClear) {
+                            // Reverse attributes in rectangular area ignores non-(1,4,5,7) bits.
+                        } else {
+                            mScreen.setOrClearEffect(bits, setOrClear, reverse, isDecsetInternalBitSet(DECSET_BIT_RECTANGULAR_CHANGEATTRIBUTE),
+                                effectiveLeftMargin, effectiveRightMargin, t, l, bt, r);
+                        }
+                    }
+                }
+                break;
+            default:
+                unknownSequence(b);
+        }
+    }
+
+    /**
+     * Efficiently write a batch of ASCII characters by interacting directly with the
+     * TerminalRow buffer, bypassing the Java code point state machine where possible.
+     */
+    private void writeBatch(byte[] buffer, int offset, int length) {
+        int remaining = length;
+        int currentOffset = offset;
+        boolean useLineDrawing = mUseLineDrawingUsesG0 ? mUseLineDrawingG0 : mUseLineDrawingG1;
+
+        while (remaining > 0) {
+            // How many columns are available on the current line?
+            int columnsAvailable = mRightMargin - mCursorCol;
+            if (columnsAvailable <= 0) {
+                // Should not happen if mCursorCol is properly managed, but if it does, force wrap
+                doLinefeed();
+                setCursorCol(mLeftMargin);
+                columnsAvailable = mRightMargin - mCursorCol;
+            }
+
+            // Write as much as possible to the current line
+            int toWrite = Math.min(remaining, columnsAvailable);
+            TerminalRow row = mScreen.allocateFullLineIfNecessary(mCursorRow);
+
+            // Directly call JNI to populate text and style arrays, passing line drawing state
+            writeASCIIBatchNative(buffer, currentOffset, row.mText, row.mStyle, mCursorCol, toWrite, getStyle(), useLineDrawing);
+
+            // Update state
+            mCursorCol += toWrite;
+            remaining -= toWrite;
+            currentOffset += toWrite;
+
+            // Handle wrap-around if we filled the line
+            if (mCursorCol == mRightMargin && remaining > 0) {
+                doLinefeed();
+                setCursorCol(mLeftMargin);
+            }
+        }
+    }
+
     @Override
     public String toString() {
         return "TerminalEmulator[size=" + mScreen.mColumns + "x" + mScreen.mScreenRows + ", margins={" + mTopMargin + "," + mRightMargin + "," + mBottomMargin
             + "," + mLeftMargin + "}]";
+    }
+
+    // ========================================================================
+    // Rust 回调方法
+    // ========================================================================
+
+    /**
+     * 被 Rust 引擎调用以报告窗口标题变更
+     * @param newTitle 新标题
+     */
+    @SuppressWarnings("unused")
+    private void reportTitleChange(String newTitle) {
+        if (mTitle != null && !mTitle.equals(newTitle)) {
+            String oldTitle = mTitle;
+            mTitle = newTitle;
+            if (mSession != null) {
+                mSession.titleChanged(oldTitle, newTitle);
+            }
+        }
+    }
+
+    /**
+     * 被 Rust 引擎调用以报告颜色变更
+     */
+    @SuppressWarnings("unused")
+    private void reportColorsChanged() {
+        if (mSession != null) {
+            mSession.onColorsChanged();
+        }
+    }
+
+    /**
+     * 被 Rust 引擎调用以报告光标可见性变更
+     * @param visible 光标是否可见
+     */
+    @SuppressWarnings("unused")
+    private void reportCursorVisibility(boolean visible) {
+        if (mSession != null) {
+            mSession.onTerminalCursorStateChange(visible);
+        }
     }
 
 }

@@ -5,8 +5,37 @@ package com.termux.terminal;
  */
 final class JNI {
 
+    public static final boolean sNativeLibrariesLoaded;
+
     static {
-        System.loadLibrary("termux");
+        boolean loaded = false;
+        try {
+            String vendor = System.getProperty("java.vendor");
+            if (vendor != null && vendor.contains("Android")) {
+                System.loadLibrary("termux_rust");
+                loaded = true;
+            } else {
+                // For unit tests on host, try to load from known locations
+                String libName = System.mapLibraryName("termux_rust");
+                // Try multiple possible paths for host-side testing
+                String[] possiblePaths = {
+                    "src/main/rust/target/release/" + libName,
+                    "terminal-emulator/src/main/rust/target/release/" + libName,
+                    "../terminal-emulator/src/main/rust/target/release/" + libName
+                };
+                for (String path : possiblePaths) {
+                    java.io.File libPath = new java.io.File(path);
+                    if (libPath.exists()) {
+                        System.load(libPath.getAbsolutePath());
+                        loaded = true;
+                        break;
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            // Silently fail, width() and others will have fallbacks
+        }
+        sNativeLibrariesLoaded = loaded;
     }
 
     /**
