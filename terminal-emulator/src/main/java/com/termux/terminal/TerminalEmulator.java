@@ -583,7 +583,7 @@ public final class TerminalEmulator {
             int copyLength = Math.min(line.mText.length, destText.length);
             System.arraycopy(line.mText, 0, destText, 0, copyLength);
             System.arraycopy(line.mStyle, 0, destStyle, 0, Math.min(line.mStyle.length, destStyle.length));
-            return line.mSpaceUsed;
+            return line.getSpaceUsed();
         }
         return 0;
     }
