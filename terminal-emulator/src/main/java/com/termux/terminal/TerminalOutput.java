@@ -29,4 +29,7 @@ public abstract class TerminalOutput {
 
     public abstract void onColorsChanged();
 
+    /** Notify the terminal client that the terminal cursor visibility has changed. */
+    public abstract void onTerminalCursorStateChange(boolean visible);
+
 }
