@@ -61,8 +61,15 @@ final class TermuxInstaller {
 
     private static final String LOG_TAG = "TermuxInstaller";
 
+    private static boolean sIsBootstrapInstallationRunning = false;
+
     /** Performs bootstrap setup if necessary. */
-    static void setupBootstrapIfNeeded(final Activity activity, final Runnable whenDone) {
+    static synchronized void setupBootstrapIfNeeded(final Activity activity, final Runnable whenDone) {
+        if (sIsBootstrapInstallationRunning) {
+            Logger.logDebug(LOG_TAG, "Bootstrap installation is already running, skipping.");
+            return;
+        }
+
         String bootstrapErrorMessage;
         Error filesDirectoryAccessibleError;
 
@@ -89,7 +96,7 @@ final class TermuxInstaller {
             bootstrapErrorMessage = Error.getMinimalErrorString(filesDirectoryAccessibleError);
             //noinspection SdCardPath
             if (PackageUtils.isAppInstalledOnExternalStorage(activity) &&
-                !TermuxConstants.TERMUX_FILES_DIR_PATH.equals(activity.getFilesDir().getAbsolutePath().replaceAll("^/data/user/0/", "/data/data/"))) {
+                !TermuxConstants.TERMUX_FILES_DIR_PATH.equals(activity.getFilesDir().getAbsolutePath().replaceAll("^/data/user/0/", "/data/user/0/"))) {
                 bootstrapErrorMessage += "\n\n" + activity.getString(R.string.bootstrap_error_installed_on_portable_sd,
                     MarkdownUtils.getMarkdownCodeForString(TERMUX_PREFIX_DIR_PATH, false));
             }
@@ -104,9 +111,11 @@ final class TermuxInstaller {
 
         // If prefix directory exists, even if its a symlink to a valid directory and symlink is not broken/dangling
         if (FileUtils.directoryFileExists(TERMUX_PREFIX_DIR_PATH, true)) {
+            Logger.logInfo(LOG_TAG, "Prefix directory exists at: " + TERMUX_PREFIX_DIR_PATH);
             if (TermuxFileUtils.isTermuxPrefixDirectoryEmpty()) {
                 Logger.logInfo(LOG_TAG, "The termux prefix directory \"" + TERMUX_PREFIX_DIR_PATH + "\" exists but is empty or only contains specific unimportant files.");
             } else {
+                Logger.logInfo(LOG_TAG, "Prefix not empty, skipping bootstrap.");
                 whenDone.run();
                 return;
             }
@@ -114,6 +123,7 @@ final class TermuxInstaller {
             Logger.logInfo(LOG_TAG, "The termux prefix directory \"" + TERMUX_PREFIX_DIR_PATH + "\" does not exist but another file exists at its destination.");
         }
 
+        sIsBootstrapInstallationRunning = true;
         final ProgressDialog progress = ProgressDialog.show(activity, null, activity.getString(R.string.bootstrap_installer_body), true, false);
         new Thread() {
             @Override
@@ -227,6 +237,9 @@ final class TermuxInstaller {
                     showBootstrapErrorDialog(activity, whenDone, Logger.getStackTracesMarkdownString(null, Logger.getStackTracesStringArray(e)));
 
                 } finally {
+                    synchronized (TermuxInstaller.class) {
+                        sIsBootstrapInstallationRunning = false;
+                    }
                     activity.runOnUiThread(() -> {
                         try {
                             progress.dismiss();
@@ -240,6 +253,9 @@ final class TermuxInstaller {
     }
 
     public static void showBootstrapErrorDialog(Activity activity, Runnable whenDone, String message) {
+        synchronized (TermuxInstaller.class) {
+            sIsBootstrapInstallationRunning = false;
+        }
         Logger.logErrorExtended(LOG_TAG, "Bootstrap Error:\n" + message);
 
         // Send a notification with the exception so that the user knows why bootstrap setup failed
