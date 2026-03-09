@@ -257,7 +257,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readRowF
         let mut style_vec = vec![0i64; style_len];
 
         // 核心逻辑在 Rust 侧完成（无 JNI）
-        engine.state.copy_row_text_u16(row as usize, &mut text_vec);
+        engine.state.copy_row_text(row as usize, &mut text_vec);
         engine.state.copy_row_styles(row as usize, &mut style_vec);
 
         // 使用 SetRegion 批量写入数据，这是最安全的 JNI 方式
