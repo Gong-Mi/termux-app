@@ -4,8 +4,14 @@ use jni::sys::jobject;
 use std::cmp::{max, min};
 use unicode_width::UnicodeWidthChar;
 use vte::{Params, Parser, Perform};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 use crate::utils::map_line_drawing;
+
+/// Base64 解码辅助函数
+fn base64_decode(input: &str) -> Result<Vec<u8>, base64::DecodeError> {
+    BASE64.decode(input)
+}
 
 #[derive(Clone)]
 pub struct TerminalRow {
@@ -423,10 +429,14 @@ pub struct ScreenState {
     // Java 回调支持
     pub java_callback_env: Option<*mut jni::sys::JNIEnv>,
     pub java_callback_obj: Option<jobject>,
+
+    // 窗口大小信息 (用于 OSC 18/19 报告)
+    pub cell_width_pixels: i32,
+    pub cell_height_pixels: i32,
 }
 
 impl ScreenState {
-    pub fn new(cols: i32, rows: i32, total_rows: i32) -> Self {
+    pub fn new(cols: i32, rows: i32, total_rows: i32, cell_width: i32, cell_height: i32) -> Self {
         let total_rows_u = max(rows as usize, total_rows as usize);
         let mut buffer = Vec::with_capacity(total_rows_u);
         for _ in 0..total_rows_u {
@@ -499,6 +509,10 @@ impl ScreenState {
 
             java_callback_env: None,
             java_callback_obj: None,
+
+            // 窗口大小信息初始化
+            cell_width_pixels: cell_width,
+            cell_height_pixels: cell_height,
         }
     }
 
@@ -560,6 +574,123 @@ impl ScreenState {
         }
     }
 
+    /// 调用 Java 方法报告屏幕刷新
+    pub fn report_screen_update(&self) {
+        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj) {
+            unsafe {
+                if let Ok(mut env) = JNIEnv::from_raw(env_ptr) {
+                    let _ = env.call_method(
+                        JObject::from_raw(obj),
+                        "onScreenUpdate",
+                        "()V",
+                        &[],
+                    );
+                }
+            }
+        }
+    }
+
+    /// 调用 Java 方法复制文本到剪贴板
+    fn report_clipboard_copy(&self, text: &str) {
+        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj) {
+            unsafe {
+                if let Ok(mut env) = JNIEnv::from_raw(env_ptr) {
+                    if let Ok(java_text) = env.new_string(text) {
+                        let _ = env.call_method(
+                            JObject::from_raw(obj),
+                            "onCopyTextToClipboard",
+                            "(Ljava/lang/String;)V",
+                            &[JValue::Object(&JObject::from_raw(java_text.as_raw()))],
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// 调用 Java 方法写入数据到终端
+    pub fn write_to_session(&self, data: &str) {
+        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj) {
+            unsafe {
+                if let Ok(mut env) = JNIEnv::from_raw(env_ptr) {
+                    if let Ok(java_data) = env.new_string(data) {
+                        let _ = env.call_method(
+                            JObject::from_raw(obj),
+                            "onWriteToSession",
+                            "(Ljava/lang/String;)V",
+                            &[JValue::Object(&JObject::from_raw(java_data.as_raw()))],
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// 调用 Java 方法报告颜色查询响应
+    fn report_color_response(&self, color_spec: &str) {
+        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj) {
+            unsafe {
+                if let Ok(mut env) = JNIEnv::from_raw(env_ptr) {
+                    if let Ok(java_spec) = env.new_string(color_spec) {
+                        let _ = env.call_method(
+                            JObject::from_raw(obj),
+                            "reportColorResponse",
+                            "(Ljava/lang/String;)V",
+                            &[JValue::Object(&JObject::from_raw(java_spec.as_raw()))],
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// 调用 Java 方法报告终端响应 (DSR/DEC)
+    fn report_terminal_response(&self, response: &str) {
+        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj) {
+            unsafe {
+                if let Ok(mut env) = JNIEnv::from_raw(env_ptr) {
+                    if let Ok(java_response) = env.new_string(response) {
+                        let _ = env.call_method(
+                            JObject::from_raw(obj),
+                            "reportTerminalResponse",
+                            "(Ljava/lang/String;)V",
+                            &[JValue::Object(&JObject::from_raw(java_response.as_raw()))],
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// 报告焦点获得事件
+    pub fn report_focus_gain(&self) {
+        if self.send_focus_events {
+            self.write_to_session("\x1b[I");
+        }
+    }
+
+    /// 报告焦点失去事件
+    pub fn report_focus_loss(&self) {
+        if self.send_focus_events {
+            self.write_to_session("\x1b[O");
+        }
+    }
+
+    /// 处理括号粘贴模式 - 开始粘贴
+    pub fn paste_start(&mut self, text: &str) {
+        if self.bracketed_paste {
+            // 发送粘贴开始标记
+            self.write_to_session("\x1b[200~");
+            // 发送粘贴内容
+            self.write_to_session(text);
+            // 发送粘贴结束标记
+            self.write_to_session("\x1b[201~");
+        } else {
+            // 非括号粘贴模式，直接发送内容
+            self.write_to_session(text);
+        }
+    }
+
     // ========================================================================
     // OSC 序列处理方法
     // ========================================================================
@@ -574,7 +705,7 @@ impl ScreenState {
     }
 
     /// 保存标题到栈 (OSC 22)
-    pub fn push_title(&mut self, mode: &str) {
+    pub fn push_title(&mut self, _mode: &str) {
         if let Some(ref title) = self.title {
             self.title_stack.push(title.clone());
             // 限制栈大小为 20
@@ -585,7 +716,7 @@ impl ScreenState {
     }
 
     /// 从栈恢复标题 (OSC 23)
-    pub fn pop_title(&mut self, mode: &str) {
+    pub fn pop_title(&mut self, _mode: &str) {
         if let Some(title) = self.title_stack.pop() {
             self.set_title(&title);
         }
@@ -602,8 +733,7 @@ impl ScreenState {
                 let color_spec = parts[i + 1];
                 if color_spec == "?" {
                     // 查询当前颜色
-                    let report = self.colors.generate_color_report(color_index);
-                    // 这里需要向 Java 层发送报告，暂时忽略
+                    let report = self.colors.generate_color_report(color_index); self.report_color_response(&format!("4;{}", report));
                 } else {
                     // 设置颜色
                     if self.colors.try_parse_color(color_index, color_spec) {
@@ -618,9 +748,8 @@ impl ScreenState {
     /// OSC 10 - 设置默认前景色
     pub fn handle_osc10(&mut self, param_text: &str) {
         if param_text == "?" {
-            // 查询当前颜色
             let report = self.colors.generate_color_report(COLOR_INDEX_FOREGROUND as usize);
-            // 需要向 Java 层发送报告
+            self.report_color_response(&format!("10;{}", report));
         } else {
             if let Some(color) = TerminalColors::parse_color(param_text) {
                 self.colors.current_colors[COLOR_INDEX_FOREGROUND as usize] = color;
@@ -632,9 +761,8 @@ impl ScreenState {
     /// OSC 11 - 设置默认背景色
     pub fn handle_osc11(&mut self, param_text: &str) {
         if param_text == "?" {
-            // 查询当前颜色
             let report = self.colors.generate_color_report(COLOR_INDEX_BACKGROUND as usize);
-            // 需要向 Java 层发送报告
+            self.report_color_response(&format!("11;{}", report));
         } else {
             if let Some(color) = TerminalColors::parse_color(param_text) {
                 self.colors.current_colors[COLOR_INDEX_BACKGROUND as usize] = color;
@@ -643,23 +771,53 @@ impl ScreenState {
         }
     }
 
+    /// OSC 13 - 报告文本区域像素大小
+    pub fn handle_osc13(&self) {
+        let width = self.cols * self.cell_width_pixels;
+        let height = self.rows * self.cell_height_pixels;
+        self.report_terminal_response(&format!("\x1b]13;t={};{}t", width, height));
+    }
+
+    /// OSC 14 - 报告屏幕位置像素大小
+    pub fn handle_osc14(&self) {
+        // 在 Android 上，我们默认返回 0,0 位置
+        let width = self.cols * self.cell_width_pixels;
+        let height = self.rows * self.cell_height_pixels;
+        self.report_terminal_response(&format!("\x1b]14;t=0;0;{};{}t", width, height));
+    }
+
+    /// OSC 18 - 报告文本区域单元格大小
+    pub fn handle_osc18(&self) {
+        self.report_terminal_response(&format!("\x1b]18;t={};{}t", self.cols, self.rows));
+    }
+
+    /// OSC 19 - 报告屏幕单元格像素大小
+    pub fn handle_osc19(&self) {
+        self.report_terminal_response(&format!("\x1b]19;t={};{}t", self.cell_width_pixels, self.cell_height_pixels));
+    }
+
     /// OSC 52 - 剪贴板操作
     /// 格式：52;selection;base64_data
     pub fn handle_osc52(&mut self, base64_data: &str) {
-        // 使用 base64 crate 解码
-        // 注意：需要添加 base64 依赖到 Cargo.toml
-        // 暂时标记为需要 Java 层处理
+        if base64_data == "?" {
+            // 目前不支持从 Rust 侧主动读取 Java 剪贴板并通过 OSC 52 返回
+            return;
+        }
+        
+        // 解码 base64
+        if let Ok(decoded_bytes) = base64_decode(base64_data) {
+            if let Ok(text) = String::from_utf8(decoded_bytes) {
+                self.report_clipboard_copy(&text);
+            }
+        }
     }
 
     /// OSC 104 - 重置颜色
-    /// 格式：104 或 104;c1;c2;...
     pub fn handle_osc104(&mut self, param_text: &str) {
         if param_text.is_empty() {
-            // 重置所有颜色
             self.colors.reset();
             self.report_colors_changed();
         } else {
-            // 重置特定颜色索引
             for part in param_text.split(';') {
                 if let Ok(index) = part.parse::<usize>() {
                     self.colors.reset_index(index);
@@ -667,6 +825,40 @@ impl ScreenState {
             }
             self.report_colors_changed();
         }
+    }
+
+    /// DECSTR - 软重置 (CSI ! p)
+    pub fn decstr_soft_reset(&mut self) {
+        self.auto_wrap = true;
+        self.origin_mode = false;
+        self.insert_mode = false;
+        self.cursor_enabled = true;
+        self.top_margin = 0;
+        self.bottom_margin = self.rows;
+        self.left_margin = 0;
+        self.right_margin = self.cols;
+        self.application_cursor_keys = false;
+        self.application_keypad = false;
+        self.reset_sgr();
+        self.report_cursor_visibility(true);
+    }
+
+    /// 重置所有 SGR 属性
+    pub fn reset_sgr(&mut self) {
+        self.current_style = STYLE_NORMAL;
+        self.fore_color = COLOR_INDEX_FOREGROUND;
+        self.back_color = COLOR_INDEX_BACKGROUND;
+        self.effect = 0;
+    }
+
+    /// 清除滚动计数器
+    pub fn clear_scroll_counter(&mut self) {
+        self.scroll_counter = 0;
+    }
+
+    /// 切换自动滚动禁用状态
+    pub fn toggle_auto_scroll_disabled(&mut self) {
+        self.auto_scroll_disabled = !self.auto_scroll_disabled;
     }
 
     pub fn clamp_cursor(&mut self) {
@@ -1455,15 +1647,6 @@ impl ScreenState {
         }
     }
 
-    /// 重置 SGR 属性为默认值
-    fn reset_sgr(&mut self) {
-        self.fore_color = COLOR_INDEX_FOREGROUND;
-        self.back_color = COLOR_INDEX_BACKGROUND;
-        self.effect = 0;
-        self.underline_color = COLOR_INDEX_FOREGROUND;
-        self.current_style = STYLE_NORMAL;
-    }
-
     /// 处理设置/重置模式 (SM/RM)
     fn handle_set_mode(&mut self, params: &Params, set: bool) {
         for param in params {
@@ -1788,6 +1971,18 @@ impl<'a> Perform for PurePerformHandler<'a> {
                     self.state.report_colors_changed();
                 }
             }
+            "13" => {
+                self.state.handle_osc13();
+            }
+            "14" => {
+                self.state.handle_osc14();
+            }
+            "18" => {
+                self.state.handle_osc18();
+            }
+            "19" => {
+                self.state.handle_osc19();
+            }
             "22" => {
                 // OSC 22 ; 0 → 保存图标和窗口标题到栈
                 // OSC 22 ; 1 → 保存图标标题到栈
@@ -1978,7 +2173,8 @@ impl<'a> Perform for PurePerformHandler<'a> {
                 }
             }
             'c' => { // DA - 设备属性
-                // 忽略，由 Java 层处理
+                // 报告具有高级功能的 VT102: CSI ? 6 c (或类似的响应)
+                self.state.report_terminal_response("\x1b[?6c");
             }
             'd' => {
                 // VPA - 垂直绝对
@@ -2020,7 +2216,23 @@ impl<'a> Perform for PurePerformHandler<'a> {
                 self.state.handle_sgr(params);
             }
             'n' => { // DSR - 设备状态报告
-                // 忽略，由 Java 层处理
+                let mode = params.iter().next().and_then(|p| p.first()).unwrap_or(&0);
+                match mode {
+                    5 => self.state.report_terminal_response("\x1b[0n"), // 终端 OK
+                    6 => {
+                        // 报告光标位置: CSI R ; C R
+                        let r = self.state.cursor_y + 1;
+                        let c = self.state.cursor_x + 1;
+                        self.state.report_terminal_response(&format!("\x1b[{};{}R", r, c));
+                    }
+                    _ => {}
+                }
+            }
+            'p' => {
+                // 软重置: CSI ! p
+                if intermediates.contains(&b'!') {
+                    self.state.decstr_soft_reset();
+                }
             }
             'r' => {
                 // DECSTBM - 设置上下边距
@@ -2197,10 +2409,10 @@ pub struct TerminalEngine {
 }
 
 impl TerminalEngine {
-    pub fn new(cols: i32, rows: i32, total_rows: i32) -> Self {
+    pub fn new(cols: i32, rows: i32, total_rows: i32, cell_width: i32, cell_height: i32) -> Self {
         Self {
             parser: Parser::new(),
-            state: ScreenState::new(cols, rows, total_rows),
+            state: ScreenState::new(cols, rows, total_rows, cell_width, cell_height),
         }
     }
 

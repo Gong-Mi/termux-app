@@ -73,6 +73,8 @@ public final class TerminalRenderer {
         for (int row = topRow; row < endRow; row++) {
             heightOffset += mFontLineSpacing;
 
+            mEmulator.syncRowFromRust(row);
+
             final int cursorX = (row == cursorRow && cursorVisible) ? cursorCol : -1;
             int selx1 = -1, selx2 = -1;
             if (row >= selectionY1 && row <= selectionY2) {

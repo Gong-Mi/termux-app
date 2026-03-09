@@ -2,17 +2,11 @@
 //!
 //! This library provides Rust implementations for terminal emulation functions,
 //! including fast-path ASCII processing and a full terminal engine.
-//!
-//! # Safety
-//!
-//! Most functions in this library are `unsafe` because they interact with raw JNI pointers.
-//! The caller must ensure that the JNI environment pointer and Java object handles are valid.
 
 #![warn(clippy::all)]
-#![allow(clippy::missing_safety_doc)] // JNI functions have implicit safety requirements
+#![allow(clippy::missing_safety_doc)]
 
 use jni::JNIEnv;
-use jni::objects::JByteArray;
 use jni::sys::{
     JNINativeInterface_, jbyteArray, jcharArray, jclass, jint, jintArray, jlong, jlongArray,
     jobject, jobjectArray, jstring,
@@ -52,71 +46,43 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_processB
             Ok(e) => e,
             Err(_) => return 0,
         };
-        let input = JByteArray::from_raw(input);
+        
+        let internal = env.get_native_interface();
+        let mut is_copy = jni::sys::JNI_FALSE;
+        let input_ptr =
+            ((**internal).GetPrimitiveArrayCritical.unwrap())(internal, input, &mut is_copy)
+                as *const u8;
 
-        let input_bytes = match env.convert_byte_array(&input) {
-            Ok(b) => b,
-            Err(_) => return 0,
-        };
+        if !input_ptr.is_null() {
+            let input_len = ((**internal).GetArrayLength.unwrap())(internal, input) as usize;
+            let start = offset as usize;
+            let len = length as usize;
 
-        let start = offset as usize;
-        let len = length as usize;
-        if start + len > input_bytes.len() {
-            return 0;
+            let result = if start + len <= input_len {
+                fastpath::scan_ascii_batch(
+                    std::slice::from_raw_parts(input_ptr.add(start), len),
+                    use_line_drawing != jni::sys::JNI_FALSE,
+                )
+            } else {
+                0
+            };
+
+            ((**internal).ReleasePrimitiveArrayCritical.unwrap())(
+                internal,
+                input,
+                input_ptr as *mut _,
+                jni::sys::JNI_ABORT,
+            );
+            result as jint
+        } else {
+            0
         }
-
-        fastpath::scan_ascii_batch(
-            &input_bytes[start..start + len],
-            use_line_drawing != jni::sys::JNI_FALSE,
-        ) as jint
     }
 }
 
-use rayon::prelude::*;
-
-#[unsafe(no_mangle)]
-pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_mapLineDrawingParallelNative(
-    env_ptr: *mut *const JNINativeInterface_,
-    _class: jclass,
-    src: jbyteArray,
-    src_offset: jint,
-    dest: jcharArray,
-    length: jint,
-) {
-    unsafe {
-        let env = match JNIEnv::from_raw(env_ptr) {
-            Ok(e) => e,
-            Err(_) => return,
-        };
-
-        let len = length as usize;
-        let mut src_vec = vec![0i8; len];
-        let _ = env.get_byte_array_region(JByteArray::from_raw(src), src_offset, &mut src_vec);
-
-        let dest_vec: Vec<u16> = src_vec
-            .par_iter()
-            .map(|&b| utils::map_line_drawing(b as u8) as u16)
-            .collect();
-
-        let _ = env.set_char_array_region(jni::objects::JCharArray::from_raw(dest), 0, &dest_vec);
-    }
-}
-
-// ==========================================
-// 2. 有状态引擎 JNI
-// ==========================================
-
-#[unsafe(no_mangle)]
-pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_createEngineRust(
-    _env_ptr: *mut *const JNINativeInterface_,
-    _class: jclass,
-    cols: jint,
-    rows: jint,
-    total_rows: jint,
-) -> jlong {
-    let engine = Box::new(TerminalEngine::new(cols, rows, total_rows));
-    Box::into_raw(engine) as jlong
-}
+// ============================================================================
+// 有状态引擎 JNI - Full Takeover 模式
+// ============================================================================
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_createEngineRustWithCallback(
@@ -125,9 +91,11 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_createEn
     cols: jint,
     rows: jint,
     total_rows: jint,
+    cell_width: jint,
+    cell_height: jint,
     callback_obj: jobject,
 ) -> jlong {
-    let mut engine = Box::new(TerminalEngine::new(cols, rows, total_rows));
+    let mut engine = Box::new(TerminalEngine::new(cols, rows, total_rows, cell_width, cell_height));
     // 设置 Java 回调
     engine.state.set_java_callback(env_ptr, callback_obj);
     Box::into_raw(engine) as jlong
@@ -174,6 +142,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_processE
                 input_ptr as *mut _,
                 jni::sys::JNI_ABORT,
             );
+            
+            // 通知 Java 刷新界面
+            engine.state.report_screen_update();
         }
     }
 }
@@ -236,7 +207,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readRowF
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_resizeEngineRust(
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_resizeEngineRustFull(
     _env_ptr: *mut *const JNINativeInterface_,
     _class: jclass,
     engine_ptr: jlong,
@@ -266,50 +237,183 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_destroyE
     }
 }
 
-// ==========================================
-// 3. 纯 C 接口 (供 Python/单元测试调用)
-// ==========================================
+// ============================================================================
+// Full Takeover 模式 - 额外 JNI 接口
+// ============================================================================
 
 #[unsafe(no_mangle)]
-pub extern "C" fn test_create_engine(cols: i32, rows: i32) -> jlong {
-    let engine = Box::new(TerminalEngine::new(cols, rows, rows));
-    Box::into_raw(engine) as jlong
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCursorColFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) -> jint {
+    if engine_ptr == 0 { return -1; }
+    let engine = unsafe { &*(engine_ptr as *mut TerminalEngine) };
+    engine.state.cursor_x as jint
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn test_process_data(engine_ptr: jlong, data: *const u8, len: usize) {
-    unsafe {
-        let engine = &mut *(engine_ptr as *mut TerminalEngine);
-        let slice = std::slice::from_raw_parts(data, len);
-        engine.process_bytes(slice);
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCursorRowFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) -> jint {
+    if engine_ptr == 0 { return -1; }
+    let engine = unsafe { &*(engine_ptr as *mut TerminalEngine) };
+    engine.state.cursor_y as jint
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCursorStyleFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) -> jint {
+    if engine_ptr == 0 { return 0; }
+    let engine = unsafe { &*(engine_ptr as *mut TerminalEngine) };
+    engine.state.cursor_style as jint
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_shouldCursorBeVisibleFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) -> jni::sys::jboolean {
+    if engine_ptr == 0 { return jni::sys::JNI_FALSE; }
+    let engine = unsafe { &*(engine_ptr as *mut TerminalEngine) };
+    if engine.state.cursor_enabled && engine.state.cursor_blink_state {
+        jni::sys::JNI_TRUE
+    } else {
+        jni::sys::JNI_FALSE
     }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn test_get_cursor_x(engine_ptr: jlong) -> i32 {
-    unsafe { (*(engine_ptr as *mut TerminalEngine)).state.cursor_x }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn test_get_cursor_y(engine_ptr: jlong) -> i32 {
-    unsafe { (*(engine_ptr as *mut TerminalEngine)).state.cursor_y }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn test_resize(engine_ptr: jlong, cols: i32, rows: i32) {
-    unsafe {
-        let engine = &mut *(engine_ptr as *mut TerminalEngine);
-        engine.resize(cols, rows);
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isReverseVideoFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) -> jni::sys::jboolean {
+    if engine_ptr == 0 { return jni::sys::JNI_FALSE; }
+    let engine = unsafe { &*(engine_ptr as *mut TerminalEngine) };
+    if engine.state.reverse_video {
+        jni::sys::JNI_TRUE
+    } else {
+        jni::sys::JNI_FALSE
     }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn test_destroy_engine(engine_ptr: jlong) {
-    unsafe {
-        if engine_ptr != 0 {
-            let _ = Box::from_raw(engine_ptr as *mut TerminalEngine);
-        }
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getTitleFromRust(
+    env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) -> jstring {
+    if engine_ptr == 0 { return std::ptr::null_mut(); }
+    let engine = unsafe { &*(engine_ptr as *mut TerminalEngine) };
+    let env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+        Ok(e) => e,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    match &engine.state.title {
+        Some(title) => match env.new_string(title) {
+            Ok(s) => s.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        },
+        None => std::ptr::null_mut(),
     }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_reportFocusGainFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) {
+    if engine_ptr == 0 { return; }
+    let engine = unsafe { &*(engine_ptr as *mut TerminalEngine) };
+    engine.state.report_focus_gain();
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_reportFocusLossFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) {
+    if engine_ptr == 0 { return; }
+    let engine = unsafe { &*(engine_ptr as *mut TerminalEngine) };
+    engine.state.report_focus_loss();
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_pasteTextFromRust(
+    env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+    text: jstring,
+) {
+    if engine_ptr == 0 { return; }
+    let engine = unsafe { &mut *(engine_ptr as *mut TerminalEngine) };
+    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    if let Ok(rust_text) = env.get_string(&unsafe { jni::objects::JString::from_raw(text) }) {
+        let text_str: String = rust_text.into();
+        engine.state.paste_start(&text_str);
+    }
+}
+
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getScrollCounterFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) -> jint {
+    if engine_ptr == 0 { return 0; }
+    let engine = unsafe { &*(engine_ptr as *mut TerminalEngine) };
+    engine.state.scroll_counter
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_clearScrollCounterFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) {
+    if engine_ptr == 0 { return; }
+    let engine = unsafe { &mut *(engine_ptr as *mut TerminalEngine) };
+    engine.state.clear_scroll_counter();
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isAutoScrollDisabledFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) -> jni::sys::jboolean {
+    if engine_ptr == 0 { return jni::sys::JNI_FALSE; }
+    let engine = unsafe { &*(engine_ptr as *mut TerminalEngine) };
+    if engine.state.auto_scroll_disabled {
+        jni::sys::JNI_TRUE
+    } else {
+        jni::sys::JNI_FALSE
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_toggleAutoScrollDisabledFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) {
+    if engine_ptr == 0 { return; }
+    let engine = unsafe { &mut *(engine_ptr as *mut TerminalEngine) };
+    engine.state.toggle_auto_scroll_disabled();
 }
 
 // ==========================================
