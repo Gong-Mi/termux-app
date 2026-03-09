@@ -36,15 +36,19 @@ android {
 
     testOptions {
         unitTests.returnDefaultValues = true
-        unitTests.all {
-            testLogging {
-                events "passed", "skipped", "failed", "standardOut", "standardError"
-                showStandardStreams = true
-                exceptionFormat = "full"
-            }
-        }
     }
 
+    // 自动同步 Rust 编译出的 .so 到 jniLibs
+    task syncRustLibs(type: Copy) {
+        from 'src/main/rust/target/release/libtermux_rust.so'
+        into 'src/main/jniLibs/arm64-v8a'
+        rename 'libtermux_rust.so', 'libtermux_rust.so'
+    }
+
+    tasks.withType(JavaCompile) {
+        dependsOn syncRustLibs
+    }
+    }
     publishing {
         singleVariant("release")
     }

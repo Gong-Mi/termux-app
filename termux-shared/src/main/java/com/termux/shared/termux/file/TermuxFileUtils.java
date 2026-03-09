@@ -337,8 +337,12 @@ public class TermuxFileUtils {
         if (error == null)
             return true;
 
-        if (!FileUtilsErrno.ERRNO_NON_EMPTY_DIRECTORY_FILE.equalsErrorTypeAndCode(error))
-            Logger.logErrorExtended(LOG_TAG, "Failed to check if termux prefix directory is empty:\n" + error.getErrorLogString());
+        if (FileUtilsErrno.ERRNO_NON_EMPTY_DIRECTORY_FILE.equalsErrorTypeAndCode(error)) {
+            Logger.logDebug(LOG_TAG, "The termux prefix directory \"" + TERMUX_PREFIX_DIR_PATH + "\" is not empty.");
+            return false;
+        }
+
+        Logger.logErrorExtended(LOG_TAG, "Failed to check if termux prefix directory is empty:\n" + error.getErrorLogString());
         return false;
     }
 
