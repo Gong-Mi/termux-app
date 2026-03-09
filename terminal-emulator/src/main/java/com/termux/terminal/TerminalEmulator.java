@@ -754,6 +754,7 @@ public final class TerminalEmulator {
     private static native void pasteTextFromRust(long enginePtr, String text);
     private static native void destroyEngineRust(long enginePtr);
     private static native int processBatchRust(byte[] buffer, int offset, int length, boolean useLineDrawing);
+    private static native void writeASCIIBatchNative(byte[] src, int srcOffset, char[] destText, long[] destStyle, int destOffset, int length, long style, boolean useLineDrawing);
     
     /** 恢复滚动相关的 Native 方法 */
     private static native int getScrollCounterFromRust(long enginePtr);

@@ -96,8 +96,15 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_createEn
     callback_obj: jobject,
 ) -> jlong {
     let mut engine = Box::new(TerminalEngine::new(cols, rows, total_rows, cell_width, cell_height));
-    // 设置 Java 回调
-    engine.state.set_java_callback(env_ptr, callback_obj);
+    
+    // 创建全局引用
+    if let Ok(env) = unsafe { JNIEnv::from_raw(env_ptr) } {
+        if let Ok(global_obj) = env.new_global_ref(unsafe { jni::objects::JObject::from_raw(callback_obj) }) {
+            // 设置 Java 回调
+            engine.state.set_java_callback(env_ptr, global_obj);
+        }
+    }
+    
     Box::into_raw(engine) as jlong
 }
 
@@ -115,6 +122,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_processE
             return;
         }
         let engine = &mut *(engine_ptr as *mut TerminalEngine);
+        
+        // 更新线程相关的 JNIEnv 状态
+        engine.state.java_callback_env = Some(env_ptr);
+
         let env = match JNIEnv::from_raw(env_ptr) {
             Ok(e) => e,
             Err(_) => return,
@@ -148,6 +159,65 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_processE
         }
     }
 }
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_writeASCIIBatchNative(
+    env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    src: jbyteArray,
+    src_offset: jint,
+    dest_text: jcharArray,
+    dest_style: jlongArray,
+    dest_offset: jint,
+    length: jint,
+    style: jlong,
+    use_line_drawing: jni::sys::jboolean,
+) {
+    unsafe {
+        let env = match JNIEnv::from_raw(env_ptr) {
+            Ok(e) => e,
+            Err(_) => return,
+        };
+
+        let len = length as usize;
+        let offset = dest_offset as usize;
+        let use_ld = use_line_drawing != jni::sys::JNI_FALSE;
+
+        let internal = env.get_native_interface();
+        let mut is_copy = jni::sys::JNI_FALSE;
+        
+        let src_ptr = ((**internal).GetPrimitiveArrayCritical.unwrap())(internal, src, &mut is_copy) as *const i8;
+        let text_ptr = ((**internal).GetPrimitiveArrayCritical.unwrap())(internal, dest_text, &mut is_copy) as *mut u16;
+        let style_ptr = ((**internal).GetPrimitiveArrayCritical.unwrap())(internal, dest_style, &mut is_copy) as *mut i64;
+
+        if !src_ptr.is_null() && !text_ptr.is_null() && !style_ptr.is_null() {
+            let src_slice = std::slice::from_raw_parts(src_ptr.add(src_offset as usize), len);
+            let text_slice = std::slice::from_raw_parts_mut(text_ptr.add(offset), len);
+            let style_slice = std::slice::from_raw_parts_mut(style_ptr.add(offset), len);
+
+            for i in 0..len {
+                let b = src_slice[i] as u8;
+                text_slice[i] = if use_ld {
+                    utils::map_line_drawing(b) as u16
+                } else {
+                    b as u16
+                };
+                style_slice[i] = style;
+            }
+        }
+
+        if !style_ptr.is_null() {
+            ((**internal).ReleasePrimitiveArrayCritical.unwrap())(internal, dest_style, style_ptr as *mut _, 0);
+        }
+        if !text_ptr.is_null() {
+            ((**internal).ReleasePrimitiveArrayCritical.unwrap())(internal, dest_text, text_ptr as *mut _, 0);
+        }
+        if !src_ptr.is_null() {
+            ((**internal).ReleasePrimitiveArrayCritical.unwrap())(internal, src, src_ptr as *mut _, jni::sys::JNI_ABORT);
+        }
+    }
+}
+
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readRowFromRust(

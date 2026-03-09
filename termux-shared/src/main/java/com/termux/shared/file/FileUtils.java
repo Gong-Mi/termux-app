@@ -275,7 +275,7 @@ public class FileUtils {
             if (!ignoredSubFilePaths.contains(subFilePath)) {
                 boolean isParentPath = false;
                 for (String ignoredSubFilePath : ignoredSubFilePaths) {
-                    if (ignoredSubFilePath.startsWith(subFilePath + "/") && fileExists(ignoredSubFilePath, false)) {
+                    if (ignoredSubFilePath != null && ignoredSubFilePath.startsWith(subFilePath + "/") && fileExists(ignoredSubFilePath, false)) {
                         isParentPath = true;
                         break;
                     }

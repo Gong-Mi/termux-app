@@ -1,6 +1,5 @@
 use jni::JNIEnv;
-use jni::objects::{JObject, JValue};
-use jni::sys::jobject;
+use jni::objects::JValue;
 use std::cmp::{max, min};
 use unicode_width::UnicodeWidthChar;
 use vte::{Params, Parser, Perform};
@@ -428,7 +427,7 @@ pub struct ScreenState {
 
     // Java 回调支持
     pub java_callback_env: Option<*mut jni::sys::JNIEnv>,
-    pub java_callback_obj: Option<jobject>,
+    pub java_callback_obj: Option<jni::objects::GlobalRef>,
 
     // 窗口大小信息 (用于 OSC 18/19 报告)
     pub cell_width_pixels: i32,
@@ -524,22 +523,22 @@ impl ScreenState {
     }
 
     /// 设置 Java 回调环境
-    pub fn set_java_callback(&mut self, env: *mut jni::sys::JNIEnv, obj: jobject) {
+    pub fn set_java_callback(&mut self, env: *mut jni::sys::JNIEnv, obj: jni::objects::GlobalRef) {
         self.java_callback_env = Some(env);
         self.java_callback_obj = Some(obj);
     }
 
     /// 调用 Java 方法报告标题变更
     fn report_title_change(&self, title: &str) {
-        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj) {
+        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj.as_ref()) {
             unsafe {
                 if let Ok(mut env) = JNIEnv::from_raw(env_ptr)
                     && let Ok(java_title) = env.new_string(title) {
                         let _ = env.call_method(
-                            JObject::from_raw(obj),
+                            obj.as_obj(),
                             "reportTitleChange",
                             "(Ljava/lang/String;)V",
-                            &[JValue::Object(&JObject::from_raw(java_title.as_raw()))],
+                            &[JValue::Object(&java_title)],
                         );
                     }
             }
@@ -548,11 +547,11 @@ impl ScreenState {
 
     /// 调用 Java 方法报告颜色变更
     fn report_colors_changed(&self) {
-        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj) {
+        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj.as_ref()) {
             unsafe {
                 if let Ok(mut env) = JNIEnv::from_raw(env_ptr) {
                     let _ =
-                        env.call_method(JObject::from_raw(obj), "reportColorsChanged", "()V", &[]);
+                        env.call_method(obj.as_obj(), "reportColorsChanged", "()V", &[]);
                 }
             }
         }
@@ -560,11 +559,11 @@ impl ScreenState {
 
     /// 调用 Java 方法报告光标可见性变更
     fn report_cursor_visibility(&self, visible: bool) {
-        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj) {
+        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj.as_ref()) {
             unsafe {
                 if let Ok(mut env) = JNIEnv::from_raw(env_ptr) {
                     let _ = env.call_method(
-                        JObject::from_raw(obj),
+                        obj.as_obj(),
                         "reportCursorVisibility",
                         "(Z)V",
                         &[JValue::Bool(if visible { 1 } else { 0 })],
@@ -576,11 +575,11 @@ impl ScreenState {
 
     /// 调用 Java 方法报告屏幕刷新
     pub fn report_screen_update(&self) {
-        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj) {
+        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj.as_ref()) {
             unsafe {
                 if let Ok(mut env) = JNIEnv::from_raw(env_ptr) {
                     let _ = env.call_method(
-                        JObject::from_raw(obj),
+                        obj.as_obj(),
                         "onScreenUpdate",
                         "()V",
                         &[],
@@ -592,15 +591,15 @@ impl ScreenState {
 
     /// 调用 Java 方法复制文本到剪贴板
     fn report_clipboard_copy(&self, text: &str) {
-        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj) {
+        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj.as_ref()) {
             unsafe {
                 if let Ok(mut env) = JNIEnv::from_raw(env_ptr) {
                     if let Ok(java_text) = env.new_string(text) {
                         let _ = env.call_method(
-                            JObject::from_raw(obj),
+                            obj.as_obj(),
                             "onCopyTextToClipboard",
                             "(Ljava/lang/String;)V",
-                            &[JValue::Object(&JObject::from_raw(java_text.as_raw()))],
+                            &[JValue::Object(&java_text)],
                         );
                     }
                 }
@@ -610,15 +609,15 @@ impl ScreenState {
 
     /// 调用 Java 方法写入数据到终端
     pub fn write_to_session(&self, data: &str) {
-        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj) {
+        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj.as_ref()) {
             unsafe {
                 if let Ok(mut env) = JNIEnv::from_raw(env_ptr) {
                     if let Ok(java_data) = env.new_string(data) {
                         let _ = env.call_method(
-                            JObject::from_raw(obj),
+                            obj.as_obj(),
                             "onWriteToSession",
                             "(Ljava/lang/String;)V",
-                            &[JValue::Object(&JObject::from_raw(java_data.as_raw()))],
+                            &[JValue::Object(&java_data)],
                         );
                     }
                 }
@@ -628,15 +627,15 @@ impl ScreenState {
 
     /// 调用 Java 方法报告颜色查询响应
     fn report_color_response(&self, color_spec: &str) {
-        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj) {
+        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj.as_ref()) {
             unsafe {
                 if let Ok(mut env) = JNIEnv::from_raw(env_ptr) {
                     if let Ok(java_spec) = env.new_string(color_spec) {
                         let _ = env.call_method(
-                            JObject::from_raw(obj),
+                            obj.as_obj(),
                             "reportColorResponse",
                             "(Ljava/lang/String;)V",
-                            &[JValue::Object(&JObject::from_raw(java_spec.as_raw()))],
+                            &[JValue::Object(&java_spec)],
                         );
                     }
                 }
@@ -646,15 +645,15 @@ impl ScreenState {
 
     /// 调用 Java 方法报告终端响应 (DSR/DEC)
     fn report_terminal_response(&self, response: &str) {
-        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj) {
+        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj.as_ref()) {
             unsafe {
                 if let Ok(mut env) = JNIEnv::from_raw(env_ptr) {
                     if let Ok(java_response) = env.new_string(response) {
                         let _ = env.call_method(
-                            JObject::from_raw(obj),
+                            obj.as_obj(),
                             "reportTerminalResponse",
                             "(Ljava/lang/String;)V",
-                            &[JValue::Object(&JObject::from_raw(java_response.as_raw()))],
+                            &[JValue::Object(&java_response)],
                         );
                     }
                 }
