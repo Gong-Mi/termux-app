@@ -143,21 +143,31 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_processE
             let len = length as usize;
 
             if start + len <= input_len {
+                // 将数据拷贝到 Rust 向量中，以允许在解析期间进行 JNI 回调
                 let slice = std::slice::from_raw_parts(input_ptr.add(start), len);
-                engine.process_bytes(slice);
-            }
+                let data_vec = slice.to_vec();
 
-            ((**internal).ReleasePrimitiveArrayCritical.unwrap())(
-                internal,
-                input,
-                input_ptr as *mut _,
-                jni::sys::JNI_ABORT,
-            );
-            
-            // 通知 Java 刷新界面
-            engine.state.report_screen_update();
-        }
-    }
+                // 立即释放原始数组，这样后续的 process_bytes 就可以安全地进行 JNI 回调
+                ((**internal).ReleasePrimitiveArrayCritical.unwrap())(
+                    internal,
+                    input,
+                    input_ptr as *mut _,
+                    jni::sys::JNI_ABORT,
+                );
+
+                engine.process_bytes(&data_vec);
+
+                // 通知 Java 刷新界面（现在安全了）
+                engine.state.report_screen_update();
+            } else {
+                ((**internal).ReleasePrimitiveArrayCritical.unwrap())(
+                    internal,
+                    input,
+                    input_ptr as *mut _,
+                    jni::sys::JNI_ABORT,
+                );
+            }
+        }    }
 }
 
 #[unsafe(no_mangle)]
@@ -239,40 +249,20 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readRowF
         };
 
         let internal = env.get_native_interface();
-        let mut is_copy = jni::sys::JNI_FALSE;
-        let text_ptr =
-            ((**internal).GetPrimitiveArrayCritical.unwrap())(internal, dest_text, &mut is_copy)
-                as *mut u16;
-        let style_ptr =
-            ((**internal).GetPrimitiveArrayCritical.unwrap())(internal, dest_style, &mut is_copy)
-                as *mut i64;
+        let text_len = ((**internal).GetArrayLength.unwrap())(internal, dest_text) as usize;
+        let style_len = ((**internal).GetArrayLength.unwrap())(internal, dest_style) as usize;
 
-        if !text_ptr.is_null() && !style_ptr.is_null() {
-            let text_len = ((**internal).GetArrayLength.unwrap())(internal, dest_text) as usize;
-            let style_len = ((**internal).GetArrayLength.unwrap())(internal, dest_style) as usize;
-            let text_slice = std::slice::from_raw_parts_mut(text_ptr, text_len);
-            let style_slice = std::slice::from_raw_parts_mut(style_ptr, style_len);
+        // 为避免 Critical 锁定过长或 JNI 冲突，我们在 Rust 侧准备好数据后再写入
+        let mut text_vec = vec![' ' as u16; text_len];
+        let mut style_vec = vec![0i64; style_len];
 
-            engine.state.copy_row_text(row as usize, text_slice);
-            engine.state.copy_row_styles(row as usize, style_slice);
-        }
+        // 核心逻辑在 Rust 侧完成（无 JNI）
+        engine.state.copy_row_text_u16(row as usize, &mut text_vec);
+        engine.state.copy_row_styles(row as usize, &mut style_vec);
 
-        if !style_ptr.is_null() {
-            ((**internal).ReleasePrimitiveArrayCritical.unwrap())(
-                internal,
-                dest_style,
-                style_ptr as *mut _,
-                0,
-            );
-        }
-        if !text_ptr.is_null() {
-            ((**internal).ReleasePrimitiveArrayCritical.unwrap())(
-                internal,
-                dest_text,
-                text_ptr as *mut _,
-                0,
-            );
-        }
+        // 使用 SetRegion 批量写入数据，这是最安全的 JNI 方式
+        ((**internal).SetCharArrayRegion.unwrap())(internal, dest_text, 0, text_len as jint, text_vec.as_ptr());
+        ((**internal).SetLongArrayRegion.unwrap())(internal, dest_style, 0, style_len as jint, style_vec.as_ptr() as *const jlong);
     }
 }
 
