@@ -95,7 +95,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_mapLineD
 
         let dest_vec: Vec<u16> = src_vec
             .par_iter()
-            .map(|&b| utils::map_line_drawing(b as u8))
+            .map(|&b| utils::map_line_drawing(b as u8) as u16)
             .collect();
 
         let _ = env.set_char_array_region(jni::objects::JCharArray::from_raw(dest), 0, &dest_vec);

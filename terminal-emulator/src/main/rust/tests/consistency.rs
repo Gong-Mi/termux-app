@@ -1868,3 +1868,306 @@ fn test_wide_char_at_line_end_with_background() {
         "Cursor should be on row 1 after wide char wrap"
     );
 }
+
+// =============================================================================
+// 新增功能测试 - 颜色管理、标题栈、行绘图等
+// =============================================================================
+
+/// 验证 OSC 4 设置颜色索引 - ✅ PASS
+#[test]
+fn test_osc4_set_color() {
+    let mut engine = TerminalEngine::new(80, 24, 100);
+
+    // OSC 4 ; 1 ; #FF0000 BEL - 设置颜色索引 1 为红色
+    engine.process_bytes(b"\x1b]4;1;#FF0000\x07");
+
+    // 验证颜色已更改
+    let color = engine.state.colors.current_colors[1];
+    assert_eq!(color, 0xffff0000, "Color index 1 should be set to #FF0000");
+}
+
+/// 验证 OSC 10 设置前景色 - ✅ PASS
+#[test]
+fn test_osc10_set_foreground() {
+    let mut engine = TerminalEngine::new(80, 24, 100);
+
+    // OSC 10 ; #00FF00 BEL - 设置前景色为绿色
+    engine.process_bytes(b"\x1b]10;#00FF00\x07");
+
+    // 验证前景色已更改
+    let fg_color = engine.state.colors.current_colors[256];
+    assert_eq!(fg_color, 0xff00ff00, "Foreground color should be set to #00FF00");
+}
+
+/// 验证 OSC 11 设置背景色 - ✅ PASS
+#[test]
+fn test_osc11_set_background() {
+    let mut engine = TerminalEngine::new(80, 24, 100);
+
+    // OSC 11 ; #0000FF BEL - 设置背景色为蓝色
+    engine.process_bytes(b"\x1b]11;#0000FF\x07");
+
+    // 验证背景色已更改
+    let bg_color = engine.state.colors.current_colors[257];
+    assert_eq!(bg_color, 0xff0000ff, "Background color should be set to #0000FF");
+}
+
+/// 验证 OSC 104 重置颜色 - ✅ PASS
+#[test]
+fn test_osc104_reset_colors() {
+    use termux_rust::engine::DEFAULT_COLORSCHEME;
+
+    let mut engine = TerminalEngine::new(80, 24, 100);
+
+    // 先更改一些颜色
+    engine.process_bytes(b"\x1b]10;#FFFFFF\x07");
+    engine.process_bytes(b"\x1b]11;#000000\x07");
+
+    // OSC 104 - 重置所有颜色
+    engine.process_bytes(b"\x1b]104\x07");
+
+    // 验证颜色已重置
+    assert_eq!(
+        engine.state.colors.current_colors[256],
+        DEFAULT_COLORSCHEME[256],
+        "Foreground color should be reset to default"
+    );
+    assert_eq!(
+        engine.state.colors.current_colors[257],
+        DEFAULT_COLORSCHEME[257],
+        "Background color should be reset to default"
+    );
+}
+
+/// 验证 OSC 22/23 标题栈 - ✅ PASS
+#[test]
+fn test_osc22_23_title_stack() {
+    let mut engine = TerminalEngine::new(80, 24, 100);
+
+    // 设置初始标题
+    engine.process_bytes(b"\x1b]2;Initial Title\x07");
+    assert_eq!(
+        engine.state.title,
+        Some("Initial Title".to_string()),
+        "Title should be set to 'Initial Title'"
+    );
+
+    // OSC 22 - 保存标题
+    engine.process_bytes(b"\x1b]22;0\x07");
+
+    // 更改标题
+    engine.process_bytes(b"\x1b]2;Changed Title\x07");
+    assert_eq!(
+        engine.state.title,
+        Some("Changed Title".to_string()),
+        "Title should be changed to 'Changed Title'"
+    );
+
+    // OSC 23 - 恢复标题
+    engine.process_bytes(b"\x1b]23;0\x07");
+    assert_eq!(
+        engine.state.title,
+        Some("Initial Title".to_string()),
+        "Title should be restored to 'Initial Title'"
+    );
+}
+
+/// 验证 ESC ( 和 ESC ) 行绘图字符集切换 - ✅ PASS
+#[test]
+fn test_line_drawing_charset_switch() {
+    let mut engine = TerminalEngine::new(80, 24, 100);
+
+    // ESC ( 0 - 选择行绘图字符集为 G0
+    engine.process_bytes(b"\x1b(0");
+    assert_eq!(
+        engine.state.use_line_drawing_g0,
+        true,
+        "Line drawing G0 should be enabled"
+    );
+    assert_eq!(
+        engine.state.use_line_drawing_uses_g0,
+        true,
+        "Should be using G0"
+    );
+
+    // ESC ) 0 - 选择行绘图字符集为 G1
+    engine.process_bytes(b"\x1b)0");
+    assert_eq!(
+        engine.state.use_line_drawing_g1,
+        true,
+        "Line drawing G1 should be enabled"
+    );
+    assert_eq!(
+        engine.state.use_line_drawing_uses_g0,
+        false,
+        "Should be using G1"
+    );
+}
+
+/// 验证 SO/SI 字符集切换 - ✅ PASS
+#[test]
+fn test_so_si_charset_switch() {
+    let mut engine = TerminalEngine::new(80, 24, 100);
+
+    // 先启用 G0 行绘图
+    engine.process_bytes(b"\x1b(0");
+
+    // SO (0x0e) - 切换到 G1
+    engine.process_bytes(b"\x0e");
+    assert_eq!(
+        engine.state.use_line_drawing_uses_g0,
+        false,
+        "Should switch to G1 with SO"
+    );
+
+    // SI (0x0f) - 切换到 G0
+    engine.process_bytes(b"\x0f");
+    assert_eq!(
+        engine.state.use_line_drawing_uses_g0,
+        true,
+        "Should switch to G0 with SI"
+    );
+}
+
+/// 验证 RIS 完整重置 - ✅ PASS
+#[test]
+fn test_ris_full_reset() {
+    let mut engine = TerminalEngine::new(80, 24, 100);
+
+    // 更改一些状态
+    engine.process_bytes(b"\x1b[?7l"); // 禁用自动换行
+    engine.process_bytes(b"\x1b[5;20r"); // 设置边距
+    engine.process_bytes(b"\x1b[31m"); // 红色前景
+    engine.process_bytes(b"\x1b]2;Test Title\x07"); // 设置标题
+
+    // RIS - 重置到初始状态
+    engine.process_bytes(b"\x1bc");
+
+    // 验证所有状态已重置
+    assert_eq!(engine.state.auto_wrap, true, "Auto wrap should be reset");
+    assert_eq!(engine.state.top_margin, 0, "Top margin should be reset");
+    assert_eq!(engine.state.bottom_margin, 24, "Bottom margin should be reset");
+    assert_eq!(
+        (engine.state.current_style >> 40) & 0x1FF,
+        256,
+        "Foreground color should be reset"
+    );
+    assert_eq!(engine.state.title, None, "Title should be cleared");
+    assert_eq!(
+        engine.state.scroll_counter, 0,
+        "Scroll counter should be reset"
+    );
+}
+
+/// 验证滚动计数器 - ✅ PASS
+#[test]
+fn test_scroll_counter() {
+    let mut engine = TerminalEngine::new(80, 5, 100);
+
+    // 初始滚动计数器应为 0
+    assert_eq!(engine.state.scroll_counter, 0, "Initial scroll counter should be 0");
+
+    // 写满屏幕触发滚动
+    for i in 0..10 {
+        let line = format!("Line {}\r\n", i);
+        engine.process_bytes(line.as_bytes());
+    }
+
+    // 验证滚动计数器已增加
+    assert!(
+        engine.state.scroll_counter > 0,
+        "Scroll counter should be incremented after scrolling"
+    );
+}
+
+/// 验证自动滚动禁用 - ✅ PASS
+#[test]
+fn test_auto_scroll_disabled() {
+    let mut engine = TerminalEngine::new(80, 5, 100);
+
+    // 禁用自动滚动
+    engine.state.auto_scroll_disabled = true;
+
+    // 写满屏幕触发滚动
+    for i in 0..10 {
+        let line = format!("Line {}\r\n", i);
+        engine.process_bytes(line.as_bytes());
+    }
+
+    // 滚动计数器不应增加
+    assert_eq!(
+        engine.state.scroll_counter, 0,
+        "Scroll counter should not increment when auto-scroll is disabled"
+    );
+}
+
+/// 验证 SGR 58/59 下划线颜色 - ✅ PASS
+#[test]
+fn test_sgr_underline_color() {
+    let mut engine = TerminalEngine::new(80, 24, 100);
+
+    // 设置下划线颜色为红色 (索引 1)
+    engine.process_bytes(b"\x1b[58;5;1m");
+
+    assert_eq!(
+        engine.state.underline_color, 1,
+        "Underline color should be set to index 1"
+    );
+
+    // 重置下划线颜色
+    engine.process_bytes(b"\x1b[59m");
+
+    assert_eq!(
+        engine.state.underline_color, 256,
+        "Underline color should be reset to default (256)"
+    );
+}
+
+/// 验证保存/恢复光标包含行绘图状态 - ✅ PASS
+#[test]
+fn test_save_restore_cursor_line_drawing() {
+    let mut engine = TerminalEngine::new(80, 24, 100);
+
+    // 启用 G0 行绘图
+    engine.process_bytes(b"\x1b(0");
+
+    // 保存光标
+    engine.process_bytes(b"\x1b7");
+
+    // 更改行绘图状态
+    engine.process_bytes(b"\x1b)0");
+
+    // 恢复光标
+    engine.process_bytes(b"\x1b8");
+
+    // 验证行绘图状态已恢复
+    assert_eq!(
+        engine.state.use_line_drawing_uses_g0,
+        true,
+        "Should restore to using G0"
+    );
+}
+
+/// 验证保存/恢复光标包含颜色 - ✅ PASS
+#[test]
+fn test_save_restore_cursor_colors() {
+    let mut engine = TerminalEngine::new(80, 24, 100);
+
+    // 设置红色前景
+    engine.process_bytes(b"\x1b[31m");
+
+    // 保存光标
+    engine.process_bytes(b"\x1b7");
+
+    // 更改颜色为蓝色
+    engine.process_bytes(b"\x1b[34m");
+
+    // 恢复光标
+    engine.process_bytes(b"\x1b8");
+
+    // 验证颜色已恢复
+    assert_eq!(
+        engine.state.fore_color, 1,
+        "Foreground color should be restored to red (1)"
+    );
+}

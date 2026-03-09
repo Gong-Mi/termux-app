@@ -5,6 +5,8 @@ use std::cmp::{max, min};
 use unicode_width::UnicodeWidthChar;
 use vte::{Params, Parser, Perform};
 
+use crate::utils::map_line_drawing;
+
 #[derive(Clone)]
 pub struct TerminalRow {
     pub text: Vec<char>,
@@ -112,6 +114,229 @@ pub const DECSET_BIT_MOUSE_PROTOCOL_SGR: i32 = 1 << 9;
 pub const DECSET_BIT_BRACKETED_PASTE_MODE: i32 = 1 << 10;
 pub const DECSET_BIT_LEFTRIGHT_MARGIN_MODE: i32 = 1 << 11;
 
+// ============================================================================
+// TerminalColors - 259 色颜色管理（与 Java TerminalColors 兼容）
+// ============================================================================
+
+/// 默认颜色方案（与 Java TerminalColorScheme.DEFAULT_COLORSCHEME 一致）
+pub const DEFAULT_COLORSCHEME: [u32; 259] = [
+    // 16 原始颜色（前 8 个是暗色）
+    0xff000000, // 0: black
+    0xffcd0000, // 1: dim red
+    0xff00cd00, // 2: dim green
+    0xffcdcd00, // 3: dim yellow
+    0xff6495ed, // 4: dim blue
+    0xffcd00cd, // 5: dim magenta
+    0xff00cdcd, // 6: dim cyan
+    0xffe5e5e5, // 7: dim white
+    // 后 8 个是亮色
+    0xff7f7f7f, // 8: medium grey
+    0xffff0000, // 9: bright red
+    0xff00ff00, // 10: bright green
+    0xffffff00, // 11: bright yellow
+    0xff5c5cff, // 12: light blue
+    0xffff00ff, // 13: bright magenta
+    0xff00ffff, // 14: bright cyan
+    0xffffffff, // 15: bright white
+
+    // 216 色立方体（6 色阶每色）- 压缩表示，实际使用时展开
+    // 为节省空间，这里用循环初始化
+    0xff000000, 0xff00005f, 0xff000087, 0xff0000af, 0xff0000d7, 0xff0000ff,
+    0xff005f00, 0xff005f5f, 0xff005f87, 0xff005faf, 0xff005fd7, 0xff005fff,
+    0xff008700, 0xff00875f, 0xff008787, 0xff0087af, 0xff0087d7, 0xff0087ff,
+    0xff00af00, 0xff00af5f, 0xff00af87, 0xff00afaf, 0xff00afd7, 0xff00afff,
+    0xff00d700, 0xff00d75f, 0xff00d787, 0xff00d7af, 0xff00d7d7, 0xff00d7ff,
+    0xff00ff00, 0xff00ff5f, 0xff00ff87, 0xff00ffaf, 0xff00ffd7, 0xff00ffff,
+    0xff5f0000, 0xff5f005f, 0xff5f0087, 0xff5f00af, 0xff5f00d7, 0xff5f00ff,
+    0xff5f5f00, 0xff5f5f5f, 0xff5f5f87, 0xff5f5faf, 0xff5f5fd7, 0xff5f5fff,
+    0xff5f8700, 0xff5f875f, 0xff5f8787, 0xff5f87af, 0xff5f87d7, 0xff5f87ff,
+    0xff5faf00, 0xff5faf5f, 0xff5faf87, 0xff5fafaf, 0xff5fafd7, 0xff5fafff,
+    0xff5fd700, 0xff5fd75f, 0xff5fd787, 0xff5fd7af, 0xff5fd7d7, 0xff5fd7ff,
+    0xff5fff00, 0xff5fff5f, 0xff5fff87, 0xff5fffaf, 0xff5fffd7, 0xff5fffff,
+    0xff870000, 0xff87005f, 0xff870087, 0xff8700af, 0xff8700d7, 0xff8700ff,
+    0xff875f00, 0xff875f5f, 0xff875f87, 0xff875faf, 0xff875fd7, 0xff875fff,
+    0xff878700, 0xff87875f, 0xff878787, 0xff8787af, 0xff8787d7, 0xff8787ff,
+    0xff87af00, 0xff87af5f, 0xff87af87, 0xff87afaf, 0xff87afd7, 0xff87afff,
+    0xff87d700, 0xff87d75f, 0xff87d787, 0xff87d7af, 0xff87d7d7, 0xff87d7ff,
+    0xff87ff00, 0xff87ff5f, 0xff87ff87, 0xff87ffaf, 0xff87ffd7, 0xff87ffff,
+    0xffaf0000, 0xffaf005f, 0xffaf0087, 0xffaf00af, 0xffaf00d7, 0xffaf00ff,
+    0xffaf5f00, 0xffaf5f5f, 0xffaf5f87, 0xffaf5faf, 0xffaf5fd7, 0xffaf5fff,
+    0xffaf8700, 0xffaf875f, 0xffaf8787, 0xffaf87af, 0xffaf87d7, 0xffaf87ff,
+    0xffafaf00, 0xffafaf5f, 0xffafaf87, 0xffafafaf, 0xffafafd7, 0xffafafff,
+    0xffafd700, 0xffafd75f, 0xffafd787, 0xffafd7af, 0xffafd7d7, 0xffafd7ff,
+    0xffafff00, 0xffafff5f, 0xffafff87, 0xffafffaf, 0xffafffd7, 0xffafffff,
+    0xffd70000, 0xffd7005f, 0xffd70087, 0xffd700af, 0xffd700d7, 0xffd700ff,
+    0xffd75f00, 0xffd75f5f, 0xffd75f87, 0xffd75faf, 0xffd75fd7, 0xffd75fff,
+    0xffd78700, 0xffd7875f, 0xffd78787, 0xffd787af, 0xffd787d7, 0xffd787ff,
+    0xffd7af00, 0xffd7af5f, 0xffd7af87, 0xffd7afaf, 0xffd7afd7, 0xffd7afff,
+    0xffd7d700, 0xffd7d75f, 0xffd7d787, 0xffd7d7af, 0xffd7d7d7, 0xffd7d7ff,
+    0xffd7ff00, 0xffd7ff5f, 0xffd7ff87, 0xffd7ffaf, 0xffd7ffd7, 0xffd7ffff,
+    0xffff0000, 0xffff005f, 0xffff0087, 0xffff00af, 0xffff00d7, 0xffff00ff,
+    0xffff5f00, 0xffff5f5f, 0xffff5f87, 0xffff5faf, 0xffff5fd7, 0xffff5fff,
+    0xffff8700, 0xffff875f, 0xffff8787, 0xffff87af, 0xffff87d7, 0xffff87ff,
+    0xffffaf00, 0xffffaf5f, 0xffffaf87, 0xffffafaf, 0xffffafd7, 0xffffafff,
+    0xffffd700, 0xffffd75f, 0xffffd787, 0xffffd7af, 0xffffd7d7, 0xffffd7ff,
+    0xffffff00, 0xffffff5f, 0xffffff87, 0xffffffaf, 0xffffffd7, 0xffffffff,
+
+    // 24 级灰度
+    0xff080808, 0xff121212, 0xff1c1c1c, 0xff262626, 0xff303030, 0xff3a3a3a,
+    0xff444444, 0xff4e4e4e, 0xff585858, 0xff626262, 0xff6c6c6c, 0xff767676,
+    0xff808080, 0xff8a8a8a, 0xff949494, 0xff9e9e9e, 0xffa8a8a8, 0xffb2b2b2,
+    0xffbcbcbc, 0xffc6c6c6, 0xffd0d0d0, 0xffdadada, 0xffe4e4e4, 0xffeeeeee,
+
+    // 特殊颜色索引
+    0xffffffff, // 256: COLOR_INDEX_FOREGROUND
+    0xff000000, // 257: COLOR_INDEX_BACKGROUND
+    0xffffffff, // 258: COLOR_INDEX_CURSOR
+];
+
+/// 终端颜色管理（与 Java TerminalColors 兼容）
+pub struct TerminalColors {
+    /// 当前 259 色数组
+    pub current_colors: [u32; 259],
+}
+
+impl TerminalColors {
+    /// 创建新实例，使用默认颜色
+    pub fn new() -> Self {
+        Self {
+            current_colors: DEFAULT_COLORSCHEME,
+        }
+    }
+
+    /// 重置所有颜色为默认值
+    pub fn reset(&mut self) {
+        self.current_colors = DEFAULT_COLORSCHEME;
+    }
+
+    /// 重置特定索引颜色
+    pub fn reset_index(&mut self, index: usize) {
+        if index < 259 {
+            self.current_colors[index] = DEFAULT_COLORSCHEME[index];
+        }
+    }
+
+    /// 解析颜色字符串（与 Java TerminalColors.parse 兼容）
+    /// 支持格式：#RGB, #RRGGBB, rgb:R/G/B
+    pub fn parse_color(color_str: &str) -> Option<u32> {
+        let color_str = color_str.trim();
+        
+        if color_str.starts_with('#') {
+            // #RGB, #RRGGBB, #RRRGGGBBB, #RRRRGGGGBBBB
+            let hex = &color_str[1..];
+            let len = hex.len();
+            
+            match len {
+                3 => {
+                    // #RGB -> #RRGGBB
+                    let r = u8::from_str_radix(&hex[0..1].repeat(2), 16).ok()?;
+                    let g = u8::from_str_radix(&hex[1..2].repeat(2), 16).ok()?;
+                    let b = u8::from_str_radix(&hex[2..3].repeat(2), 16).ok()?;
+                    Some(0xff000000 | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32))
+                }
+                6 => {
+                    // #RRGGBB
+                    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+                    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+                    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+                    Some(0xff000000 | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32))
+                }
+                9 => {
+                    // #RRRGGGBBB - 12 位色深，缩放到 8 位
+                    let r = u16::from_str_radix(&hex[0..3], 16).ok()?;
+                    let g = u16::from_str_radix(&hex[3..6], 16).ok()?;
+                    let b = u16::from_str_radix(&hex[6..9], 16).ok()?;
+                    let r = ((r * 255) / 4095) as u8;
+                    let g = ((g * 255) / 4095) as u8;
+                    let b = ((b * 255) / 4095) as u8;
+                    Some(0xff000000 | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32))
+                }
+                12 => {
+                    // #RRRRGGGGBBBB - 16 位色深，缩放到 8 位
+                    let r = u16::from_str_radix(&hex[0..4], 16).ok()?;
+                    let g = u16::from_str_radix(&hex[4..8], 16).ok()?;
+                    let b = u16::from_str_radix(&hex[8..12], 16).ok()?;
+                    let r = ((r as u32 * 255) / 65535) as u8;
+                    let g = ((g as u32 * 255) / 65535) as u8;
+                    let b = ((b as u32 * 255) / 65535) as u8;
+                    Some(0xff000000 | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32))
+                }
+                _ => None,
+            }
+        } else if color_str.starts_with("rgb:") {
+            // rgb:R/G/B 格式
+            let rgb_part = &color_str[4..];
+            let parts: Vec<&str> = rgb_part.split('/').collect();
+            if parts.len() != 3 {
+                return None;
+            }
+            
+            let r = u16::from_str_radix(parts[0], 16).ok()?;
+            let g = u16::from_str_radix(parts[1], 16).ok()?;
+            let b = u16::from_str_radix(parts[2], 16).ok()?;
+            
+            // 根据位数缩放到 8 位
+            let scale = match parts[0].len() {
+                1 => 17,  // 4 位 -> 8 位 (x17 = x * 255/15)
+                2 => 1,   // 8 位
+                3 => 0,   // 12 位，需要除法
+                4 => 0,   // 16 位，需要除法
+                _ => return None,
+            };
+            
+            let r8 = if parts[0].len() == 3 { ((r as u32 * 255) / 4095) as u8 }
+                     else if parts[0].len() == 4 { ((r as u32 * 255) / 65535) as u8 }
+                     else { (r as u8).wrapping_mul(scale) };
+            let g8 = if parts[1].len() == 3 { ((g as u32 * 255) / 4095) as u8 }
+                     else if parts[1].len() == 4 { ((g as u32 * 255) / 65535) as u8 }
+                     else { (g as u8).wrapping_mul(scale) };
+            let b8 = if parts[2].len() == 3 { ((b as u32 * 255) / 4095) as u8 }
+                     else if parts[2].len() == 4 { ((b as u32 * 255) / 65535) as u8 }
+                     else { (b as u8).wrapping_mul(scale) };
+            
+            Some(0xff000000 | ((r8 as u32) << 16) | ((g8 as u32) << 8) | (b8 as u32))
+        } else {
+            None
+        }
+    }
+
+    /// 尝试解析并设置颜色（OSC 4 命令）
+    pub fn try_parse_color(&mut self, index: usize, color_str: &str) -> bool {
+        if let Some(color) = Self::parse_color(color_str) {
+            if index < 259 {
+                self.current_colors[index] = color;
+                return true;
+            }
+        }
+        false
+    }
+
+    /// 生成 OSC 颜色报告（用于查询当前颜色）
+    pub fn generate_color_report(&self, index: usize) -> String {
+        if index >= 259 {
+            return String::new();
+        }
+        
+        let color = self.current_colors[index];
+        let r = ((color >> 16) & 0xff) as u16;
+        let g = ((color >> 8) & 0xff) as u16;
+        let b = (color & 0xff) as u16;
+        
+        // 缩放到 16 位值（xterm 格式）
+        let r16 = (r * 65535) / 255;
+        let g16 = (g * 65535) / 255;
+        let b16 = (b * 65535) / 255;
+        
+        format!("rgb:{:04x}/{:04x}/{:04x}", r16, g16, b16)
+    }
+}
+
+impl Default for TerminalColors {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct ScreenState {
     pub rows: i32,
     pub cols: i32,
@@ -125,6 +350,15 @@ pub struct ScreenState {
     pub saved_x: i32,
     pub saved_y: i32,
     pub saved_style: u64,
+    // 保存的光标 DECSET 标志（AUTOWRAP, ORIGIN_MODE）
+    pub saved_decset_flags: i32,
+    // 保存的行绘图状态（DECSC/DECRC）
+    pub saved_use_line_drawing_g0: bool,
+    pub saved_use_line_drawing_g1: bool,
+    pub saved_use_line_drawing_uses_g0: bool,
+    // 保存的颜色属性（DECSC/DECRC）
+    pub saved_fore_color: u64,
+    pub saved_back_color: u64,
     pub origin_mode: bool,
     pub insert_mode: bool,
     pub application_cursor_keys: bool,
@@ -141,7 +375,6 @@ pub struct ScreenState {
 
     // DECSET 标志位（用于保存/恢复）
     pub decset_flags: i32,
-    pub saved_decset_flags: i32, // 保存的光标 DECSET 标志
 
     // 制表位
     pub tab_stops: Vec<bool>,
@@ -149,6 +382,43 @@ pub struct ScreenState {
     // 循环缓冲区核心
     pub buffer: Vec<TerminalRow>,
     pub screen_first_row: usize, // 逻辑第 0 行在物理 buffer 中的索引
+
+    // ========================================================================
+    // 新增功能字段
+    // ========================================================================
+    
+    // 颜色管理 (TerminalColors)
+    pub colors: TerminalColors,
+    
+    // 标题栈 (OSC 22/23)
+    pub title: Option<String>,
+    pub title_stack: Vec<String>,
+    
+    // 行绘图字符集 (G0/G1)
+    pub use_line_drawing_g0: bool,
+    pub use_line_drawing_g1: bool,
+    pub use_line_drawing_uses_g0: bool, // 当前使用 G0 还是 G1
+    
+    // 滚动计数器
+    pub scroll_counter: i32,
+    
+    // 自动滚动禁用
+    pub auto_scroll_disabled: bool,
+    
+    // 光标闪烁和样式
+    pub cursor_blinking_enabled: bool,
+    pub cursor_blink_state: bool,
+    pub cursor_style: i32, // 0=block, 1=underline, 2=bar
+    
+    // 下划线颜色 (SGR 58/59)
+    pub underline_color: u64,
+    
+    // 前景色/背景色（索引色或真彩色）
+    pub fore_color: u64,
+    pub back_color: u64,
+    
+    // 效果标志（单独存储用于 SGR 重置）
+    pub effect: u64,
 
     // Java 回调支持
     pub java_callback_env: Option<*mut jni::sys::JNIEnv>,
@@ -181,9 +451,6 @@ impl ScreenState {
             left_margin: 0,
             right_margin: cols,
             current_style: STYLE_NORMAL,
-            saved_x: 0,
-            saved_y: 0,
-            saved_style: STYLE_NORMAL,
             origin_mode: false,
             insert_mode: false,
             application_cursor_keys: false,
@@ -198,10 +465,38 @@ impl ScreenState {
             leftright_margin_mode: false, // DECSET 69 - 默认禁用左右边距模式
             send_focus_events: false,     // DECSET 1004 - 默认不发送焦点事件
             decset_flags: 0,              // 初始 DECSET 标志为 0
-            saved_decset_flags: 0,        // 保存的 DECSET 标志初始为 0
             tab_stops,
             buffer,
             screen_first_row: 0,
+            
+            // 保存状态字段初始化
+            saved_x: 0,
+            saved_y: 0,
+            saved_style: STYLE_NORMAL,
+            saved_decset_flags: 0,
+            saved_use_line_drawing_g0: false,
+            saved_use_line_drawing_g1: false,
+            saved_use_line_drawing_uses_g0: true,
+            saved_fore_color: COLOR_INDEX_FOREGROUND,
+            saved_back_color: COLOR_INDEX_BACKGROUND,
+
+            // 新增功能字段初始化
+            colors: TerminalColors::new(),
+            title: None,
+            title_stack: Vec::new(),
+            use_line_drawing_g0: false,
+            use_line_drawing_g1: false,
+            use_line_drawing_uses_g0: true,
+            scroll_counter: 0,
+            auto_scroll_disabled: false,
+            cursor_blinking_enabled: false,
+            cursor_blink_state: true,
+            cursor_style: 0, // block cursor
+            underline_color: COLOR_INDEX_FOREGROUND,
+            fore_color: COLOR_INDEX_FOREGROUND,
+            back_color: COLOR_INDEX_BACKGROUND,
+            effect: 0,
+
             java_callback_env: None,
             java_callback_obj: None,
         }
@@ -265,12 +560,137 @@ impl ScreenState {
         }
     }
 
+    // ========================================================================
+    // OSC 序列处理方法
+    // ========================================================================
+
+    /// 设置窗口标题
+    pub fn set_title(&mut self, title: &str) {
+        let old_title = self.title.clone();
+        self.title = Some(title.to_string());
+        if old_title.as_deref() != Some(title) {
+            self.report_title_change(title);
+        }
+    }
+
+    /// 保存标题到栈 (OSC 22)
+    pub fn push_title(&mut self, mode: &str) {
+        if let Some(ref title) = self.title {
+            self.title_stack.push(title.clone());
+            // 限制栈大小为 20
+            if self.title_stack.len() > 20 {
+                self.title_stack.remove(0);
+            }
+        }
+    }
+
+    /// 从栈恢复标题 (OSC 23)
+    pub fn pop_title(&mut self, mode: &str) {
+        if let Some(title) = self.title_stack.pop() {
+            self.set_title(&title);
+        }
+    }
+
+    /// OSC 4 - 设置颜色索引
+    /// 格式：4;c1;spec1;c2;spec2;... 或 4;c1;spec1;c2;spec2
+    pub fn handle_osc4(&mut self, param_text: &str) {
+        let parts: Vec<&str> = param_text.split(';').collect();
+        let mut i = 0;
+        
+        while i + 1 < parts.len() {
+            if let Ok(color_index) = parts[i].parse::<usize>() {
+                let color_spec = parts[i + 1];
+                if color_spec == "?" {
+                    // 查询当前颜色
+                    let report = self.colors.generate_color_report(color_index);
+                    // 这里需要向 Java 层发送报告，暂时忽略
+                } else {
+                    // 设置颜色
+                    if self.colors.try_parse_color(color_index, color_spec) {
+                        self.report_colors_changed();
+                    }
+                }
+            }
+            i += 2;
+        }
+    }
+
+    /// OSC 10 - 设置默认前景色
+    pub fn handle_osc10(&mut self, param_text: &str) {
+        if param_text == "?" {
+            // 查询当前颜色
+            let report = self.colors.generate_color_report(COLOR_INDEX_FOREGROUND as usize);
+            // 需要向 Java 层发送报告
+        } else {
+            if let Some(color) = TerminalColors::parse_color(param_text) {
+                self.colors.current_colors[COLOR_INDEX_FOREGROUND as usize] = color;
+                self.report_colors_changed();
+            }
+        }
+    }
+
+    /// OSC 11 - 设置默认背景色
+    pub fn handle_osc11(&mut self, param_text: &str) {
+        if param_text == "?" {
+            // 查询当前颜色
+            let report = self.colors.generate_color_report(COLOR_INDEX_BACKGROUND as usize);
+            // 需要向 Java 层发送报告
+        } else {
+            if let Some(color) = TerminalColors::parse_color(param_text) {
+                self.colors.current_colors[COLOR_INDEX_BACKGROUND as usize] = color;
+                self.report_colors_changed();
+            }
+        }
+    }
+
+    /// OSC 52 - 剪贴板操作
+    /// 格式：52;selection;base64_data
+    pub fn handle_osc52(&mut self, base64_data: &str) {
+        // 使用 base64 crate 解码
+        // 注意：需要添加 base64 依赖到 Cargo.toml
+        // 暂时标记为需要 Java 层处理
+    }
+
+    /// OSC 104 - 重置颜色
+    /// 格式：104 或 104;c1;c2;...
+    pub fn handle_osc104(&mut self, param_text: &str) {
+        if param_text.is_empty() {
+            // 重置所有颜色
+            self.colors.reset();
+            self.report_colors_changed();
+        } else {
+            // 重置特定颜色索引
+            for part in param_text.split(';') {
+                if let Ok(index) = part.parse::<usize>() {
+                    self.colors.reset_index(index);
+                }
+            }
+            self.report_colors_changed();
+        }
+    }
+
     pub fn clamp_cursor(&mut self) {
         self.cursor_x = max(0, min(self.cols - 1, self.cursor_x));
         self.cursor_y = max(0, min(self.rows - 1, self.cursor_y));
     }
 
     fn print(&mut self, c: char) {
+        // 处理行绘图字符集
+        let c = if (c as u32) >= 0x20 && (c as u32) <= 0x7E {
+            // ASCII 可打印字符范围，检查是否需要映射
+            if self.use_line_drawing_uses_g0 && self.use_line_drawing_g0 {
+                // 使用 G0 行绘图
+                Some(map_line_drawing(c as u8))
+            } else if !self.use_line_drawing_uses_g0 && self.use_line_drawing_g1 {
+                // 使用 G1 行绘图
+                Some(map_line_drawing(c as u8))
+            } else {
+                None
+            }
+        } else {
+            None
+        }.unwrap_or(c);
+
         let char_width = c.width().unwrap_or(0) as i32;
         if char_width == 0 {
             return;
@@ -355,8 +775,16 @@ impl ScreenState {
                 self.cursor_x = self.left_margin;
                 true
             } // CR
-            0x0e => true, // SO - 忽略
-            0x0f => true, // SI - 忽略
+            0x0e => {
+                // SO (Shift Out) - 切换到 G1 字符集
+                self.use_line_drawing_uses_g0 = false;
+                true
+            }
+            0x0f => {
+                // SI (Shift In) - 切换到 G0 字符集
+                self.use_line_drawing_uses_g0 = true;
+                true
+            }
             _ => false,
         }
     }
@@ -400,6 +828,11 @@ impl ScreenState {
     fn scroll_up(&mut self) {
         let top = self.top_margin;
         let bottom = self.bottom_margin;
+
+        // 增加滚动计数器（用于选择跟随滚动）
+        if !self.auto_scroll_disabled {
+            self.scroll_counter += 1;
+        }
 
         if top == 0 && bottom == self.rows {
             // 全屏滚动：直接移动起始指针
@@ -739,6 +1172,68 @@ impl ScreenState {
         self.cursor_y = 0;
     }
 
+    /// RIS - 重置到初始状态 (http://vt100.net/docs/vt510-rm/RIS)
+    /// 完整重置：清屏、重置光标、重置样式、重置边距、重置制表位、重置颜色
+    pub fn reset_to_initial_state(&mut self) {
+        self.cursor_x = 0;
+        self.cursor_y = 0;
+        self.current_style = STYLE_NORMAL;
+        
+        // 清屏
+        for y in 0..self.rows as usize {
+            let idx = self.external_to_internal_row(y as i32);
+            self.buffer[idx].clear(0, self.cols as usize, STYLE_NORMAL);
+        }
+        
+        // 重置所有制表位
+        for stop in &mut self.tab_stops {
+            *stop = false;
+        }
+        
+        // 重置边距
+        self.top_margin = 0;
+        self.bottom_margin = self.rows;
+        self.left_margin = 0;
+        self.right_margin = self.cols;
+        
+        // 重置 DECSET 标志
+        self.decset_flags = 0;
+        self.auto_wrap = true;
+        self.origin_mode = false;
+        self.cursor_enabled = true;
+        self.application_cursor_keys = false;
+        self.application_keypad = false;
+        self.reverse_video = false;
+        self.insert_mode = false;
+        self.bracketed_paste = false;
+        self.mouse_tracking = false;
+        self.mouse_button_event = false;
+        self.sgr_mouse = false;
+        self.leftright_margin_mode = false;
+        self.send_focus_events = false;
+        
+        // 重置行绘图状态
+        self.use_line_drawing_g0 = false;
+        self.use_line_drawing_g1 = false;
+        self.use_line_drawing_uses_g0 = true;
+        
+        // 重置 SGR 属性
+        self.reset_sgr();
+        
+        // 重置颜色为默认值
+        self.colors.reset();
+        
+        // 重置标题
+        self.title = None;
+        self.title_stack.clear();
+        
+        // 重置滚动计数器
+        self.scroll_counter = 0;
+        
+        // 通知 Java 层
+        self.report_colors_changed();
+    }
+
     /// 清除制表位 (TBC) - CSI {N} g
     fn clear_tab_stop(&mut self, mode: i32) {
         match mode {
@@ -759,49 +1254,98 @@ impl ScreenState {
     }
 
     /// 完整的 SGR 处理（与 Java TextStyle 格式兼容）
+    /// 同时更新 current_style 和独立颜色字段 (fore_color, back_color, effect, underline_color)
     fn handle_sgr(&mut self, params: &Params) {
         let params_vec: Vec<u16> = params.iter().flat_map(|p| p.iter().copied()).collect();
         let mut i = 0;
 
         // 如果没有参数，默认为重置
         if params_vec.is_empty() {
-            self.current_style = STYLE_NORMAL;
+            self.reset_sgr();
             return;
         }
 
         while i < params_vec.len() {
             let code = params_vec[i];
             match code {
-                0 => self.current_style = STYLE_NORMAL,                  // 重置
-                1 => self.current_style |= EFFECT_BOLD,                  // 粗体
-                2 => self.current_style |= EFFECT_DIM,                   // 淡色
-                3 => self.current_style |= EFFECT_ITALIC,                // 斜体
+                0 => self.reset_sgr(),
+                1 => {
+                    self.effect |= EFFECT_BOLD;
+                    self.current_style |= EFFECT_BOLD;
+                }
+                2 => {
+                    self.effect |= EFFECT_DIM;
+                    self.current_style |= EFFECT_DIM;
+                }
+                3 => {
+                    self.effect |= EFFECT_ITALIC;
+                    self.current_style |= EFFECT_ITALIC;
+                }
                 4 => {
                     // 下划线（支持子参数）
                     if i + 1 < params_vec.len() && params_vec.get(i + 1) == Some(&0) {
                         // 子参数 0 表示无下划线
+                        self.effect &= !EFFECT_UNDERLINE;
                         self.current_style &= !EFFECT_UNDERLINE;
                         i += 1;
                     } else {
+                        self.effect |= EFFECT_UNDERLINE;
                         self.current_style |= EFFECT_UNDERLINE;
                     }
                 }
-                5 => self.current_style |= EFFECT_BLINK,                 // 闪烁
-                7 => self.current_style |= EFFECT_REVERSE,               // 反显
-                8 => self.current_style |= EFFECT_INVISIBLE,             // 隐藏
-                9 => self.current_style |= EFFECT_STRIKETHROUGH,         // 删除线
-                21 => self.current_style |= EFFECT_BOLD,                 // 双粗体（视为粗体）
-                22 => self.current_style &= !(EFFECT_BOLD | EFFECT_DIM), // 正常强度
-                23 => self.current_style &= !EFFECT_ITALIC,              // 非斜体
-                24 => self.current_style &= !EFFECT_UNDERLINE,           // 非下划线
-                25 => self.current_style &= !EFFECT_BLINK,               // 非闪烁
-                27 => self.current_style &= !EFFECT_REVERSE,             // 非反显
-                28 => self.current_style &= !EFFECT_INVISIBLE,           // 非隐藏
-                29 => self.current_style &= !EFFECT_STRIKETHROUGH,       // 非删除线
+                5 => {
+                    self.effect |= EFFECT_BLINK;
+                    self.current_style |= EFFECT_BLINK;
+                }
+                7 => {
+                    self.effect |= EFFECT_REVERSE;
+                    self.current_style |= EFFECT_REVERSE;
+                }
+                8 => {
+                    self.effect |= EFFECT_INVISIBLE;
+                    self.current_style |= EFFECT_INVISIBLE;
+                }
+                9 => {
+                    self.effect |= EFFECT_STRIKETHROUGH;
+                    self.current_style |= EFFECT_STRIKETHROUGH;
+                }
+                21 => {
+                    self.effect |= EFFECT_BOLD;
+                    self.current_style |= EFFECT_BOLD;
+                }
+                22 => {
+                    self.effect &= !(EFFECT_BOLD | EFFECT_DIM);
+                    self.current_style &= !(EFFECT_BOLD | EFFECT_DIM);
+                }
+                23 => {
+                    self.effect &= !EFFECT_ITALIC;
+                    self.current_style &= !EFFECT_ITALIC;
+                }
+                24 => {
+                    self.effect &= !EFFECT_UNDERLINE;
+                    self.current_style &= !EFFECT_UNDERLINE;
+                }
+                25 => {
+                    self.effect &= !EFFECT_BLINK;
+                    self.current_style &= !EFFECT_BLINK;
+                }
+                27 => {
+                    self.effect &= !EFFECT_REVERSE;
+                    self.current_style &= !EFFECT_REVERSE;
+                }
+                28 => {
+                    self.effect &= !EFFECT_INVISIBLE;
+                    self.current_style &= !EFFECT_INVISIBLE;
+                }
+                29 => {
+                    self.effect &= !EFFECT_STRIKETHROUGH;
+                    self.current_style &= !EFFECT_STRIKETHROUGH;
+                }
                 30..=37 => {
                     // 前景色 30-37（标准颜色 0-7）
-                    self.current_style =
-                        (self.current_style & !STYLE_MASK_FG) | ((code as u64 - 30) << 40);
+                    let color = (code - 30) as u64;
+                    self.fore_color = color;
+                    self.current_style = (self.current_style & !STYLE_MASK_FG) | (color << 40);
                 }
                 38 => {
                     // 扩展前景色 (38;5;n 或 38;2;r;g;b)
@@ -809,32 +1353,36 @@ impl ScreenState {
                         let mode = params_vec[i + 1];
                         if mode == 5 && i + 2 < params_vec.len() {
                             // 256 色索引
-                            let color = params_vec[i + 2];
+                            let color = params_vec[i + 2] as u64;
+                            self.fore_color = color;
                             self.current_style = (self.current_style & !STYLE_MASK_FG)
-                                | ((color as u64 & 0x1FF) << 40);
-                            i += 2;  // 跳过 mode 和 color
+                                | ((color & 0x1FF) << 40);
+                            i += 2;
                         } else if mode == 2 && i + 4 < params_vec.len() {
                             // 24 位真彩色 (38;2;R;G;B)
                             let r = params_vec[i + 2] as u64;
                             let g = params_vec[i + 3] as u64;
                             let b = params_vec[i + 4] as u64;
                             let truecolor = 0xff000000 | (r << 16) | (g << 8) | b;
+                            self.fore_color = truecolor;
                             self.current_style = (self.current_style & !STYLE_MASK_FG)
                                 | STYLE_TRUECOLOR_FG
                                 | ((truecolor & 0x00ffffff) << 40);
-                            i += 4;  // 跳过 mode, r, g, b (i+=1 在循环末尾)
+                            i += 4;
                         }
                     }
                 }
                 39 => {
                     // 默认前景色
+                    self.fore_color = COLOR_INDEX_FOREGROUND;
                     self.current_style = (self.current_style & !STYLE_MASK_FG)
                         | (COLOR_INDEX_FOREGROUND << 40);
                 }
                 40..=47 => {
                     // 背景色 40-47（标准颜色 0-7）
-                    self.current_style =
-                        (self.current_style & !STYLE_MASK_BG) | ((code as u64 - 40) << 16);
+                    let color = (code - 40) as u64;
+                    self.back_color = color;
+                    self.current_style = (self.current_style & !STYLE_MASK_BG) | (color << 16);
                 }
                 48 => {
                     // 扩展背景色 (48;5;n 或 48;2;r;g;b)
@@ -842,59 +1390,78 @@ impl ScreenState {
                         let mode = params_vec[i + 1];
                         if mode == 5 && i + 2 < params_vec.len() {
                             // 256 色索引
-                            let color = params_vec[i + 2];
+                            let color = params_vec[i + 2] as u64;
+                            self.back_color = color;
                             self.current_style = (self.current_style & !STYLE_MASK_BG)
-                                | ((color as u64 & 0x1FF) << 16);
-                            i += 2;  // 跳过 mode 和 color
+                                | ((color & 0x1FF) << 16);
+                            i += 2;
                         } else if mode == 2 && i + 4 < params_vec.len() {
                             // 24 位真彩色 (48;2;R;G;B)
                             let r = params_vec[i + 2] as u64;
                             let g = params_vec[i + 3] as u64;
                             let b = params_vec[i + 4] as u64;
                             let truecolor = 0xff000000 | (r << 16) | (g << 8) | b;
+                            self.back_color = truecolor;
                             self.current_style = (self.current_style & !STYLE_MASK_BG)
                                 | STYLE_TRUECOLOR_BG
                                 | ((truecolor & 0x00ffffff) << 16);
-                            i += 4;  // 跳过 mode, r, g, b (i+=1 在循环末尾)
+                            i += 4;
                         }
                     }
                 }
                 49 => {
                     // 默认背景色
+                    self.back_color = COLOR_INDEX_BACKGROUND;
                     self.current_style = (self.current_style & !STYLE_MASK_BG)
                         | (COLOR_INDEX_BACKGROUND << 16);
                 }
                 58 => {
                     // 下划线颜色 (58;5;n 或 58;2;r;g;b)
-                    // 注意：目前只解析，实际渲染时需要额外存储下划线颜色
                     if i + 1 < params_vec.len() {
                         let mode = params_vec[i + 1];
                         if mode == 5 && i + 2 < params_vec.len() {
-                            // 256 色索引 - 目前存储在前景色位置作为临时方案
+                            // 256 色索引
+                            self.underline_color = params_vec[i + 2] as u64;
                             i += 2;
                         } else if mode == 2 && i + 4 < params_vec.len() {
                             // 24 位真彩色
+                            let r = params_vec[i + 2] as u64;
+                            let g = params_vec[i + 3] as u64;
+                            let b = params_vec[i + 4] as u64;
+                            self.underline_color = 0xff000000 | (r << 16) | (g << 8) | b;
                             i += 4;
                         }
                     }
                 }
                 59 => {
                     // 默认下划线颜色
+                    self.underline_color = COLOR_INDEX_FOREGROUND;
                 }
                 90..=97 => {
                     // 亮色前景色 90-97（高亮颜色 8-15）
-                    self.current_style =
-                        (self.current_style & !STYLE_MASK_FG) | ((code as u64 - 90 + 8) << 40);
+                    let color = (code - 90 + 8) as u64;
+                    self.fore_color = color;
+                    self.current_style = (self.current_style & !STYLE_MASK_FG) | (color << 40);
                 }
                 100..=107 => {
                     // 亮色背景色 100-107（高亮颜色 8-15）
-                    self.current_style =
-                        (self.current_style & !STYLE_MASK_BG) | ((code as u64 - 100 + 8) << 16);
+                    let color = (code - 100 + 8) as u64;
+                    self.back_color = color;
+                    self.current_style = (self.current_style & !STYLE_MASK_BG) | (color << 16);
                 }
                 _ => {} // 忽略未知参数
             }
             i += 1;
         }
+    }
+
+    /// 重置 SGR 属性为默认值
+    fn reset_sgr(&mut self) {
+        self.fore_color = COLOR_INDEX_FOREGROUND;
+        self.back_color = COLOR_INDEX_BACKGROUND;
+        self.effect = 0;
+        self.underline_color = COLOR_INDEX_FOREGROUND;
+        self.current_style = STYLE_NORMAL;
     }
 
     /// 处理设置/重置模式 (SM/RM)
@@ -1050,6 +1617,7 @@ impl ScreenState {
     }
 
     /// 保存光标 (DECSC)
+    /// 保存：光标位置、样式、DECSET 标志、行绘图状态、颜色属性
     fn save_cursor(&mut self) {
         self.saved_x = self.cursor_x;
         self.saved_y = self.cursor_y;
@@ -1058,9 +1626,19 @@ impl ScreenState {
         // 包括：AUTOWRAP, ORIGIN_MODE
         let mask = DECSET_BIT_AUTOWRAP | DECSET_BIT_ORIGIN_MODE;
         self.saved_decset_flags = self.decset_flags & mask;
+        
+        // 保存行绘图状态
+        self.saved_use_line_drawing_g0 = self.use_line_drawing_g0;
+        self.saved_use_line_drawing_g1 = self.use_line_drawing_g1;
+        self.saved_use_line_drawing_uses_g0 = self.use_line_drawing_uses_g0;
+        
+        // 保存颜色属性
+        self.saved_fore_color = self.fore_color;
+        self.saved_back_color = self.back_color;
     }
 
     /// 恢复光标 (DECRC)
+    /// 恢复：光标位置、样式、DECSET 标志、行绘图状态、颜色属性
     fn restore_cursor(&mut self) {
         self.cursor_x = self.saved_x;
         self.cursor_y = self.saved_y;
@@ -1070,6 +1648,15 @@ impl ScreenState {
         self.decset_flags = (self.decset_flags & !mask) | (self.saved_decset_flags & mask);
         self.auto_wrap = (self.decset_flags & DECSET_BIT_AUTOWRAP) != 0;
         self.origin_mode = (self.decset_flags & DECSET_BIT_ORIGIN_MODE) != 0;
+        
+        // 恢复行绘图状态
+        self.use_line_drawing_g0 = self.saved_use_line_drawing_g0;
+        self.use_line_drawing_g1 = self.saved_use_line_drawing_g1;
+        self.use_line_drawing_uses_g0 = self.saved_use_line_drawing_uses_g0;
+        
+        // 恢复颜色属性
+        self.fore_color = self.saved_fore_color;
+        self.back_color = self.saved_back_color;
     }
 
     pub fn copy_row_text(&self, row: usize, dest: &mut [u16]) {
@@ -1159,31 +1746,92 @@ impl<'a> Perform for PurePerformHandler<'a> {
 
         let opcode = std::str::from_utf8(params[0]).unwrap_or("");
 
+        // 将所有参数拼接成字符串供后续处理
+        let param_text = params[1..]
+            .iter()
+            .filter_map(|p| std::str::from_utf8(p).ok())
+            .collect::<Vec<&str>>()
+            .join(";");
+
         match opcode {
-            "0" | "2" => {
+            "0" => {
+                // 设置图标名和窗口标题
+                if params.len() > 1 {
+                    let title = std::str::from_utf8(params[1]).unwrap_or("");
+                    self.state.set_title(title);
+                }
+            }
+            "2" => {
                 // 设置窗口标题
                 if params.len() > 1 {
                     let title = std::str::from_utf8(params[1]).unwrap_or("");
-                    self.state.report_title_change(title);
+                    self.state.set_title(title);
                 }
             }
             "4" => {
-                // 设置颜色
+                // OSC 4 ; c ; spec → 设置颜色索引 c 为 spec
+                // 格式：4;c;spec 或 4;c1;spec1;c2;spec2;...
+                self.state.handle_osc4(&param_text);
+            }
+            "10" => {
+                // OSC 10 ; spec → 设置默认前景色
+                self.state.handle_osc10(&param_text);
+            }
+            "11" => {
+                // OSC 11 ; spec → 设置默认背景色
+                self.state.handle_osc11(&param_text);
+            }
+            "12" => {
+                // OSC 12 ; spec → 设置光标颜色
+                if let Some(color) = TerminalColors::parse_color(&param_text) {
+                    self.state.colors.current_colors[COLOR_INDEX_CURSOR as usize] = color;
+                    self.state.report_colors_changed();
+                }
+            }
+            "22" => {
+                // OSC 22 ; 0 → 保存图标和窗口标题到栈
+                // OSC 22 ; 1 → 保存图标标题到栈
+                // OSC 22 ; 2 → 保存窗口标题到栈
+                self.state.push_title(opcode);
+            }
+            "23" => {
+                // OSC 23 → 从栈恢复标题
+                // OSC 23 ; 0 → 恢复图标和窗口标题
+                // OSC 23 ; 1 → 恢复图标标题
+                // OSC 23 ; 2 → 恢复窗口标题
+                self.state.pop_title(opcode);
+            }
+            "52" => {
+                // OSC 52 ; selection ; base64_data → 剪贴板操作
+                // 需要 Java 层处理，这里只报告
+                if params.len() > 2 {
+                    if let Ok(base64_data) = std::str::from_utf8(params[2]) {
+                        self.state.handle_osc52(base64_data);
+                    }
+                }
+            }
+            "104" => {
+                // OSC 104 ; c → 重置颜色索引 c
+                // OSC 104 → 重置所有颜色
+                self.state.handle_osc104(&param_text);
+            }
+            "110" => {
+                // OSC 110 → 重置默认前景色
+                self.state.colors.reset_index(COLOR_INDEX_FOREGROUND as usize);
                 self.state.report_colors_changed();
             }
-            "10" | "11" | "12" => {
-                // 设置前景色/背景色/光标色
+            "111" => {
+                // OSC 111 → 重置默认背景色
+                self.state.colors.reset_index(COLOR_INDEX_BACKGROUND as usize);
                 self.state.report_colors_changed();
             }
-            "52" => { // 剪贴板操作
-                // 需要 Java 层处理
-            }
-            "104" | "110" | "111" | "112" => {
-                // 重置颜色
+            "112" => {
+                // OSC 112 → 重置光标颜色
+                self.state.colors.reset_index(COLOR_INDEX_CURSOR as usize);
                 self.state.report_colors_changed();
             }
             _ => {
-                // 未知 OSC 序列
+                // 未知 OSC 序列，忽略
             }
         }
     }
@@ -1419,13 +2067,23 @@ impl<'a> Perform for PurePerformHandler<'a> {
             (&[b'#'], _) => {
                 // 其他 ESC # 序列，忽略
             }
-            (&[], b'(') => {
-                // ESC ( - 设计 G0 字符集（行绘图）
-                // 由 Java 层处理
+            // ESC ( 0 - 选择 G0 字符集（行绘图）
+            (&[b'('], b'0') => {
+                self.state.use_line_drawing_g0 = true;
+                self.state.use_line_drawing_uses_g0 = true;
             }
-            (&[], b')') => {
-                // ESC ) - 设计 G1 字符集（行绘图）
-                // 由 Java 层处理
+            // ESC ( B - 选择 G0 字符集（ASCII）
+            (&[b'('], b'B') => {
+                self.state.use_line_drawing_g0 = false;
+            }
+            // ESC ) 0 - 选择 G1 字符集（行绘图）
+            (&[b')'], b'0') => {
+                self.state.use_line_drawing_g1 = true;
+                self.state.use_line_drawing_uses_g0 = false;
+            }
+            // ESC ) B - 选择 G1 字符集（ASCII）
+            (&[b')'], b'B') => {
+                self.state.use_line_drawing_g1 = false;
             }
             (&[], b'6') => {
                 // DECBI - Back Index (http://www.vt100.net/docs/vt510-rm/DECBI)
@@ -1458,38 +2116,7 @@ impl<'a> Perform for PurePerformHandler<'a> {
             (&[], b'c') => {
                 // RIS - 重置到初始状态 (http://vt100.net/docs/vt510-rm/RIS)
                 // 完整重置：清屏、重置光标、重置样式、重置边距、重置制表位
-                self.state.cursor_x = 0;
-                self.state.cursor_y = 0;
-                self.state.current_style = STYLE_NORMAL;
-                // 清屏
-                for y in 0..self.state.rows as usize {
-                    let idx = self.state.external_to_internal_row(y as i32);
-                    self.state.buffer[idx].clear(0, self.state.cols as usize, STYLE_NORMAL);
-                }
-                // 重置所有制表位
-                for stop in &mut self.state.tab_stops {
-                    *stop = false;
-                }
-                // 重置边距
-                self.state.top_margin = 0;
-                self.state.bottom_margin = self.state.rows;
-                self.state.left_margin = 0;
-                self.state.right_margin = self.state.cols;
-                // 重置 DECSET 标志
-                self.state.decset_flags = 0;
-                self.state.auto_wrap = true;
-                self.state.origin_mode = false;
-                self.state.cursor_enabled = true;
-                self.state.application_cursor_keys = false;
-                self.state.application_keypad = false;
-                self.state.reverse_video = false;
-                self.state.insert_mode = false;
-                self.state.bracketed_paste = false;
-                self.state.mouse_tracking = false;
-                self.state.mouse_button_event = false;
-                self.state.sgr_mouse = false;
-                self.state.leftright_margin_mode = false;
-                self.state.send_focus_events = false;
+                self.state.reset_to_initial_state();
             }
             (&[], b'D') => {
                 // IND - 索引（换行）
