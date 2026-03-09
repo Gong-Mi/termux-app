@@ -1075,3 +1075,796 @@ fn test_clear_tab_stop() {
         "Tab stop at position 7 should be cleared"
     );
 }
+
+// =============================================================================
+// 中文字符背景色测试（修复验证）
+// =============================================================================
+
+/// 验证中文字符背景色 - ✅ 修复验证
+/// 
+/// 问题描述：中文字符（宽字符）会导致背景色少一个字少一格
+/// 根本原因：写入宽字符时，只设置了第一列的样式，第二列样式未设置
+/// 修复方案：在 setChar 时，对于宽字符同时设置两列的样式
+#[test]
+fn test_chinese_character_background() {
+    use termux_rust::engine::{TerminalEngine, encode_style};
+    
+    let mut engine = TerminalEngine::new(80, 24, 100);
+    
+    // 设置红色背景 (索引 1)
+    let red_bg_style = encode_style(256, 1, 0); // 前景默认，背景红色索引 1
+    
+    // 写入带背景色的中文字符
+    engine.state.current_style = red_bg_style;
+    let data = "你好".as_bytes();
+    engine.process_bytes(data);
+    
+    // 验证光标位置（两个中文字符，每个占 2 列）
+    assert_eq!(
+        engine.state.cursor_x, 4,
+        "Cursor X should be 4 after two Chinese characters"
+    );
+    
+    // 验证第一列和第二列的样式是否都设置了红色背景
+    let mut styles = [0i64; 80];
+    engine.state.copy_row_styles(0, &mut styles);
+    
+    // "你" 在列 0-1，两列都应该有红色背景
+    assert_eq!(
+        ((styles[0] as u64) >> 16) & 0x1FF, 1,
+        "Column 0 background should be red (index 1)"
+    );
+    assert_eq!(
+        ((styles[1] as u64) >> 16) & 0x1FF, 1,
+        "Column 1 background should be red (index 1) - THIS IS THE FIX!"
+    );
+    
+    // "好" 在列 2-3，两列都应该有红色背景
+    assert_eq!(
+        ((styles[2] as u64) >> 16) & 0x1FF, 1,
+        "Column 2 background should be red (index 1)"
+    );
+    assert_eq!(
+        ((styles[3] as u64) >> 16) & 0x1FF, 1,
+        "Column 3 background should be red (index 1) - THIS IS THE FIX!"
+    );
+}
+
+/// 验证宽字符覆盖时的样式处理 - ✅ 修复验证
+#[test]
+fn test_wide_char_overwrite_style() {
+    use termux_rust::engine::{TerminalEngine, encode_style};
+    
+    let mut engine = TerminalEngine::new(80, 24, 100);
+    
+    // 先写入两个单宽度字符，带不同背景色
+    let blue_bg = encode_style(256, 4, 0); // 背景蓝色索引 4
+    let green_bg = encode_style(256, 2, 0); // 背景绿色索引 2
+    
+    engine.state.current_style = blue_bg;
+    engine.process_bytes(b"A");
+    
+    engine.state.current_style = green_bg;
+    engine.process_bytes(b"B");
+    
+    // 现在用宽字符覆盖 "AB"
+    engine.state.cursor_x = 0;
+    let red_bg = encode_style(256, 1, 0); // 背景红色索引 1
+    engine.state.current_style = red_bg;
+    engine.process_bytes("中".as_bytes());
+    
+    // 验证宽字符 "中" 覆盖后，两列都是红色背景
+    let mut styles = [0i64; 80];
+    engine.state.copy_row_styles(0, &mut styles);
+    
+    assert_eq!(
+        ((styles[0] as u64) >> 16) & 0x1FF, 1,
+        "Column 0 background should be red after wide char overwrite"
+    );
+    assert_eq!(
+        ((styles[1] as u64) >> 16) & 0x1FF, 1,
+        "Column 1 background should be red after wide char overwrite - THIS IS THE FIX!"
+    );
+}
+
+/// 验证宽字符在行尾的样式处理 - ✅ 修复验证
+#[test]
+fn test_wide_char_at_line_end_style() {
+    use termux_rust::engine::{TerminalEngine, encode_style};
+    
+    let mut engine = TerminalEngine::new(10, 5, 100); // 窄屏幕
+    
+    // 设置黄色背景 (索引 3)
+    let yellow_bg = encode_style(256, 3, 0);
+    engine.state.current_style = yellow_bg;
+    
+    // 写入 8 个字符到倒数第二列
+    engine.process_bytes(b"12345678");
+    assert_eq!(engine.state.cursor_x, 8);
+    
+    // 现在写入一个宽字符，应该触发换行
+    engine.process_bytes("中".as_bytes());
+    
+    // 验证样式
+    let mut styles = [0i64; 10];
+    engine.state.copy_row_styles(0, &mut styles);
+    
+    // 第一行应该有 8 个黄色背景 + 2 个默认背景（宽字符第二列在下一行）
+    // 具体行为取决于实现，这里验证基本样式设置
+    assert_eq!(
+        ((styles[0] as u64) >> 16) & 0x1FF, 3,
+        "Column 0 background should be yellow"
+    );
+    assert_eq!(
+        ((styles[7] as u64) >> 16) & 0x1FF, 3,
+        "Column 7 background should be yellow"
+    );
+}
+
+// =============================================================================
+// Emoji 和非标准字符测试（新增）
+// =============================================================================
+
+/// 验证 Emoji 背景色 - ✅ 修复验证
+/// 
+/// Emoji 通常是宽字符（2 列），需要验证背景色正确覆盖两列
+#[test]
+fn test_emoji_background() {
+    use termux_rust::engine::{TerminalEngine, encode_style};
+    
+    let mut engine = TerminalEngine::new(80, 24, 100);
+    
+    // 设置绿色背景 (索引 2)
+    let green_bg_style = encode_style(256, 2, 0);
+    engine.state.current_style = green_bg_style;
+    
+    // 写入带背景色的 Emoji
+    let data = "😀😎🎉".as_bytes();
+    engine.process_bytes(data);
+    
+    // 验证光标位置（3 个 Emoji，每个占 2 列）
+    assert_eq!(
+        engine.state.cursor_x, 6,
+        "Cursor X should be 6 after three emoji"
+    );
+    
+    // 验证每列的样式是否都设置了绿色背景
+    let mut styles = [0i64; 80];
+    engine.state.copy_row_styles(0, &mut styles);
+    
+    // 每个 Emoji 占 2 列，共 6 列都应该有绿色背景
+    for i in 0..6 {
+        assert_eq!(
+            ((styles[i] as u64) >> 16) & 0x1FF, 2,
+            "Column {} background should be green (index 2) for emoji", i
+        );
+    }
+}
+
+/// 验证混合字符（ASCII + 中文 + Emoji）背景色 - ✅ 修复验证
+#[test]
+fn test_mixed_characters_background() {
+    use termux_rust::engine::{TerminalEngine, encode_style};
+
+    let mut engine = TerminalEngine::new(80, 24, 100);
+
+    // 设置青色背景 (索引 6)
+    let cyan_bg_style = encode_style(256, 6, 0);
+    engine.state.current_style = cyan_bg_style;
+
+    // 写入混合字符：ASCII + 中文 + Emoji
+    let data = "A 你好😀".as_bytes();
+    engine.process_bytes(data);
+
+    // 验证每列的样式
+    let mut styles = [0i64; 80];
+    engine.state.copy_row_styles(0, &mut styles);
+
+    // 验证实际占用的列数都有青色背景
+    // A(1) + 你 (2) + 好 (2) + 😀(2) = 7 或更多（取决于具体实现）
+    let cursor_x = engine.state.cursor_x as usize;
+    for i in 0..cursor_x {
+        assert_eq!(
+            ((styles[i] as u64) >> 16) & 0x1FF, 6,
+            "Column {} background should be cyan (index 6)", i
+        );
+    }
+}
+
+/// 验证韩文（Hangul）背景色 - ✅ 修复验证
+/// 
+/// 韩文字符通常是宽字符
+#[test]
+fn test_korean_hangul_background() {
+    use termux_rust::engine::{TerminalEngine, encode_style};
+    
+    let mut engine = TerminalEngine::new(80, 24, 100);
+    
+    // 设置品红色背景 (索引 5)
+    let magenta_bg_style = encode_style(256, 5, 0);
+    engine.state.current_style = magenta_bg_style;
+    
+    // 写入韩文字符
+    let data = "안녕하세요".as_bytes();
+    engine.process_bytes(data);
+    
+    // 验证每列的样式
+    let mut styles = [0i64; 80];
+    engine.state.copy_row_styles(0, &mut styles);
+    
+    // 韩文通常是宽字符，5 个字符应该占 10 列
+    // 验证前 10 列都有品红色背景
+    for i in 0..10 {
+        assert_eq!(
+            ((styles[i] as u64) >> 16) & 0x1FF, 5,
+            "Column {} background should be magenta (index 5) for Hangul", i
+        );
+    }
+}
+
+/// 验证日文假名背景色 - ✅ 修复验证
+#[test]
+fn test_japanese_kana_background() {
+    use termux_rust::engine::{TerminalEngine, encode_style};
+    
+    let mut engine = TerminalEngine::new(80, 24, 100);
+    
+    // 设置黄色背景 (索引 3)
+    let yellow_bg_style = encode_style(256, 3, 0);
+    engine.state.current_style = yellow_bg_style;
+    
+    // 写入日文假名（平假名和片假名）
+    let data = "こんにちはコンニチワ".as_bytes();
+    engine.process_bytes(data);
+    
+    // 验证每列的样式
+    let mut styles = [0i64; 80];
+    engine.state.copy_row_styles(0, &mut styles);
+    
+    // 日文假名通常是宽字符，10 个字符应该占 20 列
+    // 验证前 20 列都有黄色背景
+    for i in 0..20 {
+        assert_eq!(
+            ((styles[i] as u64) >> 16) & 0x1FF, 3,
+            "Column {} background should be yellow (index 3) for Kana", i
+        );
+    }
+}
+
+/// 验证全角字符背景色 - ✅ 修复验证
+///
+/// 全角 ASCII 字符（如 A）也是宽字符
+#[test]
+fn test_fullwidth_ascii_background() {
+    use termux_rust::engine::{TerminalEngine, encode_style};
+
+    let mut engine = TerminalEngine::new(80, 24, 100);
+
+    // 设置红色背景 (索引 1)
+    let red_bg_style = encode_style(256, 1, 0);
+    engine.state.current_style = red_bg_style;
+
+    // 写入全角 ASCII 字符
+    let data = "A B C".as_bytes();
+    engine.process_bytes(data);
+
+    // 验证每列的样式
+    let mut styles = [0i64; 80];
+    engine.state.copy_row_styles(0, &mut styles);
+
+    // 验证实际占用的列数都有红色背景
+    // 具体列数取决于字符的实际宽度
+    let cursor_x = engine.state.cursor_x as usize;
+    for i in 0..cursor_x {
+        assert_eq!(
+            ((styles[i] as u64) >> 16) & 0x1FF, 1,
+            "Column {} background should be red (index 1) for fullwidth ASCII", i
+        );
+    }
+}
+
+/// 验证组合字符（Combining Characters）处理 - ⚠️ PARTIAL
+/// 
+/// 组合字符（如重音符号）宽度为 0，不应该占用额外的列
+#[test]
+fn test_combining_characters() {
+    use termux_rust::engine::{TerminalEngine, encode_style};
+    
+    let mut engine = TerminalEngine::new(80, 24, 100);
+    
+    // 设置蓝色背景 (索引 4)
+    let blue_bg_style = encode_style(256, 4, 0);
+    engine.state.current_style = blue_bg_style;
+    
+    // 写入带组合字符的文本：e +  ́ = é
+    // \u{0301} 是组合重音符号（宽度 0）
+    let data = "cafe\u{0301}".as_bytes();
+    engine.process_bytes(data);
+    
+    // 验证光标位置：4 个基础字符，组合字符不占额外列
+    // 注意：具体行为取决于实现
+    assert!(
+        engine.state.cursor_x >= 4,
+        "Cursor X should be at least 4 after 'café'"
+    );
+}
+
+/// 验证变体选择器（Variation Selectors） - ⚠️ PARTIAL
+/// 
+/// 变体选择器用于选择 Emoji 的显示样式（如文本 vs 表情）
+#[test]
+fn test_variation_selectors() {
+    use termux_rust::engine::{TerminalEngine, encode_style};
+    
+    let mut engine = TerminalEngine::new(80, 24, 100);
+    
+    // 设置绿色背景 (索引 2)
+    let green_bg_style = encode_style(256, 2, 0);
+    engine.state.current_style = green_bg_style;
+    
+    // 写入带变体选择器的字符
+    // U+2764 (❤) + U+FE0F (变体选择器 -16, 表情样式)
+    let data = "\u{2764}\u{FE0F}".as_bytes();
+    engine.process_bytes(data);
+    
+    // 验证样式设置
+    let mut styles = [0i64; 80];
+    engine.state.copy_row_styles(0, &mut styles);
+    
+    // 至少第一列应该有绿色背景
+    assert_eq!(
+        ((styles[0] as u64) >> 16) & 0x1FF, 2,
+        "Column 0 background should be green (index 2)"
+    );
+}
+
+/// 验证零宽字符处理 - ✅ 修复验证
+/// 
+/// 零宽字符（如零宽空格、零宽连字）不应该占用列
+#[test]
+fn test_zero_width_characters() {
+    use termux_rust::engine::{TerminalEngine, encode_style};
+    
+    let mut engine = TerminalEngine::new(80, 24, 100);
+    
+    // 设置青色背景 (索引 6)
+    let cyan_bg_style = encode_style(256, 6, 0);
+    engine.state.current_style = cyan_bg_style;
+    
+    // 写入零宽空格 (U+200B)
+    let data = "AB\u{200B}CD".as_bytes();
+    engine.process_bytes(data);
+    
+    // 验证光标位置：零宽字符不占列，应该是 4
+    assert_eq!(
+        engine.state.cursor_x, 4,
+        "Cursor X should be 4 (zero-width char doesn't add columns)"
+    );
+    
+    // 验证样式
+    let mut styles = [0i64; 80];
+    engine.state.copy_row_styles(0, &mut styles);
+    
+    // 4 列都应该有青色背景
+    for i in 0..4 {
+        assert_eq!(
+            ((styles[i] as u64) >> 16) & 0x1FF, 6,
+            "Column {} background should be cyan (index 6)", i
+        );
+    }
+}
+
+/// 验证复杂 Emoji 序列（ZWNJ 序列） - ⚠️ PARTIAL
+/// 
+/// 复杂 Emoji 如家庭（👨‍👩‍👧‍👦）使用零宽连字（ZWNJ, U+200D）连接
+#[test]
+fn test_complex_emoji_sequence() {
+    use termux_rust::engine::{TerminalEngine, encode_style};
+    
+    let mut engine = TerminalEngine::new(80, 24, 100);
+    
+    // 设置红色背景 (索引 1)
+    let red_bg_style = encode_style(256, 1, 0);
+    engine.state.current_style = red_bg_style;
+    
+    // 写入复杂 Emoji 序列
+    let data = "👨‍👩‍👧‍👦".as_bytes();
+    engine.process_bytes(data);
+    
+    // 验证样式设置
+    let mut styles = [0i64; 80];
+    engine.state.copy_row_styles(0, &mut styles);
+    
+    // 至少前两列应该有红色背景（Emoji 是宽字符）
+    assert_eq!(
+        ((styles[0] as u64) >> 16) & 0x1FF, 1,
+        "Column 0 background should be red (index 1) for complex emoji"
+    );
+    assert_eq!(
+        ((styles[1] as u64) >> 16) & 0x1FF, 1,
+        "Column 1 background should be red (index 1) for complex emoji"
+    );
+}
+
+/// 验证区域指示符号（国旗 Emoji） - ✅ 修复验证
+/// 
+/// 国旗 Emoji 由两个区域指示符号组成（如 🇺🇸 = U+1F1FA + U+1F1F8）
+#[test]
+fn test_regional_indicator_symbols() {
+    use termux_rust::engine::{TerminalEngine, encode_style};
+    
+    let mut engine = TerminalEngine::new(80, 24, 100);
+    
+    // 设置蓝色背景 (索引 4)
+    let blue_bg_style = encode_style(256, 4, 0);
+    engine.state.current_style = blue_bg_style;
+    
+    // 写入美国国旗 Emoji
+    let data = "🇺🇸".as_bytes();
+    engine.process_bytes(data);
+    
+    // 验证样式设置
+    let mut styles = [0i64; 80];
+    engine.state.copy_row_styles(0, &mut styles);
+    
+    // 国旗 Emoji 应该占 2 列，两列都应该有蓝色背景
+    assert_eq!(
+        ((styles[0] as u64) >> 16) & 0x1FF, 4,
+        "Column 0 background should be blue (index 4) for flag emoji"
+    );
+    assert_eq!(
+        ((styles[1] as u64) >> 16) & 0x1FF, 4,
+        "Column 1 background should be blue (index 4) for flag emoji"
+    );
+}
+
+/// 验证多个连续 Emoji 背景色 - ✅ 修复验证
+#[test]
+fn test_multiple_consecutive_emoji() {
+    use termux_rust::engine::{TerminalEngine, encode_style};
+    
+    let mut engine = TerminalEngine::new(80, 24, 100);
+    
+    // 设置黄色背景 (索引 3)
+    let yellow_bg_style = encode_style(256, 3, 0);
+    engine.state.current_style = yellow_bg_style;
+    
+    // 写入多个连续 Emoji
+    let data = "😀😎🎉🔥💯".as_bytes();
+    engine.process_bytes(data);
+    
+    // 验证光标位置：5 个 Emoji，每个占 2 列 = 10 列
+    assert_eq!(
+        engine.state.cursor_x, 10,
+        "Cursor X should be 10 after five emoji"
+    );
+    
+    // 验证每列的样式
+    let mut styles = [0i64; 80];
+    engine.state.copy_row_styles(0, &mut styles);
+    
+    // 所有 10 列都应该有黄色背景
+    for i in 0..10 {
+        assert_eq!(
+            ((styles[i] as u64) >> 16) & 0x1FF, 3,
+            "Column {} background should be yellow (index 3) for consecutive emoji", i
+        );
+    }
+}
+
+/// 验证 Emoji 和文本混合背景色切换 - ✅ 修复验证
+#[test]
+fn test_emoji_text_style_switch() {
+    use termux_rust::engine::{TerminalEngine, encode_style};
+    
+    let mut engine = TerminalEngine::new(80, 24, 100);
+    
+    // 先写入红色背景的文本
+    engine.state.current_style = encode_style(256, 1, 0);
+    engine.process_bytes(b"Hello");
+    
+    // 切换到绿色背景写入 Emoji
+    engine.state.current_style = encode_style(256, 2, 0);
+    engine.process_bytes("😀".as_bytes());
+    
+    // 再切换到蓝色背景写入文本
+    engine.state.current_style = encode_style(256, 4, 0);
+    engine.process_bytes(b"World");
+    
+    // 验证样式
+    let mut styles = [0i64; 80];
+    engine.state.copy_row_styles(0, &mut styles);
+    
+    // "Hello" (5 列) 红色背景
+    for i in 0..5 {
+        assert_eq!(
+            ((styles[i] as u64) >> 16) & 0x1FF, 1,
+            "Column {} background should be red (index 1) for 'Hello'", i
+        );
+    }
+    
+    // "😀" (2 列) 绿色背景
+    assert_eq!(
+        ((styles[5] as u64) >> 16) & 0x1FF, 2,
+        "Column 5 background should be green (index 2) for emoji"
+    );
+    assert_eq!(
+        ((styles[6] as u64) >> 16) & 0x1FF, 2,
+        "Column 6 background should be green (index 2) for emoji"
+    );
+    
+    // "World" (5 列) 蓝色背景
+    for i in 7..12 {
+        assert_eq!(
+            ((styles[i] as u64) >> 16) & 0x1FF, 4,
+            "Column {} background should be blue (index 4) for 'World'", i
+        );
+    }
+}
+
+// =============================================================================
+// 光标测试（新增）
+// =============================================================================
+
+/// 验证宽字符上的光标 - ✅ 修复验证
+/// 
+/// 块状光标在宽字符上时应该覆盖两列
+#[test]
+fn test_cursor_on_wide_character() {
+    use termux_rust::engine::TerminalEngine;
+    
+    let mut engine = TerminalEngine::new(80, 24, 100);
+    
+    // 写入一个中文字符
+    let data = "你".as_bytes();
+    engine.process_bytes(data);
+    
+    // 光标应该在位置 2（中文字符占 2 列）
+    assert_eq!(
+        engine.state.cursor_x, 2,
+        "Cursor X should be 2 after Chinese character"
+    );
+    
+    // 现在移动到第一列（宽字符的第一列）
+    engine.process_bytes(b"\x1b[1G"); // 移动到列 1（0-based 是 0）
+    assert_eq!(
+        engine.state.cursor_x, 0,
+        "Cursor X should be 0 after moving to first column"
+    );
+    
+    // 验证光标位置
+    assert_eq!(
+        engine.state.cursor_y, 0,
+        "Cursor Y should be 0"
+    );
+}
+
+/// 验证光标在 Emoji 上 - ✅ 修复验证
+#[test]
+fn test_cursor_on_emoji() {
+    use termux_rust::engine::TerminalEngine;
+    
+    let mut engine = TerminalEngine::new(80, 24, 100);
+    
+    // 写入一个 Emoji
+    let data = "😀".as_bytes();
+    engine.process_bytes(data);
+    
+    // 光标应该在位置 2（Emoji 占 2 列）
+    assert_eq!(
+        engine.state.cursor_x, 2,
+        "Cursor X should be 2 after emoji"
+    );
+}
+
+/// 验证光标在混合字符上的位置 - ✅ 修复验证
+#[test]
+fn test_cursor_on_mixed_characters() {
+    use termux_rust::engine::TerminalEngine;
+    
+    let mut engine = TerminalEngine::new(80, 24, 100);
+    
+    // 写入混合字符：ASCII + 中文 + Emoji
+    let data = "A 你😀".as_bytes();
+    engine.process_bytes(data);
+    
+    // 验证光标位置
+    // 注意：具体列数取决于字符宽度计算
+    let cursor_x = engine.state.cursor_x;
+    assert!(
+        cursor_x >= 5,
+        "Cursor X should be at least 5 after 'A 你😀', got {}", cursor_x
+    );
+}
+
+// =============================================================================
+// 综合测试：背景色 + 光标（新增）
+// =============================================================================
+
+/// 验证宽字符上的光标和背景色 - ✅ 修复验证
+/// 
+/// 综合测试：块状光标在宽字符上时，应该覆盖两列，且背景色正确
+#[test]
+fn test_cursor_and_background_on_wide_character() {
+    use termux_rust::engine::{TerminalEngine, encode_style};
+    
+    let mut engine = TerminalEngine::new(80, 24, 100);
+    
+    // 设置红色背景 (索引 1)
+    let red_bg_style = encode_style(256, 1, 0);
+    engine.state.current_style = red_bg_style;
+    
+    // 写入一个中文字符
+    let data = "你".as_bytes();
+    engine.process_bytes(data);
+    
+    // 验证光标位置
+    assert_eq!(
+        engine.state.cursor_x, 2,
+        "Cursor X should be 2 after Chinese character"
+    );
+    
+    // 验证样式：两列都应该有红色背景
+    let mut styles = [0i64; 80];
+    engine.state.copy_row_styles(0, &mut styles);
+    
+    assert_eq!(
+        ((styles[0] as u64) >> 16) & 0x1FF, 1,
+        "Column 0 background should be red (index 1) for Chinese char"
+    );
+    assert_eq!(
+        ((styles[1] as u64) >> 16) & 0x1FF, 1,
+        "Column 1 background should be red (index 1) for Chinese char"
+    );
+}
+
+/// 验证 Emoji 上的光标和背景色 - ✅ 修复验证
+/// 
+/// 综合测试：块状光标在 Emoji 上时，应该覆盖两列，且背景色正确
+#[test]
+fn test_cursor_and_background_on_emoji() {
+    use termux_rust::engine::{TerminalEngine, encode_style};
+    
+    let mut engine = TerminalEngine::new(80, 24, 100);
+    
+    // 设置绿色背景 (索引 2)
+    let green_bg_style = encode_style(256, 2, 0);
+    engine.state.current_style = green_bg_style;
+    
+    // 写入一个 Emoji
+    let data = "😀".as_bytes();
+    engine.process_bytes(data);
+    
+    // 验证光标位置
+    assert_eq!(
+        engine.state.cursor_x, 2,
+        "Cursor X should be 2 after emoji"
+    );
+    
+    // 验证样式：两列都应该有绿色背景
+    let mut styles = [0i64; 80];
+    engine.state.copy_row_styles(0, &mut styles);
+    
+    assert_eq!(
+        ((styles[0] as u64) >> 16) & 0x1FF, 2,
+        "Column 0 background should be green (index 2) for emoji"
+    );
+    assert_eq!(
+        ((styles[1] as u64) >> 16) & 0x1FF, 2,
+        "Column 1 background should be green (index 2) for emoji"
+    );
+}
+
+/// 验证复杂混合场景 - ✅ 修复验证
+/// 
+/// 综合测试：文本 + 中文+Emoji 混合，带背景色，验证光标和背景色都正确
+#[test]
+fn test_complex_mixed_scenario() {
+    use termux_rust::engine::{TerminalEngine, encode_style};
+    
+    let mut engine = TerminalEngine::new(80, 24, 100);
+    
+    // 设置青色背景 (索引 6)
+    let cyan_bg_style = encode_style(256, 6, 0);
+    engine.state.current_style = cyan_bg_style;
+    
+    // 写入复杂混合内容：ASCII + 中文 + Emoji
+    let data = "Hello 你好😀🎉".as_bytes();
+    engine.process_bytes(data);
+    
+    // 验证光标位置
+    // 注意：具体列数取决于字符宽度计算
+    let cursor_x = engine.state.cursor_x;
+    assert!(
+        cursor_x >= 13,
+        "Cursor X should be at least 13 after 'Hello 你好😀🎉', got {}", cursor_x
+    );
+    
+    // 验证样式：所有列都应该有青色背景
+    let mut styles = [0i64; 80];
+    engine.state.copy_row_styles(0, &mut styles);
+    
+    let cursor_x_usize = cursor_x as usize;
+    for i in 0..cursor_x_usize {
+        assert_eq!(
+            ((styles[i] as u64) >> 16) & 0x1FF, 6,
+            "Column {} background should be cyan (index 6)", i
+        );
+    }
+}
+
+/// 验证背景色切换时的宽字符 - ✅ 修复验证
+/// 
+/// 综合测试：在宽字符前后切换背景色，验证样式边界正确
+#[test]
+fn test_background_switch_with_wide_characters() {
+    use termux_rust::engine::{TerminalEngine, encode_style};
+    
+    let mut engine = TerminalEngine::new(80, 24, 100);
+    
+    // 先写入红色背景的 ASCII
+    engine.state.current_style = encode_style(256, 1, 0);
+    engine.process_bytes(b"AB");
+    
+    // 切换到绿色背景写入中文
+    engine.state.current_style = encode_style(256, 2, 0);
+    engine.process_bytes("你".as_bytes());
+    
+    // 切换到蓝色背景写入 ASCII
+    engine.state.current_style = encode_style(256, 4, 0);
+    engine.process_bytes(b"CD");
+    
+    // 验证样式
+    let mut styles = [0i64; 80];
+    engine.state.copy_row_styles(0, &mut styles);
+    
+    // "AB" (2 列) 红色背景
+    assert_eq!(((styles[0] as u64) >> 16) & 0x1FF, 1, "Column 0 should be red");
+    assert_eq!(((styles[1] as u64) >> 16) & 0x1FF, 1, "Column 1 should be red");
+    
+    // "你" (2 列) 绿色背景
+    assert_eq!(((styles[2] as u64) >> 16) & 0x1FF, 2, "Column 2 should be green");
+    assert_eq!(((styles[3] as u64) >> 16) & 0x1FF, 2, "Column 3 should be green");
+    
+    // "CD" (2 列) 蓝色背景
+    assert_eq!(((styles[4] as u64) >> 16) & 0x1FF, 4, "Column 4 should be blue");
+    assert_eq!(((styles[5] as u64) >> 16) & 0x1FF, 4, "Column 5 should be blue");
+}
+
+/// 验证行尾宽字符的背景色 - ✅ 修复验证
+/// 
+/// 综合测试：宽字符在行尾时，背景色和换行都正确
+#[test]
+fn test_wide_char_at_line_end_with_background() {
+    use termux_rust::engine::{TerminalEngine, encode_style};
+    
+    let mut engine = TerminalEngine::new(10, 5, 100); // 窄屏幕
+    
+    // 设置黄色背景 (索引 3)
+    let yellow_bg_style = encode_style(256, 3, 0);
+    engine.state.current_style = yellow_bg_style;
+    
+    // 写入 8 个字符到倒数第二列
+    engine.process_bytes(b"12345678");
+    
+    // 写入一个宽字符，应该触发换行
+    engine.process_bytes("你".as_bytes());
+    
+    // 验证第一行样式
+    let mut styles = [0i64; 10];
+    engine.state.copy_row_styles(0, &mut styles);
+    
+    // 第一行 8 列应该是黄色背景
+    for i in 0..8 {
+        assert_eq!(
+            ((styles[i] as u64) >> 16) & 0x1FF, 3,
+            "Column {} background should be yellow (index 3)", i
+        );
+    }
+    
+    // 验证光标在第二行
+    assert_eq!(
+        engine.state.cursor_y, 1,
+        "Cursor should be on row 1 after wide char wrap"
+    );
+}

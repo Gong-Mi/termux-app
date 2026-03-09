@@ -140,7 +140,7 @@ public final class TerminalRenderer {
                     // 如果已到达行尾，绘制剩余的 run 并退出
                     if (lastRunStartColumn != -1) {
                         drawTextRun(canvas, lineText, palette, heightOffset, lastRunStartColumn, lastRunStartIndex, currentCharIndex,
-                            lastRunInsideCursor, lastRunInsideSelection, lastRunStyle, cursorShape, measuredWidthForRun, lastRunScaleFactor);
+                            lastRunInsideCursor, lastRunInsideSelection, lastRunStyle, cursorShape, measuredWidthForRun, lastRunScaleFactor, column);
                     }
                     break;
                 }
@@ -153,7 +153,7 @@ public final class TerminalRenderer {
                     // 不完整的代理对，视为无效字符，跳过
                     if (lastRunStartColumn != -1) {
                         drawTextRun(canvas, lineText, palette, heightOffset, lastRunStartColumn, lastRunStartIndex, currentCharIndex,
-                            lastRunInsideCursor, lastRunInsideSelection, lastRunStyle, cursorShape, measuredWidthForRun, lastRunScaleFactor);
+                            lastRunInsideCursor, lastRunInsideSelection, lastRunStyle, cursorShape, measuredWidthForRun, lastRunScaleFactor, column);
                     }
                     break;
                 }
@@ -164,14 +164,22 @@ public final class TerminalRenderer {
                 final boolean isWideChar = codePointWcWidth == 2;
                 final long style = lineStyles[column];
 
-                final boolean insideCursor = column == cursorX || (isWideChar && (column + 1) == cursorX);
+                // 判断是否在光标位置
+                // 对于块状光标，如果光标在宽字符的第一列，需要覆盖两列
+                final boolean atCursorCol = column == cursorX;
+                final boolean atSecondHalfOfWideCursor = (column + 1) == cursorX;
+                // 如果光标在宽字符的第一列，下一列也应该被视为在光标内（仅块状光标）
+                final boolean nextColIsCursorForWideChar = cursorShape == TerminalEmulator.TERMINAL_CURSOR_STYLE_BLOCK 
+                    && isWideChar && (column + 1) == cursorX + 1;
+                    
+                final boolean insideCursor = atCursorCol || atSecondHalfOfWideCursor || nextColIsCursorForWideChar;
                 final boolean insideSelection = column >= selx1 && column <= selx2;
                 final boolean fontWidthMismatch = codePoint < asciiMeasures.length && asciiMeasures[codePoint] != mFontWidth;
 
                 if (style != lastRunStyle || insideCursor != lastRunInsideCursor || insideSelection != lastRunInsideSelection || fontWidthMismatch || lastRunFontWidthMismatch) {
                     if (lastRunStartColumn != -1) {
                         drawTextRun(canvas, lineText, palette, heightOffset, lastRunStartColumn, lastRunStartIndex, currentCharIndex,
-                            lastRunInsideCursor, lastRunInsideSelection, lastRunStyle, cursorShape, measuredWidthForRun, lastRunScaleFactor);
+                            lastRunInsideCursor, lastRunInsideSelection, lastRunStyle, cursorShape, measuredWidthForRun, lastRunScaleFactor, column);
                     }
                     lastRunStartIndex = currentCharIndex;
                     lastRunStartColumn = column;
@@ -203,13 +211,13 @@ public final class TerminalRenderer {
             }
             if (lastRunStartColumn != -1) {
                 drawTextRun(canvas, lineText, palette, heightOffset, lastRunStartColumn, lastRunStartIndex, currentCharIndex,
-                    lastRunInsideCursor, lastRunInsideSelection, lastRunStyle, cursorShape, measuredWidthForRun, lastRunScaleFactor);
+                    lastRunInsideCursor, lastRunInsideSelection, lastRunStyle, cursorShape, measuredWidthForRun, lastRunScaleFactor, columns);
             }
         }
     }
 
     private void drawTextRun(Canvas canvas, char[] text, int[] palette, float y, int startColumn, int startIndex, int endIndex,
-                             boolean insideCursor, boolean insideSelection, long style, int cursorShape, float measuredWidthForRun, float scaleFactor) {
+                             boolean insideCursor, boolean insideSelection, long style, int cursorShape, float measuredWidthForRun, float scaleFactor, int endColumn) {
         int foregroundColor = TextStyle.decodeForeColor(style);
         int backgroundColor = TextStyle.decodeBackColor(style);
         final int effect = TextStyle.decodeEffect(style);
@@ -261,7 +269,9 @@ public final class TerminalRenderer {
 
         if (backgroundColor != palette[TextStyle.COLOR_INDEX_BACKGROUND]) {
             mTextPaint.setColor(backgroundColor);
-            float width = (endIndex - startIndex) * mFontWidth; // Simplified
+            // 使用列数差计算宽度，确保宽字符（中文/韩文）的背景色矩形宽度正确
+            // 每个单元格宽度为 mFontWidth，与字符实际测量宽度无关
+            float width = (endColumn - startColumn) * mFontWidth;
             canvas.drawRect(startColumn * mFontWidth, y - mFontLineSpacingAndAscent + mFontAscent, (startColumn * mFontWidth) + width, y, mTextPaint);
         }
 

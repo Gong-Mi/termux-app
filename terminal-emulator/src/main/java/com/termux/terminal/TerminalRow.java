@@ -100,9 +100,15 @@ public final class TerminalRow {
 
     public final void setChar(int columnToSet, final int codePoint, final long style) {
         if (columnToSet < 0 || columnToSet >= mColumns) return;
-        
-        mStyle[columnToSet] = style;
+
         final int newWidth = WcWidth.width(codePoint);
+        
+        // 设置样式：宽字符需要设置两列的样式
+        mStyle[columnToSet] = style;
+        if (newWidth == 2 && columnToSet + 1 < mColumns) {
+            mStyle[columnToSet + 1] = style;
+        }
+        
         if (!mHasNonOneWidthOrSurrogateChars) {
             if (newWidth == 1 && codePoint < 65536) {
                 mText[columnToSet] = (char) codePoint;
@@ -137,7 +143,9 @@ public final class TerminalRow {
     private void setCharInternal(int columnToSet, int codePoint, long style, int newWidth) {
         final boolean newIsCombining = newWidth <= 0;
         boolean wasWide = (columnToSet > 0) && wideDisplayCharacterStartingAt(columnToSet - 1);
-        if (newIsCombining) { if (wasWide) columnToSet--; }
+        if (newIsCombining) { 
+            if (wasWide) columnToSet--; 
+        }
         else {
             if (wasWide) setChar(columnToSet - 1, ' ', style);
             if (newWidth == 2 && wideDisplayCharacterStartingAt(columnToSet + 1)) setChar(columnToSet + 1, ' ', style);
@@ -158,22 +166,26 @@ public final class TerminalRow {
         } else if (diff < 0) System.arraycopy(mText, oldStart + oldUsed, mText, oldStart + newUsed, mSpaceUsed - (oldStart + oldUsed));
         mSpaceUsed += diff;
         Character.toChars(codePoint, mText, oldStart + (newIsCombining ? oldUsed : 0));
-        if (oldWidth == 2 && newWidth == 1) insertSpaceAt(oldStart + newUsed);
-        else if (oldWidth == 1 && newWidth == 2) handleWideOverwrite(columnToSet, oldStart + newUsed);
+        if (oldWidth == 2 && newWidth == 1) insertSpaceAt(oldStart + newUsed, style);
+        else if (oldWidth == 1 && newWidth == 2) handleWideOverwrite(columnToSet, oldStart + newUsed, style);
     }
 
-    private void insertSpaceAt(int index) {
+    private void insertSpaceAt(int index, long style) {
         if (mSpaceUsed + 1 > mText.length) {
             char[] nt = new char[mText.length + mColumns];
             System.arraycopy(mText, 0, nt, 0, index);
             System.arraycopy(mText, index, nt, index + 1, mSpaceUsed - index);
             mText = nt;
-        } else System.arraycopy(mText, index, mText, index + 1, mSpaceUsed - index);
+        } else {
+            System.arraycopy(mText, index, mText, index + 1, mSpaceUsed - index);
+        }
         mText[index] = ' ';
         mSpaceUsed++;
+        // 注意：样式数组不需要在这里更新，因为 insertSpaceAt 只在 setCharInternal 中被调用
+        // 且调用前已经通过 setChar() 设置了正确的样式
     }
 
-    private void handleWideOverwrite(int col, int idx) {
+    private void handleWideOverwrite(int col, int idx, long style) {
         if (col >= mColumns - 1) return;
         if (col == mColumns - 2) mSpaceUsed = (short) idx;
         else {
@@ -186,6 +198,7 @@ public final class TerminalRow {
             System.arraycopy(mText, nidx, mText, idx, mSpaceUsed - nidx);
             mSpaceUsed -= (nidx - idx);
         }
+        // 样式已经在 setChar() 中设置好了
     }
 
     boolean isBlank() {
