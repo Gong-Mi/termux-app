@@ -245,8 +245,14 @@ public final class TerminalEmulator {
     /** 指向 Rust 引擎对象的原生指针 */
     private long mRustEnginePtr = 0;
 
-    /** 是否开启 Rust 全接管模式 */
-    public static final boolean USE_RUST_FULL_TAKEOVER = true;
+    /**
+     * 是否开启 Rust 全接管模式。
+     * 注意：Rust 引擎目前仍在开发中，存在以下已知问题：
+     * - 备用屏幕缓冲区支持不完整
+     * - 某些情况下可能出现 JNI borrow checker 问题
+     * 建议在生产环境中使用 false，开发测试可使用 true
+     */
+    public static final boolean USE_RUST_FULL_TAKEOVER = false;
 
     private static boolean sRustLibLoaded = false;
 

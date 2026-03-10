@@ -170,15 +170,47 @@ public final class TerminalRenderer {
         final boolean strikeThrough = (effect & TextStyle.CHARACTER_ATTRIBUTE_STRIKETHROUGH) != 0;
         final boolean dim = (effect & TextStyle.CHARACTER_ATTRIBUTE_DIM) != 0;
 
-        if ((foreColor & 0xff000000) != 0xff000000) {
+        // Map indexed colors to palette (non-truecolor)
+        // After reverse video swap, the foreground/background may have swapped, so we need to check
+        // which original color (foreground or background) is now in each variable
+        boolean foregroundIsIndexedColor, backgroundIsIndexedColor;
+        
+        if (reverseVideo) {
+            // After swap: foreground was original background, background was original foreground
+            foregroundIsIndexedColor = (textStyle & TextStyle.CHARACTER_ATTRIBUTE_TRUECOLOR_BACKGROUND) == 0;
+            backgroundIsIndexedColor = (textStyle & TextStyle.CHARACTER_ATTRIBUTE_TRUECOLOR_FOREGROUND) == 0;
+        } else {
+            foregroundIsIndexedColor = (textStyle & TextStyle.CHARACTER_ATTRIBUTE_TRUECOLOR_FOREGROUND) == 0;
+            backgroundIsIndexedColor = (textStyle & TextStyle.CHARACTER_ATTRIBUTE_TRUECOLOR_BACKGROUND) == 0;
+        }
+        
+        // Process foreground color with bounds checking
+        if (foregroundIsIndexedColor) {
+            if (foreColor < 0 || foreColor >= palette.length) {
+                android.util.Log.e("Termux", "Invalid foreground color detected!" +
+                    " fg=" + foreColor + " palette.length=" + palette.length +
+                    " style=0x" + Long.toHexString(textStyle) +
+                    " startColumn=" + startColumn);
+                foreColor = TextStyle.COLOR_INDEX_FOREGROUND;
+            }
             // Let bold have bright colors if applicable (one of the first 8):
             if (bold && foreColor >= 0 && foreColor < 8) foreColor += 8;
             foreColor = palette[foreColor];
         }
-
-        if ((backColor & 0xff000000) != 0xff000000) {
+        // else: truecolor, keep the ARGB value as-is
+        
+        // Process background color with bounds checking
+        if (backgroundIsIndexedColor) {
+            if (backColor < 0 || backColor >= palette.length) {
+                android.util.Log.e("Termux", "Invalid background color detected!" +
+                    " bg=" + backColor + " palette.length=" + palette.length +
+                    " style=0x" + Long.toHexString(textStyle) +
+                    " startColumn=" + startColumn);
+                backColor = TextStyle.COLOR_INDEX_BACKGROUND;
+            }
             backColor = palette[backColor];
         }
+        // else: truecolor, keep the ARGB value as-is
 
         // Reverse video here if _one and only one_ of the reverse flags are set:
         final boolean reverseVideoHere = reverseVideo ^ (effect & (TextStyle.CHARACTER_ATTRIBUTE_INVERSE)) != 0;
