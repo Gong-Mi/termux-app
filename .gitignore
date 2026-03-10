@@ -38,3 +38,6 @@ local.properties
 ehthumbs.db
 Thumbs.db
 local_gemini_*.log
+
+# Git worktree for comparing with master branch
+.gitignore-workspaces/

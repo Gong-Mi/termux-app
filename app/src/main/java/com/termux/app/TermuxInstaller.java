@@ -7,7 +7,6 @@ import android.content.Context;
 import android.os.Build;
 import android.os.Environment;
 import android.system.Os;
-import android.util.Pair;
 import android.view.WindowManager;
 
 import com.termux.R;
@@ -23,15 +22,7 @@ import com.termux.shared.termux.TermuxConstants;
 import com.termux.shared.termux.TermuxUtils;
 import com.termux.shared.termux.shell.command.environment.TermuxShellEnvironment;
 
-import java.io.BufferedReader;
-import java.io.ByteArrayInputStream;
 import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStreamReader;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 import static com.termux.shared.termux.TermuxConstants.TERMUX_PREFIX_DIR;
 import static com.termux.shared.termux.TermuxConstants.TERMUX_PREFIX_DIR_PATH;
@@ -50,12 +41,7 @@ import static com.termux.shared.termux.TermuxConstants.TERMUX_STAGING_PREFIX_DIR
  * <p/>
  * (4) The zip file is loaded from a shared library.
  * <p/>
- * (5) The zip, containing entries relative to the $PREFIX, is is downloaded and extracted by a zip input stream
- * continuously encountering zip file entries:
- * <p/>
- * (5.1) If the zip entry encountered is SYMLINKS.txt, go through it and remember all symlinks to setup.
- * <p/>
- * (5.2) For every other zip entry, extract it into $STAGING_PREFIX and set execute permissions if necessary.
+ * (5) The zip is extracted using Rust implementation to $STAGING_PREFIX.
  */
 final class TermuxInstaller {
 
@@ -63,28 +49,44 @@ final class TermuxInstaller {
 
     private static boolean sIsBootstrapInstallationRunning = false;
 
-    /** Performs bootstrap setup if necessary. */
+    /**
+     * Performs bootstrap setup if necessary.
+     * 
+     * Bootstrap 触发条件：
+     * 1. PREFIX 目录不存在，或
+     * 2. PREFIX 目录存在但为空（只包含不重要的文件）
+     * 
+     * 不触发的情况：
+     * 1. PREFIX 目录存在且非空（已有完整的 bootstrap 安装）
+     * 2. Bootstrap 安装已经在运行中（防止并发）
+     * 3. Files 目录不可访问（权限问题）
+     * 4. 不是主用户（多用户场景）
+     */
     static synchronized void setupBootstrapIfNeeded(final Activity activity, final Runnable whenDone) {
+        Logger.logInfo(LOG_TAG, "========== [Bootstrap Check Start] ==========");
+        Logger.logInfo(LOG_TAG, "TERMUX_PREFIX_DIR_PATH: " + TERMUX_PREFIX_DIR_PATH);
+        Logger.logInfo(LOG_TAG, "TERMUX_STAGING_PREFIX_DIR_PATH: " + TERMUX_STAGING_PREFIX_DIR_PATH);
+        
         if (sIsBootstrapInstallationRunning) {
-            Logger.logDebug(LOG_TAG, "Bootstrap installation is already running, skipping.");
+            Logger.logWarn(LOG_TAG, "[SKIP] Bootstrap installation is already running, skipping.");
             return;
         }
 
         String bootstrapErrorMessage;
         Error filesDirectoryAccessibleError;
 
-        // This will also call Context.getFilesDir(), which should ensure that termux files directory
-        // is created if it does not already exist
+        // Step 1: Check files directory accessibility
+        Logger.logInfo(LOG_TAG, "[Step 1] Checking files directory accessibility...");
         filesDirectoryAccessibleError = TermuxFileUtils.isTermuxFilesDirectoryAccessible(activity, true, true);
         boolean isFilesDirectoryAccessible = filesDirectoryAccessibleError == null;
+        Logger.logInfo(LOG_TAG, "Files directory accessible: " + isFilesDirectoryAccessible);
 
-        // Termux can only be run as the primary user (device owner) since only that
-        // account has the expected file system paths. Verify that:
+        // Step 2: Check if primary user
+        Logger.logInfo(LOG_TAG, "[Step 2] Checking if primary user...");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !PackageUtils.isCurrentUserThePrimaryUser(activity)) {
             bootstrapErrorMessage = activity.getString(R.string.bootstrap_error_not_primary_user_message,
                 MarkdownUtils.getMarkdownCodeForString(TERMUX_PREFIX_DIR_PATH, false));
-            Logger.logError(LOG_TAG, "isFilesDirectoryAccessible: " + isFilesDirectoryAccessible);
-            Logger.logError(LOG_TAG, bootstrapErrorMessage);
+            Logger.logError(LOG_TAG, "[BLOCK] Not primary user - " + bootstrapErrorMessage);
             sendBootstrapCrashReportNotification(activity, bootstrapErrorMessage);
             MessageDialogUtils.exitAppWithErrorMessage(activity,
                 activity.getString(R.string.bootstrap_error_title),
@@ -92,6 +94,8 @@ final class TermuxInstaller {
             return;
         }
 
+        // Step 3: Check files directory access result
+        Logger.logInfo(LOG_TAG, "[Step 3] Evaluating files directory access...");
         if (!isFilesDirectoryAccessible) {
             bootstrapErrorMessage = Error.getMinimalErrorString(filesDirectoryAccessibleError);
             //noinspection SdCardPath
@@ -101,7 +105,7 @@ final class TermuxInstaller {
                     MarkdownUtils.getMarkdownCodeForString(TERMUX_PREFIX_DIR_PATH, false));
             }
 
-            Logger.logError(LOG_TAG, bootstrapErrorMessage);
+            Logger.logError(LOG_TAG, "[BLOCK] Files directory not accessible - " + bootstrapErrorMessage);
             sendBootstrapCrashReportNotification(activity, bootstrapErrorMessage);
             MessageDialogUtils.showMessage(activity,
                 activity.getString(R.string.bootstrap_error_title),
@@ -109,142 +113,161 @@ final class TermuxInstaller {
             return;
         }
 
-        // If prefix directory exists, even if its a symlink to a valid directory and symlink is not broken/dangling
-        if (FileUtils.directoryFileExists(TERMUX_PREFIX_DIR_PATH, true)) {
-            Logger.logInfo(LOG_TAG, "Prefix directory exists at: " + TERMUX_PREFIX_DIR_PATH);
-            if (TermuxFileUtils.isTermuxPrefixDirectoryEmpty()) {
-                Logger.logInfo(LOG_TAG, "The termux prefix directory \"" + TERMUX_PREFIX_DIR_PATH + "\" exists but is empty or only contains specific unimportant files.");
+        // Step 4: Check PREFIX directory status
+        Logger.logInfo(LOG_TAG, "[Step 4] Checking PREFIX directory status...");
+        boolean prefixExists = FileUtils.directoryFileExists(TERMUX_PREFIX_DIR_PATH, true);
+        Logger.logInfo(LOG_TAG, "PREFIX directory exists: " + prefixExists + " at " + TERMUX_PREFIX_DIR_PATH);
+        
+        if (prefixExists) {
+            Logger.logInfo(LOG_TAG, "[Check] PREFIX directory exists, checking if empty...");
+            boolean isPrefixEmpty = TermuxFileUtils.isTermuxPrefixDirectoryEmpty();
+            Logger.logInfo(LOG_TAG, "PREFIX directory is empty: " + isPrefixEmpty);
+            
+            if (isPrefixEmpty) {
+                Logger.logInfo(LOG_TAG, "[PROCEED] PREFIX exists but empty, will install bootstrap.");
             } else {
-                Logger.logInfo(LOG_TAG, "Prefix not empty, skipping bootstrap.");
+                Logger.logInfo(LOG_TAG, "[SKIP] PREFIX not empty, skipping bootstrap. whenDone.run()");
                 whenDone.run();
                 return;
             }
-        } else if (FileUtils.fileExists(TERMUX_PREFIX_DIR_PATH, false)) {
-            Logger.logInfo(LOG_TAG, "The termux prefix directory \"" + TERMUX_PREFIX_DIR_PATH + "\" does not exist but another file exists at its destination.");
+        } else {
+            boolean fileExistsAtPath = FileUtils.fileExists(TERMUX_PREFIX_DIR_PATH, false);
+            Logger.logInfo(LOG_TAG, "[PROCEED] PREFIX does not exist, file at path: " + fileExistsAtPath + ", will install bootstrap.");
         }
 
+        // Step 5: Start bootstrap installation
+        Logger.logInfo(LOG_TAG, "[Step 5] Starting bootstrap installation...");
         sIsBootstrapInstallationRunning = true;
         final ProgressDialog progress = ProgressDialog.show(activity, null, activity.getString(R.string.bootstrap_installer_body), true, false);
         new Thread() {
             @Override
             public void run() {
                 try {
-                    Logger.logInfo(LOG_TAG, "Installing " + TermuxConstants.TERMUX_APP_NAME + " bootstrap packages.");
+                    Logger.logInfo(LOG_TAG, "[Step 5.1] Installing bootstrap packages...");
 
                     Error error;
 
-                    // Delete prefix staging directory or any file at its destination
+                    // Step 5.2: Delete staging directory
+                    Logger.logInfo(LOG_TAG, "[Step 5.2] Deleting staging directory: " + TERMUX_STAGING_PREFIX_DIR_PATH);
                     error = FileUtils.deleteFile("termux prefix staging directory", TERMUX_STAGING_PREFIX_DIR_PATH, true);
                     if (error != null) {
+                        Logger.logError(LOG_TAG, "[ERROR] Failed to delete staging directory: " + error.getMessage());
                         showBootstrapErrorDialog(activity, whenDone, Error.getErrorMarkdownString(error));
                         return;
                     }
+                    Logger.logInfo(LOG_TAG, "[OK] Staging directory cleaned/deleted");
 
-                    // Delete prefix directory or any file at its destination
+                    // Step 5.3: Delete PREFIX directory
+                    Logger.logInfo(LOG_TAG, "[Step 5.3] Deleting PREFIX directory: " + TERMUX_PREFIX_DIR_PATH);
                     error = FileUtils.deleteFile("termux prefix directory", TERMUX_PREFIX_DIR_PATH, true);
                     if (error != null) {
+                        Logger.logError(LOG_TAG, "[ERROR] Failed to delete PREFIX directory: " + error.getMessage());
                         showBootstrapErrorDialog(activity, whenDone, Error.getErrorMarkdownString(error));
                         return;
                     }
+                    Logger.logInfo(LOG_TAG, "[OK] PREFIX directory cleaned/deleted");
 
-                    // Create prefix staging directory if it does not already exist and set required permissions
+                    // Step 5.4: Create staging directory
+                    Logger.logInfo(LOG_TAG, "[Step 5.4] Creating staging directory...");
                     error = TermuxFileUtils.isTermuxPrefixStagingDirectoryAccessible(true, true);
                     if (error != null) {
+                        Logger.logError(LOG_TAG, "[ERROR] Failed to create staging directory: " + error.getMessage());
                         showBootstrapErrorDialog(activity, whenDone, Error.getErrorMarkdownString(error));
                         return;
                     }
+                    Logger.logInfo(LOG_TAG, "[OK] Staging directory created at: " + TERMUX_STAGING_PREFIX_DIR_PATH);
 
-                    // Create prefix directory if it does not already exist and set required permissions
+                    // Step 5.5: Create PREFIX directory
+                    Logger.logInfo(LOG_TAG, "[Step 5.5] Creating PREFIX directory...");
                     error = TermuxFileUtils.isTermuxPrefixDirectoryAccessible(true, true);
                     if (error != null) {
+                        Logger.logError(LOG_TAG, "[ERROR] Failed to create PREFIX directory: " + error.getMessage());
                         showBootstrapErrorDialog(activity, whenDone, Error.getErrorMarkdownString(error));
                         return;
                     }
+                    Logger.logInfo(LOG_TAG, "[OK] PREFIX directory created at: " + TERMUX_PREFIX_DIR_PATH);
 
-                    Logger.logInfo(LOG_TAG, "Extracting bootstrap zip to prefix staging directory \"" + TERMUX_STAGING_PREFIX_DIR_PATH + "\".");
-
-                    final byte[] buffer = new byte[8096];
-                    final List<Pair<String, String>> symlinks = new ArrayList<>(50);
-
+                    // Step 5.6: Load and extract bootstrap zip
+                    Logger.logInfo(LOG_TAG, "[Step 5.6] Loading bootstrap zip bytes...");
                     final byte[] zipBytes = loadZipBytes();
-                    try (ZipInputStream zipInput = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
-                        ZipEntry zipEntry;
-                        while ((zipEntry = zipInput.getNextEntry()) != null) {
-                            if (zipEntry.getName().equals("SYMLINKS.txt")) {
-                                BufferedReader symlinksReader = new BufferedReader(new InputStreamReader(zipInput));
-                                String line;
-                                while ((line = symlinksReader.readLine()) != null) {
-                                    String[] parts = line.split("←");
-                                    if (parts.length != 2)
-                                        throw new RuntimeException("Malformed symlink line: " + line);
-                                    String oldPath = parts[0];
-                                    String newPath = TERMUX_STAGING_PREFIX_DIR_PATH + "/" + parts[1];
-                                    symlinks.add(Pair.create(oldPath, newPath));
+                    Logger.logInfo(LOG_TAG, "[OK] Loaded bootstrap zip, size: " + zipBytes.length + " bytes");
 
-                                    error = ensureDirectoryExists(new File(newPath).getParentFile());
-                                    if (error != null) {
-                                        showBootstrapErrorDialog(activity, whenDone, Error.getErrorMarkdownString(error));
-                                        return;
-                                    }
-                                }
-                            } else {
-                                String zipEntryName = zipEntry.getName();
-                                File targetFile = new File(TERMUX_STAGING_PREFIX_DIR_PATH, zipEntryName);
-                                boolean isDirectory = zipEntry.isDirectory();
+                    Logger.logInfo(LOG_TAG, "[Step 5.7] Extracting bootstrap using Rust to: " + TERMUX_STAGING_PREFIX_DIR_PATH);
+                    long startTime = System.currentTimeMillis();
+                    
+                    // Use Rust to extract bootstrap
+                    boolean extractSuccess = BootstrapExtractor.extractBootstrap(zipBytes, TERMUX_STAGING_PREFIX_DIR_PATH);
+                    long extractTime = System.currentTimeMillis() - startTime;
+                    Logger.logInfo(LOG_TAG, "[Step 5.7 Complete] Extraction took: " + extractTime + "ms, success: " + extractSuccess);
+                    
+                    if (!extractSuccess) {
+                        Logger.logError(LOG_TAG, "[ERROR] Bootstrap extraction failed");
+                        showBootstrapErrorDialog(activity, whenDone, "Bootstrap extraction failed with error");
+                        return;
+                    }
 
-                                error = ensureDirectoryExists(isDirectory ? targetFile : targetFile.getParentFile());
-                                if (error != null) {
-                                    showBootstrapErrorDialog(activity, whenDone, Error.getErrorMarkdownString(error));
-                                    return;
-                                }
-
-                                if (!isDirectory) {
-                                    try (FileOutputStream outStream = new FileOutputStream(targetFile)) {
-                                        int readBytes;
-                                        while ((readBytes = zipInput.read(buffer)) != -1)
-                                            outStream.write(buffer, 0, readBytes);
-                                    }
-                                    if (zipEntryName.startsWith("bin/") || zipEntryName.startsWith("libexec") ||
-                                        zipEntryName.startsWith("lib/apt/apt-helper") || zipEntryName.startsWith("lib/apt/methods")) {
-                                        //noinspection OctalInteger
-                                        Os.chmod(targetFile.getAbsolutePath(), 0700);
-                                    }
-                                }
+                    // Step 5.8: Verify extraction result
+                    Logger.logInfo(LOG_TAG, "[Step 5.8] Verifying extraction result...");
+                    boolean stagingExists = FileUtils.directoryFileExists(TERMUX_STAGING_PREFIX_DIR_PATH, true);
+                    Logger.logInfo(LOG_TAG, "Staging directory exists after extraction: " + stagingExists);
+                    
+                    if (stagingExists) {
+                        try {
+                            String[] files = TERMUX_STAGING_PREFIX_DIR.list();
+                            if (files != null) {
+                                Logger.logInfo(LOG_TAG, "Staging directory contents: " + java.util.Arrays.toString(files));
                             }
+                        } catch (Exception e) {
+                            Logger.logError(LOG_TAG, "Failed to list staging directory: " + e.getMessage());
                         }
                     }
 
-                    if (symlinks.isEmpty())
-                        throw new RuntimeException("No SYMLINKS.txt encountered");
-                    for (Pair<String, String> symlink : symlinks) {
-                        Os.symlink(symlink.first, symlink.second);
-                    }
-
-                    Logger.logInfo(LOG_TAG, "Moving termux prefix staging to prefix directory.");
-
+                    // Step 5.9: Move staging to PREFIX
+                    Logger.logInfo(LOG_TAG, "[Step 5.9] Moving staging to PREFIX...");
                     if (!TERMUX_STAGING_PREFIX_DIR.renameTo(TERMUX_PREFIX_DIR)) {
+                        Logger.logError(LOG_TAG, "[ERROR] Failed to move staging to PREFIX");
                         throw new RuntimeException("Moving termux prefix staging to prefix directory failed");
                     }
+                    Logger.logInfo(LOG_TAG, "[OK] Staging moved to PREFIX");
 
-                    Logger.logInfo(LOG_TAG, "Bootstrap packages installed successfully.");
+                    // Step 5.10: Verify final PREFIX
+                    Logger.logInfo(LOG_TAG, "[Step 5.10] Verifying final PREFIX directory...");
+                    boolean finalPrefixExists = FileUtils.directoryFileExists(TERMUX_PREFIX_DIR_PATH, true);
+                    Logger.logInfo(LOG_TAG, "Final PREFIX directory exists: " + finalPrefixExists);
+                    
+                    if (finalPrefixExists) {
+                        try {
+                            String[] files = TERMUX_PREFIX_DIR.list();
+                            if (files != null) {
+                                Logger.logInfo(LOG_TAG, "Final PREFIX contents: " + java.util.Arrays.toString(files));
+                            }
+                        } catch (Exception e) {
+                            Logger.logError(LOG_TAG, "Failed to list PREFIX directory: " + e.getMessage());
+                        }
+                    }
 
-                    // Recreate env file since termux prefix was wiped earlier
+                    Logger.logInfo(LOG_TAG, "[Step 5.11] Writing environment file...");
                     TermuxShellEnvironment.writeEnvironmentToFile(activity);
+                    Logger.logInfo(LOG_TAG, "[OK] Environment file written");
 
+                    Logger.logInfo(LOG_TAG, "========== [Bootstrap Installation Complete] ==========");
                     activity.runOnUiThread(whenDone);
 
                 } catch (final Exception e) {
+                    Logger.logError(LOG_TAG, "[EXCEPTION] Bootstrap installation failed: " + e.getMessage());
                     showBootstrapErrorDialog(activity, whenDone, Logger.getStackTracesMarkdownString(null, Logger.getStackTracesStringArray(e)));
 
                 } finally {
                     synchronized (TermuxInstaller.class) {
                         sIsBootstrapInstallationRunning = false;
                     }
+                    Logger.logInfo(LOG_TAG, "[Cleanup] Reset installation running flag");
                     activity.runOnUiThread(() -> {
                         try {
                             progress.dismiss();
+                            Logger.logInfo(LOG_TAG, "[Cleanup] Progress dialog dismissed");
                         } catch (RuntimeException e) {
-                            // Activity already dismissed - ignore.
+                            Logger.logWarn(LOG_TAG, "[Cleanup] Failed to dismiss progress: " + e.getMessage());
                         }
                     });
                 }

@@ -18,6 +18,7 @@ pub mod engine;
 pub mod fastpath;
 pub mod pty;
 pub mod utils;
+pub mod bootstrap;
 
 use engine::TerminalEngine;
 
