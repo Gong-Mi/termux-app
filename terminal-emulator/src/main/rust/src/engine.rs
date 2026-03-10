@@ -1060,11 +1060,21 @@ impl ScreenState {
                     self.buffer[idx].clear(0, self.cols as usize, self.current_style);
                 }
             }
-            2 | 3 => {
+            2 => {
                 for y in 0..self.rows {
                     let idx = self.external_to_internal_row(y);
                     self.buffer[idx].clear(0, self.cols as usize, self.current_style);
                 }
+            }
+            3 => {
+                // 清除整个物理缓冲区（包括滚动历史）
+                for row in &mut self.buffer {
+                    row.clear(0, self.cols as usize, self.current_style);
+                }
+                // 重置滚动指针，使当前屏幕位于缓冲区开头
+                self.screen_first_row = 0;
+                // 重置滚动计数器（对齐 Java 端行为）
+                self.scroll_counter = 0;
             }
             _ => {}
         }

@@ -2171,3 +2171,33 @@ fn test_save_restore_cursor_colors() {
         "Foreground color should be restored to red (1)"
     );
 }
+
+#[test]
+fn test_erase_display_mode_3() {
+    use termux_rust::engine::TerminalEngine;
+    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    // 填充一些滚动历史 (超过 24 行)
+    for i in 0..50 {
+        let msg = format!("Line {}\n", i);
+        engine.process_bytes(msg.as_bytes());
+    }
+    
+    // 确认有滚动历史 (screen_first_row 应该已经滚动)
+    assert!(engine.state.screen_first_row > 0, "Should have scrolled");
+    
+    // 执行 CSI 3 J (清历史)
+    engine.process_bytes(b"\x1b[3J");
+    
+    // 验证 screen_first_row 已重置
+    assert_eq!(engine.state.screen_first_row, 0, "Screen first row should be reset");
+    assert_eq!(engine.state.scroll_counter, 0, "Scroll counter should be reset");
+    
+    // 验证整个 buffer 都是空的
+    for y in 0..engine.state.buffer.len() {
+        let row = &engine.state.buffer[y];
+        for x in 0..80 {
+            let c = row.text[x];
+            assert_eq!(c, ' ', "Cell ({}, {}) should be empty space", x, y);
+        }
+    }
+}
