@@ -6,10 +6,12 @@
 #![warn(clippy::all)]
 #![allow(clippy::missing_safety_doc)]
 
-use jni::JNIEnv;
+use std::panic;
+use std::sync::OnceLock;
+use jni::{JNIEnv, JavaVM};
 use jni::sys::{
     JNINativeInterface_, jbyteArray, jcharArray, jclass, jint, jintArray, jlong, jlongArray,
-    jobject, jobjectArray, jstring,
+    jobject, jobjectArray, jstring, JNI_VERSION_1_6,
 };
 
 pub mod engine;
@@ -18,6 +20,30 @@ pub mod pty;
 pub mod utils;
 
 use engine::TerminalEngine;
+
+/// 全局 JavaVM 引用，用于在回调中安全获取 JNIEnv
+static JAVA_VM: OnceLock<JavaVM> = OnceLock::new();
+
+#[unsafe(no_mangle)]
+pub extern "system" fn JNI_OnLoad(vm: JavaVM, _reserved: *mut std::ffi::c_void) -> jint {
+    let _ = JAVA_VM.set(vm);
+    JNI_VERSION_1_6
+}
+
+/// 辅助宏：包装 JNI 调用，捕获 Panic 并防止程序崩溃
+macro_rules! catch_panic {
+    ($($tokens:tt)*) => {
+        match panic::catch_unwind(panic::AssertUnwindSafe(move || {
+            $($tokens)*
+        })) {
+            Ok(v) => v,
+            Err(_) => {
+                // 如果在调试模式，可以打印 log
+                Default::default()
+            }
+        }
+    }
+}
 
 // ==========================================
 // 1. 无状态 / 工具类 JNI
@@ -29,7 +55,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_WcWidth_widthRust(
     _class: jclass,
     ucs: jint,
 ) -> jint {
-    utils::get_char_width(ucs as u32) as jint
+    catch_panic! {
+        utils::get_char_width(ucs as u32) as jint
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -41,41 +69,43 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_processB
     length: jint,
     use_line_drawing: jni::sys::jboolean,
 ) -> jint {
-    unsafe {
-        let env = match JNIEnv::from_raw(env_ptr) {
-            Ok(e) => e,
-            Err(_) => return 0,
-        };
-        
-        let internal = env.get_native_interface();
-        let mut is_copy = jni::sys::JNI_FALSE;
-        let input_ptr =
-            ((**internal).GetPrimitiveArrayCritical.unwrap())(internal, input, &mut is_copy)
-                as *const u8;
+    catch_panic! {
+        unsafe {
+            let env = match JNIEnv::from_raw(env_ptr) {
+                Ok(e) => e,
+                Err(_) => return 0,
+            };
+            
+            let internal = env.get_native_interface();
+            let mut is_copy = jni::sys::JNI_FALSE;
+            let input_ptr =
+                ((**internal).GetPrimitiveArrayCritical.unwrap())(internal, input, &mut is_copy)
+                    as *const u8;
 
-        if !input_ptr.is_null() {
-            let input_len = ((**internal).GetArrayLength.unwrap())(internal, input) as usize;
-            let start = offset as usize;
-            let len = length as usize;
+            if !input_ptr.is_null() {
+                let input_len = ((**internal).GetArrayLength.unwrap())(internal, input) as usize;
+                let start = offset as usize;
+                let len = length as usize;
 
-            let result = if start + len <= input_len {
-                fastpath::scan_ascii_batch(
-                    std::slice::from_raw_parts(input_ptr.add(start), len),
-                    use_line_drawing != jni::sys::JNI_FALSE,
-                )
+                let result = if start + len <= input_len {
+                    fastpath::scan_ascii_batch(
+                        std::slice::from_raw_parts(input_ptr.add(start), len),
+                        use_line_drawing != jni::sys::JNI_FALSE,
+                    )
+                } else {
+                    0
+                };
+
+                ((**internal).ReleasePrimitiveArrayCritical.unwrap())(
+                    internal,
+                    input,
+                    input_ptr as *mut _,
+                    jni::sys::JNI_ABORT,
+                );
+                result as jint
             } else {
                 0
-            };
-
-            ((**internal).ReleasePrimitiveArrayCritical.unwrap())(
-                internal,
-                input,
-                input_ptr as *mut _,
-                jni::sys::JNI_ABORT,
-            );
-            result as jint
-        } else {
-            0
+            }
         }
     }
 }
@@ -96,15 +126,15 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_createEn
     callback_obj: jobject,
 ) -> jlong {
     let mut engine = Box::new(TerminalEngine::new(cols, rows, total_rows, cell_width, cell_height));
-    
+
     // 创建全局引用
     if let Ok(env) = unsafe { JNIEnv::from_raw(env_ptr) } {
         if let Ok(global_obj) = env.new_global_ref(unsafe { jni::objects::JObject::from_raw(callback_obj) }) {
             // 设置 Java 回调
-            engine.state.set_java_callback(env_ptr, global_obj);
+            engine.state.set_java_callback(global_obj);
         }
     }
-    
+
     Box::into_raw(engine) as jlong
 }
 
@@ -122,9 +152,6 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_processE
             return;
         }
         let engine = &mut *(engine_ptr as *mut TerminalEngine);
-        
-        // 更新线程相关的 JNIEnv 状态
-        engine.state.java_callback_env = Some(env_ptr);
 
         let env = match JNIEnv::from_raw(env_ptr) {
             Ok(e) => e,

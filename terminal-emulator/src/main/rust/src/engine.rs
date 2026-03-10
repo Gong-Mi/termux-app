@@ -1,4 +1,3 @@
-use jni::JNIEnv;
 use jni::objects::JValue;
 use std::cmp::{max, min};
 use unicode_width::UnicodeWidthChar;
@@ -426,7 +425,6 @@ pub struct ScreenState {
     pub effect: u64,
 
     // Java 回调支持
-    pub java_callback_env: Option<*mut jni::sys::JNIEnv>,
     pub java_callback_obj: Option<jni::objects::GlobalRef>,
 
     // 窗口大小信息 (用于 OSC 18/19 报告)
@@ -506,7 +504,6 @@ impl ScreenState {
             back_color: COLOR_INDEX_BACKGROUND,
             effect: 0,
 
-            java_callback_env: None,
             java_callback_obj: None,
 
             // 窗口大小信息初始化
@@ -523,17 +520,16 @@ impl ScreenState {
     }
 
     /// 设置 Java 回调环境
-    pub fn set_java_callback(&mut self, env: *mut jni::sys::JNIEnv, obj: jni::objects::GlobalRef) {
-        self.java_callback_env = Some(env);
+    pub fn set_java_callback(&mut self, obj: jni::objects::GlobalRef) {
         self.java_callback_obj = Some(obj);
     }
 
     /// 调用 Java 方法报告标题变更
     fn report_title_change(&self, title: &str) {
-        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj.as_ref()) {
-            unsafe {
-                if let Ok(mut env) = JNIEnv::from_raw(env_ptr)
-                    && let Ok(java_title) = env.new_string(title) {
+        if let Some(obj) = self.java_callback_obj.as_ref() {
+            if let Some(vm) = crate::JAVA_VM.get() {
+                if let Ok(mut env) = vm.get_env() {
+                    if let Ok(java_title) = env.new_string(title) {
                         let _ = env.call_method(
                             obj.as_obj(),
                             "reportTitleChange",
@@ -541,17 +537,17 @@ impl ScreenState {
                             &[JValue::Object(&java_title)],
                         );
                     }
+                }
             }
         }
     }
 
     /// 调用 Java 方法报告颜色变更
     fn report_colors_changed(&self) {
-        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj.as_ref()) {
-            unsafe {
-                if let Ok(mut env) = JNIEnv::from_raw(env_ptr) {
-                    let _ =
-                        env.call_method(obj.as_obj(), "reportColorsChanged", "()V", &[]);
+        if let Some(obj) = self.java_callback_obj.as_ref() {
+            if let Some(vm) = crate::JAVA_VM.get() {
+                if let Ok(mut env) = vm.get_env() {
+                    let _ = env.call_method(obj.as_obj(), "reportColorsChanged", "()V", &[]);
                 }
             }
         }
@@ -559,9 +555,9 @@ impl ScreenState {
 
     /// 调用 Java 方法报告光标可见性变更
     fn report_cursor_visibility(&self, visible: bool) {
-        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj.as_ref()) {
-            unsafe {
-                if let Ok(mut env) = JNIEnv::from_raw(env_ptr) {
+        if let Some(obj) = self.java_callback_obj.as_ref() {
+            if let Some(vm) = crate::JAVA_VM.get() {
+                if let Ok(mut env) = vm.get_env() {
                     let _ = env.call_method(
                         obj.as_obj(),
                         "reportCursorVisibility",
@@ -575,9 +571,9 @@ impl ScreenState {
 
     /// 调用 Java 方法报告屏幕刷新
     pub fn report_screen_update(&self) {
-        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj.as_ref()) {
-            unsafe {
-                if let Ok(mut env) = JNIEnv::from_raw(env_ptr) {
+        if let Some(obj) = self.java_callback_obj.as_ref() {
+            if let Some(vm) = crate::JAVA_VM.get() {
+                if let Ok(mut env) = vm.get_env() {
                     let _ = env.call_method(
                         obj.as_obj(),
                         "onScreenUpdate",
@@ -591,9 +587,9 @@ impl ScreenState {
 
     /// 调用 Java 方法复制文本到剪贴板
     fn report_clipboard_copy(&self, text: &str) {
-        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj.as_ref()) {
-            unsafe {
-                if let Ok(mut env) = JNIEnv::from_raw(env_ptr) {
+        if let Some(obj) = self.java_callback_obj.as_ref() {
+            if let Some(vm) = crate::JAVA_VM.get() {
+                if let Ok(mut env) = vm.get_env() {
                     if let Ok(java_text) = env.new_string(text) {
                         let _ = env.call_method(
                             obj.as_obj(),
@@ -609,9 +605,9 @@ impl ScreenState {
 
     /// 调用 Java 方法写入数据到终端
     pub fn write_to_session(&self, data: &str) {
-        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj.as_ref()) {
-            unsafe {
-                if let Ok(mut env) = JNIEnv::from_raw(env_ptr) {
+        if let Some(obj) = self.java_callback_obj.as_ref() {
+            if let Some(vm) = crate::JAVA_VM.get() {
+                if let Ok(mut env) = vm.get_env() {
                     if let Ok(java_data) = env.new_string(data) {
                         let _ = env.call_method(
                             obj.as_obj(),
@@ -627,9 +623,9 @@ impl ScreenState {
 
     /// 调用 Java 方法报告颜色查询响应
     fn report_color_response(&self, color_spec: &str) {
-        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj.as_ref()) {
-            unsafe {
-                if let Ok(mut env) = JNIEnv::from_raw(env_ptr) {
+        if let Some(obj) = self.java_callback_obj.as_ref() {
+            if let Some(vm) = crate::JAVA_VM.get() {
+                if let Ok(mut env) = vm.get_env() {
                     if let Ok(java_spec) = env.new_string(color_spec) {
                         let _ = env.call_method(
                             obj.as_obj(),
@@ -645,9 +641,9 @@ impl ScreenState {
 
     /// 调用 Java 方法报告终端响应 (DSR/DEC)
     fn report_terminal_response(&self, response: &str) {
-        if let (Some(env_ptr), Some(obj)) = (self.java_callback_env, self.java_callback_obj.as_ref()) {
-            unsafe {
-                if let Ok(mut env) = JNIEnv::from_raw(env_ptr) {
+        if let Some(obj) = self.java_callback_obj.as_ref() {
+            if let Some(vm) = crate::JAVA_VM.get() {
+                if let Ok(mut env) = vm.get_env() {
                     if let Ok(java_response) = env.new_string(response) {
                         let _ = env.call_method(
                             obj.as_obj(),
