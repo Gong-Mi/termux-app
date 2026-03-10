@@ -597,12 +597,16 @@ public final class TerminalEmulator {
     public final Object mDataLock = new Object();
 
     public void append(byte[] buffer, int length) {
-        if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
-            processEngineRust(mRustEnginePtr, buffer, 0, length);
-            return;
-        }
-
         synchronized (mDataLock) {
+            if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
+                try {
+                    processEngineRust(mRustEnginePtr, buffer, 0, length);
+                    return;
+                } catch (Exception e) {
+                    android.util.Log.e("Termux", "Rust engine process error", e);
+                }
+            }
+
             int i = 0;
             while (i < length) {
                 if (sRustLibLoaded && mUtf8ToFollow == 0 && mEscapeState == ESC_NONE) {
@@ -624,54 +628,78 @@ public final class TerminalEmulator {
     }
 
     public void paste(String text) {
-        if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
-            pasteTextFromRust(mRustEnginePtr, text);
-            return;
+        synchronized (mDataLock) {
+            if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
+                pasteTextFromRust(mRustEnginePtr, text);
+                return;
+            }
+            text = text.replaceAll("(\u001B|[\u0080-\u009F])", "");
+            text = text.replaceAll("\r?\n", "\r");
+            boolean bracketed = isDecsetInternalBitSet(DECSET_BIT_BRACKETED_PASTE_MODE);
+            if (bracketed) mSession.write("\033[200~");
+            mSession.write(text);
+            if (bracketed) mSession.write("\033[201~");
         }
-        text = text.replaceAll("(\u001B|[\u0080-\u009F])", "");
-        text = text.replaceAll("\r?\n", "\r");
-        boolean bracketed = isDecsetInternalBitSet(DECSET_BIT_BRACKETED_PASTE_MODE);
-        if (bracketed) mSession.write("\033[200~");
-        mSession.write(text);
-        if (bracketed) mSession.write("\033[201~");
     }
 
     public String getSelectedText(int x1, int y1, int x2, int y2) {
-        if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
-            for (int y = y1; y <= y2; y++) {
-                syncRowFromRust(y);
+        synchronized (mDataLock) {
+            if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
+                for (int y = y1; y <= y2; y++) {
+                    syncRowFromRust(y);
+                }
             }
+            return mScreen.getSelectedText(x1, y1, x2, y2);
         }
-        return mScreen.getSelectedText(x1, y1, x2, y2);
     }
 
     /** 恢复 TerminalView 需要的方法 */
     public int getScrollCounter() {
-        if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
-            return getScrollCounterFromRust(mRustEnginePtr);
+        synchronized (mDataLock) {
+            if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
+                return getScrollCounterFromRust(mRustEnginePtr);
+            }
+            return mScrollCounter;
         }
-        return mScrollCounter;
     }
 
     public void clearScrollCounter() {
-        if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
-            clearScrollCounterFromRust(mRustEnginePtr);
+        synchronized (mDataLock) {
+            if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
+                clearScrollCounterFromRust(mRustEnginePtr);
+            }
+            mScrollCounter = 0;
         }
-        mScrollCounter = 0;
     }
 
     public boolean isAutoScrollDisabled() {
-        if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
-            return isAutoScrollDisabledFromRust(mRustEnginePtr);
+        synchronized (mDataLock) {
+            if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
+                return isAutoScrollDisabledFromRust(mRustEnginePtr);
+            }
+            return mAutoScrollDisabled;
         }
-        return mAutoScrollDisabled;
     }
 
     public void toggleAutoScrollDisabled() {
-        if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
-            toggleAutoScrollDisabledFromRust(mRustEnginePtr);
-        } else {
-            mAutoScrollDisabled = !mAutoScrollDisabled;
+        synchronized (mDataLock) {
+            if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
+                toggleAutoScrollDisabledFromRust(mRustEnginePtr);
+            } else {
+                mAutoScrollDisabled = !mAutoScrollDisabled;
+            }
+        }
+    }
+
+    @Override
+    protected void finalize() throws Throwable {
+        try {
+            if (mRustEnginePtr != 0) {
+                destroyEngineRust(mRustEnginePtr);
+                mRustEnginePtr = 0;
+            }
+        } finally {
+            super.finalize();
         }
     }
 
