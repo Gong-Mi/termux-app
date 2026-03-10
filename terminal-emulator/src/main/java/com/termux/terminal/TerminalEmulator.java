@@ -342,6 +342,7 @@ public final class TerminalEmulator {
 
                     @Override
                     public void reportColorsChanged() {
+                        syncColorsFromRust();
                         if (mClient != null && TerminalEmulator.this.mSession instanceof TerminalSession) {
                             mClient.onColorsChanged((TerminalSession) TerminalEmulator.this.mSession);
                         }
@@ -392,6 +393,25 @@ public final class TerminalEmulator {
             } catch (UnsatisfiedLinkError e) {
                 mRustEnginePtr = 0;
             }
+        }
+    }
+
+    /**
+     * 销毁终端仿真器，释放底层 Rust 引擎内存。
+     */
+    public void destroy() {
+        if (mRustEnginePtr != 0) {
+            destroyEngineRust(mRustEnginePtr);
+            mRustEnginePtr = 0;
+        }
+    }
+
+    /**
+     * 从 Rust 引擎同步颜色到 Java。
+     */
+    private void syncColorsFromRust() {
+        if (mRustEnginePtr != 0) {
+            getColorsFromRust(mRustEnginePtr, mColors.mCurrentColors);
         }
     }
 
@@ -753,6 +773,7 @@ public final class TerminalEmulator {
     private static native void reportFocusLossFromRust(long enginePtr);
     private static native void pasteTextFromRust(long enginePtr, String text);
     private static native void destroyEngineRust(long enginePtr);
+    private static native void getColorsFromRust(long enginePtr, int[] colors);
     private static native int processBatchRust(byte[] buffer, int offset, int length, boolean useLineDrawing);
     private static native void writeASCIIBatchNative(byte[] src, int srcOffset, char[] destText, long[] destStyle, int destOffset, int length, long style, boolean useLineDrawing);
     

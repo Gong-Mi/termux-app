@@ -297,6 +297,43 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_destroyE
     }
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColorsFromRust(
+    env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+    colors: jintArray,
+) {
+    unsafe {
+        if engine_ptr == 0 {
+            return;
+        }
+        let engine = &*(engine_ptr as *mut TerminalEngine);
+        let env = match JNIEnv::from_raw(env_ptr) {
+            Ok(e) => e,
+            Err(_) => return,
+        };
+
+        let internal = env.get_native_interface();
+        let len = ((**internal).GetArrayLength.unwrap())(internal, colors) as usize;
+        
+        // 复制颜色数据
+        let mut color_data = vec![0i32; len];
+        for i in 0..std::cmp::min(len, 259) {
+            color_data[i] = engine.state.colors.current_colors[i] as i32;
+        }
+
+        // 写入 Java 数组
+        ((**internal).SetIntArrayRegion.unwrap())(
+            internal,
+            colors,
+            0,
+            std::cmp::min(len, 259) as jint,
+            color_data.as_ptr(),
+        );
+    }
+}
+
 // ============================================================================
 // Full Takeover 模式 - 额外 JNI 接口
 // ============================================================================
