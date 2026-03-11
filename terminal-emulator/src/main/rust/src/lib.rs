@@ -605,3 +605,58 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_close(
 ) {
     let _ = nix::unistd::close(fd);
 }
+
+// ============================================================================
+// 键盘和鼠标事件处理 JNI
+// ============================================================================
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendMouseEventFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+    mouse_button: jint,
+    column: jint,
+    row: jint,
+    pressed: jni::sys::jboolean,
+) {
+    if engine_ptr == 0 { return; }
+    let engine = unsafe { &mut *(engine_ptr as *mut TerminalEngine) };
+    engine.state.send_mouse_event(
+        mouse_button as u32,
+        column as i32,
+        row as i32,
+        pressed != jni::sys::JNI_FALSE,
+    );
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendKeyCodeFromRust(
+    env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+    key_code: jint,
+    key_char: jstring,
+    key_mod: jint,
+) {
+    if engine_ptr == 0 { return; }
+    let engine = unsafe { &mut *(engine_ptr as *mut TerminalEngine) };
+    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    let key_char_str = if !key_char.is_null() {
+        match env.get_string(&unsafe { jni::objects::JString::from_raw(key_char) }) {
+            Ok(s) => {
+                let s: String = s.into();
+                if s.is_empty() { None } else { Some(s) }
+            }
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
+
+    engine.state.send_key_event(key_code as i32, key_char_str, key_mod as i32);
+}

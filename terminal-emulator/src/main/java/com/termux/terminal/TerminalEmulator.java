@@ -802,7 +802,7 @@ public final class TerminalEmulator {
     private static native boolean isReverseVideoFromRust(long enginePtr);
     private static native String getTitleFromRust(long enginePtr);
     private static native void sendMouseEventFromRust(long enginePtr, int mouseButton, int column, int row, boolean pressed);
-    private static native void sendKeyCodeFromRust(long enginePtr, int keyCode, int metaState);
+    private static native void sendKeyCodeFromRust(long enginePtr, int keyCode, String keyChar, int keyMod);
     private static native void reportFocusGainFromRust(long enginePtr);
     private static native void reportFocusLossFromRust(long enginePtr);
     private static native void pasteTextFromRust(long enginePtr, String text);
@@ -810,7 +810,7 @@ public final class TerminalEmulator {
     private static native void getColorsFromRust(long enginePtr, int[] colors);
     private static native int processBatchRust(byte[] buffer, int offset, int length, boolean useLineDrawing);
     private static native void writeASCIIBatchNative(byte[] src, int srcOffset, char[] destText, long[] destStyle, int destOffset, int length, long style, boolean useLineDrawing);
-    
+
     /** 恢复滚动相关的 Native 方法 */
     private static native int getScrollCounterFromRust(long enginePtr);
     private static native void clearScrollCounterFromRust(long enginePtr);

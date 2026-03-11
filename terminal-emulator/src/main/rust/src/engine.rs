@@ -430,14 +430,39 @@ pub struct ScreenState {
     // 窗口大小信息 (用于 OSC 18/19 报告)
     pub cell_width_pixels: i32,
     pub cell_height_pixels: i32,
+
+    // ========================================================================
+    // 备用屏幕缓冲区支持 (DECSET 1048/1049)
+    // ========================================================================
+
+    // 主屏幕缓冲区
+    pub main_buffer: Vec<TerminalRow>,
+    // 备用屏幕缓冲区
+    pub alt_buffer: Vec<TerminalRow>,
+    // 当前使用的缓冲区 (true = 备用缓冲区)
+    pub use_alternate_buffer: bool,
+
+    // 保存的主屏幕状态 (用于 DECSET 1049)
+    pub saved_main_cursor_x: i32,
+    pub saved_main_cursor_y: i32,
+    pub saved_main_decset_flags: i32,
+    pub saved_main_screen_first_row: usize,
 }
 
 impl ScreenState {
     pub fn new(cols: i32, rows: i32, total_rows: i32, cell_width: i32, cell_height: i32) -> Self {
         let total_rows_u = max(rows as usize, total_rows as usize);
-        let mut buffer = Vec::with_capacity(total_rows_u);
+        
+        // 初始化主屏幕缓冲区
+        let mut main_buffer = Vec::with_capacity(total_rows_u);
         for _ in 0..total_rows_u {
-            buffer.push(TerminalRow::new(max(1, cols as usize)));
+            main_buffer.push(TerminalRow::new(max(1, cols as usize)));
+        }
+        
+        // 初始化备用屏幕缓冲区 (大小与屏幕相同，不需要滚动历史)
+        let mut alt_buffer = Vec::with_capacity(rows as usize);
+        for _ in 0..rows as usize {
+            alt_buffer.push(TerminalRow::new(max(1, cols as usize)));
         }
 
         // 初始化制表位（每 8 列一个，从位置 8 开始：8, 16, 24, ...）
@@ -473,9 +498,10 @@ impl ScreenState {
             send_focus_events: false,     // DECSET 1004 - 默认不发送焦点事件
             decset_flags: 0,              // 初始 DECSET 标志为 0
             tab_stops,
-            buffer,
+            // 旧的 buffer 字段保留用于兼容，实际使用 main_buffer/alt_buffer
+            buffer: main_buffer.clone(),
             screen_first_row: 0,
-            
+
             // 保存状态字段初始化
             saved_x: 0,
             saved_y: 0,
@@ -509,14 +535,30 @@ impl ScreenState {
             // 窗口大小信息初始化
             cell_width_pixels: cell_width,
             cell_height_pixels: cell_height,
+            
+            // 备用屏幕缓冲区初始化
+            main_buffer,
+            alt_buffer,
+            use_alternate_buffer: false,
+            saved_main_cursor_x: 0,
+            saved_main_cursor_y: 0,
+            saved_main_decset_flags: 0,
+            saved_main_screen_first_row: 0,
         }
     }
 
     /// 将逻辑行号转换为物理数组索引
     #[inline]
     fn external_to_internal_row(&self, row: i32) -> usize {
-        let total = self.buffer.len();
+        let buffer = &self.buffer;
+        let total = buffer.len();
         (self.screen_first_row + row as usize) % total
+    }
+
+    /// 获取当前缓冲区的总行数
+    #[inline]
+    fn buffer_len(&self) -> usize {
+        self.buffer.len()
     }
 
     /// 设置 Java 回调环境
@@ -567,6 +609,26 @@ impl ScreenState {
                 }
             }
         }
+    }
+
+    // ========================================================================
+    // 备用屏幕缓冲区辅助方法
+    // ========================================================================
+
+    /// 清除备用缓冲区
+    fn clear_alt_buffer(&mut self) {
+        let cols = self.cols as usize;
+        let alt_len = self.alt_buffer.len();
+        for i in 0..alt_len {
+            let row_cols = self.alt_buffer[i].text.len();
+            self.alt_buffer[i].clear(0, row_cols.min(cols), STYLE_NORMAL);
+        }
+    }
+
+    /// 检查是否使用备用缓冲区
+    #[inline]
+    pub fn is_alternate_buffer_active(&self) -> bool {
+        self.use_alternate_buffer
     }
 
     /// 调用 Java 方法报告屏幕刷新
@@ -684,6 +746,269 @@ impl ScreenState {
             // 非括号粘贴模式，直接发送内容
             self.write_to_session(text);
         }
+    }
+
+    // ========================================================================
+    // 鼠标和键盘事件处理方法
+    // ========================================================================
+
+    /// 发送鼠标事件
+    /// 支持 SGR 模式和旧格式模式
+    pub fn send_mouse_event(&mut self, mouse_button: u32, column: i32, row: i32, pressed: bool) {
+        if self.sgr_mouse {
+            // SGR 鼠标格式：CSI < button ; x ; y M/m
+            // button: 0-2 = 左/中/右按下，3 = 释放，64/65 = 滚轮
+            let event_type = if pressed { 'M' } else { 'm' };
+            let response = format!("\x1b[<{};{};{}{}", mouse_button, column, row, event_type);
+            self.write_to_session(&response);
+        } else if self.mouse_tracking || self.mouse_button_event {
+            // 旧格式鼠标事件
+            // 格式：CSI M Cb Cx Cy
+            // Cb = 32 + button + modifiers
+            // Cx = 32 + column (1-based)
+            // Cy = 32 + row (1-based)
+            
+            // 检查是否超出旧格式范围 (最大 223 = 255 - 32)
+            if column > 223 || row > 223 {
+                return;
+            }
+
+            // 构建按钮编码
+            // 按钮值：0=左，1=中，2=右，3=释放
+            // 移动时加 32
+            let mut button_val = mouse_button;
+            
+            // 如果是移动事件 (button 32 = MOUSE_LEFT_BUTTON_MOVED)
+            let is_move = mouse_button == 32;
+            if is_move && !self.mouse_button_event {
+                // 非按钮事件模式下不发送移动事件
+                return;
+            }
+            
+            if is_move {
+                button_val = 0; // 移动使用按钮 0 但加 32 偏移
+            }
+            
+            // 释放事件
+            if !pressed && !is_move {
+                button_val = 3;
+            }
+            
+            // 添加移动偏移 (32)
+            if is_move || self.mouse_button_event {
+                button_val += 32;
+            }
+
+            // 构建响应：CSI M Cb Cx Cy
+            let cb = 32 + button_val as u8;
+            let cx = 32 + column as u8;
+            let cy = 32 + row as u8;
+            
+            let response = format!("\x1b[M{}{}{}", 
+                cb as char, 
+                cx as char, 
+                cy as char
+            );
+            self.write_to_session(&response);
+        }
+        // 如果鼠标跟踪未启用，忽略事件
+    }
+
+    /// 发送键盘事件
+    /// 处理特殊键和功能键的转义序列
+    /// 
+    /// 参数：
+    /// - key_code: Android KeyEvent 键码
+    /// - key_char: 字符输入（普通字符键）
+    /// - key_mod: 修饰键状态（shift=2, alt=3, ctrl=5, 组合按位或）
+    pub fn send_key_event(&mut self, key_code: i32, key_char: Option<String>, key_mod: i32) {
+        // 检查修饰键
+        let shift = (key_mod & 0x20000000) != 0;
+        let ctrl = (key_mod & 0x40000000) != 0;
+        let alt = (key_mod & 0x80000000u32 as i32) != 0;
+        
+        // 构建修饰键前缀
+        let mod_prefix = if alt { "\x1b" } else { "" };
+        
+        // 特殊键码映射 (与 Java KeyHandler 兼容)
+        let escape_seq: String = match key_code {
+            // 功能键 F1-F12 (支持修饰键)
+            131 => Self::build_fkey_seq(1, key_mod),  // F1
+            132 => Self::build_fkey_seq(2, key_mod),  // F2
+            133 => Self::build_fkey_seq(3, key_mod),  // F3
+            134 => Self::build_fkey_seq(4, key_mod),  // F4
+            135 => Self::build_fkey_seq(5, key_mod),  // F5
+            136 => Self::build_fkey_seq(6, key_mod),  // F6
+            137 => Self::build_fkey_seq(7, key_mod),  // F7
+            138 => Self::build_fkey_seq(8, key_mod),  // F8
+            139 => Self::build_fkey_seq(9, key_mod),  // F9
+            140 => Self::build_fkey_seq(10, key_mod), // F10
+            141 => Self::build_fkey_seq(11, key_mod), // F11
+            142 => Self::build_fkey_seq(12, key_mod), // F12
+
+            // 方向键 (支持应用光标键模式和修饰键)
+            19 => {
+                // 上
+                if self.application_cursor_keys {
+                    if key_mod == 0 { "\x1bOA".to_string() } else { Self::build_mod_seq("\x1b[1", key_mod, 'A') }
+                } else {
+                    if key_mod == 0 { "\x1b[A".to_string() } else { Self::build_mod_seq("\x1b[1", key_mod, 'A') }
+                }
+            }
+            20 => {
+                // 下
+                if self.application_cursor_keys {
+                    if key_mod == 0 { "\x1bOB".to_string() } else { Self::build_mod_seq("\x1b[1", key_mod, 'B') }
+                } else {
+                    if key_mod == 0 { "\x1b[B".to_string() } else { Self::build_mod_seq("\x1b[1", key_mod, 'B') }
+                }
+            }
+            21 => {
+                // 左
+                if self.application_cursor_keys {
+                    if key_mod == 0 { "\x1bOD".to_string() } else { Self::build_mod_seq("\x1b[1", key_mod, 'D') }
+                } else {
+                    if key_mod == 0 { "\x1b[D".to_string() } else { Self::build_mod_seq("\x1b[1", key_mod, 'D') }
+                }
+            }
+            22 => {
+                // 右
+                if self.application_cursor_keys {
+                    if key_mod == 0 { "\x1bOC".to_string() } else { Self::build_mod_seq("\x1b[1", key_mod, 'C') }
+                } else {
+                    if key_mod == 0 { "\x1b[C".to_string() } else { Self::build_mod_seq("\x1b[1", key_mod, 'C') }
+                }
+            }
+
+            // Home/End
+            91 => {
+                // Home
+                if self.application_cursor_keys {
+                    if key_mod == 0 { "\x1bOH".to_string() } else { Self::build_mod_seq("\x1b[1", key_mod, 'H') }
+                } else {
+                    if key_mod == 0 { "\x1b[H".to_string() } else { Self::build_mod_seq("\x1b[1", key_mod, 'H') }
+                }
+            }
+            92 => {
+                // End
+                if self.application_cursor_keys {
+                    if key_mod == 0 { "\x1bOF".to_string() } else { Self::build_mod_seq("\x1b[1", key_mod, 'F') }
+                } else {
+                    if key_mod == 0 { "\x1b[F".to_string() } else { Self::build_mod_seq("\x1b[1", key_mod, 'F') }
+                }
+            }
+
+            // 编辑键
+            111 => {
+                // Backspace
+                if alt {
+                    if ctrl { "\x1b\x08".to_string() } else { "\x1b\x7f".to_string() }
+                } else {
+                    if ctrl { "\x08".to_string() } else { "\x7f".to_string() }
+                }
+            }
+            112 => Self::build_mod_seq("\x1b[3", key_mod, '~'),  // Delete
+            88 => Self::build_mod_seq("\x1b[5", key_mod, '~'),   // Page Up
+            89 => Self::build_mod_seq("\x1b[6", key_mod, '~'),   // Page Down
+            93 => if shift { "\x1b[Z".to_string() } else { "\x09".to_string() },  // Tab (Shift+Tab = 反向制表)
+            113 => Self::build_mod_seq("\x1b[2", key_mod, '~'),  // Insert
+
+            // 数字小键盘 (支持应用键盘模式)
+            144 => {
+                // Num Lock
+                if self.application_keypad { "\x1bOP".to_string() } else { "0".to_string() }
+            }
+            145 => if self.application_keypad { "\x1bOj".to_string() } else { "/".to_string() },  // KP Divide
+            146 => if self.application_keypad { "\x1bOk".to_string() } else { "*".to_string() },  // KP Multiply
+            147 => if self.application_keypad { "\x1bOm".to_string() } else { "-".to_string() },  // KP Subtract
+            148 => if self.application_keypad { "\x1bOk".to_string() } else { "+".to_string() },  // KP Add
+            149 => if self.application_keypad { "\x1bOM".to_string() } else { "\r".to_string() }, // KP Enter
+            150 => if self.application_keypad { "\x1bOX".to_string() } else { "=".to_string() },  // KP Equals
+
+            // Escape
+            114 => if alt { "\x1b\x1b".to_string() } else { "\x1b".to_string() },  // Escape
+
+            // Space (Ctrl+Space = NUL)
+            62 => if ctrl { "\x00".to_string() } else { " ".to_string() },
+
+            // Enter
+            66 => if alt { "\x1b\r".to_string() } else { "\r".to_string() },
+
+            // 未映射的键，使用 key_char
+            _ => {
+                if let Some(ref ch) = key_char {
+                    // 处理 Ctrl 组合
+                    if ctrl && ch.len() == 1 {
+                        let c = ch.chars().next().unwrap();
+                        if c >= '@' && c <= '_' {
+                            // Ctrl+A..Ctrl+Z
+                            let ctrl_char = (c as u8 - b'@') as char;
+                            self.write_to_session(&format!("{}{}", mod_prefix, ctrl_char));
+                            return;
+                        }
+                    }
+                    self.write_to_session(&format!("{}{}", mod_prefix, ch));
+                }
+                return;
+            }
+        };
+
+        self.write_to_session(&format!("{}{}", mod_prefix, escape_seq));
+    }
+
+    /// 构建功能键转义序列
+    /// F1-F4: 无修饰=\x1bOP, 有修饰=\x1b[1;N~
+    /// F5-F12: \x1b[NN;N~
+    fn build_fkey_seq(fnum: i32, key_mod: i32) -> String {
+        if key_mod == 0 {
+            match fnum {
+                1 => "\x1bOP".to_string(),
+                2 => "\x1bOQ".to_string(),
+                3 => "\x1bOR".to_string(),
+                4 => "\x1bOS".to_string(),
+                _ => String::new(),
+            }
+        } else {
+            match fnum {
+                1 => Self::build_mod_seq("\x1b[11", key_mod, '~'),
+                2 => Self::build_mod_seq("\x1b[12", key_mod, '~'),
+                3 => Self::build_mod_seq("\x1b[13", key_mod, '~'),
+                4 => Self::build_mod_seq("\x1b[14", key_mod, '~'),
+                5 => Self::build_mod_seq("\x1b[15", key_mod, '~'),
+                6 => Self::build_mod_seq("\x1b[17", key_mod, '~'),
+                7 => Self::build_mod_seq("\x1b[18", key_mod, '~'),
+                8 => Self::build_mod_seq("\x1b[19", key_mod, '~'),
+                9 => Self::build_mod_seq("\x1b[20", key_mod, '~'),
+                10 => Self::build_mod_seq("\x1b[21", key_mod, '~'),
+                11 => Self::build_mod_seq("\x1b[23", key_mod, '~'),
+                12 => Self::build_mod_seq("\x1b[24", key_mod, '~'),
+                _ => String::new(),
+            }
+        }
+    }
+
+    /// 根据修饰键构建转义序列
+    /// 格式：start + ";" + modifier + lastChar
+    /// modifier: 2=shift, 3=alt, 5=ctrl, 6=shift+ctrl, 7=alt+ctrl, 8=shift+alt+ctrl
+    fn build_mod_seq(start: &str, key_mod: i32, last: char) -> String {
+        let modifier = if key_mod == 0x20000000 {
+            2  // shift
+        } else if key_mod < 0 && key_mod == 0x80000000u32 as i32 {
+            3  // alt
+        } else if key_mod < 0 && key_mod == 0xA0000000u32 as i32 {
+            4  // shift+alt
+        } else if key_mod == 0x40000000 {
+            5  // ctrl
+        } else if key_mod == 0x60000000 {
+            6  // shift+ctrl
+        } else if key_mod < 0 && key_mod == 0xC0000000u32 as i32 {
+            7  // alt+ctrl
+        } else if key_mod < 0 && key_mod == 0xE0000000u32 as i32 {
+            8  // shift+alt+ctrl
+        } else {
+            return format!("{}{}", start, last);
+        };
+        format!("{};{}{}", start, modifier, last)
     }
 
     // ========================================================================
@@ -909,7 +1234,8 @@ impl ScreenState {
         let y_internal = self.external_to_internal_row(self.cursor_y);
         let x = self.cursor_x as usize;
 
-        let row = &mut self.buffer[y_internal];
+        let buffer = &mut self.buffer;
+        let row = &mut buffer[y_internal];
         if (self.cursor_x as usize) < row.text.len() {
             row.text[x] = c;
             row.styles[x] = self.current_style;
@@ -924,7 +1250,8 @@ impl ScreenState {
     /// 插入模式：在光标位置插入空格
     fn insert_character(&mut self) {
         let y_internal = self.external_to_internal_row(self.cursor_y);
-        let row = &mut self.buffer[y_internal];
+        let buffer = &mut self.buffer;
+        let row = &mut buffer[y_internal];
 
         // 从右向左移动字符
         for i in ((self.cursor_x as usize + 1)..row.text.len()).rev() {
@@ -1023,20 +1350,24 @@ impl ScreenState {
 
         if top == 0 && bottom == self.rows {
             // 全屏滚动：直接移动起始指针
-            self.screen_first_row = (self.screen_first_row + 1) % self.buffer.len();
+            let buffer_len = self.buffer_len();
+            self.screen_first_row = (self.screen_first_row + 1) % buffer_len;
             // 清理新出现的那一行（逻辑最后一行）
             let last_row_internal = self.external_to_internal_row(self.rows - 1);
-            self.buffer[last_row_internal].clear(0, self.cols as usize, self.current_style);
+            let buffer = &mut self.buffer;
+            buffer[last_row_internal].clear(0, self.cols as usize, self.current_style);
         } else {
             // 区域滚动：目前仍需物理拷贝数据，但在终端中较少见
             for i in top..(bottom - 1) {
                 let src_idx = self.external_to_internal_row(i + 1);
                 let dest_idx = self.external_to_internal_row(i);
-                let src_row = self.buffer[src_idx].clone();
-                self.buffer[dest_idx] = src_row;
+                let buffer = &mut self.buffer;
+                let src_row = buffer[src_idx].clone();
+                buffer[dest_idx] = src_row;
             }
             let clear_idx = self.external_to_internal_row(bottom - 1);
-            self.buffer[clear_idx].clear(0, self.cols as usize, self.current_style);
+            let buffer = &mut self.buffer;
+            buffer[clear_idx].clear(0, self.cols as usize, self.current_style);
         }
     }
 
@@ -1046,25 +1377,29 @@ impl ScreenState {
                 self.erase_in_line(0);
                 for y in (self.cursor_y + 1)..self.rows {
                     let idx = self.external_to_internal_row(y);
-                    self.buffer[idx].clear(0, self.cols as usize, self.current_style);
+                    let buffer = &mut self.buffer;
+                    buffer[idx].clear(0, self.cols as usize, self.current_style);
                 }
             }
             1 => {
                 self.erase_in_line(1);
                 for y in 0..self.cursor_y {
                     let idx = self.external_to_internal_row(y);
-                    self.buffer[idx].clear(0, self.cols as usize, self.current_style);
+                    let buffer = &mut self.buffer;
+                    buffer[idx].clear(0, self.cols as usize, self.current_style);
                 }
             }
             2 => {
                 for y in 0..self.rows {
                     let idx = self.external_to_internal_row(y);
-                    self.buffer[idx].clear(0, self.cols as usize, self.current_style);
+                    let buffer = &mut self.buffer;
+                    buffer[idx].clear(0, self.cols as usize, self.current_style);
                 }
             }
             3 => {
                 // 清除整个物理缓冲区（包括滚动历史）
-                for row in &mut self.buffer {
+                let buffer = &mut self.buffer;
+                for row in buffer {
                     row.clear(0, self.cols as usize, self.current_style);
                 }
                 // 重置滚动指针，使当前屏幕位于缓冲区开头
@@ -1078,15 +1413,25 @@ impl ScreenState {
 
     fn erase_in_line(&mut self, mode: i32) {
         let idx = self.external_to_internal_row(self.cursor_y);
-        let row_len = self.buffer[idx].text.len();
+        let buffer = &mut self.buffer;
+        let row_len = buffer[idx].text.len();
         let x = min(
             self.cursor_x as usize,
             if row_len > 0 { row_len - 1 } else { 0 },
         );
         match mode {
-            0 => self.buffer[idx].clear(x, row_len, self.current_style),
-            1 => self.buffer[idx].clear(0, min(row_len, x + 1), self.current_style),
-            2 => self.buffer[idx].clear(0, row_len, self.current_style),
+            0 => {
+                let buffer = &mut self.buffer;
+                buffer[idx].clear(x, row_len, self.current_style);
+            }
+            1 => {
+                let buffer = &mut self.buffer;
+                buffer[idx].clear(0, min(row_len, x + 1), self.current_style);
+            }
+            2 => {
+                let buffer = &mut self.buffer;
+                buffer[idx].clear(0, row_len, self.current_style);
+            }
             _ => {}
         }
     }
@@ -1097,7 +1442,8 @@ impl ScreenState {
         let spaces_to_insert = min(n, columns_after_cursor);
 
         let y_internal = self.external_to_internal_row(self.cursor_y);
-        let row = &mut self.buffer[y_internal];
+        let buffer = &mut self.buffer;
+        let row = &mut buffer[y_internal];
 
         // 在边界内移动字符
         let move_start = self.cursor_x as usize;
@@ -1127,7 +1473,8 @@ impl ScreenState {
         let cells_to_move = columns_after_cursor - cells_to_delete;
 
         let y_internal = self.external_to_internal_row(self.cursor_y);
-        let row = &mut self.buffer[y_internal];
+        let buffer = &mut self.buffer;
+        let row = &mut buffer[y_internal];
 
         // 从左向右移动字符
         for i in 0..cells_to_move as usize {
@@ -1161,15 +1508,17 @@ impl ScreenState {
             if dest_row < self.rows as usize {
                 let src_idx = self.external_to_internal_row(src_row as i32);
                 let dest_idx = self.external_to_internal_row(dest_row as i32);
-                let src_data = self.buffer[src_idx].clone();
-                self.buffer[dest_idx] = src_data;
+                let buffer = &mut self.buffer;
+                let src_data = buffer[src_idx].clone();
+                buffer[dest_idx] = src_data;
             }
         }
 
         // 清空插入的区域
         for i in 0..lines_to_insert as usize {
             let clear_idx = self.external_to_internal_row(self.cursor_y + i as i32);
-            self.buffer[clear_idx].clear(0, self.cols as usize, self.current_style);
+            let buffer = &mut self.buffer;
+            buffer[clear_idx].clear(0, self.cols as usize, self.current_style);
         }
     }
 
@@ -1186,15 +1535,17 @@ impl ScreenState {
 
             let src_idx = self.external_to_internal_row(src_row as i32);
             let dest_idx = self.external_to_internal_row(dest_row as i32);
-            let src_data = self.buffer[src_idx].clone();
-            self.buffer[dest_idx] = src_data;
+            let buffer = &mut self.buffer;
+            let src_data = buffer[src_idx].clone();
+            buffer[dest_idx] = src_data;
         }
 
         // 清空底部区域
         for i in 0..lines_to_delete as usize {
             let clear_idx =
                 self.external_to_internal_row(self.bottom_margin - i as i32 - 1);
-            self.buffer[clear_idx].clear(0, self.cols as usize, self.current_style);
+            let buffer = &mut self.buffer;
+            buffer[clear_idx].clear(0, self.cols as usize, self.current_style);
         }
     }
 
@@ -1202,7 +1553,8 @@ impl ScreenState {
     fn erase_characters(&mut self, n: i32) {
         let chars_to_erase = min(n, self.cols - self.cursor_x);
         let y_internal = self.external_to_internal_row(self.cursor_y);
-        let row = &mut self.buffer[y_internal];
+        let buffer = &mut self.buffer;
+        let row = &mut buffer[y_internal];
 
         let start = self.cursor_x as usize;
         let end = min(start + chars_to_erase as usize, row.text.len());
@@ -1275,15 +1627,17 @@ impl ScreenState {
             if dest_row < self.rows as usize {
                 let src_idx = self.external_to_internal_row(src_row as i32);
                 let dest_idx = self.external_to_internal_row(dest_row as i32);
-                let src_data = self.buffer[src_idx].clone();
-                self.buffer[dest_idx] = src_data;
+                let buffer = &mut self.buffer;
+                let src_data = buffer[src_idx].clone();
+                buffer[dest_idx] = src_data;
             }
         }
 
         // 清空顶部区域
         for i in 0..lines_to_scroll as usize {
             let clear_idx = self.external_to_internal_row(self.top_margin + i as i32);
-            self.buffer[clear_idx].clear(0, self.cols as usize, self.current_style);
+            let buffer = &mut self.buffer;
+            buffer[clear_idx].clear(0, self.cols as usize, self.current_style);
         }
 
         // 滚动后光标保持在顶部
@@ -1297,8 +1651,9 @@ impl ScreenState {
         // 向左滚动：将区域内所有列向右移动一列
         for y in self.top_margin..self.bottom_margin {
             let idx = self.external_to_internal_row(y);
-            let row = &mut self.buffer[idx];
-            
+            let buffer = &mut self.buffer;
+            let row = &mut buffer[idx];
+
             // 从右向左移动字符
             for x in (1..self.cols as usize).rev() {
                 if x < row.text.len() {
@@ -1320,8 +1675,9 @@ impl ScreenState {
         // 向右滚动：将区域内所有列向左移动一列
         for y in self.top_margin..self.bottom_margin {
             let idx = self.external_to_internal_row(y);
-            let row = &mut self.buffer[idx];
-            
+            let buffer = &mut self.buffer;
+            let row = &mut buffer[idx];
+
             // 从左向右移动字符
             for x in 0..(self.cols as usize - 1) {
                 if x < row.text.len() && x + 1 < row.text.len() {
@@ -1345,12 +1701,14 @@ impl ScreenState {
         for y in (self.top_margin + 1..self.bottom_margin).rev() {
             let src_idx = self.external_to_internal_row(y - 1);
             let dest_idx = self.external_to_internal_row(y);
-            let src_data = self.buffer[src_idx].clone();
-            self.buffer[dest_idx] = src_data;
+            let buffer = &mut self.buffer;
+            let src_data = buffer[src_idx].clone();
+            buffer[dest_idx] = src_data;
         }
         // 清空顶部行
         let clear_idx = self.external_to_internal_row(self.top_margin);
-        self.buffer[clear_idx].clear(0, self.cols as usize, self.current_style);
+        let buffer = &mut self.buffer;
+        buffer[clear_idx].clear(0, self.cols as usize, self.current_style);
     }
 
     /// DECALN - 屏幕对齐测试 (ESC # 8)
@@ -1358,7 +1716,8 @@ impl ScreenState {
     fn decaln_screen_align(&mut self) {
         for y in 0..self.rows as usize {
             let idx = self.external_to_internal_row(y as i32);
-            let row = &mut self.buffer[idx];
+            let buffer = &mut self.buffer;
+            let row = &mut buffer[idx];
             for x in 0..row.text.len().min(self.cols as usize) {
                 row.text[x] = 'E';
                 row.styles[x] = STYLE_NORMAL;
@@ -1375,24 +1734,25 @@ impl ScreenState {
         self.cursor_x = 0;
         self.cursor_y = 0;
         self.current_style = STYLE_NORMAL;
-        
+
         // 清屏
         for y in 0..self.rows as usize {
             let idx = self.external_to_internal_row(y as i32);
-            self.buffer[idx].clear(0, self.cols as usize, STYLE_NORMAL);
+            let buffer = &mut self.buffer;
+            buffer[idx].clear(0, self.cols as usize, STYLE_NORMAL);
         }
-        
+
         // 重置所有制表位
         for stop in &mut self.tab_stops {
             *stop = false;
         }
-        
+
         // 重置边距
         self.top_margin = 0;
         self.bottom_margin = self.rows;
         self.left_margin = 0;
         self.right_margin = self.cols;
-        
+
         // 重置 DECSET 标志
         self.decset_flags = 0;
         self.auto_wrap = true;
@@ -1754,6 +2114,48 @@ impl ScreenState {
                         self.bracketed_paste = set;
                         self.update_decset_flag(DECSET_BIT_BRACKETED_PASTE_MODE, set);
                     }
+                    1048 => {
+                        // 备用光标 (保存/恢复光标位置)
+                        if set {
+                            // 保存当前光标位置
+                            self.saved_main_cursor_x = self.cursor_x;
+                            self.saved_main_cursor_y = self.cursor_y;
+                        } else {
+                            // 恢复光标位置
+                            self.cursor_x = self.saved_main_cursor_x;
+                            self.cursor_y = self.saved_main_cursor_y;
+                            self.clamp_cursor();
+                        }
+                    }
+                    1049 => {
+                        // 备用屏幕缓冲区 (包含 1048 的光标保存/恢复)
+                        if set {
+                            // 切换到备用缓冲区
+                            // 保存当前光标位置
+                            self.saved_main_cursor_x = self.cursor_x;
+                            self.saved_main_cursor_y = self.cursor_y;
+                            self.saved_main_decset_flags = self.decset_flags;
+                            self.saved_main_screen_first_row = self.screen_first_row;
+                            
+                            // 切换到备用缓冲区
+                            self.use_alternate_buffer = true;
+                            
+                            // 清除备用缓冲区
+                            self.clear_alt_buffer();
+                            
+                            // 重置光标到左上角
+                            self.cursor_x = 0;
+                            self.cursor_y = 0;
+                        } else {
+                            // 切换到主缓冲区
+                            self.use_alternate_buffer = false;
+                            
+                            // 恢复光标位置
+                            self.cursor_x = self.saved_main_cursor_x;
+                            self.cursor_y = self.saved_main_cursor_y;
+                            self.clamp_cursor();
+                        }
+                    }
                     _ => {
                         // 忽略未知模式
                     }
@@ -1849,7 +2251,8 @@ impl ScreenState {
 
     pub fn copy_row_text(&self, row: usize, dest: &mut [u16]) {
         let idx = self.external_to_internal_row(row as i32);
-        let src = &self.buffer[idx].text;
+        let buffer = &self.buffer;
+        let src = &buffer[idx].text;
         let mut dest_idx = 0;
 
         for &c in src {
@@ -1879,7 +2282,8 @@ impl ScreenState {
 
     pub fn copy_row_styles(&self, row: usize, dest: &mut [i64]) {
         let idx = self.external_to_internal_row(row as i32);
-        let src = &self.buffer[idx].styles;
+        let buffer = &self.buffer;
+        let src = &buffer[idx].styles;
         for i in 0..min(src.len(), dest.len()) {
             dest[i] = src[i] as i64;
         }
@@ -1887,9 +2291,14 @@ impl ScreenState {
 
     pub fn resize(&mut self, new_cols: i32, new_rows: i32) {
         // Resize 时需将循环缓冲区物理展开，否则数据会错乱
-        let mut new_buffer = Vec::with_capacity(max(new_rows as usize, self.buffer.len()));
+        // 先计算所有索引，避免借用冲突
+        let mut indices = Vec::with_capacity(self.rows as usize);
         for y in 0..self.rows {
-            let old_idx = self.external_to_internal_row(y);
+            indices.push(self.external_to_internal_row(y));
+        }
+        
+        let mut new_buffer = Vec::with_capacity(max(new_rows as usize, self.buffer.len()));
+        for old_idx in indices {
             let mut row = self.buffer[old_idx].clone();
             row.text.resize(new_cols as usize, ' ');
             row.styles.resize(new_cols as usize, 0);
@@ -2384,7 +2793,9 @@ impl<'a> Perform for PurePerformHandler<'a> {
                 // SS3 - 单移位 3，忽略
             }
             (&[], b'P') => {
-                // DCS - 设备控制字符串，由 Java 层处理
+                // DCS - 设备控制字符串
+                // DCS 序列由 vte 解析器处理，put_string 回调会被调用
+                // 目前主要支持 DECSIXEL 图形，其他 DCS 序列忽略
             }
             (&[], b'=') => {
                 // DECKPAM - 应用键盘模式
@@ -2398,10 +2809,12 @@ impl<'a> Perform for PurePerformHandler<'a> {
                 // CSI - 由 vte 解析器处理
             }
             (&[], b']') => {
-                // OSC - 由 Java 层处理
+                // OSC - 由 vte 解析器处理，osc_dispatch 回调会被调用
             }
             (&[], b'_') => {
-                // APC - 应用程序命令，由 Java 层处理
+                // APC - 应用程序命令
+                // 目前简单处理：忽略 APC 内容
+                // APC 序列格式：ESC _ (数据) ESC \\ 或 ESC _ (数据) BEL
             }
             _ => self.unhandled_sequences.push(format!("ESC {:?}", byte)),
         }
