@@ -812,8 +812,8 @@ public final class TerminalEmulator {
     private static native void writeASCIIBatchNative(byte[] src, int srcOffset, char[] destText, long[] destStyle, int destOffset, int length, long style, boolean useLineDrawing);
 
     /** 批量读取优化 - 减少 JNI 调用次数 */
-    private static native void readScreenBatchFromRust(long enginePtr, char[][] destText, long[][] destStyle, int startRow, int numRows);
-    private static native void readFullScreenFromRust(long enginePtr, char[][] destText, long[][] destStyle);
+    static native void readScreenBatchFromRust(long enginePtr, char[][] destText, long[][] destStyle, int startRow, int numRows);
+    static native void readFullScreenFromRust(long enginePtr, char[][] destText, long[][] destStyle);
 
     /** DirectByteBuffer 零拷贝支持 (阶段 2) */
     private static native java.nio.ByteBuffer createSharedBufferRust(long enginePtr);
