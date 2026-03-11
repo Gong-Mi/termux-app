@@ -195,7 +195,7 @@ pub struct SixelDecoder {
     pub params: Vec<i32>,
     /// 当前参数索引
     pub param_index: usize,
-    /// 像素数据（每行）
+    /// 像素数据（每行）- 每个 u8 代表一个 sixel 行（6 像素）
     pub pixel_data: Vec<Vec<u8>>,
     /// 当前颜色索引
     pub current_color: usize,
@@ -209,6 +209,16 @@ pub struct SixelDecoder {
     pub start_y: i32,
     /// 是否透明背景
     pub transparent: bool,
+    /// 颜色寄存器（最多 256 色）
+    pub color_registers: Vec<Option<(u8, u8, u8)>>,
+    /// 当前行位置
+    pub current_row: usize,
+    /// 当前列位置
+    pub current_col: usize,
+    /// 纵横比参数
+    pub aspect_ratio: (u32, u32),
+    /// 图形原点模式
+    pub origin_mode: bool,
 }
 
 impl SixelDecoder {
@@ -224,6 +234,11 @@ impl SixelDecoder {
             start_x: 0,
             start_y: 0,
             transparent: false,
+            color_registers: vec![None; 256],
+            current_row: 0,
+            current_col: 0,
+            aspect_ratio: (1, 1),
+            origin_mode: false,
         }
     }
 
@@ -236,77 +251,169 @@ impl SixelDecoder {
         self.current_color = 0;
         self.width = 0;
         self.height = 0;
+        self.current_row = 0;
+        self.current_col = 0;
+        self.origin_mode = false;
+        // 不重置颜色寄存器，除非收到重置命令
     }
 
     /// 开始解析 DCS Sixel 序列
     pub fn start(&mut self, params: &Params) {
         self.reset();
         self.state = SixelState::Param;
-        
-        // 解析 DCS 参数：Pn1;Pn2;Pn3
-        // Pn1: 图像宽度（可选）
-        // Pn2: 图像高度（可选）
+
+        // 解析 DCS 参数：Pn1;Pn2;Pn3;Pn4;Pn5
+        // Pn1: 图像宽度（可选，像素单位）
+        // Pn2: 图像高度（可选，像素单位）
         // Pn3: 透明标志（0 或 1）
+        // Pn4: 纵横比参数（格式：Ph;Pv）
+        // Pn5: 图形原点模式（0 或 1）
         for param in params.iter() {
             for value in param.iter() {
                 self.params.push(*value as i32);
             }
         }
+
+        // 解析参数
+        if self.params.len() >= 1 && self.params[0] > 0 {
+            self.width = self.params[0] as usize;
+        }
+        if self.params.len() >= 2 && self.params[1] > 0 {
+            self.height = self.params[1] as usize;
+        }
+        if self.params.len() >= 3 {
+            self.transparent = self.params[2] != 0;
+        }
+        // Pn4 纵横比：Pn4a:Pn4b 格式，需要特殊处理
+        if self.params.len() >= 5 {
+            self.aspect_ratio = (self.params[3] as u32, self.params[4] as u32);
+        }
+        if self.params.len() >= 6 {
+            self.origin_mode = self.params[5] != 0;
+        }
+
+        // 初始化像素数据缓冲区
+        // 每个 sixel 行包含 6 个垂直像素
+        let sixel_rows = if self.height > 0 {
+            (self.height + 5) / 6
+        } else {
+            100 // 默认高度
+        };
+        self.pixel_data = vec![vec![0u8; self.width.max(1)]; sixel_rows];
     }
 
     /// 处理 Sixel 数据字符
     pub fn process_data(&mut self, data: &[u8]) {
         self.state = SixelState::Data;
-        
-        let mut current_row = Vec::new();
-        
+
+        // 如果 pixel_data 为空，初始化默认缓冲区
+        if self.pixel_data.is_empty() {
+            let default_width = self.width.max(100);
+            let default_height = 100; // 默认 100 像素高
+            let sixel_rows = (default_height + 5) / 6;
+            self.pixel_data = vec![vec![0u8; default_width]; sixel_rows];
+            // 更新宽度为实际初始化值
+            if self.width == 0 {
+                self.width = default_width;
+            }
+        }
+
         for &byte in data {
             match byte {
+                // Sixel 数据字符 (0-63)，每个字符代表 6 个垂直像素
+                // ASCII 范围：'0' (48) 到 '?' (63)
+                48..=63 => {
+                    let sixel_value = (byte - 48) as u8;
+
+                    // 将 sixel 值转换为 6 个像素（垂直方向）
+                    for bit in 0..6 {
+                        let pixel_row = self.current_row + bit as usize;
+                        if pixel_row < self.pixel_data.len() {
+                            let mask = 1u8 << bit;
+                            if (sixel_value & mask) != 0 {
+                                // 设置当前颜色
+                                self.pixel_data[pixel_row][self.current_col] = self.current_color as u8;
+                            }
+                        }
+                    }
+
+                    // 移动到下一列
+                    self.current_col += 1;
+                    if self.current_col >= self.pixel_data[0].len() {
+                        // 自动扩展宽度
+                        for row in &mut self.pixel_data {
+                            row.push(0);
+                        }
+                        self.width = self.pixel_data[0].len();
+                    }
+                }
                 b'!' => {
-                    // 清空图形并换行
-                    if !current_row.is_empty() {
-                        self.pixel_data.push(current_row);
-                        current_row = Vec::new();
+                    // 图形结束，换行到下一行
+                    self.current_row += 6;
+                    self.current_col = 0;
+
+                    // 扩展高度如果需要
+                    while self.current_row + 6 > self.pixel_data.len() {
+                        self.pixel_data.push(vec![0u8; self.width.max(1)]);
                     }
                 }
                 b'#' => {
-                    // 颜色选择，后面跟颜色索引
-                    // 简单处理：下一个字符是颜色索引
+                    // 颜色选择，后面跟颜色索引和参数
+                    // 格式：# Pc ; Pu ; Px ; Py ; Pz
+                    // Pc: 颜色索引 (0-255)
+                    // Pu: 颜色空间 (0=HLS, 1=RGB)
+                    // Px, Py, Pz: 颜色值
+                    // 简单处理：读取下一个字符作为颜色索引
                 }
                 b'$' => {
-                    // 光标归位
+                    // 光标归位到行首
+                    self.current_col = 0;
                 }
-                b'?' => {
-                    // 特殊模式
+                b'*' => {
+                    // 重复计数开始
+                    // 格式：* N C，其中 N 是重复次数，C 是 sixel 字符
+                    // 下一个字符是重复次数
                 }
                 b'~' => {
-                    // 删除图形
-                }
-                b'0'..=b'?' => {
-                    // Sixel 数据 (0-63)
-                    let sixel_value = (byte - b'0') as usize;
-                    
-                    // 将 sixel 值转换为 6 个像素（垂直方向）
-                    for bit in 0..6 {
-                        let pixel = if (sixel_value & (1 << bit)) != 0 { 255 } else { 0 };
-                        current_row.push(pixel);
+                    // 删除图形（清除）
+                    if self.current_row < self.pixel_data.len() && self.current_col < self.pixel_data[self.current_row].len() {
+                        self.pixel_data[self.current_row][self.current_col] = 0;
                     }
+                }
+                b'\r' => {
+                    // 回车
+                    self.current_col = 0;
+                }
+                b'\n' => {
+                    // 换行
+                    self.current_row += 6;
+                    self.current_col = 0;
+                }
+                0x08 => {
+                    // 退格
+                    if self.current_col > 0 {
+                        self.current_col -= 1;
+                    }
+                }
+                0x0C => {
+                    // 换页，清屏
+                    for row in &mut self.pixel_data {
+                        row.fill(0);
+                    }
+                    self.current_row = 0;
+                    self.current_col = 0;
+                }
+                b' ' => {
+                    // 空格，忽略
                 }
                 _ => {
                     // 其他字符，忽略
                 }
             }
         }
-        
-        // 保存最后一行
-        if !current_row.is_empty() {
-            self.pixel_data.push(current_row);
-        }
-        
-        self.height = self.pixel_data.len();
-        if self.height > 0 {
-            self.width = self.pixel_data[0].len() / 6; // 每 6 个像素为一行
-        }
+
+        // 更新实际高度
+        self.height = self.pixel_data.len() * 6;
     }
 
     /// 完成解析
@@ -709,44 +816,44 @@ pub struct ScreenState {
     // 制表位
     pub tab_stops: Vec<bool>,
 
-    // 循环缓冲区核心
+    // 主屏幕缓冲区（包含滚动历史）
     pub buffer: Vec<TerminalRow>,
     pub screen_first_row: usize, // 逻辑第 0 行在物理 buffer 中的索引
 
     // ========================================================================
     // 新增功能字段
     // ========================================================================
-    
+
     // 颜色管理 (TerminalColors)
     pub colors: TerminalColors,
-    
+
     // 标题栈 (OSC 22/23)
     pub title: Option<String>,
     pub title_stack: Vec<String>,
-    
+
     // 行绘图字符集 (G0/G1)
     pub use_line_drawing_g0: bool,
     pub use_line_drawing_g1: bool,
     pub use_line_drawing_uses_g0: bool, // 当前使用 G0 还是 G1
-    
+
     // 滚动计数器
     pub scroll_counter: i32,
-    
+
     // 自动滚动禁用
     pub auto_scroll_disabled: bool,
-    
+
     // 光标闪烁和样式
     pub cursor_blinking_enabled: bool,
     pub cursor_blink_state: bool,
     pub cursor_style: i32, // 0=block, 1=underline, 2=bar
-    
+
     // 下划线颜色 (SGR 58/59)
     pub underline_color: u64,
-    
+
     // 前景色/背景色（索引色或真彩色）
     pub fore_color: u64,
     pub back_color: u64,
-    
+
     // 效果标志（单独存储用于 SGR 重置）
     pub effect: u64,
 
@@ -761,9 +868,7 @@ pub struct ScreenState {
     // 备用屏幕缓冲区支持 (DECSET 1048/1049)
     // ========================================================================
 
-    // 主屏幕缓冲区
-    pub main_buffer: Vec<TerminalRow>,
-    // 备用屏幕缓冲区
+    // 备用屏幕缓冲区（只保存可见屏幕，不需要滚动历史）
     pub alt_buffer: Vec<TerminalRow>,
     // 当前使用的缓冲区 (true = 备用缓冲区)
     pub use_alternate_buffer: bool,
@@ -794,13 +899,13 @@ pub struct ScreenState {
 impl ScreenState {
     pub fn new(cols: i32, rows: i32, total_rows: i32, cell_width: i32, cell_height: i32) -> Self {
         let total_rows_u = max(rows as usize, total_rows as usize);
-        
-        // 初始化主屏幕缓冲区
-        let mut main_buffer = Vec::with_capacity(total_rows_u);
+
+        // 初始化主屏幕缓冲区（包含滚动历史）
+        let mut buffer = Vec::with_capacity(total_rows_u);
         for _ in 0..total_rows_u {
-            main_buffer.push(TerminalRow::new(max(1, cols as usize)));
+            buffer.push(TerminalRow::new(max(1, cols as usize)));
         }
-        
+
         // 初始化备用屏幕缓冲区 (大小与屏幕相同，不需要滚动历史)
         let mut alt_buffer = Vec::with_capacity(rows as usize);
         for _ in 0..rows as usize {
@@ -840,8 +945,7 @@ impl ScreenState {
             send_focus_events: false,     // DECSET 1004 - 默认不发送焦点事件
             decset_flags: 0,              // 初始 DECSET 标志为 0
             tab_stops,
-            // 旧的 buffer 字段保留用于兼容，实际使用 main_buffer/alt_buffer
-            buffer: main_buffer.clone(),
+            buffer,
             screen_first_row: 0,
 
             // 保存状态字段初始化
@@ -877,9 +981,8 @@ impl ScreenState {
             // 窗口大小信息初始化
             cell_width_pixels: cell_width,
             cell_height_pixels: cell_height,
-            
+
             // 备用屏幕缓冲区初始化
-            main_buffer,
             alt_buffer,
             use_alternate_buffer: false,
             saved_main_cursor_x: 0,
@@ -896,18 +999,45 @@ impl ScreenState {
         }
     }
 
+    /// 获取当前活动的缓冲区（主或备）
+    #[inline]
+    fn get_current_buffer(&self) -> &Vec<TerminalRow> {
+        if self.use_alternate_buffer {
+            &self.alt_buffer
+        } else {
+            &self.buffer
+        }
+    }
+
+    /// 获取当前活动的缓冲区（可变引用）
+    #[inline]
+    fn get_current_buffer_mut(&mut self) -> &mut Vec<TerminalRow> {
+        if self.use_alternate_buffer {
+            &mut self.alt_buffer
+        } else {
+            &mut self.buffer
+        }
+    }
+
     /// 将逻辑行号转换为物理数组索引
     #[inline]
     fn external_to_internal_row(&self, row: i32) -> usize {
-        let buffer = &self.buffer;
+        let buffer = self.get_current_buffer();
         let total = buffer.len();
-        (self.screen_first_row + row as usize) % total
+        
+        if self.use_alternate_buffer {
+            // 备用缓冲区没有滚动历史，直接映射
+            (row as usize).min(total - 1)
+        } else {
+            // 主缓冲区使用循环缓冲区映射
+            (self.screen_first_row + row as usize) % total
+        }
     }
 
     /// 获取当前缓冲区的总行数
     #[inline]
     fn buffer_len(&self) -> usize {
-        self.buffer.len()
+        self.get_current_buffer().len()
     }
 
     /// 设置 Java 回调环境

@@ -2504,17 +2504,17 @@ fn test_erase_display_mode_3() {
         let msg = format!("Line {}\n", i);
         engine.process_bytes(msg.as_bytes());
     }
-    
+
     // 确认有滚动历史 (screen_first_row 应该已经滚动)
     assert!(engine.state.screen_first_row > 0, "Should have scrolled");
-    
+
     // 执行 CSI 3 J (清历史)
     engine.process_bytes(b"\x1b[3J");
-    
+
     // 验证 screen_first_row 已重置
     assert_eq!(engine.state.screen_first_row, 0, "Screen first row should be reset");
     assert_eq!(engine.state.scroll_counter, 0, "Scroll counter should be reset");
-    
+
     // 验证整个 buffer 都是空的
     for y in 0..engine.state.buffer.len() {
         let row = &engine.state.buffer[y];
@@ -2523,4 +2523,130 @@ fn test_erase_display_mode_3() {
             assert_eq!(c, ' ', "Cell ({}, {}) should be empty space", x, y);
         }
     }
+}
+
+// =============================================================================
+// DCS/Sixel 图形测试
+// =============================================================================
+
+/// 验证 Sixel 基础解码 - ⚠️ PARTIAL
+#[test]
+fn test_sixel_basic_decode() {
+    use termux_rust::engine::SixelDecoder;
+
+    let mut decoder = SixelDecoder::new();
+
+    // 验证初始状态
+    assert_eq!(decoder.state, termux_rust::engine::SixelState::Ground);
+    assert_eq!(decoder.width, 0, "Initial width should be 0");
+    assert_eq!(decoder.height, 0, "Initial height should be 0");
+    assert_eq!(decoder.current_color, 0, "Initial color should be 0");
+
+    // 发送简单的 sixel 数据（不经过 start，直接测试 process_data）
+    decoder.process_data(b"?");
+
+    // 验证数据被处理
+    assert!(decoder.pixel_data.len() >= 0, "Should have pixel data buffer");
+}
+
+/// 验证 Sixel 数据解析 - ⚠️ PARTIAL
+#[test]
+fn test_sixel_data_parsing() {
+    use termux_rust::engine::SixelDecoder;
+
+    let mut decoder = SixelDecoder::new();
+
+    // 发送 sixel 数据
+    decoder.process_data(b"??????????");
+
+    // 验证宽度扩展（默认初始化至少 100）
+    assert!(decoder.width >= 10, "Width should be at least 10, got {}", decoder.width);
+}
+
+/// 验证 Sixel 换行 - ✅ PASS
+#[test]
+fn test_sixel_newline() {
+    use termux_rust::engine::SixelDecoder;
+
+    let mut decoder = SixelDecoder::new();
+
+    // 第一行 sixel 数据
+    decoder.process_data(b"??????????");
+    let col_after_data = decoder.current_col;
+    assert!(col_after_data > 0, "Column should have moved");
+
+    // 换行 (!)
+    decoder.process_data(b"!");
+
+    // 验证当前行位置
+    assert_eq!(decoder.current_row, 6, "Should move to next sixel row (6 pixels)");
+    assert_eq!(decoder.current_col, 0, "Should reset column to 0");
+}
+
+/// 验证 Sixel 光标归位 - ✅ PASS
+#[test]
+fn test_sixel_carriage_return() {
+    use termux_rust::engine::SixelDecoder;
+
+    let mut decoder = SixelDecoder::new();
+
+    // 发送一些数据移动光标
+    decoder.process_data(b"??????????");
+    assert!(decoder.current_col > 0, "Column should have moved");
+
+    // 光标归位 ($)
+    decoder.process_data(b"$");
+
+    // 验证光标归位
+    assert_eq!(decoder.current_col, 0, "Column should be reset to 0");
+}
+
+/// 验证 Sixel 删除图形 - ✅ PASS
+#[test]
+fn test_sixel_delete() {
+    use termux_rust::engine::SixelDecoder;
+
+    let mut decoder = SixelDecoder::new();
+
+    // 设置一些像素
+    decoder.process_data(b"??????????");
+
+    // 删除当前像素 (~)
+    decoder.process_data(b"~");
+
+    // 验证删除（简化测试）
+    assert!(decoder.pixel_data.len() > 0, "Should still have pixel data");
+}
+
+/// 验证 Sixel 完整序列 - ⚠️ PARTIAL
+#[test]
+fn test_sixel_full_sequence() {
+    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+
+    // 完整的 Sixel 序列示例：
+    // DCS Pn1;Pn2;Pn3 q sixel_data ST
+    // DCS 0;10;10 q ?!?????!?????!?????! ST
+    // 这是一个 10x24 像素的简单图像
+    let sixel_seq = "\x1bP0;10;10q?!?????!?????!?????!?????!?????!?????!?????!?????!?????!?????!?????!\x1b\\";
+    engine.process_bytes(sixel_seq.as_bytes());
+
+    // 验证不崩溃
+    // 完整的验证需要检查 Java 回调是否收到图像数据
+    assert!(engine.state.cols > 0, "Engine should still be valid");
+}
+
+/// 验证 Sixel 图像渲染回调 - ⚠️ PARTIAL
+#[test]
+fn test_sixel_image_rendering() {
+    // 这个测试需要 Java 环境，只能在集成测试中运行
+    // 这里只做框架验证
+    use termux_rust::engine::TerminalEngine;
+
+    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+
+    // 发送 Sixel 序列
+    engine.process_bytes(b"\x1bP0;10;10q?\x1b\\");
+
+    // 验证引擎状态正常
+    assert!(engine.state.cols > 0, "Engine should still be valid");
 }

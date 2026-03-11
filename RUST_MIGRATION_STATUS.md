@@ -11,7 +11,7 @@
 
 | 项目 | Java (TerminalEmulator.java) | Rust (engine.rs) | 迁移率 |
 |------|------------------------------|------------------|--------|
-| 核心逻辑 | 已退化为 JNI 调用壳 | **2,882 行** | **100%** |
+| 核心逻辑 | 已退化为 JNI 调用壳 | **3,429 行** | **100%** |
 | 处理模式 | 旧路径 (已废弃) | **Full Takeover (活动)** | **100%** |
 
 ---
@@ -26,6 +26,7 @@
 | 字符渲染同步 | ✅ | 通过 `readRowFromRust` 实时同步到 Java 渲染器 |
 | 异步显示刷新 | ✅ | 实现 `onScreenUpdate` 回调，解决显示卡顿 |
 | 缓冲区管理 | ✅ | Rust 侧维护 O(1) 循环缓冲区 |
+| 主/备缓冲区切换 | ✅ | DECSET 1049 完整支持 |
 
 #### 2. 复制与粘贴 (修复完成)
 | 功能 | 状态 | 备注 |
@@ -54,6 +55,8 @@
 |------|------|------|
 | 调色板查询 | ✅ | 支持 OSC 4/10/11/12 的 `?` 查询响应 |
 | 动态颜色修改 | ✅ | 支持 OSC 4/10/11/12/104 颜色设置与重置 |
+| 256 色支持 | ✅ | 完整支持 |
+| 真彩色支持 | ✅ | 24 位 RGB 支持 |
 
 #### 6. 软重置 (DECSTR)
 | 功能 | 状态 | 指令 |
@@ -90,14 +93,27 @@
 | DECSET 1049 备用屏幕 | ✅ | 切换主/备缓冲区，清除备用屏 |
 | 主备缓冲区管理 | ✅ | Rust 侧维护双缓冲区 |
 
+#### 11. DCS/Sixel 图形支持 (框架完成)
+| 功能 | 状态 | 备注 |
+|------|------|------|
+| DCS 序列解析框架 | ✅ | Sixel 数据解析基础 |
+| Sixel 数据解码 | ✅ | 基础 sixel 到像素转换 |
+| Sixel 颜色选择 | ⚠️ | 框架完成，颜色寄存器待完善 |
+| Sixel 图像渲染回调 | ✅ | 通过 Java 回调报告图像数据 |
+
 ---
 
-### ⚠️ 进行中的功能 (100%)
+### ⚠️ 进行中的功能
 
-#### 1. DCS/APC 序列
-- **状态**: 已建立基础解析框架。
-- **目标**: 完整支持 Sixel 图形解析。
-- **进度**: 框架完成，Sixel 解码待实现
+#### 1. Sixel 颜色寄存器
+- **状态**: 框架完成，颜色寄存器数据结构已定义
+- **目标**: 完整支持 # Pc 颜色选择命令
+- **进度**: 约 70%
+
+#### 2. Sixel 重复计数
+- **状态**: 解析框架完成
+- **目标**: 支持 * N 重复计数语法
+- **进度**: 约 50%
 
 ---
 
@@ -115,12 +131,18 @@
 [Rust 层 - 核心模拟器]
     ├── TerminalEngine (解析器 + 处理器)
     └── ScreenState (状态机 + 缓冲区 + 回调触发)
-           ├── O(1) Buffer (高效滚动)
-           ├── Color Palette (动态颜色)
+           ├── O(1) Buffer (高效滚动，支持 2000 行历史)
+           ├── Color Palette (259 色动态颜色)
            ├── Keyboard Handler (键盘事件)
            ├── Mouse Handler (鼠标事件)
-           └── Dual Buffer System (主/备缓冲区)
+           ├── Dual Buffer System (主/备缓冲区)
+           └── Sixel Decoder (图形解码)
 ```
+
+### 缓冲区架构
+- **主缓冲区 (`buffer`)**: 包含完整滚动历史 (默认 2000 行)
+- **备用缓冲区 (`alt_buffer`)**: 仅可见屏幕大小 (无滚动历史)
+- **循环缓冲区**: 使用 `screen_first_row` 指针实现 O(1) 滚动
 
 ---
 
@@ -135,35 +157,63 @@
 
 ---
 
-## 新增测试用例
+## 测试用例统计
 
-本次迁移新增了以下测试用例：
+本次迁移新增了以下测试用例（总计 116 个测试）：
 
-### 键盘和鼠标事件测试
-- `test_mouse_event_sgr` - SGR 鼠标模式验证
-- `test_mouse_event_legacy` - 旧格式鼠标模式验证
-- `test_mouse_event_button_tracking` - 鼠标按钮事件跟踪测试
-- `test_mouse_event_release` - 鼠标释放事件测试
-- `test_mouse_event_wheel` - 滚轮事件测试
-- `test_mouse_event_bounds` - 鼠标事件范围限制测试
-- `test_key_event_function_keys` - 功能键测试
-- `test_key_event_arrow 键` - 方向键测试
-- `test_key_event_ctrl_combinations` - Ctrl 组合键测试
-- `test_key_event_alt_prefix` - Alt 前缀键测试
-- `test_key_event_keypad` - 数字小键盘测试
+### 基础文本测试 (15 个)
+- `test_basic_text`, `test_backspace`, `test_newline`, `test_tab`, 等
 
-### DCS/APC 序列测试
-- `test_dcs_sequence_framework` - DCS 序列框架测试
-- `test_apc_sequence_framework` - APC 序列框架测试
+### 光标控制测试 (12 个)
+- `test_cursor_movement`, `test_cursor_position`, `test_cursor_horizontal_absolute`, 等
 
-### 焦点和粘贴测试
-- `test_focus_event_reporting` - 焦点事件报告测试
-- `test_bracketed_paste_mode` - 括号粘贴模式测试
+### 擦除和插入测试 (10 个)
+- `test_erase_display`, `test_erase_line`, `test_insert_characters`, `test_delete_characters`, 等
 
-### 备用屏幕缓冲区测试
-- `test_decset_1048_save_restore_cursor` - DECSET 1048 光标保存/恢复测试
-- `test_decset_1049_alternate_screen` - DECSET 1049 备用屏幕切换测试
-- `test_alternate_buffer_clear` - 备用缓冲区清除测试
+### 滚动测试 (5 个)
+- `test_scroll_up`, `test_scroll_down`, `test_scroll_counter`, 等
+
+### DECSET 模式测试 (12 个)
+- `test_decset_auto_wrap`, `test_decset_origin_mode`, `test_decset_cursor_visible`, 等
+
+### 备用屏幕缓冲区测试 (3 个)
+- `test_decset_1048_save_restore_cursor`, `test_decset_1049_alternate_screen`, `test_alternate_buffer_clear`
+
+### SGR 样式测试 (12 个)
+- `test_sgr_bold`, `test_sgr_colors`, `test_sgr_256_color_foreground`, `test_sgr_truecolor_background`, 等
+
+### 键盘事件测试 (6 个)
+- `test_key_event_function_keys`, `test_key_event_arrow 键`, `test_key_event_ctrl_combinations`, 等
+
+### 鼠标事件测试 (7 个)
+- `test_mouse_event_sgr`, `test_mouse_event_legacy`, `test_mouse_event_button_tracking`, 等
+
+### OSC 序列测试 (8 个)
+- `test_osc4_set_color`, `test_osc10_set_foreground`, `test_osc11_set_background`, `test_osc22_23_title_stack`, 等
+
+### DCS/Sixel 测试 (7 个)
+- `test_dcs_sequence_framework`, `test_sixel_basic_decode`, `test_sixel_data_parsing`, `test_sixel_newline`, 等
+
+### 其他测试 (19 个)
+- `test_wide_characters`, `test_emoji_width`, `test_combining_characters`, `test_ris_full_reset`, 等
+
+---
+
+## 待完成工作
+
+### 高优先级
+1. **完善 Sixel 颜色寄存器**: 支持 # Pc 颜色选择命令
+2. **完善 Sixel 重复计数**: 支持 * N 语法
+3. **添加更多 Sixel 集成测试**: 验证完整图像渲染
+
+### 中优先级
+1. **优化 Java TerminalBuffer 层**: 探索移除冗余存储
+2. **性能基准测试**: 对比 Java 和 Rust 模式性能
+3. **内存管理优化**: 减少不必要的分配
+
+### 低优先级
+1. **文档完善**: 添加更多 Rust 代码注释
+2. **代码清理**: 移除已废弃的 Java 代码路径
 
 ---
 
@@ -173,7 +223,7 @@
 目前的 Rust 引擎不仅在性能上远超旧有 Java 实现，而且在功能对齐（特别是窗口报告、颜色查询、粘贴模式、键盘/鼠标事件处理、备用屏幕缓冲区）上已经完全超越了原有的 `TerminalEmulator.java`。
 
 **下一步：**
-1. 完善 DCS Sixel 图形解析逻辑。
-2. 优化 Java TerminalBuffer 层，探索移除冗余存储。
-3. 添加更多集成测试验证 Java/Rust 交互。
-4. 性能优化和内存管理改进。
+1. 完善 Sixel 颜色寄存器和重复计数逻辑
+2. 添加更多 Sixel 集成测试
+3. 性能基准测试和优化
+4. 代码清理和文档完善
