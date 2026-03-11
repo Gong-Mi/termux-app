@@ -832,7 +832,7 @@ public final class TerminalEmulator {
     private static native void getColorsFromRust(long enginePtr, int[] colors);
     private static native int processBatchRust(byte[] buffer, int offset, int length, boolean useLineDrawing);
     private static native void writeASCIIBatchNative(byte[] src, int srcOffset, char[] destText, long[] destStyle, int destOffset, int length, long style, boolean useLineDrawing);
-    private static native int getActiveTranscriptRowsFromRust(long enginePtr);
+    public static native int getActiveTranscriptRowsFromRust(long enginePtr);
 
     /** 批量读取优化 - 减少 JNI 调用次数 */
     static native void readScreenBatchFromRust(long enginePtr, char[][] destText, long[][] destStyle, int startRow, int numRows);
