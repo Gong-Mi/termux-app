@@ -69,11 +69,11 @@ public final class TerminalRenderer {
         if (reverseVideo)
             canvas.drawColor(palette[TextStyle.COLOR_INDEX_FOREGROUND], PorterDuff.Mode.SRC);
 
+        mEmulator.syncScreenBatchFromRust(topRow, endRow - topRow);
+
         float heightOffset = mFontLineSpacingAndAscent;
         for (int row = topRow; row < endRow; row++) {
             heightOffset += mFontLineSpacing;
-
-            mEmulator.syncRowFromRust(row);
 
             final int cursorX = (row == cursorRow && cursorVisible) ? cursorCol : -1;
             int selx1 = -1, selx2 = -1;

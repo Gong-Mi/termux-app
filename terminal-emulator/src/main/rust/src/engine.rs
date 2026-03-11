@@ -1831,17 +1831,25 @@ impl ScreenState {
         }
 
         let y_internal = self.external_to_internal_row(self.cursor_y);
-        let x = self.cursor_x as usize;
+        let cursor_x = self.cursor_x as usize;
+        let current_style = self.current_style;
+        let mut update_cursor = false;
 
-        let buffer = &mut self.buffer;
-        let row = &mut buffer[y_internal];
-        if (self.cursor_x as usize) < row.text.len() {
-            row.text[x] = c;
-            row.styles[x] = self.current_style;
-            if char_width == 2 && x + 1 < row.text.len() {
-                row.text[x + 1] = '\0'; // Placeholder for second half of wide char
-                row.styles[x + 1] = self.current_style;
+        {
+            let buffer = self.get_current_buffer_mut();
+            let row = &mut buffer[y_internal];
+            if cursor_x < row.text.len() {
+                row.text[cursor_x] = c;
+                row.styles[cursor_x] = current_style;
+                if char_width == 2 && cursor_x + 1 < row.text.len() {
+                    row.text[cursor_x + 1] = '\0'; // Placeholder for second half of wide char
+                    row.styles[cursor_x + 1] = current_style;
+                }
+                update_cursor = true;
             }
+        }
+        
+        if update_cursor {
             self.cursor_x += char_width;
         }
     }
@@ -1849,17 +1857,18 @@ impl ScreenState {
     /// 插入模式：在光标位置插入空格
     fn insert_character(&mut self) {
         let y_internal = self.external_to_internal_row(self.cursor_y);
-        let buffer = &mut self.buffer;
+        let cursor_x = self.cursor_x as usize;
+        let buffer = self.get_current_buffer_mut();
         let row = &mut buffer[y_internal];
 
         // 从右向左移动字符
-        for i in ((self.cursor_x as usize + 1)..row.text.len()).rev() {
+        for i in (cursor_x + 1..row.text.len()).rev() {
             row.text[i] = row.text[i - 1];
             row.styles[i] = row.styles[i - 1];
         }
-        if (self.cursor_x as usize) < row.text.len() {
-            row.text[self.cursor_x as usize] = ' ';
-            row.styles[self.cursor_x as usize] = STYLE_NORMAL;
+        if cursor_x < row.text.len() {
+            row.text[cursor_x] = ' ';
+            row.styles[cursor_x] = STYLE_NORMAL;
         }
     }
 
@@ -1953,53 +1962,62 @@ impl ScreenState {
             self.screen_first_row = (self.screen_first_row + 1) % buffer_len;
             // 清理新出现的那一行（逻辑最后一行）
             let last_row_internal = self.external_to_internal_row(self.rows - 1);
-            let buffer = &mut self.buffer;
-            buffer[last_row_internal].clear(0, self.cols as usize, self.current_style);
+            let cols = self.cols as usize;
+            let current_style = self.current_style;
+            let buffer = self.get_current_buffer_mut();
+            buffer[last_row_internal].clear(0, cols, current_style);
         } else {
             // 区域滚动：目前仍需物理拷贝数据，但在终端中较少见
             for i in top..(bottom - 1) {
                 let src_idx = self.external_to_internal_row(i + 1);
                 let dest_idx = self.external_to_internal_row(i);
-                let buffer = &mut self.buffer;
+                let buffer = self.get_current_buffer_mut();
                 let src_row = buffer[src_idx].clone();
                 buffer[dest_idx] = src_row;
             }
             let clear_idx = self.external_to_internal_row(bottom - 1);
-            let buffer = &mut self.buffer;
-            buffer[clear_idx].clear(0, self.cols as usize, self.current_style);
+            let cols = self.cols as usize;
+            let current_style = self.current_style;
+            let buffer = self.get_current_buffer_mut();
+            buffer[clear_idx].clear(0, cols, current_style);
         }
     }
 
     fn erase_in_display(&mut self, mode: i32) {
+        let cols = self.cols as usize;
+        let current_style = self.current_style;
+        let cursor_y = self.cursor_y;
+        let rows = self.rows;
+
         match mode {
             0 => {
                 self.erase_in_line(0);
-                for y in (self.cursor_y + 1)..self.rows {
+                for y in (cursor_y + 1)..rows {
                     let idx = self.external_to_internal_row(y);
-                    let buffer = &mut self.buffer;
-                    buffer[idx].clear(0, self.cols as usize, self.current_style);
+                    let buffer = self.get_current_buffer_mut();
+                    buffer[idx].clear(0, cols, current_style);
                 }
             }
             1 => {
                 self.erase_in_line(1);
-                for y in 0..self.cursor_y {
+                for y in 0..cursor_y {
                     let idx = self.external_to_internal_row(y);
-                    let buffer = &mut self.buffer;
-                    buffer[idx].clear(0, self.cols as usize, self.current_style);
+                    let buffer = self.get_current_buffer_mut();
+                    buffer[idx].clear(0, cols, current_style);
                 }
             }
             2 => {
-                for y in 0..self.rows {
+                for y in 0..rows {
                     let idx = self.external_to_internal_row(y);
-                    let buffer = &mut self.buffer;
-                    buffer[idx].clear(0, self.cols as usize, self.current_style);
+                    let buffer = self.get_current_buffer_mut();
+                    buffer[idx].clear(0, cols, current_style);
                 }
             }
             3 => {
                 // 清除整个物理缓冲区（包括滚动历史）
-                let buffer = &mut self.buffer;
+                let buffer = self.get_current_buffer_mut();
                 for row in buffer {
-                    row.clear(0, self.cols as usize, self.current_style);
+                    row.clear(0, cols, current_style);
                 }
                 // 重置滚动指针，使当前屏幕位于缓冲区开头
                 self.screen_first_row = 0;
@@ -2012,24 +2030,24 @@ impl ScreenState {
 
     fn erase_in_line(&mut self, mode: i32) {
         let idx = self.external_to_internal_row(self.cursor_y);
-        let buffer = &mut self.buffer;
+        let cursor_x = self.cursor_x as usize;
+        let cols = self.cols as usize;
+        let current_style = self.current_style;
+        let buffer = self.get_current_buffer_mut();
         let row_len = buffer[idx].text.len();
         let x = min(
-            self.cursor_x as usize,
+            cursor_x,
             if row_len > 0 { row_len - 1 } else { 0 },
         );
         match mode {
             0 => {
-                let buffer = &mut self.buffer;
-                buffer[idx].clear(x, row_len, self.current_style);
+                buffer[idx].clear(cursor_x, cols, current_style);
             }
             1 => {
-                let buffer = &mut self.buffer;
-                buffer[idx].clear(0, min(row_len, x + 1), self.current_style);
+                buffer[idx].clear(0, min(row_len, x + 1), current_style);
             }
             2 => {
-                let buffer = &mut self.buffer;
-                buffer[idx].clear(0, row_len, self.current_style);
+                buffer[idx].clear(0, cols, current_style);
             }
             _ => {}
         }
@@ -2041,11 +2059,13 @@ impl ScreenState {
         let spaces_to_insert = min(n, columns_after_cursor);
 
         let y_internal = self.external_to_internal_row(self.cursor_y);
-        let buffer = &mut self.buffer;
+        let cursor_x = self.cursor_x as usize;
+        let current_style = self.current_style;
+        let buffer = self.get_current_buffer_mut();
         let row = &mut buffer[y_internal];
 
         // 在边界内移动字符
-        let move_start = self.cursor_x as usize;
+        let move_start = cursor_x;
         let move_count = (columns_after_cursor - spaces_to_insert) as usize;
         let insert_count = spaces_to_insert as usize;
 
@@ -2059,7 +2079,7 @@ impl ScreenState {
         // 清空插入的区域（用空格填充）
         for i in move_start..(move_start + insert_count).min(row.text.len()) {
             row.text[i] = ' ';
-            row.styles[i] = self.current_style;
+            row.styles[i] = current_style;
         }
 
         // ICH 后光标位置不变
@@ -2072,13 +2092,15 @@ impl ScreenState {
         let cells_to_move = columns_after_cursor - cells_to_delete;
 
         let y_internal = self.external_to_internal_row(self.cursor_y);
-        let buffer = &mut self.buffer;
+        let cursor_x = self.cursor_x as usize;
+        let right_margin = self.right_margin as usize;
+        let buffer = self.get_current_buffer_mut();
         let row = &mut buffer[y_internal];
 
         // 从左向右移动字符
         for i in 0..cells_to_move as usize {
-            let src = self.cursor_x as usize + i + cells_to_delete as usize;
-            let dest = self.cursor_x as usize + i;
+            let src = cursor_x + i + cells_to_delete as usize;
+            let dest = cursor_x + i;
             if src < row.text.len() && dest < row.text.len() {
                 row.text[dest] = row.text[src];
                 row.styles[dest] = row.styles[src];
@@ -2086,8 +2108,8 @@ impl ScreenState {
         }
 
         // 清空右侧区域
-        let clear_start = self.cursor_x as usize + cells_to_move as usize;
-        for i in clear_start..min(self.right_margin as usize, row.text.len()) {
+        let clear_start = cursor_x + cells_to_move as usize;
+        for i in clear_start..min(right_margin, row.text.len()) {
             row.text[i] = ' ';
             row.styles[i] = STYLE_NORMAL;
         }
@@ -2098,16 +2120,19 @@ impl ScreenState {
         let lines_after_cursor = self.bottom_margin - self.cursor_y;
         let lines_to_insert = min(n, lines_after_cursor);
         let lines_to_move = lines_after_cursor - lines_to_insert;
+        let cursor_y = self.cursor_y;
+        let cols = self.cols as usize;
+        let current_style = self.current_style;
 
         // 从下向上移动行
         for i in (0..lines_to_move as usize).rev() {
-            let src_row = self.cursor_y as usize + i;
-            let dest_row = self.cursor_y as usize + i + lines_to_insert as usize;
+            let src_row = cursor_y as usize + i;
+            let dest_row = cursor_y as usize + i + lines_to_insert as usize;
 
             if dest_row < self.rows as usize {
                 let src_idx = self.external_to_internal_row(src_row as i32);
                 let dest_idx = self.external_to_internal_row(dest_row as i32);
-                let buffer = &mut self.buffer;
+                let buffer = self.get_current_buffer_mut();
                 let src_data = buffer[src_idx].clone();
                 buffer[dest_idx] = src_data;
             }
@@ -2115,9 +2140,9 @@ impl ScreenState {
 
         // 清空插入的区域
         for i in 0..lines_to_insert as usize {
-            let clear_idx = self.external_to_internal_row(self.cursor_y + i as i32);
-            let buffer = &mut self.buffer;
-            buffer[clear_idx].clear(0, self.cols as usize, self.current_style);
+            let clear_idx = self.external_to_internal_row(cursor_y + i as i32);
+            let buffer = self.get_current_buffer_mut();
+            buffer[clear_idx].clear(0, cols, current_style);
         }
     }
 
@@ -2126,15 +2151,19 @@ impl ScreenState {
         let lines_after_cursor = self.bottom_margin - self.cursor_y;
         let lines_to_delete = min(n, lines_after_cursor);
         let lines_to_move = lines_after_cursor - lines_to_delete;
+        let cursor_y = self.cursor_y;
+        let cols = self.cols as usize;
+        let current_style = self.current_style;
+        let bottom_margin = self.bottom_margin;
 
         // 从上向下移动行
         for i in 0..lines_to_move as usize {
-            let src_row = self.cursor_y as usize + i + lines_to_delete as usize;
-            let dest_row = self.cursor_y as usize + i;
+            let src_row = cursor_y as usize + i + lines_to_delete as usize;
+            let dest_row = cursor_y as usize + i;
 
             let src_idx = self.external_to_internal_row(src_row as i32);
             let dest_idx = self.external_to_internal_row(dest_row as i32);
-            let buffer = &mut self.buffer;
+            let buffer = self.get_current_buffer_mut();
             let src_data = buffer[src_idx].clone();
             buffer[dest_idx] = src_data;
         }
@@ -2142,9 +2171,9 @@ impl ScreenState {
         // 清空底部区域
         for i in 0..lines_to_delete as usize {
             let clear_idx =
-                self.external_to_internal_row(self.bottom_margin - i as i32 - 1);
-            let buffer = &mut self.buffer;
-            buffer[clear_idx].clear(0, self.cols as usize, self.current_style);
+                self.external_to_internal_row(bottom_margin - i as i32 - 1);
+            let buffer = self.get_current_buffer_mut();
+            buffer[clear_idx].clear(0, cols, current_style);
         }
     }
 
@@ -2152,12 +2181,14 @@ impl ScreenState {
     fn erase_characters(&mut self, n: i32) {
         let chars_to_erase = min(n, self.cols - self.cursor_x);
         let y_internal = self.external_to_internal_row(self.cursor_y);
-        let buffer = &mut self.buffer;
+        let cursor_x = self.cursor_x as usize;
+        let current_style = self.current_style;
+        let buffer = self.get_current_buffer_mut();
         let row = &mut buffer[y_internal];
 
-        let start = self.cursor_x as usize;
+        let start = cursor_x;
         let end = min(start + chars_to_erase as usize, row.text.len());
-        row.clear(start, end, self.current_style);
+        row.clear(start, end, current_style);
     }
 
     /// 光标水平绝对 (CHA) - CSI {N} G
@@ -2217,16 +2248,20 @@ impl ScreenState {
     /// 下滚 (SD) - CSI {N} T
     fn scroll_down_lines(&mut self, n: i32) {
         let lines_to_scroll = min(n, self.bottom_margin - self.top_margin);
+        let top_margin = self.top_margin;
+        let bottom_margin = self.bottom_margin;
+        let cols = self.cols as usize;
+        let current_style = self.current_style;
 
         // 从上向下移动行
-        for i in (0..(self.bottom_margin - self.top_margin - lines_to_scroll) as usize).rev() {
-            let src_row = self.top_margin as usize + i;
-            let dest_row = self.top_margin as usize + i + lines_to_scroll as usize;
+        for i in (0..(bottom_margin - top_margin - lines_to_scroll) as usize).rev() {
+            let src_row = top_margin as usize + i;
+            let dest_row = top_margin as usize + i + lines_to_scroll as usize;
 
             if dest_row < self.rows as usize {
                 let src_idx = self.external_to_internal_row(src_row as i32);
                 let dest_idx = self.external_to_internal_row(dest_row as i32);
-                let buffer = &mut self.buffer;
+                let buffer = self.get_current_buffer_mut();
                 let src_data = buffer[src_idx].clone();
                 buffer[dest_idx] = src_data;
             }
@@ -2234,9 +2269,9 @@ impl ScreenState {
 
         // 清空顶部区域
         for i in 0..lines_to_scroll as usize {
-            let clear_idx = self.external_to_internal_row(self.top_margin + i as i32);
-            let buffer = &mut self.buffer;
-            buffer[clear_idx].clear(0, self.cols as usize, self.current_style);
+            let clear_idx = self.external_to_internal_row(top_margin + i as i32);
+            let buffer = self.get_current_buffer_mut();
+            buffer[clear_idx].clear(0, cols, current_style);
         }
 
         // 滚动后光标保持在顶部
@@ -2247,14 +2282,18 @@ impl ScreenState {
     /// DECBI - Back Index 滚动 (ESC 6)
     /// 当光标在左边界时，向左滚动并插入空白列
     fn back_index_scroll(&mut self) {
+        let top_margin = self.top_margin;
+        let bottom_margin = self.bottom_margin;
+        let cols = self.cols as usize;
+
         // 向左滚动：将区域内所有列向右移动一列
-        for y in self.top_margin..self.bottom_margin {
+        for y in top_margin..bottom_margin {
             let idx = self.external_to_internal_row(y);
-            let buffer = &mut self.buffer;
+            let buffer = self.get_current_buffer_mut();
             let row = &mut buffer[idx];
 
             // 从右向左移动字符
-            for x in (1..self.cols as usize).rev() {
+            for x in (1..cols).rev() {
                 if x < row.text.len() {
                     row.text[x] = row.text[x - 1];
                     row.styles[x] = row.styles[x - 1];
@@ -2271,21 +2310,25 @@ impl ScreenState {
     /// DECFI - Forward Index 滚动 (ESC 9)
     /// 当光标在右边界时，向右滚动并插入空白列
     fn forward_index_scroll(&mut self) {
+        let top_margin = self.top_margin;
+        let bottom_margin = self.bottom_margin;
+        let cols = self.cols as usize;
+
         // 向右滚动：将区域内所有列向左移动一列
-        for y in self.top_margin..self.bottom_margin {
+        for y in top_margin..bottom_margin {
             let idx = self.external_to_internal_row(y);
-            let buffer = &mut self.buffer;
+            let buffer = self.get_current_buffer_mut();
             let row = &mut buffer[idx];
 
             // 从左向右移动字符
-            for x in 0..(self.cols as usize - 1) {
+            for x in 0..(cols - 1) {
                 if x < row.text.len() && x + 1 < row.text.len() {
                     row.text[x] = row.text[x + 1];
                     row.styles[x] = row.styles[x + 1];
                 }
             }
             // 最后一列填充空格
-            let last_col = (self.cols as usize - 1).min(row.text.len().saturating_sub(1));
+            let last_col = (cols - 1).min(row.text.len().saturating_sub(1));
             if row.text.len() > last_col {
                 row.text[last_col] = ' ';
                 row.styles[last_col] = STYLE_NORMAL;
@@ -2296,28 +2339,36 @@ impl ScreenState {
     /// RI - Reverse Index 滚动 (ESC M)
     /// 当光标在顶部边距时，向下滚动并插入空白行
     fn reverse_index_scroll(&mut self) {
+        let top_margin = self.top_margin;
+        let bottom_margin = self.bottom_margin;
+        let cols = self.cols as usize;
+        let current_style = self.current_style;
+
         // 向下滚动：将区域内所有行向下移动一行
-        for y in (self.top_margin + 1..self.bottom_margin).rev() {
+        for y in (top_margin + 1..bottom_margin).rev() {
             let src_idx = self.external_to_internal_row(y - 1);
             let dest_idx = self.external_to_internal_row(y);
-            let buffer = &mut self.buffer;
+            let buffer = self.get_current_buffer_mut();
             let src_data = buffer[src_idx].clone();
             buffer[dest_idx] = src_data;
         }
         // 清空顶部行
-        let clear_idx = self.external_to_internal_row(self.top_margin);
-        let buffer = &mut self.buffer;
-        buffer[clear_idx].clear(0, self.cols as usize, self.current_style);
+        let clear_idx = self.external_to_internal_row(top_margin);
+        let buffer = self.get_current_buffer_mut();
+        buffer[clear_idx].clear(0, cols, current_style);
     }
 
     /// DECALN - 屏幕对齐测试 (ESC # 8)
     /// 用字母 'E' 填充整个屏幕，用于测试屏幕对齐
     fn decaln_screen_align(&mut self) {
-        for y in 0..self.rows as usize {
+        let cols = self.cols as usize;
+        let rows = self.rows;
+
+        for y in 0..rows as usize {
             let idx = self.external_to_internal_row(y as i32);
-            let buffer = &mut self.buffer;
+            let buffer = self.get_current_buffer_mut();
             let row = &mut buffer[idx];
-            for x in 0..row.text.len().min(self.cols as usize) {
+            for x in 0..row.text.len().min(cols) {
                 row.text[x] = 'E';
                 row.styles[x] = STYLE_NORMAL;
             }
@@ -2333,12 +2384,14 @@ impl ScreenState {
         self.cursor_x = 0;
         self.cursor_y = 0;
         self.current_style = STYLE_NORMAL;
+        let cols = self.cols as usize;
+        let rows = self.rows;
 
         // 清屏
-        for y in 0..self.rows as usize {
+        for y in 0..rows as usize {
             let idx = self.external_to_internal_row(y as i32);
-            let buffer = &mut self.buffer;
-            buffer[idx].clear(0, self.cols as usize, STYLE_NORMAL);
+            let buffer = self.get_current_buffer_mut();
+            buffer[idx].clear(0, cols, STYLE_NORMAL);
         }
 
         // 重置所有制表位
@@ -2850,7 +2903,7 @@ impl ScreenState {
 
     pub fn copy_row_text(&self, row: usize, dest: &mut [u16]) {
         let idx = self.external_to_internal_row(row as i32);
-        let buffer = &self.buffer;
+        let buffer = self.get_current_buffer();
         let src = &buffer[idx].text;
         let mut dest_idx = 0;
 
@@ -2881,7 +2934,7 @@ impl ScreenState {
 
     pub fn copy_row_styles(&self, row: usize, dest: &mut [i64]) {
         let idx = self.external_to_internal_row(row as i32);
-        let buffer = &self.buffer;
+        let buffer = self.get_current_buffer();
         let src = &buffer[idx].styles;
         for i in 0..min(src.len(), dest.len()) {
             dest[i] = src[i] as i64;
@@ -2889,31 +2942,43 @@ impl ScreenState {
     }
 
     pub fn resize(&mut self, new_cols: i32, new_rows: i32) {
-        // Resize 时需将循环缓冲区物理展开，否则数据会错乱
-        // 先计算所有索引，避免借用冲突
-        let mut indices = Vec::with_capacity(self.rows as usize);
+        // 1. 先扩容主缓冲区
+        let mut main_indices = Vec::with_capacity(self.rows as usize);
         for y in 0..self.rows {
-            indices.push(self.external_to_internal_row(y));
+            main_indices.push(self.external_to_internal_row(y));
         }
         
-        let mut new_buffer = Vec::with_capacity(max(new_rows as usize, self.buffer.len()));
-        for old_idx in indices {
+        let mut new_main = Vec::with_capacity(max(new_rows as usize, self.buffer.len()));
+        for old_idx in main_indices {
             let mut row = self.buffer[old_idx].clone();
             row.text.resize(new_cols as usize, ' ');
             row.styles.resize(new_cols as usize, 0);
-            new_buffer.push(row);
+            new_main.push(row);
         }
-
-        // 补齐新行
-        while new_buffer.len() < new_rows as usize {
-            new_buffer.push(TerminalRow::new(new_cols as usize));
+        while new_main.len() < new_rows as usize {
+            new_main.push(TerminalRow::new(new_cols as usize));
         }
+        self.buffer = new_main;
 
-        self.buffer = new_buffer;
+        // 2. 扩容备用缓冲区
+        let mut new_alt = Vec::with_capacity(new_rows as usize);
+        for row in &self.alt_buffer {
+            let mut new_row = row.clone();
+            new_row.text.resize(new_cols as usize, ' ');
+            new_row.styles.resize(new_cols as usize, 0);
+            new_alt.push(new_row);
+        }
+        while new_alt.len() < new_rows as usize {
+            new_alt.push(TerminalRow::new(new_cols as usize));
+        }
+        self.alt_buffer = new_alt;
+
+        // 3. 更新状态
         self.screen_first_row = 0;
         self.cols = new_cols;
         self.rows = new_rows;
         self.bottom_margin = new_rows;
+        self.right_margin = new_cols;
         self.clamp_cursor();
     }
 }

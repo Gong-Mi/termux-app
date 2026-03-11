@@ -126,17 +126,17 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_createEn
     cell_height: jint,
     callback_obj: jobject,
 ) -> jlong {
-    let mut engine = Box::new(TerminalEngine::new(cols, rows, total_rows, cell_width, cell_height));
+    let mut engine_inner = TerminalEngine::new(cols, rows, total_rows, cell_width, cell_height);
 
     // 创建全局引用
     if let Ok(env) = unsafe { JNIEnv::from_raw(env_ptr) } {
         if let Ok(global_obj) = env.new_global_ref(unsafe { jni::objects::JObject::from_raw(callback_obj) }) {
             // 设置 Java 回调
-            engine.state.set_java_callback(global_obj);
+            engine_inner.state.set_java_callback(global_obj);
         }
     }
 
-    Box::into_raw(engine) as jlong
+    Box::into_raw(Box::new(std::sync::RwLock::new(engine_inner))) as jlong
 }
 
 #[unsafe(no_mangle)]
@@ -152,7 +152,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_processE
         if engine_ptr == 0 || length == 0 {
             return;
         }
-        let engine = &mut *(engine_ptr as *mut TerminalEngine);
+        let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+        let mut guard = engine_lock.write().unwrap();
+        let engine = &mut *guard;
 
         let env = match JNIEnv::from_raw(env_ptr) {
             Ok(e) => e,
@@ -270,7 +272,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readRowF
         if engine_ptr == 0 {
             return;
         }
-        let engine = &mut *(engine_ptr as *mut TerminalEngine);
+        let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+        let mut guard = engine_lock.write().unwrap();
+        let engine = &mut *guard;
         let env = match JNIEnv::from_raw(env_ptr) {
             Ok(e) => e,
             Err(_) => return,
@@ -312,7 +316,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readScre
         if engine_ptr == 0 || num_rows <= 0 {
             return;
         }
-        let engine = &mut *(engine_ptr as *mut TerminalEngine);
+        let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+        let mut guard = engine_lock.write().unwrap();
+        let engine = &mut *guard;
         let env = match JNIEnv::from_raw(env_ptr) {
             Ok(e) => e,
             Err(_) => return,
@@ -376,7 +382,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readFull
         if engine_ptr == 0 {
             return;
         }
-        let engine = &mut *(engine_ptr as *mut TerminalEngine);
+        let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+        let mut guard = engine_lock.write().unwrap();
+        let engine = &mut *guard;
         let rows = engine.state.rows as jint;
         
         Java_com_termux_terminal_TerminalEmulator_readScreenBatchFromRust(
@@ -406,7 +414,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_createSh
         if engine_ptr == 0 {
             return std::ptr::null_mut();
         }
-        let engine = &mut *(engine_ptr as *mut TerminalEngine);
+        let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+        let mut guard = engine_lock.write().unwrap();
+        let engine = &mut *guard;
         let mut env = match JNIEnv::from_raw(env_ptr) {
             Ok(e) => e,
             Err(_) => return std::ptr::null_mut(),
@@ -448,7 +458,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_syncToSh
         if engine_ptr == 0 {
             return;
         }
-        let engine = &mut *(engine_ptr as *mut TerminalEngine);
+        let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+        let mut guard = engine_lock.write().unwrap();
+        let engine = &mut *guard;
 
         // 将当前屏幕数据同步到共享缓冲区
         if let Some(ref mut flat_buffer) = engine.state.flat_buffer {
@@ -486,7 +498,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getShare
     if engine_ptr == 0 {
         return jni::sys::JNI_FALSE;
     }
-    let engine = unsafe { &*(engine_ptr as *mut TerminalEngine) };
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = engine_lock.read().unwrap();
+    let engine = &*guard;
 
     if !engine.state.shared_buffer_ptr.is_null() {
         let shared = unsafe { &*engine.state.shared_buffer_ptr };
@@ -507,7 +521,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_clearSha
     if engine_ptr == 0 {
         return;
     }
-    let engine = unsafe { &mut *(engine_ptr as *mut TerminalEngine) };
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let mut guard = engine_lock.write().unwrap();
+    let engine = &mut *guard;
 
     if !engine.state.shared_buffer_ptr.is_null() {
         let shared = unsafe { &mut *engine.state.shared_buffer_ptr };
@@ -526,7 +542,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_destroyS
         if engine_ptr == 0 {
             return;
         }
-        let engine = &mut *(engine_ptr as *mut TerminalEngine);
+        let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+        let mut guard = engine_lock.write().unwrap();
+        let engine = &mut *guard;
 
         if !engine.state.shared_buffer_ptr.is_null() {
             let buffer_size = engine::SharedScreenBuffer::required_size(
@@ -552,7 +570,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_resizeEn
         if engine_ptr == 0 {
             return;
         }
-        let engine = &mut *(engine_ptr as *mut TerminalEngine);
+        let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+        let mut guard = engine_lock.write().unwrap();
+        let engine = &mut *guard;
         engine.resize(new_cols, new_rows);
     }
 }
@@ -567,7 +587,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_destroyE
         if engine_ptr == 0 {
             return;
         }
-        let _ = Box::from_raw(engine_ptr as *mut TerminalEngine);
+        let _ = Box::from_raw(engine_ptr as *mut std::sync::RwLock<TerminalEngine>);
     }
 }
 
@@ -582,7 +602,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColor
         if engine_ptr == 0 {
             return;
         }
-        let engine = &*(engine_ptr as *mut TerminalEngine);
+        let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+        let guard = engine_lock.read().unwrap();
+        let engine = &*guard;
         let env = match JNIEnv::from_raw(env_ptr) {
             Ok(e) => e,
             Err(_) => return,
@@ -619,7 +641,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCurso
     engine_ptr: jlong,
 ) -> jint {
     if engine_ptr == 0 { return -1; }
-    let engine = unsafe { &*(engine_ptr as *mut TerminalEngine) };
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = engine_lock.read().unwrap();
+    let engine = &*guard;
     engine.state.cursor_x as jint
 }
 
@@ -630,7 +654,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCurso
     engine_ptr: jlong,
 ) -> jint {
     if engine_ptr == 0 { return -1; }
-    let engine = unsafe { &*(engine_ptr as *mut TerminalEngine) };
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = engine_lock.read().unwrap();
+    let engine = &*guard;
     engine.state.cursor_y as jint
 }
 
@@ -641,7 +667,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCurso
     engine_ptr: jlong,
 ) -> jint {
     if engine_ptr == 0 { return 0; }
-    let engine = unsafe { &*(engine_ptr as *mut TerminalEngine) };
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = engine_lock.read().unwrap();
+    let engine = &*guard;
     engine.state.cursor_style as jint
 }
 
@@ -652,7 +680,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_shouldCu
     engine_ptr: jlong,
 ) -> jni::sys::jboolean {
     if engine_ptr == 0 { return jni::sys::JNI_FALSE; }
-    let engine = unsafe { &*(engine_ptr as *mut TerminalEngine) };
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = engine_lock.read().unwrap();
+    let engine = &*guard;
     if engine.state.cursor_enabled && engine.state.cursor_blink_state {
         jni::sys::JNI_TRUE
     } else {
@@ -667,7 +697,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isRevers
     engine_ptr: jlong,
 ) -> jni::sys::jboolean {
     if engine_ptr == 0 { return jni::sys::JNI_FALSE; }
-    let engine = unsafe { &*(engine_ptr as *mut TerminalEngine) };
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = engine_lock.read().unwrap();
+    let engine = &*guard;
     if engine.state.reverse_video {
         jni::sys::JNI_TRUE
     } else {
@@ -682,7 +714,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getTitle
     engine_ptr: jlong,
 ) -> jstring {
     if engine_ptr == 0 { return std::ptr::null_mut(); }
-    let engine = unsafe { &*(engine_ptr as *mut TerminalEngine) };
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = engine_lock.read().unwrap();
+    let engine = &*guard;
     let env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return std::ptr::null_mut(),
@@ -703,7 +737,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_reportFo
     engine_ptr: jlong,
 ) {
     if engine_ptr == 0 { return; }
-    let engine = unsafe { &*(engine_ptr as *mut TerminalEngine) };
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = engine_lock.read().unwrap();
+    let engine = &*guard;
     engine.state.report_focus_gain();
 }
 
@@ -714,7 +750,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_reportFo
     engine_ptr: jlong,
 ) {
     if engine_ptr == 0 { return; }
-    let engine = unsafe { &*(engine_ptr as *mut TerminalEngine) };
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = engine_lock.read().unwrap();
+    let engine = &*guard;
     engine.state.report_focus_loss();
 }
 
@@ -726,7 +764,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_pasteTex
     text: jstring,
 ) {
     if engine_ptr == 0 { return; }
-    let engine = unsafe { &mut *(engine_ptr as *mut TerminalEngine) };
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let mut guard = engine_lock.write().unwrap();
+    let engine = &mut *guard;
     let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return,
@@ -746,7 +786,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getScrol
     engine_ptr: jlong,
 ) -> jint {
     if engine_ptr == 0 { return 0; }
-    let engine = unsafe { &*(engine_ptr as *mut TerminalEngine) };
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = engine_lock.read().unwrap();
+    let engine = &*guard;
     engine.state.scroll_counter
 }
 
@@ -757,7 +799,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_clearScr
     engine_ptr: jlong,
 ) {
     if engine_ptr == 0 { return; }
-    let engine = unsafe { &mut *(engine_ptr as *mut TerminalEngine) };
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let mut guard = engine_lock.write().unwrap();
+    let engine = &mut *guard;
     engine.state.clear_scroll_counter();
 }
 
@@ -768,7 +812,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isAutoSc
     engine_ptr: jlong,
 ) -> jni::sys::jboolean {
     if engine_ptr == 0 { return jni::sys::JNI_FALSE; }
-    let engine = unsafe { &*(engine_ptr as *mut TerminalEngine) };
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = engine_lock.read().unwrap();
+    let engine = &*guard;
     if engine.state.auto_scroll_disabled {
         jni::sys::JNI_TRUE
     } else {
@@ -783,7 +829,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_toggleAu
     engine_ptr: jlong,
 ) {
     if engine_ptr == 0 { return; }
-    let engine = unsafe { &mut *(engine_ptr as *mut TerminalEngine) };
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let mut guard = engine_lock.write().unwrap();
+    let engine = &mut *guard;
     engine.state.toggle_auto_scroll_disabled();
 }
 
@@ -867,7 +915,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendMous
     pressed: jni::sys::jboolean,
 ) {
     if engine_ptr == 0 { return; }
-    let engine = unsafe { &mut *(engine_ptr as *mut TerminalEngine) };
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let mut guard = engine_lock.write().unwrap();
+    let engine = &mut *guard;
     engine.state.send_mouse_event(
         mouse_button as u32,
         column as i32,
@@ -886,7 +936,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendKeyC
     key_mod: jint,
 ) {
     if engine_ptr == 0 { return; }
-    let engine = unsafe { &mut *(engine_ptr as *mut TerminalEngine) };
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let mut guard = engine_lock.write().unwrap();
+    let engine = &mut *guard;
     let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return,
@@ -921,7 +973,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getActiv
     if engine_ptr == 0 {
         return 0;
     }
-    let engine = unsafe { &*(engine_ptr as *mut TerminalEngine) };
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = engine_lock.read().unwrap();
+    let engine = &*guard;
     // 计算滚动历史行数 = 总行数 - 屏幕行数
     let total_rows = engine.state.buffer.len();
     let screen_rows = engine.state.rows as usize;

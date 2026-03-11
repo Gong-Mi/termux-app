@@ -37,56 +37,6 @@ public final class TerminalEmulator {
     /** Used for invalid data - http://en.wikipedia.org/wiki/Replacement_character#Replacement_character */
     public static final int UNICODE_REPLACEMENT_CHAR = 0xFFFD;
 
-    /** Escape processing: Not currently in an escape sequence. */
-    private static final int ESC_NONE = 0;
-    /** Escape processing: Have seen an ESC character - proceed to {@link #doEsc(int)} */
-    private static final int ESC = 1;
-    /** Escape processing: Have seen ESC POUND */
-    private static final int ESC_POUND = 2;
-    /** Escape processing: Have seen ESC and a character-set-select ( char */
-    private static final int ESC_SELECT_LEFT_PAREN = 3;
-    /** Escape processing: Have seen ESC and a character-set-select ) char */
-    private static final int ESC_SELECT_RIGHT_PAREN = 4;
-    /** Escape processing: "ESC [" or CSI (Control Sequence Introducer). */
-    private static final int ESC_CSI = 6;
-    /** Escape processing: ESC [ ? */
-    private static final int ESC_CSI_QUESTIONMARK = 7;
-    /** Escape processing: ESC [ $ */
-    private static final int ESC_CSI_DOLLAR = 8;
-    /** Escape processing: ESC % */
-    private static final int ESC_PERCENT = 9;
-    /** Escape processing: ESC ] (AKA OSC - Operating System Controls) */
-    private static final int ESC_OSC = 10;
-    /** Escape processing: ESC ] (AKA OSC - Operating System Controls) ESC */
-    private static final int ESC_OSC_ESC = 11;
-    /** Escape processing: ESC [ > */
-    private static final int ESC_CSI_BIGGERTHAN = 12;
-    /** Escape procession: "ESC P" or Device Control String (DCS) */
-    private static final int ESC_P = 13;
-    /** Escape processing: CSI > */
-    private static final int ESC_CSI_QUESTIONMARK_ARG_DOLLAR = 14;
-    /** Escape processing: CSI $ARGS ' ' */
-    private static final int ESC_CSI_ARGS_SPACE = 15;
-    /** Escape processing: CSI $ARGS '*' */
-    private static final int ESC_CSI_ARGS_ASTERIX = 16;
-    /** Escape processing: CSI " */
-    private static final int ESC_CSI_DOUBLE_QUOTE = 17;
-    /** Escape processing: CSI ' */
-    private static final int ESC_CSI_SINGLE_QUOTE = 18;
-    /** Escape processing: CSI ! */
-    private static final int ESC_CSI_EXCLAMATION = 19;
-    /** Escape processing: "ESC _" or Application Program Command (APC). */
-    private static final int ESC_APC = 20;
-    /** Escape processing: "ESC _" or Application Program Command (APC), followed by Escape. */
-    private static final int ESC_APC_ESCAPE = 21;
-    /** Escape processing: ESC [ <parameter bytes> */
-    private static final int ESC_CSI_UNSUPPORTED_PARAMETER_BYTE = 22;
-    /** Escape processing: ESC [ <parameter bytes> <intermediate bytes> */
-    private static final int ESC_CSI_UNSUPPORTED_INTERMEDIATE_BYTE = 23;
-
-    /** The number of parameter arguments including colon separated sub-parameters. */
-    private static final int MAX_ESCAPE_PARAMETERS = 32;
-
     /** Needs to be large enough to contain reasonable OSC 52 pastes. */
     private static final int MAX_OSC_STRING_LENGTH = 8192;
 
@@ -155,25 +105,6 @@ public final class TerminalEmulator {
 
     TerminalSessionClient mClient;
 
-    /** Keeps track of the current argument of the current escape sequence. Ranges from 0 to MAX_ESCAPE_PARAMETERS-1. */
-    private int mArgIndex;
-    /** Holds the arguments of the current escape sequence. */
-    private final int[] mArgs = new int[MAX_ESCAPE_PARAMETERS];
-    /** Holds the bit flags which arguments are sub parameters (after a colon) - bit N is set if <code>mArgs[N]</code> is a sub parameter. */
-    private int mArgsSubParamsBitSet = 0;
-
-    /** Holds OSC and device control arguments, which can be strings. */
-    private final StringBuilder mOSCOrDeviceControlArgs = new StringBuilder();
-
-    /**
-     * True if the current escape sequence should continue, false if the current escape sequence should be terminated.
-     * Used when parsing a single character.
-     */
-    private boolean mContinueSequence;
-
-    /** The current state of the escape sequence state machine. One of the ESC_* constants. */
-    private int mEscapeState;
-
     /** State saved by DECSC and restored by DECRC. */
     private static final class SavedScreenState {
         int mSavedCursorRow, mSavedCursorCol;
@@ -203,17 +134,6 @@ public final class TerminalEmulator {
     private boolean[] mTabStop;
 
     /**
-     * Top margin of screen for scrolling ranges from 0 to mRows-2. Bottom margin ranges from mTopMargin + 2 to mRows
-     * (Defines the first row after the scrolling region). Left/right margin in [0, mColumns].
-     */
-    private int mTopMargin, mBottomMargin, mLeftMargin, mRightMargin;
-
-    /**
-     * If the next character to be emitted will be automatically wrapped to the next line.
-     */
-    private boolean mAboutToAutoWrap;
-
-    /**
      * If the cursor blinking is enabled.
      */
     private boolean mCursorBlinkingEnabled;
@@ -239,10 +159,6 @@ public final class TerminalEmulator {
 
     /** If automatic scrolling of terminal is disabled */
     private boolean mAutoScrollDisabled;
-
-    private byte mUtf8ToFollow, mUtf8Index;
-    private final byte[] mUtf8InputBuffer = new byte[4];
-    private int mLastEmittedCodePoint = -1;
 
     public final TerminalColors mColors = new TerminalColors();
 
@@ -504,8 +420,6 @@ public final class TerminalEmulator {
 
         if (mRows != rows) {
             mRows = rows;
-            mTopMargin = 0;
-            mBottomMargin = mRows;
         }
         if (mColumns != columns) {
             int oldColumns = mColumns;
@@ -515,8 +429,6 @@ public final class TerminalEmulator {
             setDefaultTabStops();
             int toTransfer = Math.min(oldColumns, columns);
             System.arraycopy(oldTabStop, 0, mTabStop, 0, toTransfer);
-            mLeftMargin = 0;
-            mRightMargin = mColumns;
         }
 
         resizeScreen();
@@ -582,6 +494,19 @@ public final class TerminalEmulator {
         }
     }
 
+    public void syncScreenBatchFromRust(int startRow, int numRows) {
+        if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
+            char[][] destText = new char[numRows][];
+            long[][] destStyle = new long[numRows][];
+            for (int i = 0; i < numRows; i++) {
+                TerminalRow lineObject = mScreen.allocateFullLineIfNecessary(mScreen.externalToInternalRow(startRow + i));
+                destText[i] = lineObject.mText;
+                destStyle[i] = lineObject.mStyle;
+            }
+            readScreenBatchFromRust(mRustEnginePtr, destText, destStyle, startRow, numRows);
+        }
+    }
+
     public void setCursorStyle() {
         Integer cursorStyle = null;
         if (mClient != null)
@@ -626,7 +551,7 @@ public final class TerminalEmulator {
 
     public void append(byte[] buffer, int length) {
         synchronized (mDataLock) {
-            if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
+            if (mRustEnginePtr != 0) {
                 try {
                     processEngineRust(mRustEnginePtr, buffer, 0, length);
                     return;
@@ -634,24 +559,7 @@ public final class TerminalEmulator {
                     android.util.Log.e("Termux", "Rust engine process error", e);
                 }
             }
-
-            int i = 0;
-            while (i < length) {
-                if (sRustLibLoaded && mUtf8ToFollow == 0 && mEscapeState == ESC_NONE) {
-                    try {
-                        boolean useLineDrawing = mUseLineDrawingUsesG0 ? mUseLineDrawingG0 : mUseLineDrawingG1;
-                        int rustProcessed = processBatchRust(buffer, i, length - i, useLineDrawing);
-                        if (rustProcessed > 0) {
-                            writeBatch(buffer, i, rustProcessed);
-                            i += rustProcessed;
-                            continue;
-                        }
-                    } catch (UnsatisfiedLinkError e) {
-                        // Fallback
-                    }
-                }
-                processByte(buffer[i++]);
-            }
+            // 如果 Rust 引擎未就绪，目前不提供备用解析
         }
     }
 
@@ -673,9 +581,7 @@ public final class TerminalEmulator {
     public String getSelectedText(int x1, int y1, int x2, int y2) {
         synchronized (mDataLock) {
             if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
-                for (int y = y1; y <= y2; y++) {
-                    syncRowFromRust(y);
-                }
+                syncScreenBatchFromRust(y1, y2 - y1 + 1);
             }
             return mScreen.getSelectedText(x1, y1, x2, y2);
         }
@@ -731,83 +637,18 @@ public final class TerminalEmulator {
         }
     }
 
-    private void emitCodePoint(int codePoint) {
-        mScreen.setChar(mCursorCol, mCursorRow, codePoint, getStyle());
-        mLastEmittedCodePoint = codePoint;
-        int advance = WcWidth.width(codePoint);
-        if (mCursorCol + advance < mColumns) {
-            mCursorCol += advance;
-        } else {
-            mAboutToAutoWrap = true;
-        }
-    }
-
     private long getStyle() {
         return TextStyle.encode(mForeColor, mBackColor, mEffect);
     }
 
-    private void blockClear(int x, int y, int width) {
-        blockClear(x, y, width, 1);
-    }
-
-    private void blockClear(int x, int y, int width, int height) {
-        mScreen.blockSet(x, y, width, height, ' ', getStyle());
-    }
-
-    private void setCursorRow(int row) {
-        mCursorRow = row;
-        mAboutToAutoWrap = false;
-    }
-
-    private void setCursorCol(int col) {
-        mCursorCol = col;
-        mAboutToAutoWrap = false;
-    }
-
-    private void setCursorRowCol(int row, int col) {
-        mCursorRow = row;
-        mCursorCol = col;
-        mAboutToAutoWrap = false;
-    }
-
-    private void setCursorPosition(int x, int y) {
-        int effectiveTopMargin = 0;
-        int effectiveBottomMargin = mRows;
-        if (isDecsetInternalBitSet(DECSET_BIT_ORIGIN_MODE)) {
-            effectiveTopMargin = mTopMargin;
-            effectiveBottomMargin = mBottomMargin;
-        }
-        mCursorRow = Math.max(effectiveTopMargin, Math.min(effectiveTopMargin + y, effectiveBottomMargin - 1));
-        mCursorCol = Math.max(0, Math.min(x, mColumns - 1));
-        mAboutToAutoWrap = false;
-    }
-
-    private void setCursorColRespectingOriginMode(int col) {
-        setCursorPosition(col, isDecsetInternalBitSet(DECSET_BIT_ORIGIN_MODE) ? mCursorRow - mTopMargin : mCursorRow);
-    }
-
-    private void scrollDownOneLine() {
-        mScrollCounter++;
-        mScreen.scrollDownOneLine(mTopMargin, mBottomMargin, getStyle());
-    }
-
     public void reset() {
         mCursorRow = mCursorCol = 0;
-        mArgIndex = 0;
-        mContinueSequence = false;
-        mEscapeState = ESC_NONE;
         mCurrentDecSetFlags = 0;
         setDecsetinternalBit(DECSET_BIT_AUTOWRAP, true);
         setDecsetinternalBit(DECSET_BIT_CURSOR_ENABLED, true);
-        mTopMargin = 0;
-        mBottomMargin = mRows;
-        mLeftMargin = 0;
-        mRightMargin = mColumns;
-        mAboutToAutoWrap = false;
         mForeColor = TextStyle.COLOR_INDEX_FOREGROUND;
         mBackColor = TextStyle.COLOR_INDEX_BACKGROUND;
         mEffect = 0;
-        mUtf8ToFollow = mUtf8Index = 0;
         Arrays.fill(mTabStop, false);
         setDefaultTabStops();
     }
@@ -850,15 +691,4 @@ public final class TerminalEmulator {
     private static native void clearScrollCounterFromRust(long enginePtr);
     private static native boolean isAutoScrollDisabledFromRust(long enginePtr);
     private static native void toggleAutoScrollDisabledFromRust(long enginePtr);
-
-    // ========================================================================
-    // 旧的或兼容性方法 (解析逻辑略)
-    // ========================================================================
-    private void processByte(byte b) { }
-    private void processCodePoint(int b) { }
-    private void writeBatch(byte[] data, int offset, int length) {
-        for (int i = 0; i < length; i++) {
-            emitCodePoint(data[offset + i]);
-        }
-    }
 }
