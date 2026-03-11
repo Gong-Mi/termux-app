@@ -130,6 +130,22 @@ jobs:
         env:
           CARGO_TARGET_${{ matrix.target == 'aarch64-linux-android' && 'AARCH64' || matrix.target == 'armv7-linux-androideabi' && 'ARMV7' || matrix.target == 'i686-linux-android' && 'I686' || 'X86_64' }}_LINKER: clang
 
+  # 真正的 ARM64 运行环境测试
+  arm64-native-test:
+    name: Native ARM64 Tests
+    runs-on: ubuntu-24.04-arm64
+    steps:
+      - uses: actions/checkout@v6
+      
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Run Native ARM Tests
+        run: |
+          cd terminal-emulator/src/main/rust
+          # 由于是原生 ARM 环境，直接跑测试即可
+          cargo test --test consistency -- --test-threads=1
+
   # 文档检查
   doc:
     name: Documentation
