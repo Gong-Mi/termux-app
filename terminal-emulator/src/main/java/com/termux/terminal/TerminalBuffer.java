@@ -497,4 +497,63 @@ public final class TerminalBuffer {
         mActiveTranscriptRows = 0;
     }
 
+    // ========================================================================
+    // Rust Full Takeover 优化方法
+    // ========================================================================
+
+    /**
+     * 批量从 Rust 同步多行数据到 Java 缓冲区（优化版本）
+     * 减少 JNI 调用次数，从 N 次降低到 1 次
+     */
+    public void syncRowsFromRust(long rustEnginePtr, int startRow, int numRows) {
+        if (rustEnginePtr == 0 || numRows <= 0) return;
+
+        // 分配二维数组用于批量接收数据
+        char[][] textBuffer = new char[numRows][];
+        long[][] styleBuffer = new long[numRows][];
+        for (int i = 0; i < numRows; i++) {
+            textBuffer[i] = new char[mColumns];
+            styleBuffer[i] = new long[mColumns];
+        }
+
+        // 单次 JNI 调用获取所有行
+        TerminalEmulator.readScreenBatchFromRust(rustEnginePtr, textBuffer, styleBuffer, startRow, numRows);
+
+        // 将数据复制到内部缓冲区
+        for (int i = 0; i < numRows; i++) {
+            int row = startRow + i;
+            if (row >= 0 && row < mScreenRows) {
+                int internalRow = externalToInternalRow(row);
+                if (mLines[internalRow] == null) {
+                    mLines[internalRow] = new TerminalRow(mColumns, 0);
+                }
+                // 批量复制文本和样式
+                mLines[internalRow].setTextAndStyles(textBuffer[i], styleBuffer[i]);
+            }
+        }
+    }
+
+    /**
+     * 同步整个屏幕（全屏刷新优化）
+     */
+    public void syncFullScreenFromRust(long rustEnginePtr) {
+        if (rustEnginePtr == 0) return;
+
+        char[][] textBuffer = new char[mScreenRows][];
+        long[][] styleBuffer = new long[mScreenRows][];
+        for (int i = 0; i < mScreenRows; i++) {
+            textBuffer[i] = new char[mColumns];
+            styleBuffer[i] = new long[mColumns];
+        }
+
+        TerminalEmulator.readFullScreenFromRust(rustEnginePtr, textBuffer, styleBuffer);
+
+        for (int row = 0; row < mScreenRows; row++) {
+            int internalRow = externalToInternalRow(row);
+            if (mLines[internalRow] == null) {
+                mLines[internalRow] = new TerminalRow(mColumns, 0);
+            }
+            mLines[internalRow].setTextAndStyles(textBuffer[row], styleBuffer[row]);
+        }
+    }
 }

@@ -3,12 +3,338 @@ use std::cmp::{max, min};
 use unicode_width::UnicodeWidthChar;
 use vte::{Params, Parser, Perform};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::utils::map_line_drawing;
 
 /// Base64 解码辅助函数
 fn base64_decode(input: &str) -> Result<Vec<u8>, base64::DecodeError> {
     BASE64.decode(input)
+}
+
+// =============================================================================
+// DirectByteBuffer 零拷贝支持
+// =============================================================================
+
+/// 共享内存布局：用于 Rust 和 Java 之间的零拷贝数据共享
+/// 内存布局：[text_data (u16 数组)][style_data (u64 数组)]
+#[repr(C)]
+pub struct SharedScreenBuffer {
+    /// 缓冲区版本，用于同步
+    pub version: AtomicBool,
+    /// 列数
+    pub cols: u32,
+    /// 行数
+    pub rows: u32,
+    /// 文本数据起始位置（u16 数组，大小 = cols * rows）
+    pub text_data: [u16; 0], // 灵活数组成员
+}
+
+impl SharedScreenBuffer {
+    /// 计算所需内存大小
+    pub fn required_size(cols: usize, rows: usize) -> usize {
+        std::mem::size_of::<Self>() + (cols * rows * (2 + 8)) // u16 + u64 per cell
+    }
+    
+    /// 获取样式数据起始位置
+    pub fn style_data_ptr(&self) -> *const u64 {
+        let text_ptr = self.text_data.as_ptr();
+        let cell_count = self.cols as usize * self.rows as usize;
+        unsafe { text_ptr.add(cell_count) as *const u64 }
+    }
+    
+    /// 获取可变样式数据指针
+    pub fn style_data_ptr_mut(&mut self) -> *mut u64 {
+        let text_ptr = self.text_data.as_ptr() as *mut u16;
+        let cell_count = self.cols as usize * self.rows as usize;
+        unsafe { text_ptr.add(cell_count) as *mut u64 }
+    }
+}
+
+/// 屏幕数据扁平化存储，支持零拷贝
+pub struct FlatScreenBuffer {
+    /// 共享内存缓冲区（用于 DirectByteBuffer）
+    pub shared_buffer: Option<Arc<SharedScreenBuffer>>,
+    /// 文本数据（Rust 侧使用）
+    pub text_data: Vec<u16>,
+    /// 样式数据（Rust 侧使用）
+    pub style_data: Vec<u64>,
+    /// 列数
+    pub cols: usize,
+    /// 行数
+    pub rows: usize,
+}
+
+impl FlatScreenBuffer {
+    pub fn new(cols: usize, rows: usize) -> Self {
+        let cell_count = cols * rows;
+        Self {
+            shared_buffer: None,
+            text_data: vec![0u16; cell_count],
+            style_data: vec![0u64; cell_count],
+            cols,
+            rows,
+        }
+    }
+    
+    /// 创建共享缓冲区用于 DirectByteBuffer
+    pub fn create_shared_buffer(&mut self) -> *mut SharedScreenBuffer {
+        // 分配共享内存
+        let buffer_size = SharedScreenBuffer::required_size(self.cols, self.rows);
+        let layout = std::alloc::Layout::from_size_align(buffer_size, 8).unwrap();
+        let ptr = unsafe { std::alloc::alloc(layout) } as *mut SharedScreenBuffer;
+        
+        if !ptr.is_null() {
+            unsafe {
+                std::ptr::write(&mut (*ptr).version, AtomicBool::new(false));
+                std::ptr::write(&mut (*ptr).cols, self.cols as u32);
+                std::ptr::write(&mut (*ptr).rows, self.rows as u32);
+            }
+            self.shared_buffer = Some(Arc::new(SharedScreenBuffer {
+                version: AtomicBool::new(false),
+                cols: self.cols as u32,
+                rows: self.rows as u32,
+                text_data: [],
+            }));
+        }
+        
+        ptr
+    }
+    
+    /// 从共享缓冲区同步数据到 Rust 侧
+    pub fn sync_from_shared(&mut self, shared_ptr: *const SharedScreenBuffer) {
+        if shared_ptr.is_null() { return; }
+        
+        unsafe {
+            let shared = &*shared_ptr;
+            let cell_count = self.cols * self.rows;
+            
+            std::ptr::copy_nonoverlapping(
+                shared.text_data.as_ptr(),
+                self.text_data.as_mut_ptr(),
+                cell_count,
+            );
+            std::ptr::copy_nonoverlapping(
+                shared.style_data_ptr(),
+                self.style_data.as_mut_ptr(),
+                cell_count,
+            );
+        }
+    }
+    
+    /// 同步数据到共享缓冲区
+    pub fn sync_to_shared(&self, shared_ptr: *mut SharedScreenBuffer) {
+        if shared_ptr.is_null() { return; }
+        
+        unsafe {
+            let shared = &mut *shared_ptr;
+            let cell_count = self.cols * self.rows;
+            
+            std::ptr::copy_nonoverlapping(
+                self.text_data.as_ptr(),
+                shared.text_data.as_mut_ptr(),
+                cell_count,
+            );
+            std::ptr::copy_nonoverlapping(
+                self.style_data.as_ptr(),
+                shared.style_data_ptr_mut(),
+                cell_count,
+            );
+            
+            // 更新版本，通知 Java 侧数据已变更
+            shared.version.store(true, Ordering::Release);
+        }
+    }
+    
+    /// 获取单元格索引
+    #[inline]
+    pub fn cell_index(&self, col: usize, row: usize) -> usize {
+        row * self.cols + col
+    }
+    
+    /// 设置单元格文本
+    #[inline]
+    pub fn set_cell_text(&mut self, col: usize, row: usize, ch: u16) {
+        let idx = self.cell_index(col, row);
+        if idx < self.text_data.len() {
+            self.text_data[idx] = ch;
+        }
+    }
+    
+    /// 设置单元格样式
+    #[inline]
+    pub fn set_cell_style(&mut self, col: usize, row: usize, style: u64) {
+        let idx = self.cell_index(col, row);
+        if idx < self.style_data.len() {
+            self.style_data[idx] = style;
+        }
+    }
+}
+
+// =============================================================================
+// Sixel 图形解码支持 (DCS 序列)
+// =============================================================================
+
+/// Sixel 解码器状态
+#[derive(Debug, Clone, PartialEq)]
+pub enum SixelState {
+    /// 地面状态，等待 DCS 序列开始
+    Ground,
+    /// 参数解析状态
+    Param,
+    /// Sixel 数据解析状态
+    Data,
+}
+
+/// Sixel 图形解码器
+pub struct SixelDecoder {
+    /// 当前状态
+    pub state: SixelState,
+    /// 解析的参数
+    pub params: Vec<i32>,
+    /// 当前参数索引
+    pub param_index: usize,
+    /// 像素数据（每行）
+    pub pixel_data: Vec<Vec<u8>>,
+    /// 当前颜色索引
+    pub current_color: usize,
+    /// 图像宽度（sixel 单位）
+    pub width: usize,
+    /// 图像高度（sixel 单位）
+    pub height: usize,
+    /// 起始 X 坐标
+    pub start_x: i32,
+    /// 起始 Y 坐标
+    pub start_y: i32,
+    /// 是否透明背景
+    pub transparent: bool,
+}
+
+impl SixelDecoder {
+    pub fn new() -> Self {
+        Self {
+            state: SixelState::Ground,
+            params: Vec::with_capacity(4),
+            param_index: 0,
+            pixel_data: Vec::new(),
+            current_color: 0,
+            width: 0,
+            height: 0,
+            start_x: 0,
+            start_y: 0,
+            transparent: false,
+        }
+    }
+
+    /// 重置解码器状态
+    pub fn reset(&mut self) {
+        self.state = SixelState::Ground;
+        self.params.clear();
+        self.param_index = 0;
+        self.pixel_data.clear();
+        self.current_color = 0;
+        self.width = 0;
+        self.height = 0;
+    }
+
+    /// 开始解析 DCS Sixel 序列
+    pub fn start(&mut self, params: &Params) {
+        self.reset();
+        self.state = SixelState::Param;
+        
+        // 解析 DCS 参数：Pn1;Pn2;Pn3
+        // Pn1: 图像宽度（可选）
+        // Pn2: 图像高度（可选）
+        // Pn3: 透明标志（0 或 1）
+        for param in params.iter() {
+            for value in param.iter() {
+                self.params.push(*value as i32);
+            }
+        }
+    }
+
+    /// 处理 Sixel 数据字符
+    pub fn process_data(&mut self, data: &[u8]) {
+        self.state = SixelState::Data;
+        
+        let mut current_row = Vec::new();
+        
+        for &byte in data {
+            match byte {
+                b'!' => {
+                    // 清空图形并换行
+                    if !current_row.is_empty() {
+                        self.pixel_data.push(current_row);
+                        current_row = Vec::new();
+                    }
+                }
+                b'#' => {
+                    // 颜色选择，后面跟颜色索引
+                    // 简单处理：下一个字符是颜色索引
+                }
+                b'$' => {
+                    // 光标归位
+                }
+                b'?' => {
+                    // 特殊模式
+                }
+                b'~' => {
+                    // 删除图形
+                }
+                b'0'..=b'?' => {
+                    // Sixel 数据 (0-63)
+                    let sixel_value = (byte - b'0') as usize;
+                    
+                    // 将 sixel 值转换为 6 个像素（垂直方向）
+                    for bit in 0..6 {
+                        let pixel = if (sixel_value & (1 << bit)) != 0 { 255 } else { 0 };
+                        current_row.push(pixel);
+                    }
+                }
+                _ => {
+                    // 其他字符，忽略
+                }
+            }
+        }
+        
+        // 保存最后一行
+        if !current_row.is_empty() {
+            self.pixel_data.push(current_row);
+        }
+        
+        self.height = self.pixel_data.len();
+        if self.height > 0 {
+            self.width = self.pixel_data[0].len() / 6; // 每 6 个像素为一行
+        }
+    }
+
+    /// 完成解析
+    pub fn finish(&mut self) {
+        self.state = SixelState::Ground;
+    }
+
+    /// 获取解码后的图像数据（RGBA 格式）
+    pub fn get_image_data(&self) -> Vec<u8> {
+        let mut rgba_data = Vec::new();
+        
+        for row in &self.pixel_data {
+            for &pixel in row {
+                rgba_data.push(pixel); // R
+                rgba_data.push(pixel); // G
+                rgba_data.push(pixel); // B
+                rgba_data.push(255);   // A
+            }
+        }
+        
+        rgba_data
+    }
+}
+
+impl Default for SixelDecoder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[derive(Clone)]
@@ -447,6 +773,22 @@ pub struct ScreenState {
     pub saved_main_cursor_y: i32,
     pub saved_main_decset_flags: i32,
     pub saved_main_screen_first_row: usize,
+
+    // ========================================================================
+    // DirectByteBuffer 零拷贝支持 (新增)
+    // ========================================================================
+
+    // 扁平化屏幕缓冲区（用于 DirectByteBuffer 共享）
+    pub flat_buffer: Option<FlatScreenBuffer>,
+    // 共享内存指针（用于 JNI DirectByteBuffer）
+    pub shared_buffer_ptr: *mut SharedScreenBuffer,
+
+    // ========================================================================
+    // Sixel 图形支持 (新增)
+    // ========================================================================
+
+    // Sixel 解码器
+    pub sixel_decoder: SixelDecoder,
 }
 
 impl ScreenState {
@@ -544,6 +886,13 @@ impl ScreenState {
             saved_main_cursor_y: 0,
             saved_main_decset_flags: 0,
             saved_main_screen_first_row: 0,
+
+            // DirectByteBuffer 零拷贝支持初始化
+            flat_buffer: Some(FlatScreenBuffer::new(cols as usize, rows as usize)),
+            shared_buffer_ptr: std::ptr::null_mut(),
+
+            // Sixel 图形支持初始化
+            sixel_decoder: SixelDecoder::new(),
         }
     }
 
@@ -730,6 +1079,75 @@ impl ScreenState {
     pub fn report_focus_loss(&self) {
         if self.send_focus_events {
             self.write_to_session("\x1b[O");
+        }
+    }
+
+    // ========================================================================
+    // Sixel 图形渲染
+    // ========================================================================
+
+    /// 渲染 Sixel 图像到屏幕
+    pub fn render_sixel_image(&mut self) {
+        let decoder = &self.sixel_decoder;
+        
+        // 获取图像数据
+        let image_data = decoder.get_image_data();
+        let width = decoder.width;
+        let height = decoder.height;
+        
+        if width == 0 || height == 0 {
+            return;
+        }
+
+        // 计算每个像素在终端中的位置
+        // Sixel 图像每个 sixel 单位是 6 像素高，1 像素宽
+        let start_x = self.cursor_x;
+        let start_y = self.cursor_y;
+        
+        // 通过 Java 回调报告图像数据
+        self.report_sixel_image(&image_data, width, height, start_x, start_y);
+        
+        // 移动光标到图像下方
+        let pixels_per_row = 6; // 每个 sixel 行有 6 像素
+        let terminal_rows_needed = (height + pixels_per_row - 1) / pixels_per_row;
+        self.cursor_y = min(self.cursor_y + terminal_rows_needed as i32, self.rows - 1);
+    }
+
+    /// 调用 Java 方法报告 Sixel 图像
+    fn report_sixel_image(&self, image_data: &[u8], width: usize, height: usize, x: i32, y: i32) {
+        if let Some(obj) = self.java_callback_obj.as_ref() {
+            if let Some(vm) = crate::JAVA_VM.get() {
+                if let Ok(mut env) = vm.get_env() {
+                    // 创建 byte 数组传递图像数据
+                    if let Ok(java_image_data) = env.new_byte_array(image_data.len() as i32) {
+                        let data_vec: Vec<i8> = image_data.iter().map(|&b| b as i8).collect();
+                        
+                        // 保存原始引用用于后续调用
+                        let image_obj_raw = java_image_data.as_raw();
+                        
+                        let _ = env.set_byte_array_region(
+                            java_image_data,
+                            0,
+                            data_vec.as_slice(),
+                        );
+                        
+                        // 调用 Java 方法 - 使用原始引用重建 JObject
+                        let image_obj = unsafe { jni::objects::JObject::from_raw(image_obj_raw) };
+                        let _ = env.call_method(
+                            obj.as_obj(),
+                            "onSixelImage",
+                            "([BIIII)V",
+                            &[
+                                JValue::Object(&image_obj),
+                                JValue::Int(width as i32),
+                                JValue::Int(height as i32),
+                                JValue::Int(x),
+                                JValue::Int(y),
+                            ],
+                        );
+                    }
+                }
+            }
         }
     }
 
@@ -2681,6 +3099,36 @@ impl<'a> Perform for PurePerformHandler<'a> {
                 self.state.restore_cursor();
             }
             _ => self.unhandled_sequences.push(format!("CSI {:?}", action)),
+        }
+    }
+
+    // ========================================================================
+    // DCS 序列处理 - Sixel 图形支持
+    // ========================================================================
+
+    fn hook(&mut self, params: &Params, intermediates: &[u8], _ignore: bool, action: char) {
+        // DCS 序列开始：DCS Pn1;Pn2;... Pn action
+        if action == 'q' && intermediates.is_empty() {
+            // DCS q - Sixel 图形
+            self.state.sixel_decoder.start(params);
+        }
+    }
+
+    fn put(&mut self, byte: u8) {
+        // DCS 数据部分
+        if self.state.sixel_decoder.state == SixelState::Data {
+            // 收集 Sixel 数据
+            let data = [byte];
+            self.state.sixel_decoder.process_data(&data);
+        }
+    }
+
+    fn unhook(&mut self) {
+        // DCS 序列结束
+        if self.state.sixel_decoder.state == SixelState::Data {
+            self.state.sixel_decoder.finish();
+            // 渲染 Sixel 图像到屏幕
+            self.state.render_sixel_image();
         }
     }
 

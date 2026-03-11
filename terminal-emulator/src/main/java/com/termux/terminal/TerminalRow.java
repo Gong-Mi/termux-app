@@ -212,4 +212,32 @@ public final class TerminalRow {
     public final void updateStatusAfterBatchWrite() {
         mSpaceUsed = (short) mColumns;
     }
+
+    /**
+     * 批量设置文本和样式（用于 Rust Full Takeover 优化）
+     * 直接从 Rust 传输的数组复制数据，避免逐字符操作
+     */
+    public final void setTextAndStyles(char[] text, long[] styles) {
+        if (text.length != mColumns || styles.length != mColumns) {
+            throw new IllegalArgumentException("Text and styles length must match mColumns (" + mColumns + ")");
+        }
+        
+        // 直接复制整个数组
+        System.arraycopy(text, 0, mText, 0, Math.min(text.length, mText.length));
+        System.arraycopy(styles, 0, mStyle, 0, mColumns);
+        
+        // 更新状态
+        mSpaceUsed = (short) mColumns;
+        mHasNonOneWidthOrSurrogateChars = false;
+        
+        // 检查是否有非单宽字符或代理对
+        for (int i = 0; i < mColumns && i < text.length; i++) {
+            char c = text[i];
+            if (c >= 0xD800 && c <= 0xDFFF) {
+                // 代理对
+                mHasNonOneWidthOrSurrogateChars = true;
+                break;
+            }
+        }
+    }
 }

@@ -294,6 +294,252 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readRowF
     }
 }
 
+// ============================================================================
+// 批量读取优化 - 减少 JNI 调用次数
+// ============================================================================
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readScreenBatchFromRust(
+    env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+    dest_text: jobjectArray,
+    dest_style: jobjectArray,
+    start_row: jint,
+    num_rows: jint,
+) {
+    unsafe {
+        if engine_ptr == 0 || num_rows <= 0 {
+            return;
+        }
+        let engine = &mut *(engine_ptr as *mut TerminalEngine);
+        let env = match JNIEnv::from_raw(env_ptr) {
+            Ok(e) => e,
+            Err(_) => return,
+        };
+
+        let internal = env.get_native_interface();
+        let cols = engine.state.cols as usize;
+        let start = start_row as usize;
+        let count = num_rows as usize;
+
+        // 预分配 Rust 侧缓冲区，减少重复分配
+        let mut text_vec = vec![' ' as u16; cols];
+        let mut style_vec = vec![0i64; cols];
+
+        for i in 0..count {
+            let row = start + i;
+            
+            // 从 Rust 复制数据到临时缓冲区
+            engine.state.copy_row_text(row, &mut text_vec);
+            engine.state.copy_row_styles(row, &mut style_vec);
+
+            // 获取 Java 二维数组的第 i 行
+            let row_text_array = ((**internal).GetObjectArrayElement.unwrap())(internal, dest_text, i as jint);
+            let row_style_array = ((**internal).GetObjectArrayElement.unwrap())(internal, dest_style, i as jint);
+
+            if !row_text_array.is_null() && !row_style_array.is_null() {
+                // 批量写入数据
+                ((**internal).SetCharArrayRegion.unwrap())(
+                    internal,
+                    row_text_array as jni::sys::jcharArray,
+                    0,
+                    cols as jint,
+                    text_vec.as_ptr(),
+                );
+                ((**internal).SetLongArrayRegion.unwrap())(
+                    internal,
+                    row_style_array as jni::sys::jlongArray,
+                    0,
+                    cols as jint,
+                    style_vec.as_ptr() as *const jlong,
+                );
+            }
+
+            // 删除局部引用，防止 JNI 局部引用表溢出
+            ((**internal).DeleteLocalRef.unwrap())(internal, row_text_array);
+            ((**internal).DeleteLocalRef.unwrap())(internal, row_style_array);
+        }
+    }
+}
+
+/// 读取整个屏幕的优化版本（固定从第 0 行开始）
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readFullScreenFromRust(
+    env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+    dest_text: jobjectArray,
+    dest_style: jobjectArray,
+) {
+    unsafe {
+        if engine_ptr == 0 {
+            return;
+        }
+        let engine = &mut *(engine_ptr as *mut TerminalEngine);
+        let rows = engine.state.rows as jint;
+        
+        Java_com_termux_terminal_TerminalEmulator_readScreenBatchFromRust(
+            env_ptr,
+            _class,
+            engine_ptr,
+            dest_text,
+            dest_style,
+            0,
+            rows,
+        );
+    }
+}
+
+// ============================================================================
+// DirectByteBuffer 零拷贝优化 (阶段 2)
+// ============================================================================
+
+/// 创建共享内存缓冲区并返回 DirectByteBuffer
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_createSharedBufferRust(
+    env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) -> jobject {
+    unsafe {
+        if engine_ptr == 0 {
+            return std::ptr::null_mut();
+        }
+        let engine = &mut *(engine_ptr as *mut TerminalEngine);
+        let mut env = match JNIEnv::from_raw(env_ptr) {
+            Ok(e) => e,
+            Err(_) => return std::ptr::null_mut(),
+        };
+
+        // 创建共享缓冲区
+        if let Some(ref mut flat_buffer) = engine.state.flat_buffer {
+            let shared_ptr = flat_buffer.create_shared_buffer();
+            engine.state.shared_buffer_ptr = shared_ptr;
+
+            if !shared_ptr.is_null() {
+                let buffer_size = engine::SharedScreenBuffer::required_size(
+                    flat_buffer.cols,
+                    flat_buffer.rows,
+                );
+
+                // 创建 DirectByteBuffer
+                match env.new_direct_byte_buffer(shared_ptr as *mut u8, buffer_size) {
+                    Ok(buffer) => buffer.into_raw(),
+                    Err(_) => std::ptr::null_mut(),
+                }
+            } else {
+                std::ptr::null_mut()
+            }
+        } else {
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// 同步 Rust 数据到共享缓冲区
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_syncToSharedBufferRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) {
+    unsafe {
+        if engine_ptr == 0 {
+            return;
+        }
+        let engine = &mut *(engine_ptr as *mut TerminalEngine);
+
+        // 将当前屏幕数据同步到共享缓冲区
+        if let Some(ref mut flat_buffer) = engine.state.flat_buffer {
+            if !engine.state.shared_buffer_ptr.is_null() {
+                // 从主缓冲区同步数据到 flat_buffer
+                let cols = engine.state.cols as usize;
+                let rows = engine.state.rows as usize;
+
+                for row in 0..rows {
+                    for col in 0..cols {
+                        let cell_idx = flat_buffer.cell_index(col, row);
+                        if let Some(buffer_row) = engine.state.buffer.get(row) {
+                            if col < buffer_row.text.len() {
+                                flat_buffer.text_data[cell_idx] = buffer_row.text[col] as u16;
+                                flat_buffer.style_data[cell_idx] = buffer_row.styles[col];
+                            }
+                        }
+                    }
+                }
+
+                // 同步到共享内存
+                flat_buffer.sync_to_shared(engine.state.shared_buffer_ptr);
+            }
+        }
+    }
+}
+
+/// 从共享缓冲区读取版本标志
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getSharedBufferVersionRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) -> jni::sys::jboolean {
+    if engine_ptr == 0 {
+        return jni::sys::JNI_FALSE;
+    }
+    let engine = unsafe { &*(engine_ptr as *mut TerminalEngine) };
+
+    if !engine.state.shared_buffer_ptr.is_null() {
+        let shared = unsafe { &*engine.state.shared_buffer_ptr };
+        if shared.version.load(std::sync::atomic::Ordering::Acquire) {
+            return jni::sys::JNI_TRUE;
+        }
+    }
+    jni::sys::JNI_FALSE
+}
+
+/// 清除共享缓冲区版本标志
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_clearSharedBufferVersionRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) {
+    if engine_ptr == 0 {
+        return;
+    }
+    let engine = unsafe { &mut *(engine_ptr as *mut TerminalEngine) };
+
+    if !engine.state.shared_buffer_ptr.is_null() {
+        let shared = unsafe { &mut *engine.state.shared_buffer_ptr };
+        shared.version.store(false, std::sync::atomic::Ordering::Release);
+    }
+}
+
+/// 释放共享缓冲区
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_destroySharedBufferRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) {
+    unsafe {
+        if engine_ptr == 0 {
+            return;
+        }
+        let engine = &mut *(engine_ptr as *mut TerminalEngine);
+
+        if !engine.state.shared_buffer_ptr.is_null() {
+            let buffer_size = engine::SharedScreenBuffer::required_size(
+                engine.state.cols as usize,
+                engine.state.rows as usize,
+            );
+            let layout = std::alloc::Layout::from_size_align(buffer_size, 8).unwrap();
+            std::alloc::dealloc(engine.state.shared_buffer_ptr as *mut u8, layout);
+            engine.state.shared_buffer_ptr = std::ptr::null_mut();
+        }
+    }
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_resizeEngineRustFull(
     _env_ptr: *mut *const JNINativeInterface_,

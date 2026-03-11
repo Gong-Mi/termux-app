@@ -811,6 +811,17 @@ public final class TerminalEmulator {
     private static native int processBatchRust(byte[] buffer, int offset, int length, boolean useLineDrawing);
     private static native void writeASCIIBatchNative(byte[] src, int srcOffset, char[] destText, long[] destStyle, int destOffset, int length, long style, boolean useLineDrawing);
 
+    /** 批量读取优化 - 减少 JNI 调用次数 */
+    private static native void readScreenBatchFromRust(long enginePtr, char[][] destText, long[][] destStyle, int startRow, int numRows);
+    private static native void readFullScreenFromRust(long enginePtr, char[][] destText, long[][] destStyle);
+
+    /** DirectByteBuffer 零拷贝支持 (阶段 2) */
+    private static native java.nio.ByteBuffer createSharedBufferRust(long enginePtr);
+    private static native void syncToSharedBufferRust(long enginePtr);
+    private static native boolean getSharedBufferVersionRust(long enginePtr);
+    private static native void clearSharedBufferVersionRust(long enginePtr);
+    private static native void destroySharedBufferRust(long enginePtr);
+
     /** 恢复滚动相关的 Native 方法 */
     private static native int getScrollCounterFromRust(long enginePtr);
     private static native void clearScrollCounterFromRust(long enginePtr);
