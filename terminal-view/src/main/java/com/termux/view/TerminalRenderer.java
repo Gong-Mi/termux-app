@@ -69,11 +69,23 @@ public final class TerminalRenderer {
         if (reverseVideo)
             canvas.drawColor(palette[TextStyle.COLOR_INDEX_FOREGROUND], PorterDuff.Mode.SRC);
 
-        mEmulator.syncScreenBatchFromRust(topRow, endRow - topRow);
+        final int activeTranscriptRows = screen.getActiveTranscriptRows();
+        final int minRow = -activeTranscriptRows;
+        final int maxRow = mEmulator.mRows;
+
+        // 确保 topRow 和 endRow 在合法范围内
+        final int effectiveTopRow = Math.max(minRow, Math.min(maxRow - 1, topRow));
+        final int effectiveEndRow = Math.max(minRow, Math.min(maxRow, endRow));
+
+        if (effectiveTopRow < effectiveEndRow) {
+            mEmulator.syncScreenBatchFromRust(effectiveTopRow, effectiveEndRow - effectiveTopRow);
+        }
 
         float heightOffset = mFontLineSpacingAndAscent;
         for (int row = topRow; row < endRow; row++) {
             heightOffset += mFontLineSpacing;
+
+            if (row < minRow || row >= maxRow) continue;
 
             final int cursorX = (row == cursorRow && cursorVisible) ? cursorCol : -1;
             int selx1 = -1, selx2 = -1;
