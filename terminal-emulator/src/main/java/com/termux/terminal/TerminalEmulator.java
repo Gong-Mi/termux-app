@@ -17,10 +17,20 @@ public final class TerminalEmulator {
     /** Log unknown or unimplemented escape sequences received from the shell process. */
     private static final boolean LOG_ESCAPE_SEQUENCES = false;
 
+    /** Mouse left button press. */
     public static final int MOUSE_LEFT_BUTTON = 0;
+    /** Mouse middle button press. */
+    public static final int MOUSE_MIDDLE_BUTTON = 1;
+    /** Mouse right button press. */
+    public static final int MOUSE_RIGHT_BUTTON = 2;
 
     /** Mouse moving while having left mouse button pressed. */
     public static final int MOUSE_LEFT_BUTTON_MOVED = 32;
+    /** Mouse moving while having middle mouse button pressed. */
+    public static final int MOUSE_MIDDLE_BUTTON_MOVED = 33;
+    /** Mouse moving while having right mouse button pressed. */
+    public static final int MOUSE_RIGHT_BUTTON_MOVED = 34;
+
     public static final int MOUSE_WHEELUP_BUTTON = 64;
     public static final int MOUSE_WHEELDOWN_BUTTON = 65;
 
@@ -274,6 +284,7 @@ public final class TerminalEmulator {
         void onCopyTextToClipboard(String text);
         void onPasteTextFromClipboard();
         void onWriteToSession(String data);
+        void onWriteToSessionBytes(byte[] data);
         void reportColorResponse(String colorSpec);
         void reportTerminalResponse(String response);
     }
@@ -383,6 +394,13 @@ public final class TerminalEmulator {
                     }
 
                     @Override
+                    public void onWriteToSessionBytes(byte[] data) {
+                        if (mSession != null) {
+                            mSession.write(data);
+                        }
+                    }
+
+                    @Override
                     public void reportColorResponse(String colorSpec) {
                         if (mSession != null) {
                             mSession.write("\u001b]" + colorSpec + "\u0007");
@@ -396,6 +414,10 @@ public final class TerminalEmulator {
                         }
                     }
                 });
+                
+                // 设置 Rust 引擎指针到 TerminalBuffer，以便获取滚动历史行数
+                mScreen.setRustEnginePtr(mRustEnginePtr);
+                mAltBuffer.setRustEnginePtr(mRustEnginePtr);
             } catch (UnsatisfiedLinkError e) {
                 mRustEnginePtr = 0;
             }
@@ -810,6 +832,7 @@ public final class TerminalEmulator {
     private static native void getColorsFromRust(long enginePtr, int[] colors);
     private static native int processBatchRust(byte[] buffer, int offset, int length, boolean useLineDrawing);
     private static native void writeASCIIBatchNative(byte[] src, int srcOffset, char[] destText, long[] destStyle, int destOffset, int length, long style, boolean useLineDrawing);
+    private static native int getActiveTranscriptRowsFromRust(long enginePtr);
 
     /** 批量读取优化 - 减少 JNI 调用次数 */
     static native void readScreenBatchFromRust(long enginePtr, char[][] destText, long[][] destStyle, int startRow, int numRows);

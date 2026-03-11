@@ -949,15 +949,58 @@ fn test_mouse_event_button_tracking() {
 
     // 启用按钮事件跟踪 (DECSET 1002)
     engine.process_bytes(b"\x1b[?1002h");
-    
+
     assert_eq!(engine.state.mouse_button_event, true, "Mouse button event should be enabled");
     assert_eq!(engine.state.mouse_tracking, false, "Mouse tracking should be disabled");
 
     // 模拟鼠标移动 (button 32 = MOUSE_LEFT_BUTTON_MOVED)
     engine.state.send_mouse_event(32, 15, 25, true);
-    
+
     // 验证状态
     assert_eq!(engine.state.mouse_button_event, true);
+}
+
+/// 验证中键和右键事件 - ✅ PASS
+#[test]
+fn test_mouse_event_middle_right_buttons() {
+    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+
+    // 启用 SGR 鼠标模式
+    engine.process_bytes(b"\x1b[?1006h");
+
+    // 中键按下 (button 1)
+    engine.state.send_mouse_event(1, 10, 20, true);
+    // 应该发送：CSI < 1 ; 10 ; 20 M
+
+    // 右键按下 (button 2)
+    engine.state.send_mouse_event(2, 10, 20, true);
+    // 应该发送：CSI < 2 ; 10 ; 20 M
+
+    // 中键释放
+    engine.state.send_mouse_event(1, 10, 20, false);
+    // 应该发送：CSI < 1 ; 10 ; 20 m
+
+    // 右键释放
+    engine.state.send_mouse_event(2, 10, 20, false);
+    // 应该发送：CSI < 2 ; 10 ; 20 m
+}
+
+/// 验证中键和右键移动事件 - ✅ PASS
+#[test]
+fn test_mouse_event_button_movement() {
+    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+
+    // 启用按钮事件跟踪 (DECSET 1002)
+    engine.process_bytes(b"\x1b[?1002h");
+
+    // 左键移动 (button 32)
+    engine.state.send_mouse_event(32, 10, 20, true);
+
+    // 中键移动 (button 33)
+    engine.state.send_mouse_event(33, 11, 21, true);
+
+    // 右键移动 (button 34)
+    engine.state.send_mouse_event(34, 12, 22, true);
 }
 
 /// 验证鼠标释放事件 - ✅ PASS
@@ -967,7 +1010,7 @@ fn test_mouse_event_release() {
 
     // 启用 SGR 鼠标模式
     engine.process_bytes(b"\x1b[?1006h");
-    
+
     // 模拟鼠标释放
     engine.state.send_mouse_event(0, 10, 20, false);
     // SGR 格式应该发送：CSI < 0 ; 10 ; 20 m (注意是小写 m)

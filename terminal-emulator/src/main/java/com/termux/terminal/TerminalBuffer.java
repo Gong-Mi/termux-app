@@ -19,6 +19,10 @@ public final class TerminalBuffer {
     private int mActiveTranscriptRows = 0;
     /** The index in the circular buffer where the visible screen starts. */
     private int mScreenFirstRow = 0;
+    /** Whether to get active transcript rows from Rust (Full Takeover mode). */
+    private boolean mUseRustTranscriptRows = false;
+    /** Reference to Rust engine pointer for getting transcript rows. */
+    private long mRustEnginePtr = 0;
 
     /**
      * Create a transcript screen.
@@ -145,7 +149,22 @@ public final class TerminalBuffer {
     }
 
     public int getActiveTranscriptRows() {
+        if (mUseRustTranscriptRows && mRustEnginePtr != 0) {
+            return TerminalEmulator.getActiveTranscriptRowsFromRust(mRustEnginePtr);
+        }
         return mActiveTranscriptRows;
+    }
+
+    /** Set the Rust engine pointer for Full Takeover mode. */
+    public void setRustEnginePtr(long enginePtr) {
+        mRustEnginePtr = enginePtr;
+        mUseRustTranscriptRows = true;
+    }
+
+    /** Disable Rust transcript rows mode (for switching back to Java mode). */
+    public void disableRustTranscriptRows() {
+        mUseRustTranscriptRows = false;
+        mRustEnginePtr = 0;
     }
 
     public int getActiveRows() {

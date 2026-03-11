@@ -906,3 +906,25 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendKeyC
 
     engine.state.send_key_event(key_code as i32, key_char_str, key_mod as i32);
 }
+
+// ============================================================================
+// 滚动历史支持
+// ============================================================================
+
+/// 获取 Rust 侧滚动历史行数
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getActiveTranscriptRowsFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) -> jint {
+    if engine_ptr == 0 {
+        return 0;
+    }
+    let engine = unsafe { &*(engine_ptr as *mut TerminalEngine) };
+    // 计算滚动历史行数 = 总行数 - 屏幕行数
+    let total_rows = engine.state.buffer.len();
+    let screen_rows = engine.state.rows as usize;
+    let transcript_rows = total_rows.saturating_sub(screen_rows);
+    transcript_rows as jint
+}

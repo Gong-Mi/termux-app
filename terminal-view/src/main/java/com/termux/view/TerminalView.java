@@ -641,11 +641,42 @@ public final class TerminalView extends View {
     /** Overriding {@link View#onGenericMotionEvent(MotionEvent)}. */
     @Override
     public boolean onGenericMotionEvent(MotionEvent event) {
-        if (mEmulator != null && event.isFromSource(InputDevice.SOURCE_MOUSE) && event.getAction() == MotionEvent.ACTION_SCROLL) {
-            // Handle mouse wheel scrolling.
-            boolean up = event.getAxisValue(MotionEvent.AXIS_VSCROLL) > 0.0f;
-            doScroll(event, up ? -3 : 3);
-            return true;
+        if (mEmulator == null) return false;
+        
+        if (event.isFromSource(InputDevice.SOURCE_MOUSE)) {
+            int action = event.getAction();
+            
+            // 处理鼠标滚轮滚动
+            if (action == MotionEvent.ACTION_SCROLL) {
+                boolean up = event.getAxisValue(MotionEvent.AXIS_VSCROLL) > 0.0f;
+                doScroll(event, up ? -3 : 3);
+                return true;
+            }
+            
+            // 处理鼠标悬停移动事件 (HOVER_MOVE)
+            if (action == MotionEvent.ACTION_HOVER_MOVE && mEmulator.isMouseTrackingActive()) {
+                sendMouseEventCode(event, TerminalEmulator.MOUSE_LEFT_BUTTON_MOVED, true);
+                return true;
+            }
+            
+            // 处理鼠标按钮按下/释放事件 (BUTTON_PRESS/BUTTON_RELEASE)
+            if (action == MotionEvent.ACTION_BUTTON_PRESS || action == MotionEvent.ACTION_BUTTON_RELEASE) {
+                int button;
+                boolean pressed = (action == MotionEvent.ACTION_BUTTON_PRESS);
+                
+                // 检测哪个按钮被按下
+                int actionButton = event.getActionButton();
+                if (actionButton == MotionEvent.BUTTON_SECONDARY) {
+                    button = pressed ? TerminalEmulator.MOUSE_RIGHT_BUTTON : 3; // 3 = release
+                } else if (actionButton == MotionEvent.BUTTON_TERTIARY) {
+                    button = pressed ? TerminalEmulator.MOUSE_MIDDLE_BUTTON : 3; // 3 = release
+                } else {
+                    button = pressed ? TerminalEmulator.MOUSE_LEFT_BUTTON : 3; // 3 = release
+                }
+                
+                sendMouseEventCode(event, button, pressed);
+                return true;
+            }
         }
         return false;
     }
@@ -662,28 +693,58 @@ public final class TerminalView extends View {
             mGestureRecognizer.onTouchEvent(event);
             return true;
         } else if (event.isFromSource(InputDevice.SOURCE_MOUSE)) {
-            if (event.isButtonPressed(MotionEvent.BUTTON_SECONDARY)) {
-                if (action == MotionEvent.ACTION_DOWN) showContextMenu();
-                return true;
-            } else if (event.isButtonPressed(MotionEvent.BUTTON_TERTIARY)) {
-                ClipboardManager clipboardManager = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
-                ClipData clipData = clipboardManager.getPrimaryClip();
-                if (clipData != null) {
-                    ClipData.Item clipItem = clipData.getItemAt(0);
-                    if (clipItem != null) {
-                        CharSequence text = clipItem.coerceToText(getContext());
-                        if (!TextUtils.isEmpty(text)) mEmulator.paste(text.toString());
+            // 在鼠标跟踪模式下，将所有鼠标事件发送到终端
+            if (mEmulator.isMouseTrackingActive()) {
+                int button;
+                boolean pressed;
+                
+                // 检测按下的鼠标按钮
+                if (event.isButtonPressed(MotionEvent.BUTTON_SECONDARY)) {
+                    // 右键
+                    button = (action == MotionEvent.ACTION_MOVE) 
+                        ? TerminalEmulator.MOUSE_RIGHT_BUTTON_MOVED 
+                        : TerminalEmulator.MOUSE_RIGHT_BUTTON;
+                    pressed = (action != MotionEvent.ACTION_UP);
+                    sendMouseEventCode(event, button, pressed);
+                    return true;
+                } else if (event.isButtonPressed(MotionEvent.BUTTON_TERTIARY)) {
+                    // 中键
+                    button = (action == MotionEvent.ACTION_MOVE) 
+                        ? TerminalEmulator.MOUSE_MIDDLE_BUTTON_MOVED 
+                        : TerminalEmulator.MOUSE_MIDDLE_BUTTON;
+                    pressed = (action != MotionEvent.ACTION_UP);
+                    sendMouseEventCode(event, button, pressed);
+                    return true;
+                } else if (event.isButtonPressed(MotionEvent.BUTTON_PRIMARY) || 
+                           action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_UP) {
+                    // 左键
+                    switch (action) {
+                        case MotionEvent.ACTION_DOWN:
+                        case MotionEvent.ACTION_UP:
+                            sendMouseEventCode(event, TerminalEmulator.MOUSE_LEFT_BUTTON, action == MotionEvent.ACTION_DOWN);
+                            break;
+                        case MotionEvent.ACTION_MOVE:
+                            sendMouseEventCode(event, TerminalEmulator.MOUSE_LEFT_BUTTON_MOVED, true);
+                            break;
                     }
+                    return true;
                 }
-            } else if (mEmulator.isMouseTrackingActive()) { // BUTTON_PRIMARY.
-                switch (event.getAction()) {
-                    case MotionEvent.ACTION_DOWN:
-                    case MotionEvent.ACTION_UP:
-                        sendMouseEventCode(event, TerminalEmulator.MOUSE_LEFT_BUTTON, event.getAction() == MotionEvent.ACTION_DOWN);
-                        break;
-                    case MotionEvent.ACTION_MOVE:
-                        sendMouseEventCode(event, TerminalEmulator.MOUSE_LEFT_BUTTON_MOVED, true);
-                        break;
+            } else {
+                // 非鼠标跟踪模式：保留原有功能
+                if (event.isButtonPressed(MotionEvent.BUTTON_SECONDARY)) {
+                    if (action == MotionEvent.ACTION_DOWN) showContextMenu();
+                    return true;
+                } else if (event.isButtonPressed(MotionEvent.BUTTON_TERTIARY)) {
+                    ClipboardManager clipboardManager = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+                    ClipData clipData = clipboardManager.getPrimaryClip();
+                    if (clipData != null) {
+                        ClipData.Item clipItem = clipData.getItemAt(0);
+                        if (clipItem != null) {
+                            CharSequence text = clipItem.coerceToText(getContext());
+                            if (!TextUtils.isEmpty(text)) mEmulator.paste(text.toString());
+                        }
+                    }
+                    return true;
                 }
             }
         }

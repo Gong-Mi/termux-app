@@ -1162,6 +1162,31 @@ impl ScreenState {
         }
     }
 
+    /// 调用 Java 方法写入字节数据到终端（避免 String 转换）
+    pub fn write_to_session_bytes(&self, data: &[u8]) {
+        if let Some(obj) = self.java_callback_obj.as_ref() {
+            if let Some(vm) = crate::JAVA_VM.get() {
+                if let Ok(mut env) = vm.get_env() {
+                    // 将字节数组转换为 Java byte[]
+                    // 注意：JNI 的 byte 是有符号的 (i8)，但我们可以直接传递 u8 数据
+                    if let Ok(java_bytes) = env.new_byte_array(data.len() as i32) {
+                        // 安全转换：u8 和 i8 在内存中布局相同，只是解释不同
+                        let signed_data: &[i8] = unsafe {
+                            std::slice::from_raw_parts(data.as_ptr() as *const i8, data.len())
+                        };
+                        let _ = env.set_byte_array_region(&java_bytes, 0, signed_data);
+                        let _ = env.call_method(
+                            obj.as_obj(),
+                            "onWriteToSessionBytes",
+                            "([B)V",
+                            &[JValue::Object(&java_bytes)],
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     /// 调用 Java 方法报告颜色查询响应
     fn report_color_response(&self, color_spec: &str) {
         if let Some(obj) = self.java_callback_obj.as_ref() {
@@ -1302,20 +1327,37 @@ impl ScreenState {
 
     /// 发送鼠标事件
     /// 支持 SGR 模式和旧格式模式
+    ///
+    /// 按钮值定义 (与 Java TerminalEmulator 保持一致):
+    /// - 0: MOUSE_LEFT_BUTTON (左键按下)
+    /// - 1: MOUSE_MIDDLE_BUTTON (中键按下)
+    /// - 2: MOUSE_RIGHT_BUTTON (右键按下)
+    /// - 32: MOUSE_LEFT_BUTTON_MOVED (左键移动)
+    /// - 33: MOUSE_MIDDLE_BUTTON_MOVED (中键移动)
+    /// - 34: MOUSE_RIGHT_BUTTON_MOVED (右键移动)
+    /// - 64: MOUSE_WHEELUP_BUTTON (滚轮向上)
+    /// - 65: MOUSE_WHEELDOWN_BUTTON (滚轮向下)
     pub fn send_mouse_event(&mut self, mouse_button: u32, column: i32, row: i32, pressed: bool) {
+        // 使用 SmallVec 避免小字符串分配
+        let mut response = [0u8; 32];
+        let len;
+        
         if self.sgr_mouse {
             // SGR 鼠标格式：CSI < button ; x ; y M/m
             // button: 0-2 = 左/中/右按下，3 = 释放，64/65 = 滚轮
-            let event_type = if pressed { 'M' } else { 'm' };
-            let response = format!("\x1b[<{};{};{}{}", mouse_button, column, row, event_type);
-            self.write_to_session(&response);
+            // M = 按下/移动，m = 释放
+            let event_type = if pressed { b'M' } else { b'm' };
+            // 格式：\x1b[<button;x;yM 或 \x1b[<button;x;ym
+            let response_str = format!("\x1b[<{};{};{}{}", mouse_button, column, row, event_type as char);
+            self.write_to_session(&response_str);
+            return;
         } else if self.mouse_tracking || self.mouse_button_event {
             // 旧格式鼠标事件
             // 格式：CSI M Cb Cx Cy
             // Cb = 32 + button + modifiers
             // Cx = 32 + column (1-based)
             // Cy = 32 + row (1-based)
-            
+
             // 检查是否超出旧格式范围 (最大 223 = 255 - 32)
             if column > 223 || row > 223 {
                 return;
@@ -1323,41 +1365,50 @@ impl ScreenState {
 
             // 构建按钮编码
             // 按钮值：0=左，1=中，2=右，3=释放
-            // 移动时加 32
+            // 移动事件：32=左移动，33=中移动，34=右移动
             let mut button_val = mouse_button;
-            
-            // 如果是移动事件 (button 32 = MOUSE_LEFT_BUTTON_MOVED)
-            let is_move = mouse_button == 32;
+
+            // 判断是否为移动事件 (32-34 = 移动事件)
+            let is_move = mouse_button >= 32 && mouse_button <= 34;
             if is_move && !self.mouse_button_event {
                 // 非按钮事件模式下不发送移动事件
                 return;
             }
-            
+
+            // 处理移动事件
             if is_move {
-                button_val = 0; // 移动使用按钮 0 但加 32 偏移
+                // 移动事件需要减去 32 得到基础按钮值，然后加 32 偏移
+                button_val = mouse_button - 32;
             }
-            
-            // 释放事件
+
+            // 释放事件 (非移动事件且 pressed=false)
             if !pressed && !is_move {
                 button_val = 3;
             }
-            
+
             // 添加移动偏移 (32)
-            if is_move || self.mouse_button_event {
+            // 在按钮事件模式下，移动事件需要加 32
+            if is_move && self.mouse_button_event {
                 button_val += 32;
             }
 
-            // 构建响应：CSI M Cb Cx Cy
+            // 构建响应：CSI M Cb Cx Cy (固定 6 字节)
+            // \x1b [ M Cb Cx Cy
             let cb = 32 + button_val as u8;
             let cx = 32 + column as u8;
             let cy = 32 + row as u8;
+
+            // 直接使用字节数组，避免 String 分配
+            response[0] = b'\x1b';
+            response[1] = b'[';
+            response[2] = b'M';
+            response[3] = cb;
+            response[4] = cx;
+            response[5] = cy;
+            len = 6;
             
-            let response = format!("\x1b[M{}{}{}", 
-                cb as char, 
-                cx as char, 
-                cy as char
-            );
-            self.write_to_session(&response);
+            self.write_to_session_bytes(&response[..len]);
+            return;
         }
         // 如果鼠标跟踪未启用，忽略事件
     }

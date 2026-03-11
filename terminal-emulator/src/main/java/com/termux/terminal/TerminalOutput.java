@@ -15,6 +15,12 @@ public abstract class TerminalOutput {
     /** Write bytes to the terminal client. */
     public abstract void write(byte[] data, int offset, int count);
 
+    /** Write bytes to the terminal client (convenience method). */
+    public void write(byte[] data) {
+        if (data == null) return;
+        write(data, 0, data.length);
+    }
+
     /** Notify the terminal client that the terminal title has changed. */
     public abstract void titleChanged(String oldTitle, String newTitle);
 

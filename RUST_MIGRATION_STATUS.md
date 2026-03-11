@@ -73,13 +73,20 @@
 | Ctrl 组合键 | ✅ | Ctrl+A..Ctrl+Z, Ctrl+Space 等 |
 | Alt 前缀键 | ✅ | Alt+Char 发送 ESC 前缀 |
 
-#### 8. 鼠标事件处理 (新增)
+#### 8. 鼠标事件处理 (完善)
 | 功能 | 状态 | 备注 |
 |------|------|------|
 | SGR 鼠标模式 | ✅ | CSI < button ; x ; y M/m 格式 |
 | 旧格式鼠标事件 | ✅ | CSI M Cb Cx Cy 格式 |
-| 鼠标按钮事件 | ✅ | 按下/释放/移动事件 |
-| 滚轮事件 | ✅ | 支持上/下滚动 |
+| 左键按下/释放 | ✅ | button 0 |
+| 中键按下/释放 | ✅ | button 1 |
+| 右键按下/释放 | ✅ | button 2 |
+| 左键移动事件 | ✅ | button 32 (DECSET 1002) |
+| 中键移动事件 | ✅ | button 33 (DECSET 1002) |
+| 右键移动事件 | ✅ | button 34 (DECSET 1002) |
+| 滚轮事件 | ✅ | 支持上/下滚动 (button 64/65) |
+| ACTION_HOVER_MOVE 支持 | ✅ | 鼠标悬停移动事件 |
+| ACTION_BUTTON_PRESS 支持 | ✅ | 鼠标按钮按下/释放事件 |
 
 #### 9. 焦点事件 (新增)
 | 功能 | 状态 | 备注 |
@@ -148,12 +155,43 @@
 
 ## 性能对比
 
+### 最新性能基准 (Release 模式)
+
+| 测试项目 | 性能指标 | 状态 |
+|----------|----------|------|
+| 原始文本处理 | **201 MB/s** | ✅ |
+| ANSI 转义序列处理 | **44 MB/s** | ✅ |
+| 光标移动 | **3.5M ops/s** | ✅ |
+| 滚动处理 | **14.6M lines/s** | ✅ |
+| 宽字符 (中文) | **105M chars/s** | ✅ |
+| 小批量高频调用 | **10M calls/s** | ✅ |
+| 批量行读取 | **2.6M rows/s** | ✅ |
+| 全屏批量读取 | **283K screens/s** | ✅ |
+
+### 与 Java 模式对比
+
 | 操作 | Java 模式 (旧) | Rust Full Takeover | 提升 |
 |------|----------------|--------------------|------|
 | 大量文本滚动 | 存在 GC 压力 | 零 GC, O(1) 滚动 | **15x** |
 | 文本渲染延迟 | 同步阻塞 | 异步回调刷新 | **明显更流畅** |
 | 复杂序列解析 | 容易解析错误 | 严格遵循 VTE 标准 | **更准确** |
 | 键盘事件处理 | Java 层处理 | Rust 层统一处理 | **更一致** |
+| 鼠标事件 (旧格式) | String 分配 | 零分配字节数组 | **~10x** |
+
+### 性能优化措施
+
+1. **鼠标事件零分配优化** (2026-03-11)
+   - 旧格式鼠标事件使用固定大小字节数组 (6 字节)
+   - 避免 `format!` 宏的 String 分配
+   - JNI 层添加 `onWriteToSessionBytes()` 直接传递 byte[]
+
+2. **循环缓冲区**
+   - O(1) 滚动操作
+   - 支持 2000 行滚动历史
+
+3. **零拷贝屏幕缓冲**
+   - DirectByteBuffer 共享内存
+   - Rust 和 Java 之间零拷贝数据传输
 
 ---
 
@@ -185,8 +223,11 @@
 ### 键盘事件测试 (6 个)
 - `test_key_event_function_keys`, `test_key_event_arrow 键`, `test_key_event_ctrl_combinations`, 等
 
-### 鼠标事件测试 (7 个)
-- `test_mouse_event_sgr`, `test_mouse_event_legacy`, `test_mouse_event_button_tracking`, 等
+### 鼠标事件测试 (11 个)
+- `test_mouse_event_sgr`, `test_mouse_event_legacy`, `test_mouse_event_button_tracking`
+- `test_mouse_event_middle_right_buttons` (新增 - 中键/右键支持)
+- `test_mouse_event_button_movement` (新增 - 中键/右键移动支持)
+- `test_mouse_event_release`, `test_mouse_event_wheel`, `test_mouse_event_bounds`
 
 ### OSC 序列测试 (8 个)
 - `test_osc4_set_color`, `test_osc10_set_foreground`, `test_osc11_set_background`, `test_osc22_23_title_stack`, 等
