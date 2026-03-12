@@ -1,0 +1,97 @@
+name: Engine Comparison (Java vs Rust)
+
+on:
+  push:
+    branches:
+      - master
+      - feature/rust-integration
+  pull_request:
+    branches:
+      - master
+      - feature/rust-integration
+  workflow_dispatch:
+
+env:
+  JAVA_VERSION: '17'
+  ANDROID_NDK_VERSION: '26.1.10909125'
+  RUST_TOOLCHAIN: 'stable'
+
+jobs:
+  # Job 1: 逻辑一致性对比 (Consistency Check)
+  consistency:
+    name: 🛡️ Logic Consistency Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'gradle'
+          
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Build Rust Engine (JNI library)
+        run: |
+          cd terminal-emulator/src/main/rust
+          cargo build --release
+          # 将编译好的 .so 放到 JNI 目录以便 Java 加载
+          mkdir -p ../jniLibs/x86_64
+          cp target/release/libtermux_rust.so ../jniLibs/x86_64/
+
+      - name: Run Consistency Test
+        run: |
+          ./gradlew :terminal-emulator:test --tests com.termux.terminal.RustConsistencyTest
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/terminal-emulator/src/main/jniLibs/x86_64
+
+      - name: Upload Test Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: consistency-test-results
+          path: terminal-emulator/build/reports/tests/test/
+
+  # Job 2: 吞吐量与性能基准对比 (Performance Benchmark)
+  performance:
+    name: ⚡ Performance Benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'gradle'
+          
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Build Rust Engine (JNI library)
+        run: |
+          cd terminal-emulator/src/main/rust
+          cargo build --release
+          mkdir -p ../jniLibs/x86_64
+          cp target/release/libtermux_rust.so ../jniLibs/x86_64/
+
+      - name: Run Performance Benchmark
+        run: |
+          ./gradlew :terminal-emulator:test --tests com.termux.terminal.JavaRustPerformanceComparisonTest
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/terminal-emulator/src/main/jniLibs/x86_64
+
+      - name: Upload Benchmark Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-benchmark-results
+          path: terminal-emulator/build/reports/tests/test/
