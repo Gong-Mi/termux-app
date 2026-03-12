@@ -2313,9 +2313,10 @@ impl ScreenState {
 
         // 清空插入的区域
         for i in 0..lines_to_insert as usize {
-            let clear_idx = self.external_to_internal_row(cursor_y + i as i32);
+            let clear_idx = self.external_to_internal_row(top_margin + i as i32);
+            let style = self.current_style;
             let buffer = self.get_current_buffer_mut();
-            buffer[clear_idx].clear(0, cols, current_style);
+            buffer[clear_idx].clear(0, cols, style);
         }
     }
 
@@ -2343,9 +2344,10 @@ impl ScreenState {
 
         // 清空底部区域
         for i in 0..lines_to_delete as usize {
-            let clear_idx = self.external_to_internal_row(bottom_margin - i as i32 - 1);
+            let clear_idx = self.external_to_internal_row(top_margin + i as i32);
+            let style = self.current_style;
             let buffer = self.get_current_buffer_mut();
-            buffer[clear_idx].clear(0, cols, current_style);
+            buffer[clear_idx].clear(0, cols, style);
         }
     }
 
@@ -2431,7 +2433,6 @@ impl ScreenState {
         let top_margin = self.top_margin;
         let bottom_margin = self.bottom_margin;
         let cols = self.cols as usize;
-        let current_style = self.current_style;
 
         // 从上向下移动行
         for i in (0..(bottom_margin - top_margin - lines_to_scroll) as usize).rev() {
@@ -2535,9 +2536,10 @@ impl ScreenState {
             buffer[dest_idx] = src_data;
         }
         // 清空顶部行
-        let clear_idx = self.external_to_internal_row(top_margin);
+        let clear_idx = self.external_to_internal_row(top_margin + i as i32);
+        let style = self.current_style;
         let buffer = self.get_current_buffer_mut();
-        buffer[clear_idx].clear(0, cols, current_style);
+        buffer[clear_idx].clear(0, cols, style);
     }
 
     /// DECALN - 屏幕对齐测试 (ESC # 8)
