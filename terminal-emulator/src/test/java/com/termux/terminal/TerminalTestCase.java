@@ -111,6 +111,7 @@ public abstract class TerminalTestCase extends TestCase {
 	protected void setUp() throws Exception {
 		super.setUp();
 		mOutput = new MockTerminalOutput();
+		TerminalEmulator.sEnableFullSyncForTests = true;
 	}
 
 	protected TerminalTestCase withTerminalSized(int columns, int rows) {

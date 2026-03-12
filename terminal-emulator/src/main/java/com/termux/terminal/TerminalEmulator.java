@@ -593,6 +593,9 @@ public final class TerminalEmulator implements AutoCloseable {
 
     public final Object mDataLock = new Object();
 
+    /** 是否在每次 append 后全量同步屏幕，用于单元测试内容校验 */
+    public static boolean sEnableFullSyncForTests = false;
+
     private void syncStateFromRust() {
         if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
             syncColorsFromRust();
@@ -601,17 +604,19 @@ public final class TerminalEmulator implements AutoCloseable {
             mCurrentDecSetFlags = getDecsetFlagsFromRust(mRustEnginePtr);
             mInsertMode = isInsertModeActiveFromRust(mRustEnginePtr);
             
-            // 极其重要：将 Rust 侧的屏幕内容全量拉回 Java 缓冲区，供测试断言和 UI 渲染读取
-            int rows = mRows;
-            char[][] text = new char[rows][mColumns];
-            long[][] style = new long[rows][mColumns];
-            readFullScreenFromRust(mRustEnginePtr, text, style);
-            
-            for (int i = 0; i < rows; i++) {
-                TerminalRow row = mScreen.allocateFullLineIfNecessary(mScreen.externalToInternalRow(i));
-                System.arraycopy(text[i], 0, row.mText, 0, mColumns);
-                System.arraycopy(style[i], 0, row.mStyle, 0, mColumns);
-                row.updateStatusAfterBatchWrite();
+            if (sEnableFullSyncForTests) {
+                // 极其重要：将 Rust 侧的屏幕内容全量拉回 Java 缓冲区，供测试断言读取
+                int rows = mRows;
+                char[][] text = new char[rows][mColumns];
+                long[][] style = new long[rows][mColumns];
+                readFullScreenFromRust(mRustEnginePtr, text, style);
+                
+                for (int i = 0; i < rows; i++) {
+                    TerminalRow row = mScreen.allocateFullLineIfNecessary(mScreen.externalToInternalRow(i));
+                    System.arraycopy(text[i], 0, row.mText, 0, mColumns);
+                    System.arraycopy(style[i], 0, row.mStyle, 0, mColumns);
+                    row.updateStatusAfterBatchWrite();
+                }
             }
         }
     }

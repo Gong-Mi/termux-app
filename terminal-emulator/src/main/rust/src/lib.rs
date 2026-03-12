@@ -652,14 +652,61 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColor
         }
 
         // 写入 Java 数组
-        ((**internal).SetIntArrayRegion.unwrap())(
-            internal,
-            colors,
-            0,
-            std::cmp::min(len, 259) as jint,
-            color_data.as_ptr(),
-        );
+        unsafe {
+            ((**internal).SetIntArrayRegion.unwrap())(
+                internal,
+                colors,
+                0,
+                std::cmp::min(len, 259) as jint,
+                color_data.as_ptr(),
+            );
+        }
     }
+}
+
+/// 获取当前前景色
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getForeColorFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) -> jint {
+    if engine_ptr == 0 {
+        return 256;
+    }
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = engine_lock.read().unwrap();
+    guard.state.fore_color as jint
+}
+
+/// 获取当前背景色
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getBackColorFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) -> jint {
+    if engine_ptr == 0 {
+        return 257;
+    }
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = engine_lock.read().unwrap();
+    guard.state.back_color as jint
+}
+
+/// 获取当前效果标志
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getEffectFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) -> jint {
+    if engine_ptr == 0 {
+        return 0;
+    }
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = engine_lock.read().unwrap();
+    guard.state.effect as jint
 }
 
 // ============================================================================
