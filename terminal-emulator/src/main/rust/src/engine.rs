@@ -2263,6 +2263,7 @@ impl ScreenState {
         let columns_after_cursor = self.right_margin - self.cursor_x;
         let cells_to_delete = min(n, columns_after_cursor);
         let cells_to_move = columns_after_cursor - cells_to_delete;
+        let style = self.current_style;
 
         let y_internal = self.external_to_internal_row(self.cursor_y);
         let cursor_x = self.cursor_x as usize;
@@ -2284,7 +2285,7 @@ impl ScreenState {
         let clear_start = cursor_x + cells_to_move as usize;
         for i in clear_start..min(right_margin, row.text.len()) {
             row.text[i] = ' ';
-            row.styles[i] = current_style;
+            row.styles[i] = style;
         }
     }
 
@@ -2295,7 +2296,6 @@ impl ScreenState {
         let lines_to_move = lines_after_cursor - lines_to_insert;
         let cursor_y = self.cursor_y;
         let cols = self.cols as usize;
-        let current_style = self.current_style;
 
         // 从下向上移动行
         for i in (0..lines_to_move as usize).rev() {
@@ -2312,9 +2312,10 @@ impl ScreenState {
         }
 
         // 清空插入的区域
+        let style = self.current_style;
+        let top_margin = self.top_margin;
         for i in 0..lines_to_insert as usize {
             let clear_idx = self.external_to_internal_row(top_margin + i as i32);
-            let style = self.current_style;
             let buffer = self.get_current_buffer_mut();
             buffer[clear_idx].clear(0, cols, style);
         }
@@ -2327,8 +2328,6 @@ impl ScreenState {
         let lines_to_move = lines_after_cursor - lines_to_delete;
         let cursor_y = self.cursor_y;
         let cols = self.cols as usize;
-        let current_style = self.current_style;
-        let bottom_margin = self.bottom_margin;
 
         // 从上向下移动行
         for i in 0..lines_to_move as usize {
@@ -2343,9 +2342,10 @@ impl ScreenState {
         }
 
         // 清空底部区域
+        let style = self.current_style;
+        let bottom_margin = self.bottom_margin;
         for i in 0..lines_to_delete as usize {
-            let clear_idx = self.external_to_internal_row(top_margin + i as i32);
-            let style = self.current_style;
+            let clear_idx = self.external_to_internal_row(bottom_margin - i as i32 - 1);
             let buffer = self.get_current_buffer_mut();
             buffer[clear_idx].clear(0, cols, style);
         }
@@ -2353,16 +2353,18 @@ impl ScreenState {
 
     /// 擦除字符 (ECH) - CSI {N} X
     fn erase_characters(&mut self, n: i32) {
-        let chars_to_erase = min(n, self.cols - self.cursor_x);
+        let style = self.current_style;
+        let cols = self.cols;
+        let cursor_x = self.cursor_x;
         let y_internal = self.external_to_internal_row(self.cursor_y);
-        let cursor_x = self.cursor_x as usize;
-        let current_style = self.current_style;
+        
+        let chars_to_erase = min(n, cols - cursor_x);
         let buffer = self.get_current_buffer_mut();
         let row = &mut buffer[y_internal];
 
-        let start = cursor_x;
+        let start = cursor_x as usize;
         let end = min(start + chars_to_erase as usize, row.text.len());
-        row.clear(start, end, current_style);
+        row.clear(start, end, style);
         self.about_to_wrap = false;
     }
 
@@ -2525,7 +2527,6 @@ impl ScreenState {
         let top_margin = self.top_margin;
         let bottom_margin = self.bottom_margin;
         let cols = self.cols as usize;
-        let current_style = self.current_style;
 
         // 向下滚动：将区域内所有行向下移动一行
         for y in (top_margin + 1..bottom_margin).rev() {
@@ -2536,7 +2537,7 @@ impl ScreenState {
             buffer[dest_idx] = src_data;
         }
         // 清空顶部行
-        let clear_idx = self.external_to_internal_row(top_margin + i as i32);
+        let clear_idx = self.external_to_internal_row(self.top_margin);
         let style = self.current_style;
         let buffer = self.get_current_buffer_mut();
         buffer[clear_idx].clear(0, cols, style);
