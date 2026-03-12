@@ -3,7 +3,6 @@ use jni::objects::JValue;
 use std::cmp::{max, min};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use unicode_width::UnicodeWidthChar;
 use vte::{Params, Parser, Perform};
 
 use crate::utils::map_line_drawing;
@@ -1911,8 +1910,13 @@ impl ScreenState {
         self.right_margin = self.cols;
         self.application_cursor_keys = false;
         self.application_keypad = false;
+        self.about_to_wrap = false;
+        self.use_line_drawing_g0 = false;
+        self.use_line_drawing_g1 = false;
+        self.use_line_drawing_uses_g0 = true;
         self.reset_sgr();
         self.report_cursor_visibility(true);
+        self.report_colors_changed();
     }
 
     /// 重置所有 SGR 属性
@@ -2538,35 +2542,6 @@ impl ScreenState {
         // 移动光标到左上角
         self.cursor_x = 0;
         self.cursor_y = 0;
-    }
-
-    /// DECSTR - 软终端重置 (http://vt100.net/docs/vt510-rm/DECSTR)
-    pub fn decstr_soft_reset(&mut self) {
-        self.current_style = STYLE_NORMAL;
-        self.reset_sgr();
-
-        // 重置边距
-        self.top_margin = 0;
-        self.bottom_margin = self.rows;
-        self.left_margin = 0;
-        self.right_margin = self.cols;
-
-        // 重置关键 DECSET 标志
-        self.auto_wrap = true;
-        self.origin_mode = false;
-        self.insert_mode = false;
-        self.cursor_enabled = true;
-        self.application_cursor_keys = false;
-        self.application_keypad = false;
-        self.about_to_wrap = false;
-
-        // 重置行绘图状态
-        self.use_line_drawing_g0 = false;
-        self.use_line_drawing_g1 = false;
-        self.use_line_drawing_uses_g0 = true;
-
-        // 通知 Java 层
-        self.report_colors_changed();
     }
 
     /// RIS - 重置到初始状态 (http://vt100.net/docs/vt510-rm/RIS)
