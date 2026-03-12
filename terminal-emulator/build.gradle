@@ -1,5 +1,6 @@
 apply plugin: 'com.android.library'
 apply plugin: 'maven-publish'
+apply plugin: 'com.termux.rust'
 
 android {
     namespace "com.termux.terminal"
@@ -38,31 +39,16 @@ android {
         unitTests.returnDefaultValues = true
     }
 
-    // 自动同步 Rust 编译出的 .so 到 jniLibs
-    task syncRustLibs(type: Copy) {
-        def soFile = file('src/main/rust/target/release/libtermux_rust.so')
-        if (soFile.exists()) {
-            from soFile
-            into 'src/main/jniLibs/arm64-v8a'
-        }
-    }
-
-    // 确保在合并 JNI 库之前完成同步
-    project.afterEvaluate {
-        tasks.matching { it.name.contains("merge") && it.name.contains("JniLib") }.configureEach {
-            it.dependsOn syncRustLibs
-        }
-    }
-
     publishing {
         singleVariant("release")
     }
 }
 
-project.afterEvaluate {
-    tasks.named("preBuild").configure {
-        // Rust 编译现在由 CMakeLists.txt 管理
-    }
+rustAndroid {
+    rustSrcDir = "src/main/rust"
+    jniLibsDestDir = "src/main/jniLibs"
+    libName = "termux_rust"
+    minSdkVersion = project.properties.minSdkVersion.toInteger()
 }
 
 tasks.withType(Test) {

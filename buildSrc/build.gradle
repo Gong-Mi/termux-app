@@ -1,0 +1,22 @@
+plugins {
+    id 'groovy-gradle-plugin'
+}
+
+repositories {
+    gradlePluginPortal()
+    mavenCentral()
+}
+
+dependencies {
+    implementation gradleApi()
+}
+
+gradlePlugin {
+    plugins {
+        rustAndroidPlugin {
+            id = 'com.termux.rust'
+            implementationClass = 'com.termux.rust.RustAndroidPlugin'
+        }
+    }
+}
+
