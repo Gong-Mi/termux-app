@@ -326,7 +326,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readScre
 
         let internal = env.get_native_interface();
         let cols = engine.state.cols as usize;
-        let start = start_row as usize;
+        let start = start_row;
         let count = num_rows as usize;
 
         // 预分配 Rust 侧缓冲区，减少重复分配
@@ -334,11 +334,12 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readScre
         let mut style_vec = vec![0i64; cols];
 
         for i in 0..count {
-            let row = start + i;
+            let row = start + i as i32;
             
             // 从 Rust 复制数据到临时缓冲区
-            engine.state.copy_row_text(row, &mut text_vec);
-            engine.state.copy_row_styles(row, &mut style_vec);
+            // 注意：row 可能为负数（滚动历史），copy_row_text 内部会处理转换
+            engine.state.copy_row_text(row as usize, &mut text_vec);
+            engine.state.copy_row_styles(row as usize, &mut style_vec);
 
             // 获取 Java 二维数组的第 i 行
             let row_text_array = ((**internal).GetObjectArrayElement.unwrap())(internal, dest_text, i as jint);

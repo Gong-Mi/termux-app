@@ -1027,10 +1027,20 @@ impl ScreenState {
         
         if self.use_alternate_buffer {
             // 备用缓冲区没有滚动历史，直接映射
-            (row as usize).min(total - 1)
+            (row.max(0) as usize).min(total - 1)
         } else {
             // 主缓冲区使用循环缓冲区映射
-            (self.screen_first_row + row as usize) % total
+            // 处理负数行（滚动历史）：(first_row + row) % total
+            // 使用 i64 避免溢出，并实现正确的负数取模
+            let first = self.screen_first_row as i64;
+            let r = row as i64;
+            let t = total as i64;
+            let internal = (first + r) % t;
+            if internal < 0 {
+                (internal + t) as usize
+            } else {
+                internal as usize
+            }
         }
     }
 

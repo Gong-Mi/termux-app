@@ -178,7 +178,7 @@ public final class TerminalEmulator {
      * - 某些情况下可能出现 JNI borrow checker 问题
      * 建议在生产环境中使用 false，开发测试可使用 true
      */
-    public static final boolean USE_RUST_FULL_TAKEOVER = false;
+    public static final boolean USE_RUST_FULL_TAKEOVER = true;
 
     private static boolean sRustLibLoaded = false;
 

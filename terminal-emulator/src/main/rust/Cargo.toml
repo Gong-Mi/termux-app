@@ -31,5 +31,9 @@ name = "consistency"
 path = "tests/consistency.rs"
 
 [[test]]
+name = "extended_features"
+path = "tests/extended_features.rs"
+
+[[test]]
 name = "performance"
 path = "tests/performance.rs"
