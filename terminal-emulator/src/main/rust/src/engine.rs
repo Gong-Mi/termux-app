@@ -483,9 +483,9 @@ impl TerminalRow {
 /// - 位 40-63:  前景色 (24 位真彩色或 9 位索引)
 ///
 /// u64 布局：[63:40] 前景色 [39:16] 背景色 [15:0] 效果标志
-pub const STYLE_MASK_EFFECT: u64 = 0x7FF; // 位 0-10 (11 位效果标志)
-pub const STYLE_MASK_BG: u64 = 0x1FF0000; // 位 16-24 (9 位索引色背景)
-pub const STYLE_MASK_FG: u64 = 0x1FF0000000000; // 位 40-48 (9 位索引色前景)
+pub const STYLE_MASK_EFFECT: u64 = 0x7FF;           // 位 0-10 (11 位效果标志)
+pub const STYLE_MASK_BG: u64 = 0xFFFFFF << 16;      // 位 16-39 (24 位背景色)
+pub const STYLE_MASK_FG: u64 = 0xFFFFFF << 40;      // 位 40-63 (24 位前景色)
 
 // 真彩色标志位（公开供测试使用）
 pub const STYLE_TRUECOLOR_FG: u64 = 1 << 9; // 位 9 - 前景色使用 24 位真彩色
@@ -2720,7 +2720,7 @@ impl ScreenState {
                     // 前景色 30-37（标准颜色 0-7）
                     let color = (code - 30) as u64;
                     self.fore_color = color;
-                    self.current_style = (self.current_style & !STYLE_MASK_FG) | (color << 40);
+                    self.current_style = (self.current_style & !STYLE_MASK_FG & !STYLE_TRUECOLOR_FG) | (color << 40);
                 }
                 38 => {
                     // 扩展前景色 (38;5;n 或 38;2;r;g;b)
@@ -2731,7 +2731,7 @@ impl ScreenState {
                             let color = params_vec[i + 2] as u64;
                             self.fore_color = color;
                             self.current_style =
-                                (self.current_style & !STYLE_MASK_FG) | ((color & 0x1FF) << 40);
+                                (self.current_style & !STYLE_MASK_FG & !STYLE_TRUECOLOR_FG) | ((color & 0x1FF) << 40);
                             i += 2;
                         } else if mode == 2 && i + 4 < params_vec.len() {
                             // 24 位真彩色 (38;2;R;G;B)
@@ -2740,7 +2740,7 @@ impl ScreenState {
                             let b = params_vec[i + 4] as u64;
                             let truecolor = 0xff000000 | (r << 16) | (g << 8) | b;
                             self.fore_color = truecolor;
-                            self.current_style = (self.current_style & !STYLE_MASK_FG)
+                            self.current_style = (self.current_style & !STYLE_MASK_FG & !STYLE_TRUECOLOR_FG)
                                 | STYLE_TRUECOLOR_FG
                                 | ((truecolor & 0x00ffffff) << 40);
                             i += 4;
@@ -2751,13 +2751,13 @@ impl ScreenState {
                     // 默认前景色
                     self.fore_color = COLOR_INDEX_FOREGROUND;
                     self.current_style =
-                        (self.current_style & !STYLE_MASK_FG) | (COLOR_INDEX_FOREGROUND << 40);
+                        (self.current_style & !STYLE_MASK_FG & !STYLE_TRUECOLOR_FG) | (COLOR_INDEX_FOREGROUND << 40);
                 }
                 40..=47 => {
                     // 背景色 40-47（标准颜色 0-7）
                     let color = (code - 40) as u64;
                     self.back_color = color;
-                    self.current_style = (self.current_style & !STYLE_MASK_BG) | (color << 16);
+                    self.current_style = (self.current_style & !STYLE_MASK_BG & !STYLE_TRUECOLOR_BG) | (color << 16);
                 }
                 48 => {
                     // 扩展背景色 (48;5;n 或 48;2;r;g;b)
@@ -2768,7 +2768,7 @@ impl ScreenState {
                             let color = params_vec[i + 2] as u64;
                             self.back_color = color;
                             self.current_style =
-                                (self.current_style & !STYLE_MASK_BG) | ((color & 0x1FF) << 16);
+                                (self.current_style & !STYLE_MASK_BG & !STYLE_TRUECOLOR_BG) | ((color & 0x1FF) << 16);
                             i += 2;
                         } else if mode == 2 && i + 4 < params_vec.len() {
                             // 24 位真彩色 (48;2;R;G;B)
@@ -2777,7 +2777,7 @@ impl ScreenState {
                             let b = params_vec[i + 4] as u64;
                             let truecolor = 0xff000000 | (r << 16) | (g << 8) | b;
                             self.back_color = truecolor;
-                            self.current_style = (self.current_style & !STYLE_MASK_BG)
+                            self.current_style = (self.current_style & !STYLE_MASK_BG & !STYLE_TRUECOLOR_BG)
                                 | STYLE_TRUECOLOR_BG
                                 | ((truecolor & 0x00ffffff) << 16);
                             i += 4;
@@ -2788,7 +2788,7 @@ impl ScreenState {
                     // 默认背景色
                     self.back_color = COLOR_INDEX_BACKGROUND;
                     self.current_style =
-                        (self.current_style & !STYLE_MASK_BG) | (COLOR_INDEX_BACKGROUND << 16);
+                        (self.current_style & !STYLE_MASK_BG & !STYLE_TRUECOLOR_BG) | (COLOR_INDEX_BACKGROUND << 16);
                 }
                 58 => {
                     // 下划线颜色 (58;5;n 或 58;2;r;g;b)
@@ -2816,13 +2816,13 @@ impl ScreenState {
                     // 亮色前景色 90-97（高亮颜色 8-15）
                     let color = (code - 90 + 8) as u64;
                     self.fore_color = color;
-                    self.current_style = (self.current_style & !STYLE_MASK_FG) | (color << 40);
+                    self.current_style = (self.current_style & !STYLE_MASK_FG & !STYLE_TRUECOLOR_FG) | (color << 40);
                 }
                 100..=107 => {
                     // 亮色背景色 100-107（高亮颜色 8-15）
                     let color = (code - 100 + 8) as u64;
                     self.back_color = color;
-                    self.current_style = (self.current_style & !STYLE_MASK_BG) | (color << 16);
+                    self.current_style = (self.current_style & !STYLE_MASK_BG & !STYLE_TRUECOLOR_BG) | (color << 16);
                 }
                 _ => {} // 忽略未知参数
             }
