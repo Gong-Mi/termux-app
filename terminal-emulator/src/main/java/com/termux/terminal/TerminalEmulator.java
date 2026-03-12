@@ -272,32 +272,40 @@ public final class TerminalEmulator implements AutoCloseable {
                 mRustEnginePtr = createEngineRustWithCallback(columns, rows, getTerminalTranscriptRows(transcriptRows), mCellWidthPixels, mCellHeightPixels, new RustEngineCallback() {
                     @Override
                     public void onScreenUpdate() {
-                        if (mClient != null && TerminalEmulator.this.mSession instanceof TerminalSession) {
-                            mClient.onTextChanged((TerminalSession) TerminalEmulator.this.mSession);
-                        }
+                        mMainThreadHandler.post(() -> {
+                            if (mClient != null && TerminalEmulator.this.mSession instanceof TerminalSession) {
+                                mClient.onTextChanged((TerminalSession) TerminalEmulator.this.mSession);
+                            }
+                        });
                     }
 
                     @Override
                     public void reportTitleChange(String title) {
-                        mTitle = title;
-                        if (mClient != null && TerminalEmulator.this.mSession instanceof TerminalSession) {
-                            mClient.onTitleChanged((TerminalSession) TerminalEmulator.this.mSession);
-                        }
+                        mMainThreadHandler.post(() -> {
+                            mTitle = title;
+                            if (mClient != null && TerminalEmulator.this.mSession instanceof TerminalSession) {
+                                mClient.onTitleChanged((TerminalSession) TerminalEmulator.this.mSession);
+                            }
+                        });
                     }
 
                     @Override
                     public void reportColorsChanged() {
-                        syncColorsFromRust();
-                        if (mClient != null && TerminalEmulator.this.mSession instanceof TerminalSession) {
-                            mClient.onColorsChanged((TerminalSession) TerminalEmulator.this.mSession);
-                        }
+                        mMainThreadHandler.post(() -> {
+                            syncColorsFromRust();
+                            if (mClient != null && TerminalEmulator.this.mSession instanceof TerminalSession) {
+                                mClient.onColorsChanged((TerminalSession) TerminalEmulator.this.mSession);
+                            }
+                        });
                     }
 
                     @Override
                     public void reportCursorVisibility(boolean visible) {
-                        if (mClient != null) {
-                            mClient.onTerminalCursorStateChange(visible);
-                        }
+                        mMainThreadHandler.post(() -> {
+                            if (mClient != null) {
+                                mClient.onTerminalCursorStateChange(visible);
+                            }
+                        });
                     }
 
                     @Override
@@ -597,6 +605,8 @@ public final class TerminalEmulator implements AutoCloseable {
             try {
                 // 在同步块外调用 native 方法，避免阻塞其他同步操作
                 processEngineRust(ptr, buffer, 0, length);
+                // 确保测试断言能读到最新的颜色状态（不触发 UB）
+                syncColorsFromRust();
                 return;
             } catch (Exception e) {
                 android.util.Log.e("Termux", "Rust engine process error", e);
