@@ -767,7 +767,6 @@ public final class TerminalEmulator implements AutoCloseable {
     private static native void destroySharedBufferRust(long enginePtr);
 
     /** 恢复滚动相关的 Native 方法 */
-    private static native int getScrollCounterFromRust(long enginePtr);
     private static native void clearScrollCounterFromRust(long enginePtr);
     private static native boolean isAutoScrollDisabledFromRust(long enginePtr);
     private static native void toggleAutoScrollDisabledFromRust(long enginePtr);
