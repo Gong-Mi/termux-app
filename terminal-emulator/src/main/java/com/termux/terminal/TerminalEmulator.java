@@ -600,6 +600,19 @@ public final class TerminalEmulator implements AutoCloseable {
             mCursorRow = getCursorRowFromRust(mRustEnginePtr);
             mCurrentDecSetFlags = getDecsetFlagsFromRust(mRustEnginePtr);
             mInsertMode = isInsertModeActiveFromRust(mRustEnginePtr);
+            
+            // 极其重要：将 Rust 侧的屏幕内容全量拉回 Java 缓冲区，供测试断言和 UI 渲染读取
+            int rows = mRows;
+            char[][] text = new char[rows][mColumns];
+            long[][] style = new long[rows][mColumns];
+            readFullScreenFromRust(mRustEnginePtr, text, style);
+            
+            for (int i = 0; i < rows; i++) {
+                TerminalRow row = mScreen.allocateFullLineIfNecessary(mScreen.externalToInternalRow(i));
+                System.arraycopy(text[i], 0, row.mText, 0, mColumns);
+                System.arraycopy(style[i], 0, row.mStyle, 0, mColumns);
+                row.updateStatusAfterBatchWrite();
+            }
         }
     }
 
