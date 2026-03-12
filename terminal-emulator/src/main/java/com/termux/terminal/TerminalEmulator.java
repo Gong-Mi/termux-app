@@ -740,6 +740,7 @@ public final class TerminalEmulator implements AutoCloseable {
     private static native int getCursorRowFromRust(long enginePtr);
     private static native int getCursorStyleFromRust(long enginePtr);
     private static native boolean shouldCursorBeVisibleFromRust(long enginePtr);
+    private static native boolean isReverseVideoFromRust(long enginePtr);
     private static native int getDecsetFlagsFromRust(long enginePtr);
     private static native boolean isInsertModeActiveFromRust(long enginePtr);
     private static native int getScrollCounterFromRust(long enginePtr);
