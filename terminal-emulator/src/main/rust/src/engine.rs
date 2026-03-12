@@ -517,23 +517,23 @@ pub const COLOR_INDEX_CURSOR: u64 = 258;
 /// 返回：编码后的 64 位样式值
 #[inline]
 pub const fn encode_style(fore_color: u64, back_color: u64, effect: u64) -> u64 {
-    let mut result = effect & STYLE_MASK_EFFECT;
+    let mut result = effect & 0x7FF; // 效果位 (0-10)
 
-    // 处理前景色
+    // 处理前景色 (40-63位)
     if (fore_color & 0xff000000) == 0xff000000 {
-        // 24 位真彩色
-        result |= STYLE_TRUECOLOR_FG | ((fore_color & 0x00ffffff) << 40);
+        // 24 位真彩色标志 (位 9)
+        result |= (1 << 9) | ((fore_color & 0x00ffffff) << 40);
     } else {
-        // 索引色（9 位）
+        // 索引色（保证 9 位，位 40-48）
         result |= (fore_color & 0x1FF) << 40;
     }
 
-    // 处理背景色
+    // 处理背景色 (16-39位)
     if (back_color & 0xff000000) == 0xff000000 {
-        // 24 位真彩色
-        result |= STYLE_TRUECOLOR_BG | ((back_color & 0x00ffffff) << 16);
+        // 24 位真彩色标志 (位 10)
+        result |= (1 << 10) | ((back_color & 0x00ffffff) << 16);
     } else {
-        // 索引色（9 位）
+        // 索引色（保证 9 位，位 16-24）
         result |= (back_color & 0x1FF) << 16;
     }
 
@@ -541,6 +541,7 @@ pub const fn encode_style(fore_color: u64, back_color: u64, effect: u64) -> u64 
 }
 
 /// 默认样式（与 Java TextStyle.NORMAL 一致）
+/// 默认样式 (对齐 Java TextStyle.NORMAL): 前景 256, 背景 257, 无效果
 pub const STYLE_NORMAL: u64 = encode_style(COLOR_INDEX_FOREGROUND, COLOR_INDEX_BACKGROUND, 0);
 
 /// DECSET 标志位定义（与 Java DECSET_BIT_* 常量一致）
@@ -2035,7 +2036,7 @@ impl ScreenState {
         }
         if cursor_x < row.text.len() {
             row.text[cursor_x] = ' ';
-            row.styles[cursor_x] = STYLE_NORMAL;
+            row.styles[cursor_x] = self.current_style;
         }
     }
 
@@ -2048,10 +2049,12 @@ impl ScreenState {
             } // BEL - 响铃
             0x08 => {
                 self.cursor_x = max(self.left_margin, self.cursor_x - 1);
+                self.about_to_wrap = false;
                 true
             } // BS
             0x09 => {
                 self.cursor_forward_tab();
+                self.about_to_wrap = false;
                 true
             } // HT
             0x0a..=0x0c => {
@@ -2061,10 +2064,12 @@ impl ScreenState {
                 } else {
                     self.scroll_up();
                 }
+                self.about_to_wrap = false;
                 true
             }
             0x0d => {
                 self.cursor_x = self.left_margin;
+                self.about_to_wrap = false;
                 true
             } // CR
             0x0e => {
@@ -2278,7 +2283,7 @@ impl ScreenState {
         let clear_start = cursor_x + cells_to_move as usize;
         for i in clear_start..min(right_margin, row.text.len()) {
             row.text[i] = ' ';
-            row.styles[i] = STYLE_NORMAL;
+            row.styles[i] = current_style;
         }
     }
 
@@ -2355,12 +2360,14 @@ impl ScreenState {
         let start = cursor_x;
         let end = min(start + chars_to_erase as usize, row.text.len());
         row.clear(start, end, current_style);
+        self.about_to_wrap = false;
     }
 
     /// 光标水平绝对 (CHA) - CSI {N} G
     fn cursor_horizontal_absolute(&mut self, n: i32) {
         let col = max(1, n) - 1;
         self.cursor_x = min(max(0, col), self.cols - 1);
+        self.about_to_wrap = false;
     }
 
     /// 光标水平相对 (HPR) - CSI {N} a
@@ -2369,29 +2376,34 @@ impl ScreenState {
             self.right_margin - 1,
             max(self.left_margin, self.cursor_x + n),
         );
+        self.about_to_wrap = false;
     }
 
     /// 下一行 (CNL) - CSI {N} E
     fn cursor_next_line(&mut self, n: i32) {
         self.cursor_x = self.left_margin;
         self.cursor_y = min(self.bottom_margin - 1, self.cursor_y + n);
+        self.about_to_wrap = false;
     }
 
     /// 上一行 (CPL) - CSI {N} F
     fn cursor_previous_line(&mut self, n: i32) {
         self.cursor_x = self.left_margin;
         self.cursor_y = max(self.top_margin, self.cursor_y - n);
+        self.about_to_wrap = false;
     }
 
     /// 垂直绝对 (VPA) - CSI {N} d
     fn cursor_vertical_absolute(&mut self, n: i32) {
         let row = max(1, n) - 1;
         self.cursor_y = min(max(0, row), self.rows - 1);
+        self.about_to_wrap = false;
     }
 
     /// 垂直相对 (VPR) - CSI {N} e
     fn cursor_vertical_relative(&mut self, n: i32) {
         self.cursor_y = min(self.rows - 1, max(0, self.cursor_y + n));
+        self.about_to_wrap = false;
     }
 
     /// 重复字符 (REP) - CSI {N} b
@@ -2409,6 +2421,7 @@ impl ScreenState {
         // 滚动后光标保持在顶部
         self.cursor_x = self.left_margin;
         self.cursor_y = self.top_margin;
+        self.about_to_wrap = false;
     }
 
     /// 下滚 (SD) - CSI {N} T
@@ -2443,6 +2456,7 @@ impl ScreenState {
         // 滚动后光标保持在顶部
         self.cursor_x = self.left_margin;
         self.cursor_y = self.top_margin;
+        self.about_to_wrap = false;
     }
 
     /// DECBI - Back Index 滚动 (ESC 6)

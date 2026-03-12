@@ -593,6 +593,16 @@ public final class TerminalEmulator implements AutoCloseable {
 
     public final Object mDataLock = new Object();
 
+    private void syncStateFromRust() {
+        if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
+            syncColorsFromRust();
+            mCursorCol = getCursorColFromRust(mRustEnginePtr);
+            mCursorRow = getCursorRowFromRust(mRustEnginePtr);
+            mCurrentDecSetFlags = getDecsetFlagsFromRust(mRustEnginePtr);
+            mInsertMode = isInsertModeActiveFromRust(mRustEnginePtr);
+        }
+    }
+
     /**
      * 处理来自 PTY 的输入数据。
      * 优化：缩小同步范围，只在读取指针时同步。
@@ -605,8 +615,8 @@ public final class TerminalEmulator implements AutoCloseable {
             try {
                 // 在同步块外调用 native 方法，避免阻塞其他同步操作
                 processEngineRust(ptr, buffer, 0, length);
-                // 确保测试断言能读到最新的颜色状态（不触发 UB）
-                syncColorsFromRust();
+                // 确保测试断言能读到最新的所有状态
+                syncStateFromRust();
                 return;
             } catch (Exception e) {
                 android.util.Log.e("Termux", "Rust engine process error", e);
