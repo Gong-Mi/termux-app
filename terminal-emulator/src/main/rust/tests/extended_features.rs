@@ -41,9 +41,9 @@ fn test_unicode_boundary_conditions() {
     // 在行尾测试宽字符自动换行
     engine.process_bytes("123456789测试".as_bytes());
 
-    // "测试" 的第一个字应该换行到第二行
+    // "测试" 的第一个字应该换行到第二行，第二个字也紧随其后
     assert_eq!(engine.state.cursor_y, 1);
-    assert_eq!(engine.state.cursor_x, 2); 
+    assert_eq!(engine.state.cursor_x, 4); 
 }
 
 #[test]

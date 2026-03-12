@@ -487,15 +487,15 @@ public final class TerminalEmulator {
         return mTitle;
     }
 
-    public void syncRowFromRust(int row) {
-        if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
-            TerminalRow lineObject = mScreen.allocateFullLineIfNecessary(mScreen.externalToInternalRow(row));
-            readRowFromRust(mRustEnginePtr, row, lineObject.mText, lineObject.mStyle);
-        }
-    }
-
     public void syncScreenBatchFromRust(int startRow, int numRows) {
         if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
+            int activeTranscriptRows = mScreen.getActiveTranscriptRows();
+            if (startRow < -activeTranscriptRows || startRow >= mRows) {
+                return;
+            }
+            numRows = Math.min(numRows, mRows - startRow);
+            if (numRows <= 0) return;
+
             char[][] destText = new char[numRows][];
             long[][] destStyle = new long[numRows][];
             for (int i = 0; i < numRows; i++) {
