@@ -272,103 +272,81 @@ public final class TerminalEmulator implements AutoCloseable {
                 mRustEnginePtr = createEngineRustWithCallback(columns, rows, getTerminalTranscriptRows(transcriptRows), mCellWidthPixels, mCellHeightPixels, new RustEngineCallback() {
                     @Override
                     public void onScreenUpdate() {
-                        mMainThreadHandler.post(() -> {
-                            if (mClient != null && TerminalEmulator.this.mSession instanceof TerminalSession) {
-                                mClient.onTextChanged((TerminalSession) TerminalEmulator.this.mSession);
-                            }
-                        });
+                        if (mClient != null && TerminalEmulator.this.mSession instanceof TerminalSession) {
+                            mClient.onTextChanged((TerminalSession) TerminalEmulator.this.mSession);
+                        }
                     }
 
                     @Override
                     public void reportTitleChange(String title) {
-                        mMainThreadHandler.post(() -> {
-                            mTitle = title;
-                            if (mClient != null && TerminalEmulator.this.mSession instanceof TerminalSession) {
-                                mClient.onTitleChanged((TerminalSession) TerminalEmulator.this.mSession);
-                            }
-                        });
+                        mTitle = title;
+                        if (mClient != null && TerminalEmulator.this.mSession instanceof TerminalSession) {
+                            mClient.onTitleChanged((TerminalSession) TerminalEmulator.this.mSession);
+                        }
                     }
 
                     @Override
                     public void reportColorsChanged() {
-                        mMainThreadHandler.post(() -> {
-                            syncColorsFromRust();
-                            if (mClient != null && TerminalEmulator.this.mSession instanceof TerminalSession) {
-                                mClient.onColorsChanged((TerminalSession) TerminalEmulator.this.mSession);
-                            }
-                        });
+                        syncColorsFromRust();
+                        if (mClient != null && TerminalEmulator.this.mSession instanceof TerminalSession) {
+                            mClient.onColorsChanged((TerminalSession) TerminalEmulator.this.mSession);
+                        }
                     }
 
                     @Override
                     public void reportCursorVisibility(boolean visible) {
-                        mMainThreadHandler.post(() -> {
-                            if (mClient != null) {
-                                mClient.onTerminalCursorStateChange(visible);
-                            }
-                        });
+                        if (mClient != null) {
+                            mClient.onTerminalCursorStateChange(visible);
+                        }
                     }
 
                     @Override
                     public void onBell() {
-                        mMainThreadHandler.post(() -> {
-                            if (mSession != null) {
-                                mSession.onBell();
-                            }
-                        });
+                        if (mSession != null) {
+                            mSession.onBell();
+                        }
                     }
 
                     @Override
                     public void onCopyTextToClipboard(String text) {
-                        mMainThreadHandler.post(() -> {
-                            if (mSession != null) {
-                                mSession.onCopyTextToClipboard(text);
-                            }
-                        });
+                        if (mSession != null) {
+                            mSession.onCopyTextToClipboard(text);
+                        }
                     }
 
                     @Override
                     public void onPasteTextFromClipboard() {
-                        mMainThreadHandler.post(() -> {
-                            if (mSession != null) {
-                                mSession.onPasteTextFromClipboard();
-                            }
-                        });
+                        if (mSession != null) {
+                            mSession.onPasteTextFromClipboard();
+                        }
                     }
 
                     @Override
                     public void onWriteToSession(String data) {
-                        mMainThreadHandler.post(() -> {
-                            if (mSession != null) {
-                                mSession.write(data);
-                            }
-                        });
+                        if (mSession != null) {
+                            mSession.write(data);
+                        }
                     }
 
                     @Override
                     public void onWriteToSessionBytes(byte[] data) {
-                        mMainThreadHandler.post(() -> {
-                            if (mSession != null) {
-                                mSession.write(data);
-                            }
-                        });
+                        if (mSession != null) {
+                            mSession.write(data);
+                        }
                     }
 
                     @Override
                     public void reportColorResponse(String colorSpec) {
-                        mMainThreadHandler.post(() -> {
-                            if (mSession != null) {
-                                mSession.write("\u001b]" + colorSpec + "\u0007");
-                            }
-                        });
+                        if (mSession != null) {
+                            mSession.write("\u001b]" + colorSpec + "\u0007");
+                        }
                     }
 
                     @Override
                     public void reportTerminalResponse(String response) {
-                        mMainThreadHandler.post(() -> {
-                            if (mSession != null) {
-                                mSession.write(response);
-                            }
-                        });
+                        if (mSession != null) {
+                            mSession.write(response);
+                        }
                     }
                 });
 
