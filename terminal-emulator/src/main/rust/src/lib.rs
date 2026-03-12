@@ -6,19 +6,19 @@
 #![warn(clippy::all)]
 #![allow(clippy::missing_safety_doc)]
 
+use jni::sys::{
+    JNI_VERSION_1_6, JNINativeInterface_, jbyteArray, jcharArray, jclass, jint, jintArray, jlong,
+    jlongArray, jobject, jobjectArray, jstring,
+};
+use jni::{JNIEnv, JavaVM};
 use std::panic;
 use std::sync::OnceLock;
-use jni::{JNIEnv, JavaVM};
-use jni::sys::{
-    JNINativeInterface_, jbyteArray, jcharArray, jclass, jint, jintArray, jlong, jlongArray,
-    jobject, jobjectArray, jstring, JNI_VERSION_1_6,
-};
 
+pub mod bootstrap;
 pub mod engine;
 pub mod fastpath;
 pub mod pty;
 pub mod utils;
-pub mod bootstrap;
 
 use engine::TerminalEngine;
 
@@ -76,7 +76,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_processB
                 Ok(e) => e,
                 Err(_) => return 0,
             };
-            
+
             let internal = env.get_native_interface();
             let mut is_copy = jni::sys::JNI_FALSE;
             let input_ptr =
@@ -130,7 +130,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_createEn
 
     // 创建全局引用
     if let Ok(env) = unsafe { JNIEnv::from_raw(env_ptr) } {
-        if let Ok(global_obj) = env.new_global_ref(unsafe { jni::objects::JObject::from_raw(callback_obj) }) {
+        if let Ok(global_obj) =
+            env.new_global_ref(unsafe { jni::objects::JObject::from_raw(callback_obj) })
+        {
             // 设置 Java 回调
             engine_inner.state.set_java_callback(global_obj);
         }
@@ -148,56 +150,57 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_processE
     offset: jint,
     length: jint,
 ) {
+    if engine_ptr == 0 || length == 0 {
+        return;
+    }
+
+    let env = unsafe { JNIEnv::from_raw(env_ptr).unwrap() };
+    let internal = env.get_native_interface();
+
+    // 1. 获取数组长度（不需要临界区）
+    let input_len = unsafe { ((**internal).GetArrayLength.unwrap())(internal, input) as usize };
+    let start = offset as usize;
+    let len = length as usize;
+
+    if start + len > input_len {
+        return;
+    }
+
+    // 2. 进入临界区，拷贝数据
+    let mut is_copy = jni::sys::JNI_FALSE;
+    let input_ptr =
+        unsafe { ((**internal).GetPrimitiveArrayCritical.unwrap())(internal, input, &mut is_copy) }
+            as *const u8;
+
+    if input_ptr.is_null() {
+        return;
+    }
+
+    // 拷贝到 Rust Vec
+    let data_vec = unsafe { std::slice::from_raw_parts(input_ptr.add(start), len).to_vec() };
+
+    // 3. 立即释放临界区（允许后续 JNI 回调）
     unsafe {
-        if engine_ptr == 0 || length == 0 {
-            return;
-        }
-        let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+        ((**internal).ReleasePrimitiveArrayCritical.unwrap())(
+            internal,
+            input,
+            input_ptr as *mut _,
+            jni::sys::JNI_ABORT,
+        );
+    }
+
+    // 4. 执行解析（现在可以安全地进行 JNI 回调）
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    {
         let mut guard = engine_lock.write().unwrap();
         let engine = &mut *guard;
+        engine.process_bytes(&data_vec);
+    }
 
-        let env = match JNIEnv::from_raw(env_ptr) {
-            Ok(e) => e,
-            Err(_) => return,
-        };
-
-        let internal = env.get_native_interface();
-        let mut is_copy = jni::sys::JNI_FALSE;
-        let input_ptr =
-            ((**internal).GetPrimitiveArrayCritical.unwrap())(internal, input, &mut is_copy)
-                as *const u8;
-
-        if !input_ptr.is_null() {
-            let input_len = ((**internal).GetArrayLength.unwrap())(internal, input) as usize;
-            let start = offset as usize;
-            let len = length as usize;
-
-            if start + len <= input_len {
-                // 将数据拷贝到 Rust 向量中，以允许在解析期间进行 JNI 回调
-                let slice = std::slice::from_raw_parts(input_ptr.add(start), len);
-                let data_vec = slice.to_vec();
-
-                // 立即释放原始数组，这样后续的 process_bytes 就可以安全地进行 JNI 回调
-                ((**internal).ReleasePrimitiveArrayCritical.unwrap())(
-                    internal,
-                    input,
-                    input_ptr as *mut _,
-                    jni::sys::JNI_ABORT,
-                );
-
-                engine.process_bytes(&data_vec);
-
-                // 通知 Java 刷新界面（现在安全了）
-                engine.state.report_screen_update();
-            } else {
-                ((**internal).ReleasePrimitiveArrayCritical.unwrap())(
-                    internal,
-                    input,
-                    input_ptr as *mut _,
-                    jni::sys::JNI_ABORT,
-                );
-            }
-        }    }
+    // 5. 解析完成后通知 Java 刷新界面
+    if let Ok(guard) = engine_lock.try_read() {
+        guard.state.report_screen_update();
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -225,10 +228,15 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_writeASC
 
         let internal = env.get_native_interface();
         let mut is_copy = jni::sys::JNI_FALSE;
-        
-        let src_ptr = ((**internal).GetPrimitiveArrayCritical.unwrap())(internal, src, &mut is_copy) as *const i8;
-        let text_ptr = ((**internal).GetPrimitiveArrayCritical.unwrap())(internal, dest_text, &mut is_copy) as *mut u16;
-        let style_ptr = ((**internal).GetPrimitiveArrayCritical.unwrap())(internal, dest_style, &mut is_copy) as *mut i64;
+
+        let src_ptr = ((**internal).GetPrimitiveArrayCritical.unwrap())(internal, src, &mut is_copy)
+            as *const i8;
+        let text_ptr =
+            ((**internal).GetPrimitiveArrayCritical.unwrap())(internal, dest_text, &mut is_copy)
+                as *mut u16;
+        let style_ptr =
+            ((**internal).GetPrimitiveArrayCritical.unwrap())(internal, dest_style, &mut is_copy)
+                as *mut i64;
 
         if !src_ptr.is_null() && !text_ptr.is_null() && !style_ptr.is_null() {
             let src_slice = std::slice::from_raw_parts(src_ptr.add(src_offset as usize), len);
@@ -247,17 +255,31 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_writeASC
         }
 
         if !style_ptr.is_null() {
-            ((**internal).ReleasePrimitiveArrayCritical.unwrap())(internal, dest_style, style_ptr as *mut _, 0);
+            ((**internal).ReleasePrimitiveArrayCritical.unwrap())(
+                internal,
+                dest_style,
+                style_ptr as *mut _,
+                0,
+            );
         }
         if !text_ptr.is_null() {
-            ((**internal).ReleasePrimitiveArrayCritical.unwrap())(internal, dest_text, text_ptr as *mut _, 0);
+            ((**internal).ReleasePrimitiveArrayCritical.unwrap())(
+                internal,
+                dest_text,
+                text_ptr as *mut _,
+                0,
+            );
         }
         if !src_ptr.is_null() {
-            ((**internal).ReleasePrimitiveArrayCritical.unwrap())(internal, src, src_ptr as *mut _, jni::sys::JNI_ABORT);
+            ((**internal).ReleasePrimitiveArrayCritical.unwrap())(
+                internal,
+                src,
+                src_ptr as *mut _,
+                jni::sys::JNI_ABORT,
+            );
         }
     }
 }
-
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readRowFromRust(
@@ -268,34 +290,44 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readRowF
     dest_text: jcharArray,
     dest_style: jlongArray,
 ) {
-    unsafe {
-        if engine_ptr == 0 {
-            return;
-        }
-        let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-        let mut guard = engine_lock.write().unwrap();
-        let engine = &mut *guard;
-        let env = match JNIEnv::from_raw(env_ptr) {
-            Ok(e) => e,
-            Err(_) => return,
-        };
-
-        let internal = env.get_native_interface();
-        let text_len = ((**internal).GetArrayLength.unwrap())(internal, dest_text) as usize;
-        let style_len = ((**internal).GetArrayLength.unwrap())(internal, dest_style) as usize;
-
-        // 为避免 Critical 锁定过长或 JNI 冲突，我们在 Rust 侧准备好数据后再写入
-        let mut text_vec = vec![' ' as u16; text_len];
-        let mut style_vec = vec![0i64; style_len];
-
-        // 核心逻辑在 Rust 侧完成（无 JNI）
-        engine.state.copy_row_text(row as usize, &mut text_vec);
-        engine.state.copy_row_styles(row as usize, &mut style_vec);
-
-        // 使用 SetRegion 批量写入数据，这是最安全的 JNI 方式
-        ((**internal).SetCharArrayRegion.unwrap())(internal, dest_text, 0, text_len as jint, text_vec.as_ptr());
-        ((**internal).SetLongArrayRegion.unwrap())(internal, dest_style, 0, style_len as jint, style_vec.as_ptr() as *const jlong);
+    if engine_ptr == 0 {
+        return;
     }
+    let engine_lock = &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>);
+    let mut guard = engine_lock.write().unwrap();
+    let engine = &mut *guard;
+    let env = match JNIEnv::from_raw(env_ptr) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    let internal = env.get_native_interface();
+    let text_len = ((**internal).GetArrayLength.unwrap())(internal, dest_text) as usize;
+    let style_len = ((**internal).GetArrayLength.unwrap())(internal, dest_style) as usize;
+
+    // 为避免 Critical 锁定过长或 JNI 冲突，我们在 Rust 侧准备好数据后再写入
+    let mut text_vec = vec![' ' as u16; text_len];
+    let mut style_vec = vec![0i64; style_len];
+
+    // 核心逻辑在 Rust 侧完成（无 JNI）
+    engine.state.copy_row_text(row as usize, &mut text_vec);
+    engine.state.copy_row_styles(row as usize, &mut style_vec);
+
+    // 使用 SetRegion 批量写入数据，这是最安全的 JNI 方式
+    ((**internal).SetCharArrayRegion.unwrap())(
+        internal,
+        dest_text,
+        0,
+        text_len as jint,
+        text_vec.as_ptr(),
+    );
+    ((**internal).SetLongArrayRegion.unwrap())(
+        internal,
+        dest_style,
+        0,
+        style_len as jint,
+        style_vec.as_ptr() as *const jlong,
+    );
 }
 
 // ============================================================================
@@ -312,61 +344,67 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readScre
     start_row: jint,
     num_rows: jint,
 ) {
-    unsafe {
-        if engine_ptr == 0 || num_rows <= 0 {
-            return;
-        }
-        let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-        let mut guard = engine_lock.write().unwrap();
-        let engine = &mut *guard;
-        let env = match JNIEnv::from_raw(env_ptr) {
-            Ok(e) => e,
-            Err(_) => return,
-        };
+    if engine_ptr == 0 || num_rows <= 0 {
+        return;
+    }
+    let engine_lock = &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>);
+    let mut guard = engine_lock.write().unwrap();
+    let engine = &mut *guard;
+    let env = match JNIEnv::from_raw(env_ptr) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
 
-        let internal = env.get_native_interface();
-        let cols = engine.state.cols as usize;
-        let start = start_row;
-        let count = num_rows as usize;
+    let internal = env.get_native_interface();
+    let rust_cols = engine.state.cols as usize;
+    let start = start_row;
+    let count = num_rows as usize;
 
-        // 预分配 Rust 侧缓冲区，减少重复分配
-        let mut text_vec = vec![' ' as u16; cols];
-        let mut style_vec = vec![0i64; cols];
+    for i in 0..count {
+        let row = start + i as i32;
 
-        for i in 0..count {
-            let row = start + i as i32;
+        // 获取 Java 二维数组的第 i 行，并获取其实际长度
+        let row_text_array =
+            ((**internal).GetObjectArrayElement.unwrap())(internal, dest_text, i as jint);
+        let row_style_array =
+            ((**internal).GetObjectArrayElement.unwrap())(internal, dest_style, i as jint);
+
+        if !row_text_array.is_null() && !row_style_array.is_null() {
+            // 获取 Java 数组的实际长度
+            let java_cols = ((**internal).GetArrayLength.unwrap())(internal, row_text_array) as usize;
+            let style_cols = ((**internal).GetArrayLength.unwrap())(internal, row_style_array) as usize;
             
+            // 使用 Rust 和 Java 中较小的列数，避免数组越界
+            let copy_cols = std::cmp::min(rust_cols, std::cmp::min(java_cols, style_cols));
+            
+            // 预分配 Rust 侧缓冲区
+            let mut text_vec = vec![' ' as u16; copy_cols];
+            let mut style_vec = vec![0i64; copy_cols];
+
             // 从 Rust 复制数据到临时缓冲区
-            // 注意：row 可能为负数（滚动历史），copy_row_text 内部会处理转换
             engine.state.copy_row_text(row as usize, &mut text_vec);
             engine.state.copy_row_styles(row as usize, &mut style_vec);
 
-            // 获取 Java 二维数组的第 i 行
-            let row_text_array = ((**internal).GetObjectArrayElement.unwrap())(internal, dest_text, i as jint);
-            let row_style_array = ((**internal).GetObjectArrayElement.unwrap())(internal, dest_style, i as jint);
-
-            if !row_text_array.is_null() && !row_style_array.is_null() {
-                // 批量写入数据
-                ((**internal).SetCharArrayRegion.unwrap())(
-                    internal,
-                    row_text_array as jni::sys::jcharArray,
-                    0,
-                    cols as jint,
-                    text_vec.as_ptr(),
-                );
-                ((**internal).SetLongArrayRegion.unwrap())(
-                    internal,
-                    row_style_array as jni::sys::jlongArray,
-                    0,
-                    cols as jint,
-                    style_vec.as_ptr() as *const jlong,
-                );
-            }
-
-            // 删除局部引用，防止 JNI 局部引用表溢出
-            ((**internal).DeleteLocalRef.unwrap())(internal, row_text_array);
-            ((**internal).DeleteLocalRef.unwrap())(internal, row_style_array);
+            // 批量写入数据
+            ((**internal).SetCharArrayRegion.unwrap())(
+                internal,
+                row_text_array as jni::sys::jcharArray,
+                0,
+                copy_cols as jint,
+                text_vec.as_ptr(),
+            );
+            ((**internal).SetLongArrayRegion.unwrap())(
+                internal,
+                row_style_array as jni::sys::jlongArray,
+                0,
+                copy_cols as jint,
+                style_vec.as_ptr() as *const jlong,
+            );
         }
+
+        // 删除局部引用，防止 JNI 局部引用表溢出
+        ((**internal).DeleteLocalRef.unwrap())(internal, row_text_array);
+        ((**internal).DeleteLocalRef.unwrap())(internal, row_style_array);
     }
 }
 
@@ -379,25 +417,17 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readFull
     dest_text: jobjectArray,
     dest_style: jobjectArray,
 ) {
-    unsafe {
-        if engine_ptr == 0 {
-            return;
-        }
-        let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-        let mut guard = engine_lock.write().unwrap();
-        let engine = &mut *guard;
-        let rows = engine.state.rows as jint;
-        
-        Java_com_termux_terminal_TerminalEmulator_readScreenBatchFromRust(
-            env_ptr,
-            _class,
-            engine_ptr,
-            dest_text,
-            dest_style,
-            0,
-            rows,
-        );
+    if engine_ptr == 0 {
+        return;
     }
+    let engine_lock = &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>);
+    let mut guard = engine_lock.write().unwrap();
+    let engine = &mut *guard;
+    let rows = engine.state.rows as jint;
+
+    Java_com_termux_terminal_TerminalEmulator_readScreenBatchFromRust(
+        env_ptr, _class, engine_ptr, dest_text, dest_style, 0, rows,
+    );
 }
 
 // ============================================================================
@@ -429,10 +459,8 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_createSh
             engine.state.shared_buffer_ptr = shared_ptr;
 
             if !shared_ptr.is_null() {
-                let buffer_size = engine::SharedScreenBuffer::required_size(
-                    flat_buffer.cols,
-                    flat_buffer.rows,
-                );
+                let buffer_size =
+                    engine::SharedScreenBuffer::required_size(flat_buffer.cols, flat_buffer.rows);
 
                 // 创建 DirectByteBuffer
                 match env.new_direct_byte_buffer(shared_ptr as *mut u8, buffer_size) {
@@ -528,7 +556,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_clearSha
 
     if !engine.state.shared_buffer_ptr.is_null() {
         let shared = unsafe { &mut *engine.state.shared_buffer_ptr };
-        shared.version.store(false, std::sync::atomic::Ordering::Release);
+        shared
+            .version
+            .store(false, std::sync::atomic::Ordering::Release);
     }
 }
 
@@ -613,7 +643,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColor
 
         let internal = env.get_native_interface();
         let len = ((**internal).GetArrayLength.unwrap())(internal, colors) as usize;
-        
+
         // 复制颜色数据
         let mut color_data = vec![0i32; len];
         for i in 0..std::cmp::min(len, 259) {
@@ -641,7 +671,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCurso
     _class: jclass,
     engine_ptr: jlong,
 ) -> jint {
-    if engine_ptr == 0 { return -1; }
+    if engine_ptr == 0 {
+        return -1;
+    }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
     let guard = engine_lock.read().unwrap();
     let engine = &*guard;
@@ -654,7 +686,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCurso
     _class: jclass,
     engine_ptr: jlong,
 ) -> jint {
-    if engine_ptr == 0 { return -1; }
+    if engine_ptr == 0 {
+        return -1;
+    }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
     let guard = engine_lock.read().unwrap();
     let engine = &*guard;
@@ -667,7 +701,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCurso
     _class: jclass,
     engine_ptr: jlong,
 ) -> jint {
-    if engine_ptr == 0 { return 0; }
+    if engine_ptr == 0 {
+        return 0;
+    }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
     let guard = engine_lock.read().unwrap();
     let engine = &*guard;
@@ -680,7 +716,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_shouldCu
     _class: jclass,
     engine_ptr: jlong,
 ) -> jni::sys::jboolean {
-    if engine_ptr == 0 { return jni::sys::JNI_FALSE; }
+    if engine_ptr == 0 {
+        return jni::sys::JNI_FALSE;
+    }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
     let guard = engine_lock.read().unwrap();
     let engine = &*guard;
@@ -697,7 +735,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isRevers
     _class: jclass,
     engine_ptr: jlong,
 ) -> jni::sys::jboolean {
-    if engine_ptr == 0 { return jni::sys::JNI_FALSE; }
+    if engine_ptr == 0 {
+        return jni::sys::JNI_FALSE;
+    }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
     let guard = engine_lock.read().unwrap();
     let engine = &*guard;
@@ -714,7 +754,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getTitle
     _class: jclass,
     engine_ptr: jlong,
 ) -> jstring {
-    if engine_ptr == 0 { return std::ptr::null_mut(); }
+    if engine_ptr == 0 {
+        return std::ptr::null_mut();
+    }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
     let guard = engine_lock.read().unwrap();
     let engine = &*guard;
@@ -737,7 +779,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_reportFo
     _class: jclass,
     engine_ptr: jlong,
 ) {
-    if engine_ptr == 0 { return; }
+    if engine_ptr == 0 {
+        return;
+    }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
     let guard = engine_lock.read().unwrap();
     let engine = &*guard;
@@ -750,7 +794,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_reportFo
     _class: jclass,
     engine_ptr: jlong,
 ) {
-    if engine_ptr == 0 { return; }
+    if engine_ptr == 0 {
+        return;
+    }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
     let guard = engine_lock.read().unwrap();
     let engine = &*guard;
@@ -764,7 +810,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_pasteTex
     engine_ptr: jlong,
     text: jstring,
 ) {
-    if engine_ptr == 0 { return; }
+    if engine_ptr == 0 {
+        return;
+    }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
     let mut guard = engine_lock.write().unwrap();
     let engine = &mut *guard;
@@ -779,14 +827,15 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_pasteTex
     }
 }
 
-
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getScrollCounterFromRust(
     _env_ptr: *mut *const JNINativeInterface_,
     _class: jclass,
     engine_ptr: jlong,
 ) -> jint {
-    if engine_ptr == 0 { return 0; }
+    if engine_ptr == 0 {
+        return 0;
+    }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
     let guard = engine_lock.read().unwrap();
     let engine = &*guard;
@@ -799,7 +848,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_clearScr
     _class: jclass,
     engine_ptr: jlong,
 ) {
-    if engine_ptr == 0 { return; }
+    if engine_ptr == 0 {
+        return;
+    }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
     let mut guard = engine_lock.write().unwrap();
     let engine = &mut *guard;
@@ -812,7 +863,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isAutoSc
     _class: jclass,
     engine_ptr: jlong,
 ) -> jni::sys::jboolean {
-    if engine_ptr == 0 { return jni::sys::JNI_FALSE; }
+    if engine_ptr == 0 {
+        return jni::sys::JNI_FALSE;
+    }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
     let guard = engine_lock.read().unwrap();
     let engine = &*guard;
@@ -829,7 +882,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_toggleAu
     _class: jclass,
     engine_ptr: jlong,
 ) {
-    if engine_ptr == 0 { return; }
+    if engine_ptr == 0 {
+        return;
+    }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
     let mut guard = engine_lock.write().unwrap();
     let engine = &mut *guard;
@@ -915,7 +970,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendMous
     row: jint,
     pressed: jni::sys::jboolean,
 ) {
-    if engine_ptr == 0 { return; }
+    if engine_ptr == 0 {
+        return;
+    }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
     let mut guard = engine_lock.write().unwrap();
     let engine = &mut *guard;
@@ -936,7 +993,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendKeyC
     key_char: jstring,
     key_mod: jint,
 ) {
-    if engine_ptr == 0 { return; }
+    if engine_ptr == 0 {
+        return;
+    }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
     let mut guard = engine_lock.write().unwrap();
     let engine = &mut *guard;
@@ -957,7 +1016,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendKeyC
         None
     };
 
-    engine.state.send_key_event(key_code as i32, key_char_str, key_mod as i32);
+    engine
+        .state
+        .send_key_event(key_code as i32, key_char_str, key_mod as i32);
 }
 
 // ============================================================================

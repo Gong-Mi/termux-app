@@ -194,6 +194,20 @@ public final class TerminalBuffer {
      */
     public int externalToInternalRow(int externalRow) {
         int activeTranscriptRows = getActiveTranscriptRows();
+        
+        // 边界保护：确保 externalRow 在有效范围内
+        if (externalRow < -activeTranscriptRows) {
+            externalRow = -activeTranscriptRows;
+        }
+        if (externalRow >= mScreenRows) {
+            externalRow = mScreenRows - 1;
+        }
+        
+        // 额外安全检查：如果 activeTranscriptRows 为 0 且 externalRow 为负数，修正为 0
+        if (activeTranscriptRows == 0 && externalRow < 0) {
+            externalRow = 0;
+        }
+        
         if (externalRow < -activeTranscriptRows || externalRow >= mScreenRows)
             throw new IllegalArgumentException("extRow=" + externalRow + ", mScreenRows=" + mScreenRows + ", activeTranscriptRows=" + activeTranscriptRows);
         final int internalRow = mScreenFirstRow + externalRow;

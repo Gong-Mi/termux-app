@@ -2,8 +2,8 @@
 //!
 //! Provides functionality to extract bootstrap zip to target directory.
 
-use std::io::Read;
 use std::fs::{File, create_dir_all};
+use std::io::Read;
 use std::path::Path;
 use zip::ZipArchive;
 
@@ -30,7 +30,7 @@ pub extern "system" fn Java_com_termux_app_BootstrapExtractor_extractFromBytes(
         Ok(e) => {
             eprintln!("[Rust Bootstrap] [OK] JNI environment initialized");
             e
-        },
+        }
         Err(e) => {
             eprintln!("[Rust Bootstrap] [ERROR] JNI environment error: {:?}", e);
             return -1;
@@ -43,9 +43,12 @@ pub extern "system" fn Java_com_termux_app_BootstrapExtractor_extractFromBytes(
             let s: String = s.into();
             eprintln!("[Rust Bootstrap] [OK] Target directory: {}", s);
             s
-        },
+        }
         Err(e) => {
-            eprintln!("[Rust Bootstrap] [ERROR] Failed to get target directory: {:?}", e);
+            eprintln!(
+                "[Rust Bootstrap] [ERROR] Failed to get target directory: {:?}",
+                e
+            );
             return -2;
         }
     };
@@ -53,11 +56,17 @@ pub extern "system" fn Java_com_termux_app_BootstrapExtractor_extractFromBytes(
     // 获取 zip 字节数据
     let zip_data: Vec<u8> = match env.convert_byte_array(&zip_bytes) {
         Ok(data) => {
-            eprintln!("[Rust Bootstrap] [OK] Zip data loaded, size: {} bytes", data.len());
+            eprintln!(
+                "[Rust Bootstrap] [OK] Zip data loaded, size: {} bytes",
+                data.len()
+            );
             data
-        },
+        }
         Err(e) => {
-            eprintln!("[Rust Bootstrap] [ERROR] Failed to convert byte array: {:?}", e);
+            eprintln!(
+                "[Rust Bootstrap] [ERROR] Failed to convert byte array: {:?}",
+                e
+            );
             return -3;
         }
     };
@@ -69,7 +78,7 @@ pub extern "system" fn Java_com_termux_app_BootstrapExtractor_extractFromBytes(
             eprintln!("[Rust Bootstrap] [SUCCESS] Extracted {} files", count);
             eprintln!("[Rust Bootstrap] ========== [Extraction Complete] ==========");
             count as jni::sys::jlong
-        },
+        }
         Err(e) => {
             eprintln!("[Rust Bootstrap] [ERROR] Bootstrap extract error: {:?}", e);
             eprintln!("[Rust Bootstrap] ========== [Extraction Failed] ==========");
@@ -79,13 +88,19 @@ pub extern "system" fn Java_com_termux_app_BootstrapExtractor_extractFromBytes(
 }
 
 /// 解压 zip 到指定目录
-fn extract_zip_to_dir(zip_bytes: &[u8], target_dir: &str) -> Result<usize, Box<dyn std::error::Error>> {
+fn extract_zip_to_dir(
+    zip_bytes: &[u8],
+    target_dir: &str,
+) -> Result<usize, Box<dyn std::error::Error>> {
     eprintln!("[Rust Extract] Opening zip archive...");
     let reader = std::io::Cursor::new(zip_bytes);
     let mut archive = ZipArchive::new(reader)?;
-    
+
     let total_entries = archive.len();
-    eprintln!("[Rust Extract] Archive opened, total entries: {}", total_entries);
+    eprintln!(
+        "[Rust Extract] Archive opened, total entries: {}",
+        total_entries
+    );
 
     let mut extracted_count = 0;
     let mut symlinks: Vec<(String, String)> = Vec::new();
@@ -116,7 +131,10 @@ fn extract_zip_to_dir(zip_bytes: &[u8], target_dir: &str) -> Result<usize, Box<d
                     symlink_count += 1;
                 }
             }
-            eprintln!("[Rust Extract] Found {} symlinks in SYMLINKS.txt", symlink_count);
+            eprintln!(
+                "[Rust Extract] Found {} symlinks in SYMLINKS.txt",
+                symlink_count
+            );
             continue;
         }
 
@@ -131,21 +149,28 @@ fn extract_zip_to_dir(zip_bytes: &[u8], target_dir: &str) -> Result<usize, Box<d
         // 提取文件
         let mut outfile = File::create(&out_path)?;
         let bytes_copied = std::io::copy(&mut file, &mut outfile)?;
-        
-        eprintln!("[Rust Extract] [{}] Extracted: {} ({} bytes)", i, path_str, bytes_copied);
+
+        eprintln!(
+            "[Rust Extract] [{}] Extracted: {} ({} bytes)",
+            i, path_str, bytes_copied
+        );
 
         // 设置执行权限 (bin/, libexec/ 等目录)
         let path_str = file_path.to_string_lossy();
-        if path_str.starts_with("bin/") ||
-           path_str.starts_with("libexec") ||
-           path_str.starts_with("lib/apt/") {
+        if path_str.starts_with("bin/")
+            || path_str.starts_with("libexec")
+            || path_str.starts_with("lib/apt/")
+        {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
                 let mut perms = std::fs::metadata(&out_path)?.permissions();
                 perms.set_mode(0o700);
                 std::fs::set_permissions(&out_path, perms)?;
-                eprintln!("[Rust Extract] [{}] Set executable permission: {}", i, path_str);
+                eprintln!(
+                    "[Rust Extract] [{}] Set executable permission: {}",
+                    i, path_str
+                );
             }
         }
 
@@ -153,8 +178,10 @@ fn extract_zip_to_dir(zip_bytes: &[u8], target_dir: &str) -> Result<usize, Box<d
         extracted_count += 1;
     }
 
-    eprintln!("[Rust Extract] Extraction summary: {} dirs, {} files, {} symlinks to create", 
-              dir_count, file_count, symlink_count);
+    eprintln!(
+        "[Rust Extract] Extraction summary: {} dirs, {} files, {} symlinks to create",
+        dir_count, file_count, symlink_count
+    );
 
     // 创建符号链接
     eprintln!("[Rust Extract] Creating {} symlinks...", symlink_count);

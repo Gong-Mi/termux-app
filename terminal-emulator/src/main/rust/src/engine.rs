@@ -1,10 +1,10 @@
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use jni::objects::JValue;
 use std::cmp::{max, min};
-use unicode_width::UnicodeWidthChar;
-use vte::{Params, Parser, Perform};
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use unicode_width::UnicodeWidthChar;
+use vte::{Params, Parser, Perform};
 
 use crate::utils::map_line_drawing;
 
@@ -36,14 +36,14 @@ impl SharedScreenBuffer {
     pub fn required_size(cols: usize, rows: usize) -> usize {
         std::mem::size_of::<Self>() + (cols * rows * (2 + 8)) // u16 + u64 per cell
     }
-    
+
     /// 获取样式数据起始位置
     pub fn style_data_ptr(&self) -> *const u64 {
         let text_ptr = self.text_data.as_ptr();
         let cell_count = self.cols as usize * self.rows as usize;
         unsafe { text_ptr.add(cell_count) as *const u64 }
     }
-    
+
     /// 获取可变样式数据指针
     pub fn style_data_ptr_mut(&mut self) -> *mut u64 {
         let text_ptr = self.text_data.as_ptr() as *mut u16;
@@ -77,14 +77,14 @@ impl FlatScreenBuffer {
             rows,
         }
     }
-    
+
     /// 创建共享缓冲区用于 DirectByteBuffer
     pub fn create_shared_buffer(&mut self) -> *mut SharedScreenBuffer {
         // 分配共享内存
         let buffer_size = SharedScreenBuffer::required_size(self.cols, self.rows);
         let layout = std::alloc::Layout::from_size_align(buffer_size, 8).unwrap();
         let ptr = unsafe { std::alloc::alloc(layout) } as *mut SharedScreenBuffer;
-        
+
         if !ptr.is_null() {
             unsafe {
                 std::ptr::write(&mut (*ptr).version, AtomicBool::new(false));
@@ -98,18 +98,20 @@ impl FlatScreenBuffer {
                 text_data: [],
             }));
         }
-        
+
         ptr
     }
-    
+
     /// 从共享缓冲区同步数据到 Rust 侧
     pub fn sync_from_shared(&mut self, shared_ptr: *const SharedScreenBuffer) {
-        if shared_ptr.is_null() { return; }
-        
+        if shared_ptr.is_null() {
+            return;
+        }
+
         unsafe {
             let shared = &*shared_ptr;
             let cell_count = self.cols * self.rows;
-            
+
             std::ptr::copy_nonoverlapping(
                 shared.text_data.as_ptr(),
                 self.text_data.as_mut_ptr(),
@@ -122,15 +124,17 @@ impl FlatScreenBuffer {
             );
         }
     }
-    
+
     /// 同步数据到共享缓冲区
     pub fn sync_to_shared(&self, shared_ptr: *mut SharedScreenBuffer) {
-        if shared_ptr.is_null() { return; }
-        
+        if shared_ptr.is_null() {
+            return;
+        }
+
         unsafe {
             let shared = &mut *shared_ptr;
             let cell_count = self.cols * self.rows;
-            
+
             std::ptr::copy_nonoverlapping(
                 self.text_data.as_ptr(),
                 shared.text_data.as_mut_ptr(),
@@ -141,18 +145,18 @@ impl FlatScreenBuffer {
                 shared.style_data_ptr_mut(),
                 cell_count,
             );
-            
+
             // 更新版本，通知 Java 侧数据已变更
             shared.version.store(true, Ordering::Release);
         }
     }
-    
+
     /// 获取单元格索引
     #[inline]
     pub fn cell_index(&self, col: usize, row: usize) -> usize {
         row * self.cols + col
     }
-    
+
     /// 设置单元格文本
     #[inline]
     pub fn set_cell_text(&mut self, col: usize, row: usize, ch: u16) {
@@ -161,7 +165,7 @@ impl FlatScreenBuffer {
             self.text_data[idx] = ch;
         }
     }
-    
+
     /// 设置单元格样式
     #[inline]
     pub fn set_cell_style(&mut self, col: usize, row: usize, style: u64) {
@@ -332,7 +336,8 @@ impl SixelDecoder {
                             let mask = 1u8 << bit;
                             if (sixel_value & mask) != 0 {
                                 // 设置当前颜色
-                                self.pixel_data[pixel_row][self.current_col] = self.current_color as u8;
+                                self.pixel_data[pixel_row][self.current_col] =
+                                    self.current_color as u8;
                             }
                         }
                     }
@@ -376,7 +381,9 @@ impl SixelDecoder {
                 }
                 b'~' => {
                     // 删除图形（清除）
-                    if self.current_row < self.pixel_data.len() && self.current_col < self.pixel_data[self.current_row].len() {
+                    if self.current_row < self.pixel_data.len()
+                        && self.current_col < self.pixel_data[self.current_row].len()
+                    {
                         self.pixel_data[self.current_row][self.current_col] = 0;
                     }
                 }
@@ -424,16 +431,16 @@ impl SixelDecoder {
     /// 获取解码后的图像数据（RGBA 格式）
     pub fn get_image_data(&self) -> Vec<u8> {
         let mut rgba_data = Vec::new();
-        
+
         for row in &self.pixel_data {
             for &pixel in row {
                 rgba_data.push(pixel); // R
                 rgba_data.push(pixel); // G
                 rgba_data.push(pixel); // B
-                rgba_data.push(255);   // A
+                rgba_data.push(255); // A
             }
         }
-        
+
         rgba_data
     }
 }
@@ -470,31 +477,31 @@ impl TerminalRow {
 }
 
 /// SGR 样式位字段定义（与 Java TextStyle 格式兼容）
-/// 
+///
 /// Java TextStyle 位布局 (64 位 long):
 /// - 位 0-10:   效果标志 (11 位)
 /// - 位 16-39:  背景色 (24 位真彩色或 9 位索引)
 /// - 位 40-63:  前景色 (24 位真彩色或 9 位索引)
-/// 
+///
 /// u64 布局：[63:40] 前景色 [39:16] 背景色 [15:0] 效果标志
-pub const STYLE_MASK_EFFECT: u64 = 0x7FF;           // 位 0-10 (11 位效果标志)
-pub const STYLE_MASK_BG: u64 = 0x1FF0000;           // 位 16-24 (9 位索引色背景)
-pub const STYLE_MASK_FG: u64 = 0x1FF0000000000;     // 位 40-48 (9 位索引色前景)
+pub const STYLE_MASK_EFFECT: u64 = 0x7FF; // 位 0-10 (11 位效果标志)
+pub const STYLE_MASK_BG: u64 = 0x1FF0000; // 位 16-24 (9 位索引色背景)
+pub const STYLE_MASK_FG: u64 = 0x1FF0000000000; // 位 40-48 (9 位索引色前景)
 
 // 真彩色标志位（公开供测试使用）
-pub const STYLE_TRUECOLOR_FG: u64 = 1 << 9;         // 位 9 - 前景色使用 24 位真彩色
-pub const STYLE_TRUECOLOR_BG: u64 = 1 << 10;        // 位 10 - 背景色使用 24 位真彩色
+pub const STYLE_TRUECOLOR_FG: u64 = 1 << 9; // 位 9 - 前景色使用 24 位真彩色
+pub const STYLE_TRUECOLOR_BG: u64 = 1 << 10; // 位 10 - 背景色使用 24 位真彩色
 
 // 效果标志（与 Java TextStyle 完全一致）
-pub const EFFECT_BOLD: u64 = 1 << 0;                // 位 0 - 粗体
-pub const EFFECT_ITALIC: u64 = 1 << 1;              // 位 1 - 斜体
-pub const EFFECT_UNDERLINE: u64 = 1 << 2;           // 位 2 - 下划线
-pub const EFFECT_BLINK: u64 = 1 << 3;               // 位 3 - 闪烁
-pub const EFFECT_REVERSE: u64 = 1 << 4;             // 位 4 - 反显
-pub const EFFECT_INVISIBLE: u64 = 1 << 5;           // 位 5 - 隐藏
-pub const EFFECT_STRIKETHROUGH: u64 = 1 << 6;       // 位 6 - 删除线
-pub const EFFECT_PROTECTED: u64 = 1 << 7;           // 位 7 - 保护属性
-pub const EFFECT_DIM: u64 = 1 << 8;                 // 位 8 - 淡色/半亮度
+pub const EFFECT_BOLD: u64 = 1 << 0; // 位 0 - 粗体
+pub const EFFECT_ITALIC: u64 = 1 << 1; // 位 1 - 斜体
+pub const EFFECT_UNDERLINE: u64 = 1 << 2; // 位 2 - 下划线
+pub const EFFECT_BLINK: u64 = 1 << 3; // 位 3 - 闪烁
+pub const EFFECT_REVERSE: u64 = 1 << 4; // 位 4 - 反显
+pub const EFFECT_INVISIBLE: u64 = 1 << 5; // 位 5 - 隐藏
+pub const EFFECT_STRIKETHROUGH: u64 = 1 << 6; // 位 6 - 删除线
+pub const EFFECT_PROTECTED: u64 = 1 << 7; // 位 7 - 保护属性
+pub const EFFECT_DIM: u64 = 1 << 8; // 位 8 - 淡色/半亮度
 
 // 特殊颜色索引（与 Java TextStyle 一致）
 pub const COLOR_INDEX_FOREGROUND: u64 = 256;
@@ -502,17 +509,17 @@ pub const COLOR_INDEX_BACKGROUND: u64 = 257;
 pub const COLOR_INDEX_CURSOR: u64 = 258;
 
 /// 编码样式（与 Java TextStyle.encode 兼容）
-/// 
+///
 /// 参数：
 /// - fore_color: 前景色（索引色 0-258 或 24 位真彩色如 0xFFRRGGBB）
 /// - back_color: 背景色（索引色 0-258 或 24 位真彩色如 0xFFRRGGBB）
 /// - effect: 效果标志（如 EFFECT_BOLD 等）
-/// 
+///
 /// 返回：编码后的 64 位样式值
 #[inline]
 pub const fn encode_style(fore_color: u64, back_color: u64, effect: u64) -> u64 {
     let mut result = effect & STYLE_MASK_EFFECT;
-    
+
     // 处理前景色
     if (fore_color & 0xff000000) == 0xff000000 {
         // 24 位真彩色
@@ -521,7 +528,7 @@ pub const fn encode_style(fore_color: u64, back_color: u64, effect: u64) -> u64 
         // 索引色（9 位）
         result |= (fore_color & 0x1FF) << 40;
     }
-    
+
     // 处理背景色
     if (back_color & 0xff000000) == 0xff000000 {
         // 24 位真彩色
@@ -530,7 +537,7 @@ pub const fn encode_style(fore_color: u64, back_color: u64, effect: u64) -> u64 
         // 索引色（9 位）
         result |= (back_color & 0x1FF) << 16;
     }
-    
+
     result
 }
 
@@ -575,52 +582,39 @@ pub const DEFAULT_COLORSCHEME: [u32; 259] = [
     0xffff00ff, // 13: bright magenta
     0xff00ffff, // 14: bright cyan
     0xffffffff, // 15: bright white
-
     // 216 色立方体（6 色阶每色）- 压缩表示，实际使用时展开
     // 为节省空间，这里用循环初始化
-    0xff000000, 0xff00005f, 0xff000087, 0xff0000af, 0xff0000d7, 0xff0000ff,
-    0xff005f00, 0xff005f5f, 0xff005f87, 0xff005faf, 0xff005fd7, 0xff005fff,
-    0xff008700, 0xff00875f, 0xff008787, 0xff0087af, 0xff0087d7, 0xff0087ff,
-    0xff00af00, 0xff00af5f, 0xff00af87, 0xff00afaf, 0xff00afd7, 0xff00afff,
-    0xff00d700, 0xff00d75f, 0xff00d787, 0xff00d7af, 0xff00d7d7, 0xff00d7ff,
-    0xff00ff00, 0xff00ff5f, 0xff00ff87, 0xff00ffaf, 0xff00ffd7, 0xff00ffff,
-    0xff5f0000, 0xff5f005f, 0xff5f0087, 0xff5f00af, 0xff5f00d7, 0xff5f00ff,
-    0xff5f5f00, 0xff5f5f5f, 0xff5f5f87, 0xff5f5faf, 0xff5f5fd7, 0xff5f5fff,
-    0xff5f8700, 0xff5f875f, 0xff5f8787, 0xff5f87af, 0xff5f87d7, 0xff5f87ff,
-    0xff5faf00, 0xff5faf5f, 0xff5faf87, 0xff5fafaf, 0xff5fafd7, 0xff5fafff,
-    0xff5fd700, 0xff5fd75f, 0xff5fd787, 0xff5fd7af, 0xff5fd7d7, 0xff5fd7ff,
-    0xff5fff00, 0xff5fff5f, 0xff5fff87, 0xff5fffaf, 0xff5fffd7, 0xff5fffff,
-    0xff870000, 0xff87005f, 0xff870087, 0xff8700af, 0xff8700d7, 0xff8700ff,
-    0xff875f00, 0xff875f5f, 0xff875f87, 0xff875faf, 0xff875fd7, 0xff875fff,
-    0xff878700, 0xff87875f, 0xff878787, 0xff8787af, 0xff8787d7, 0xff8787ff,
-    0xff87af00, 0xff87af5f, 0xff87af87, 0xff87afaf, 0xff87afd7, 0xff87afff,
-    0xff87d700, 0xff87d75f, 0xff87d787, 0xff87d7af, 0xff87d7d7, 0xff87d7ff,
-    0xff87ff00, 0xff87ff5f, 0xff87ff87, 0xff87ffaf, 0xff87ffd7, 0xff87ffff,
-    0xffaf0000, 0xffaf005f, 0xffaf0087, 0xffaf00af, 0xffaf00d7, 0xffaf00ff,
-    0xffaf5f00, 0xffaf5f5f, 0xffaf5f87, 0xffaf5faf, 0xffaf5fd7, 0xffaf5fff,
-    0xffaf8700, 0xffaf875f, 0xffaf8787, 0xffaf87af, 0xffaf87d7, 0xffaf87ff,
-    0xffafaf00, 0xffafaf5f, 0xffafaf87, 0xffafafaf, 0xffafafd7, 0xffafafff,
-    0xffafd700, 0xffafd75f, 0xffafd787, 0xffafd7af, 0xffafd7d7, 0xffafd7ff,
-    0xffafff00, 0xffafff5f, 0xffafff87, 0xffafffaf, 0xffafffd7, 0xffafffff,
-    0xffd70000, 0xffd7005f, 0xffd70087, 0xffd700af, 0xffd700d7, 0xffd700ff,
-    0xffd75f00, 0xffd75f5f, 0xffd75f87, 0xffd75faf, 0xffd75fd7, 0xffd75fff,
-    0xffd78700, 0xffd7875f, 0xffd78787, 0xffd787af, 0xffd787d7, 0xffd787ff,
-    0xffd7af00, 0xffd7af5f, 0xffd7af87, 0xffd7afaf, 0xffd7afd7, 0xffd7afff,
-    0xffd7d700, 0xffd7d75f, 0xffd7d787, 0xffd7d7af, 0xffd7d7d7, 0xffd7d7ff,
-    0xffd7ff00, 0xffd7ff5f, 0xffd7ff87, 0xffd7ffaf, 0xffd7ffd7, 0xffd7ffff,
-    0xffff0000, 0xffff005f, 0xffff0087, 0xffff00af, 0xffff00d7, 0xffff00ff,
-    0xffff5f00, 0xffff5f5f, 0xffff5f87, 0xffff5faf, 0xffff5fd7, 0xffff5fff,
-    0xffff8700, 0xffff875f, 0xffff8787, 0xffff87af, 0xffff87d7, 0xffff87ff,
-    0xffffaf00, 0xffffaf5f, 0xffffaf87, 0xffffafaf, 0xffffafd7, 0xffffafff,
-    0xffffd700, 0xffffd75f, 0xffffd787, 0xffffd7af, 0xffffd7d7, 0xffffd7ff,
-    0xffffff00, 0xffffff5f, 0xffffff87, 0xffffffaf, 0xffffffd7, 0xffffffff,
-
+    0xff000000, 0xff00005f, 0xff000087, 0xff0000af, 0xff0000d7, 0xff0000ff, 0xff005f00, 0xff005f5f,
+    0xff005f87, 0xff005faf, 0xff005fd7, 0xff005fff, 0xff008700, 0xff00875f, 0xff008787, 0xff0087af,
+    0xff0087d7, 0xff0087ff, 0xff00af00, 0xff00af5f, 0xff00af87, 0xff00afaf, 0xff00afd7, 0xff00afff,
+    0xff00d700, 0xff00d75f, 0xff00d787, 0xff00d7af, 0xff00d7d7, 0xff00d7ff, 0xff00ff00, 0xff00ff5f,
+    0xff00ff87, 0xff00ffaf, 0xff00ffd7, 0xff00ffff, 0xff5f0000, 0xff5f005f, 0xff5f0087, 0xff5f00af,
+    0xff5f00d7, 0xff5f00ff, 0xff5f5f00, 0xff5f5f5f, 0xff5f5f87, 0xff5f5faf, 0xff5f5fd7, 0xff5f5fff,
+    0xff5f8700, 0xff5f875f, 0xff5f8787, 0xff5f87af, 0xff5f87d7, 0xff5f87ff, 0xff5faf00, 0xff5faf5f,
+    0xff5faf87, 0xff5fafaf, 0xff5fafd7, 0xff5fafff, 0xff5fd700, 0xff5fd75f, 0xff5fd787, 0xff5fd7af,
+    0xff5fd7d7, 0xff5fd7ff, 0xff5fff00, 0xff5fff5f, 0xff5fff87, 0xff5fffaf, 0xff5fffd7, 0xff5fffff,
+    0xff870000, 0xff87005f, 0xff870087, 0xff8700af, 0xff8700d7, 0xff8700ff, 0xff875f00, 0xff875f5f,
+    0xff875f87, 0xff875faf, 0xff875fd7, 0xff875fff, 0xff878700, 0xff87875f, 0xff878787, 0xff8787af,
+    0xff8787d7, 0xff8787ff, 0xff87af00, 0xff87af5f, 0xff87af87, 0xff87afaf, 0xff87afd7, 0xff87afff,
+    0xff87d700, 0xff87d75f, 0xff87d787, 0xff87d7af, 0xff87d7d7, 0xff87d7ff, 0xff87ff00, 0xff87ff5f,
+    0xff87ff87, 0xff87ffaf, 0xff87ffd7, 0xff87ffff, 0xffaf0000, 0xffaf005f, 0xffaf0087, 0xffaf00af,
+    0xffaf00d7, 0xffaf00ff, 0xffaf5f00, 0xffaf5f5f, 0xffaf5f87, 0xffaf5faf, 0xffaf5fd7, 0xffaf5fff,
+    0xffaf8700, 0xffaf875f, 0xffaf8787, 0xffaf87af, 0xffaf87d7, 0xffaf87ff, 0xffafaf00, 0xffafaf5f,
+    0xffafaf87, 0xffafafaf, 0xffafafd7, 0xffafafff, 0xffafd700, 0xffafd75f, 0xffafd787, 0xffafd7af,
+    0xffafd7d7, 0xffafd7ff, 0xffafff00, 0xffafff5f, 0xffafff87, 0xffafffaf, 0xffafffd7, 0xffafffff,
+    0xffd70000, 0xffd7005f, 0xffd70087, 0xffd700af, 0xffd700d7, 0xffd700ff, 0xffd75f00, 0xffd75f5f,
+    0xffd75f87, 0xffd75faf, 0xffd75fd7, 0xffd75fff, 0xffd78700, 0xffd7875f, 0xffd78787, 0xffd787af,
+    0xffd787d7, 0xffd787ff, 0xffd7af00, 0xffd7af5f, 0xffd7af87, 0xffd7afaf, 0xffd7afd7, 0xffd7afff,
+    0xffd7d700, 0xffd7d75f, 0xffd7d787, 0xffd7d7af, 0xffd7d7d7, 0xffd7d7ff, 0xffd7ff00, 0xffd7ff5f,
+    0xffd7ff87, 0xffd7ffaf, 0xffd7ffd7, 0xffd7ffff, 0xffff0000, 0xffff005f, 0xffff0087, 0xffff00af,
+    0xffff00d7, 0xffff00ff, 0xffff5f00, 0xffff5f5f, 0xffff5f87, 0xffff5faf, 0xffff5fd7, 0xffff5fff,
+    0xffff8700, 0xffff875f, 0xffff8787, 0xffff87af, 0xffff87d7, 0xffff87ff, 0xffffaf00, 0xffffaf5f,
+    0xffffaf87, 0xffffafaf, 0xffffafd7, 0xffffafff, 0xffffd700, 0xffffd75f, 0xffffd787, 0xffffd7af,
+    0xffffd7d7, 0xffffd7ff, 0xffffff00, 0xffffff5f, 0xffffff87, 0xffffffaf, 0xffffffd7, 0xffffffff,
     // 24 级灰度
-    0xff080808, 0xff121212, 0xff1c1c1c, 0xff262626, 0xff303030, 0xff3a3a3a,
-    0xff444444, 0xff4e4e4e, 0xff585858, 0xff626262, 0xff6c6c6c, 0xff767676,
-    0xff808080, 0xff8a8a8a, 0xff949494, 0xff9e9e9e, 0xffa8a8a8, 0xffb2b2b2,
-    0xffbcbcbc, 0xffc6c6c6, 0xffd0d0d0, 0xffdadada, 0xffe4e4e4, 0xffeeeeee,
-
+    0xff080808, 0xff121212, 0xff1c1c1c, 0xff262626, 0xff303030, 0xff3a3a3a, 0xff444444, 0xff4e4e4e,
+    0xff585858, 0xff626262, 0xff6c6c6c, 0xff767676, 0xff808080, 0xff8a8a8a, 0xff949494, 0xff9e9e9e,
+    0xffa8a8a8, 0xffb2b2b2, 0xffbcbcbc, 0xffc6c6c6, 0xffd0d0d0, 0xffdadada, 0xffe4e4e4, 0xffeeeeee,
     // 特殊颜色索引
     0xffffffff, // 256: COLOR_INDEX_FOREGROUND
     0xff000000, // 257: COLOR_INDEX_BACKGROUND
@@ -657,12 +651,12 @@ impl TerminalColors {
     /// 支持格式：#RGB, #RRGGBB, rgb:R/G/B
     pub fn parse_color(color_str: &str) -> Option<u32> {
         let color_str = color_str.trim();
-        
+
         if color_str.starts_with('#') {
             // #RGB, #RRGGBB, #RRRGGGBBB, #RRRRGGGGBBBB
             let hex = &color_str[1..];
             let len = hex.len();
-            
+
             match len {
                 3 => {
                     // #RGB -> #RRGGBB
@@ -707,30 +701,42 @@ impl TerminalColors {
             if parts.len() != 3 {
                 return None;
             }
-            
+
             let r = u16::from_str_radix(parts[0], 16).ok()?;
             let g = u16::from_str_radix(parts[1], 16).ok()?;
             let b = u16::from_str_radix(parts[2], 16).ok()?;
-            
+
             // 根据位数缩放到 8 位
             let scale = match parts[0].len() {
-                1 => 17,  // 4 位 -> 8 位 (x17 = x * 255/15)
-                2 => 1,   // 8 位
-                3 => 0,   // 12 位，需要除法
-                4 => 0,   // 16 位，需要除法
+                1 => 17, // 4 位 -> 8 位 (x17 = x * 255/15)
+                2 => 1,  // 8 位
+                3 => 0,  // 12 位，需要除法
+                4 => 0,  // 16 位，需要除法
                 _ => return None,
             };
-            
-            let r8 = if parts[0].len() == 3 { ((r as u32 * 255) / 4095) as u8 }
-                     else if parts[0].len() == 4 { ((r as u32 * 255) / 65535) as u8 }
-                     else { (r as u8).wrapping_mul(scale) };
-            let g8 = if parts[1].len() == 3 { ((g as u32 * 255) / 4095) as u8 }
-                     else if parts[1].len() == 4 { ((g as u32 * 255) / 65535) as u8 }
-                     else { (g as u8).wrapping_mul(scale) };
-            let b8 = if parts[2].len() == 3 { ((b as u32 * 255) / 4095) as u8 }
-                     else if parts[2].len() == 4 { ((b as u32 * 255) / 65535) as u8 }
-                     else { (b as u8).wrapping_mul(scale) };
-            
+
+            let r8 = if parts[0].len() == 3 {
+                ((r as u32 * 255) / 4095) as u8
+            } else if parts[0].len() == 4 {
+                ((r as u32 * 255) / 65535) as u8
+            } else {
+                (r as u8).wrapping_mul(scale)
+            };
+            let g8 = if parts[1].len() == 3 {
+                ((g as u32 * 255) / 4095) as u8
+            } else if parts[1].len() == 4 {
+                ((g as u32 * 255) / 65535) as u8
+            } else {
+                (g as u8).wrapping_mul(scale)
+            };
+            let b8 = if parts[2].len() == 3 {
+                ((b as u32 * 255) / 4095) as u8
+            } else if parts[2].len() == 4 {
+                ((b as u32 * 255) / 65535) as u8
+            } else {
+                (b as u8).wrapping_mul(scale)
+            };
+
             Some(0xff000000 | ((r8 as u32) << 16) | ((g8 as u32) << 8) | (b8 as u32))
         } else {
             None
@@ -753,17 +759,17 @@ impl TerminalColors {
         if index >= 259 {
             return String::new();
         }
-        
+
         let color = self.current_colors[index];
         let r = ((color >> 16) & 0xff) as u16;
         let g = ((color >> 8) & 0xff) as u16;
         let b = (color & 0xff) as u16;
-        
+
         // 缩放到 16 位值（xterm 格式）
         let r16 = (r * 65535) / 255;
         let g16 = (g * 65535) / 255;
         let b16 = (b * 65535) / 255;
-        
+
         format!("rgb:{:04x}/{:04x}/{:04x}", r16, g16, b16)
     }
 }
@@ -1024,7 +1030,7 @@ impl ScreenState {
     fn external_to_internal_row(&self, row: i32) -> usize {
         let buffer = self.get_current_buffer();
         let total = buffer.len();
-        
+
         if self.use_alternate_buffer {
             // 备用缓冲区没有滚动历史，直接映射
             (row.max(0) as usize).min(total - 1)
@@ -1125,12 +1131,7 @@ impl ScreenState {
         if let Some(obj) = self.java_callback_obj.as_ref() {
             if let Some(vm) = crate::JAVA_VM.get() {
                 if let Ok(mut env) = vm.get_env() {
-                    let _ = env.call_method(
-                        obj.as_obj(),
-                        "onScreenUpdate",
-                        "()V",
-                        &[],
-                    );
+                    let _ = env.call_method(obj.as_obj(), "onScreenUpdate", "()V", &[]);
                 }
             }
         }
@@ -1254,12 +1255,12 @@ impl ScreenState {
     /// 渲染 Sixel 图像到屏幕
     pub fn render_sixel_image(&mut self) {
         let decoder = &self.sixel_decoder;
-        
+
         // 获取图像数据
         let image_data = decoder.get_image_data();
         let width = decoder.width;
         let height = decoder.height;
-        
+
         if width == 0 || height == 0 {
             return;
         }
@@ -1268,10 +1269,10 @@ impl ScreenState {
         // Sixel 图像每个 sixel 单位是 6 像素高，1 像素宽
         let start_x = self.cursor_x;
         let start_y = self.cursor_y;
-        
+
         // 通过 Java 回调报告图像数据
         self.report_sixel_image(&image_data, width, height, start_x, start_y);
-        
+
         // 移动光标到图像下方
         let pixels_per_row = 6; // 每个 sixel 行有 6 像素
         let terminal_rows_needed = (height + pixels_per_row - 1) / pixels_per_row;
@@ -1286,16 +1287,12 @@ impl ScreenState {
                     // 创建 byte 数组传递图像数据
                     if let Ok(java_image_data) = env.new_byte_array(image_data.len() as i32) {
                         let data_vec: Vec<i8> = image_data.iter().map(|&b| b as i8).collect();
-                        
+
                         // 保存原始引用用于后续调用
                         let image_obj_raw = java_image_data.as_raw();
-                        
-                        let _ = env.set_byte_array_region(
-                            java_image_data,
-                            0,
-                            data_vec.as_slice(),
-                        );
-                        
+
+                        let _ = env.set_byte_array_region(java_image_data, 0, data_vec.as_slice());
+
                         // 调用 Java 方法 - 使用原始引用重建 JObject
                         let image_obj = unsafe { jni::objects::JObject::from_raw(image_obj_raw) };
                         let _ = env.call_method(
@@ -1351,14 +1348,17 @@ impl ScreenState {
         // 使用 SmallVec 避免小字符串分配
         let mut response = [0u8; 32];
         let len;
-        
+
         if self.sgr_mouse {
             // SGR 鼠标格式：CSI < button ; x ; y M/m
             // button: 0-2 = 左/中/右按下，3 = 释放，64/65 = 滚轮
             // M = 按下/移动，m = 释放
             let event_type = if pressed { b'M' } else { b'm' };
             // 格式：\x1b[<button;x;yM 或 \x1b[<button;x;ym
-            let response_str = format!("\x1b[<{};{};{}{}", mouse_button, column, row, event_type as char);
+            let response_str = format!(
+                "\x1b[<{};{};{}{}",
+                mouse_button, column, row, event_type as char
+            );
             self.write_to_session(&response_str);
             return;
         } else if self.mouse_tracking || self.mouse_button_event {
@@ -1416,7 +1416,7 @@ impl ScreenState {
             response[4] = cx;
             response[5] = cy;
             len = 6;
-            
+
             self.write_to_session_bytes(&response[..len]);
             return;
         }
@@ -1425,7 +1425,7 @@ impl ScreenState {
 
     /// 发送键盘事件
     /// 处理特殊键和功能键的转义序列
-    /// 
+    ///
     /// 参数：
     /// - key_code: Android KeyEvent 键码
     /// - key_char: 字符输入（普通字符键）
@@ -1435,10 +1435,10 @@ impl ScreenState {
         let shift = (key_mod & 0x20000000) != 0;
         let ctrl = (key_mod & 0x40000000) != 0;
         let alt = (key_mod & 0x80000000u32 as i32) != 0;
-        
+
         // 构建修饰键前缀
         let mod_prefix = if alt { "\x1b" } else { "" };
-        
+
         // 特殊键码映射 (与 Java KeyHandler 兼容)
         let escape_seq: String = match key_code {
             // 功能键 F1-F12 (支持修饰键)
@@ -1459,33 +1459,65 @@ impl ScreenState {
             19 => {
                 // 上
                 if self.application_cursor_keys {
-                    if key_mod == 0 { "\x1bOA".to_string() } else { Self::build_mod_seq("\x1b[1", key_mod, 'A') }
+                    if key_mod == 0 {
+                        "\x1bOA".to_string()
+                    } else {
+                        Self::build_mod_seq("\x1b[1", key_mod, 'A')
+                    }
                 } else {
-                    if key_mod == 0 { "\x1b[A".to_string() } else { Self::build_mod_seq("\x1b[1", key_mod, 'A') }
+                    if key_mod == 0 {
+                        "\x1b[A".to_string()
+                    } else {
+                        Self::build_mod_seq("\x1b[1", key_mod, 'A')
+                    }
                 }
             }
             20 => {
                 // 下
                 if self.application_cursor_keys {
-                    if key_mod == 0 { "\x1bOB".to_string() } else { Self::build_mod_seq("\x1b[1", key_mod, 'B') }
+                    if key_mod == 0 {
+                        "\x1bOB".to_string()
+                    } else {
+                        Self::build_mod_seq("\x1b[1", key_mod, 'B')
+                    }
                 } else {
-                    if key_mod == 0 { "\x1b[B".to_string() } else { Self::build_mod_seq("\x1b[1", key_mod, 'B') }
+                    if key_mod == 0 {
+                        "\x1b[B".to_string()
+                    } else {
+                        Self::build_mod_seq("\x1b[1", key_mod, 'B')
+                    }
                 }
             }
             21 => {
                 // 左
                 if self.application_cursor_keys {
-                    if key_mod == 0 { "\x1bOD".to_string() } else { Self::build_mod_seq("\x1b[1", key_mod, 'D') }
+                    if key_mod == 0 {
+                        "\x1bOD".to_string()
+                    } else {
+                        Self::build_mod_seq("\x1b[1", key_mod, 'D')
+                    }
                 } else {
-                    if key_mod == 0 { "\x1b[D".to_string() } else { Self::build_mod_seq("\x1b[1", key_mod, 'D') }
+                    if key_mod == 0 {
+                        "\x1b[D".to_string()
+                    } else {
+                        Self::build_mod_seq("\x1b[1", key_mod, 'D')
+                    }
                 }
             }
             22 => {
                 // 右
                 if self.application_cursor_keys {
-                    if key_mod == 0 { "\x1bOC".to_string() } else { Self::build_mod_seq("\x1b[1", key_mod, 'C') }
+                    if key_mod == 0 {
+                        "\x1bOC".to_string()
+                    } else {
+                        Self::build_mod_seq("\x1b[1", key_mod, 'C')
+                    }
                 } else {
-                    if key_mod == 0 { "\x1b[C".to_string() } else { Self::build_mod_seq("\x1b[1", key_mod, 'C') }
+                    if key_mod == 0 {
+                        "\x1b[C".to_string()
+                    } else {
+                        Self::build_mod_seq("\x1b[1", key_mod, 'C')
+                    }
                 }
             }
 
@@ -1493,17 +1525,33 @@ impl ScreenState {
             91 => {
                 // Home
                 if self.application_cursor_keys {
-                    if key_mod == 0 { "\x1bOH".to_string() } else { Self::build_mod_seq("\x1b[1", key_mod, 'H') }
+                    if key_mod == 0 {
+                        "\x1bOH".to_string()
+                    } else {
+                        Self::build_mod_seq("\x1b[1", key_mod, 'H')
+                    }
                 } else {
-                    if key_mod == 0 { "\x1b[H".to_string() } else { Self::build_mod_seq("\x1b[1", key_mod, 'H') }
+                    if key_mod == 0 {
+                        "\x1b[H".to_string()
+                    } else {
+                        Self::build_mod_seq("\x1b[1", key_mod, 'H')
+                    }
                 }
             }
             92 => {
                 // End
                 if self.application_cursor_keys {
-                    if key_mod == 0 { "\x1bOF".to_string() } else { Self::build_mod_seq("\x1b[1", key_mod, 'F') }
+                    if key_mod == 0 {
+                        "\x1bOF".to_string()
+                    } else {
+                        Self::build_mod_seq("\x1b[1", key_mod, 'F')
+                    }
                 } else {
-                    if key_mod == 0 { "\x1b[F".to_string() } else { Self::build_mod_seq("\x1b[1", key_mod, 'F') }
+                    if key_mod == 0 {
+                        "\x1b[F".to_string()
+                    } else {
+                        Self::build_mod_seq("\x1b[1", key_mod, 'F')
+                    }
                 }
             }
 
@@ -1511,37 +1559,109 @@ impl ScreenState {
             111 => {
                 // Backspace
                 if alt {
-                    if ctrl { "\x1b\x08".to_string() } else { "\x1b\x7f".to_string() }
+                    if ctrl {
+                        "\x1b\x08".to_string()
+                    } else {
+                        "\x1b\x7f".to_string()
+                    }
                 } else {
-                    if ctrl { "\x08".to_string() } else { "\x7f".to_string() }
+                    if ctrl {
+                        "\x08".to_string()
+                    } else {
+                        "\x7f".to_string()
+                    }
                 }
             }
-            112 => Self::build_mod_seq("\x1b[3", key_mod, '~'),  // Delete
-            88 => Self::build_mod_seq("\x1b[5", key_mod, '~'),   // Page Up
-            89 => Self::build_mod_seq("\x1b[6", key_mod, '~'),   // Page Down
-            93 => if shift { "\x1b[Z".to_string() } else { "\x09".to_string() },  // Tab (Shift+Tab = 反向制表)
-            113 => Self::build_mod_seq("\x1b[2", key_mod, '~'),  // Insert
+            112 => Self::build_mod_seq("\x1b[3", key_mod, '~'), // Delete
+            88 => Self::build_mod_seq("\x1b[5", key_mod, '~'),  // Page Up
+            89 => Self::build_mod_seq("\x1b[6", key_mod, '~'),  // Page Down
+            93 => {
+                if shift {
+                    "\x1b[Z".to_string()
+                } else {
+                    "\x09".to_string()
+                }
+            } // Tab (Shift+Tab = 反向制表)
+            113 => Self::build_mod_seq("\x1b[2", key_mod, '~'), // Insert
 
             // 数字小键盘 (支持应用键盘模式)
             144 => {
                 // Num Lock
-                if self.application_keypad { "\x1bOP".to_string() } else { "0".to_string() }
+                if self.application_keypad {
+                    "\x1bOP".to_string()
+                } else {
+                    "0".to_string()
+                }
             }
-            145 => if self.application_keypad { "\x1bOj".to_string() } else { "/".to_string() },  // KP Divide
-            146 => if self.application_keypad { "\x1bOk".to_string() } else { "*".to_string() },  // KP Multiply
-            147 => if self.application_keypad { "\x1bOm".to_string() } else { "-".to_string() },  // KP Subtract
-            148 => if self.application_keypad { "\x1bOk".to_string() } else { "+".to_string() },  // KP Add
-            149 => if self.application_keypad { "\x1bOM".to_string() } else { "\r".to_string() }, // KP Enter
-            150 => if self.application_keypad { "\x1bOX".to_string() } else { "=".to_string() },  // KP Equals
+            145 => {
+                if self.application_keypad {
+                    "\x1bOj".to_string()
+                } else {
+                    "/".to_string()
+                }
+            } // KP Divide
+            146 => {
+                if self.application_keypad {
+                    "\x1bOk".to_string()
+                } else {
+                    "*".to_string()
+                }
+            } // KP Multiply
+            147 => {
+                if self.application_keypad {
+                    "\x1bOm".to_string()
+                } else {
+                    "-".to_string()
+                }
+            } // KP Subtract
+            148 => {
+                if self.application_keypad {
+                    "\x1bOk".to_string()
+                } else {
+                    "+".to_string()
+                }
+            } // KP Add
+            149 => {
+                if self.application_keypad {
+                    "\x1bOM".to_string()
+                } else {
+                    "\r".to_string()
+                }
+            } // KP Enter
+            150 => {
+                if self.application_keypad {
+                    "\x1bOX".to_string()
+                } else {
+                    "=".to_string()
+                }
+            } // KP Equals
 
             // Escape
-            114 => if alt { "\x1b\x1b".to_string() } else { "\x1b".to_string() },  // Escape
+            114 => {
+                if alt {
+                    "\x1b\x1b".to_string()
+                } else {
+                    "\x1b".to_string()
+                }
+            } // Escape
 
             // Space (Ctrl+Space = NUL)
-            62 => if ctrl { "\x00".to_string() } else { " ".to_string() },
+            62 => {
+                if ctrl {
+                    "\x00".to_string()
+                } else {
+                    " ".to_string()
+                }
+            }
 
             // Enter
-            66 => if alt { "\x1b\r".to_string() } else { "\r".to_string() },
+            66 => {
+                if alt {
+                    "\x1b\r".to_string()
+                } else {
+                    "\r".to_string()
+                }
+            }
 
             // 未映射的键，使用 key_char
             _ => {
@@ -1601,19 +1721,19 @@ impl ScreenState {
     /// modifier: 2=shift, 3=alt, 5=ctrl, 6=shift+ctrl, 7=alt+ctrl, 8=shift+alt+ctrl
     fn build_mod_seq(start: &str, key_mod: i32, last: char) -> String {
         let modifier = if key_mod == 0x20000000 {
-            2  // shift
+            2 // shift
         } else if key_mod < 0 && key_mod == 0x80000000u32 as i32 {
-            3  // alt
+            3 // alt
         } else if key_mod < 0 && key_mod == 0xA0000000u32 as i32 {
-            4  // shift+alt
+            4 // shift+alt
         } else if key_mod == 0x40000000 {
-            5  // ctrl
+            5 // ctrl
         } else if key_mod == 0x60000000 {
-            6  // shift+ctrl
+            6 // shift+ctrl
         } else if key_mod < 0 && key_mod == 0xC0000000u32 as i32 {
-            7  // alt+ctrl
+            7 // alt+ctrl
         } else if key_mod < 0 && key_mod == 0xE0000000u32 as i32 {
-            8  // shift+alt+ctrl
+            8 // shift+alt+ctrl
         } else {
             return format!("{}{}", start, last);
         };
@@ -1656,13 +1776,14 @@ impl ScreenState {
     pub fn handle_osc4(&mut self, param_text: &str) {
         let parts: Vec<&str> = param_text.split(';').collect();
         let mut i = 0;
-        
+
         while i + 1 < parts.len() {
             if let Ok(color_index) = parts[i].parse::<usize>() {
                 let color_spec = parts[i + 1];
                 if color_spec == "?" {
                     // 查询当前颜色
-                    let report = self.colors.generate_color_report(color_index); self.report_color_response(&format!("4;{}", report));
+                    let report = self.colors.generate_color_report(color_index);
+                    self.report_color_response(&format!("4;{}", report));
                 } else {
                     // 设置颜色
                     if self.colors.try_parse_color(color_index, color_spec) {
@@ -1677,7 +1798,9 @@ impl ScreenState {
     /// OSC 10 - 设置默认前景色
     pub fn handle_osc10(&mut self, param_text: &str) {
         if param_text == "?" {
-            let report = self.colors.generate_color_report(COLOR_INDEX_FOREGROUND as usize);
+            let report = self
+                .colors
+                .generate_color_report(COLOR_INDEX_FOREGROUND as usize);
             self.report_color_response(&format!("10;{}", report));
         } else {
             if let Some(color) = TerminalColors::parse_color(param_text) {
@@ -1690,7 +1813,9 @@ impl ScreenState {
     /// OSC 11 - 设置默认背景色
     pub fn handle_osc11(&mut self, param_text: &str) {
         if param_text == "?" {
-            let report = self.colors.generate_color_report(COLOR_INDEX_BACKGROUND as usize);
+            let report = self
+                .colors
+                .generate_color_report(COLOR_INDEX_BACKGROUND as usize);
             self.report_color_response(&format!("11;{}", report));
         } else {
             if let Some(color) = TerminalColors::parse_color(param_text) {
@@ -1722,7 +1847,10 @@ impl ScreenState {
 
     /// OSC 19 - 报告屏幕单元格像素大小
     pub fn handle_osc19(&self) {
-        self.report_terminal_response(&format!("\x1b]19;t={};{}t", self.cell_width_pixels, self.cell_height_pixels));
+        self.report_terminal_response(&format!(
+            "\x1b]19;t={};{}t",
+            self.cell_width_pixels, self.cell_height_pixels
+        ));
     }
 
     /// OSC 52 - 剪贴板操作
@@ -1732,7 +1860,7 @@ impl ScreenState {
             // 目前不支持从 Rust 侧主动读取 Java 剪贴板并通过 OSC 52 返回
             return;
         }
-        
+
         // 解码 base64
         if let Ok(decoded_bytes) = base64_decode(base64_data) {
             if let Ok(text) = String::from_utf8(decoded_bytes) {
@@ -1810,7 +1938,8 @@ impl ScreenState {
             }
         } else {
             None
-        }.unwrap_or(c);
+        }
+        .unwrap_or(c);
 
         let char_width = c.width().unwrap_or(0) as i32;
         if char_width == 0 {
@@ -1858,7 +1987,7 @@ impl ScreenState {
                 update_cursor = true;
             }
         }
-        
+
         if update_cursor {
             self.cursor_x += char_width;
         }
@@ -2045,10 +2174,7 @@ impl ScreenState {
         let current_style = self.current_style;
         let buffer = self.get_current_buffer_mut();
         let row_len = buffer[idx].text.len();
-        let x = min(
-            cursor_x,
-            if row_len > 0 { row_len - 1 } else { 0 },
-        );
+        let x = min(cursor_x, if row_len > 0 { row_len - 1 } else { 0 });
         match mode {
             0 => {
                 buffer[idx].clear(cursor_x, cols, current_style);
@@ -2180,8 +2306,7 @@ impl ScreenState {
 
         // 清空底部区域
         for i in 0..lines_to_delete as usize {
-            let clear_idx =
-                self.external_to_internal_row(bottom_margin - i as i32 - 1);
+            let clear_idx = self.external_to_internal_row(bottom_margin - i as i32 - 1);
             let buffer = self.get_current_buffer_mut();
             buffer[clear_idx].clear(0, cols, current_style);
         }
@@ -2430,25 +2555,25 @@ impl ScreenState {
         self.sgr_mouse = false;
         self.leftright_margin_mode = false;
         self.send_focus_events = false;
-        
+
         // 重置行绘图状态
         self.use_line_drawing_g0 = false;
         self.use_line_drawing_g1 = false;
         self.use_line_drawing_uses_g0 = true;
-        
+
         // 重置 SGR 属性
         self.reset_sgr();
-        
+
         // 重置颜色为默认值
         self.colors.reset();
-        
+
         // 重置标题
         self.title = None;
         self.title_stack.clear();
-        
+
         // 重置滚动计数器
         self.scroll_counter = 0;
-        
+
         // 通知 Java 层
         self.report_colors_changed();
     }
@@ -2574,8 +2699,8 @@ impl ScreenState {
                             // 256 色索引
                             let color = params_vec[i + 2] as u64;
                             self.fore_color = color;
-                            self.current_style = (self.current_style & !STYLE_MASK_FG)
-                                | ((color & 0x1FF) << 40);
+                            self.current_style =
+                                (self.current_style & !STYLE_MASK_FG) | ((color & 0x1FF) << 40);
                             i += 2;
                         } else if mode == 2 && i + 4 < params_vec.len() {
                             // 24 位真彩色 (38;2;R;G;B)
@@ -2594,8 +2719,8 @@ impl ScreenState {
                 39 => {
                     // 默认前景色
                     self.fore_color = COLOR_INDEX_FOREGROUND;
-                    self.current_style = (self.current_style & !STYLE_MASK_FG)
-                        | (COLOR_INDEX_FOREGROUND << 40);
+                    self.current_style =
+                        (self.current_style & !STYLE_MASK_FG) | (COLOR_INDEX_FOREGROUND << 40);
                 }
                 40..=47 => {
                     // 背景色 40-47（标准颜色 0-7）
@@ -2611,8 +2736,8 @@ impl ScreenState {
                             // 256 色索引
                             let color = params_vec[i + 2] as u64;
                             self.back_color = color;
-                            self.current_style = (self.current_style & !STYLE_MASK_BG)
-                                | ((color & 0x1FF) << 16);
+                            self.current_style =
+                                (self.current_style & !STYLE_MASK_BG) | ((color & 0x1FF) << 16);
                             i += 2;
                         } else if mode == 2 && i + 4 < params_vec.len() {
                             // 24 位真彩色 (48;2;R;G;B)
@@ -2631,8 +2756,8 @@ impl ScreenState {
                 49 => {
                     // 默认背景色
                     self.back_color = COLOR_INDEX_BACKGROUND;
-                    self.current_style = (self.current_style & !STYLE_MASK_BG)
-                        | (COLOR_INDEX_BACKGROUND << 16);
+                    self.current_style =
+                        (self.current_style & !STYLE_MASK_BG) | (COLOR_INDEX_BACKGROUND << 16);
                 }
                 58 => {
                     // 下划线颜色 (58;5;n 或 58;2;r;g;b)
@@ -2798,20 +2923,20 @@ impl ScreenState {
                             self.saved_main_cursor_y = self.cursor_y;
                             self.saved_main_decset_flags = self.decset_flags;
                             self.saved_main_screen_first_row = self.screen_first_row;
-                            
+
                             // 切换到备用缓冲区
                             self.use_alternate_buffer = true;
-                            
+
                             // 清除备用缓冲区
                             self.clear_alt_buffer();
-                            
+
                             // 重置光标到左上角
                             self.cursor_x = 0;
                             self.cursor_y = 0;
                         } else {
                             // 切换到主缓冲区
                             self.use_alternate_buffer = false;
-                            
+
                             // 恢复光标位置
                             self.cursor_x = self.saved_main_cursor_x;
                             self.cursor_y = self.saved_main_cursor_y;
@@ -2878,12 +3003,12 @@ impl ScreenState {
         // 包括：AUTOWRAP, ORIGIN_MODE
         let mask = DECSET_BIT_AUTOWRAP | DECSET_BIT_ORIGIN_MODE;
         self.saved_decset_flags = self.decset_flags & mask;
-        
+
         // 保存行绘图状态
         self.saved_use_line_drawing_g0 = self.use_line_drawing_g0;
         self.saved_use_line_drawing_g1 = self.use_line_drawing_g1;
         self.saved_use_line_drawing_uses_g0 = self.use_line_drawing_uses_g0;
-        
+
         // 保存颜色属性
         self.saved_fore_color = self.fore_color;
         self.saved_back_color = self.back_color;
@@ -2900,12 +3025,12 @@ impl ScreenState {
         self.decset_flags = (self.decset_flags & !mask) | (self.saved_decset_flags & mask);
         self.auto_wrap = (self.decset_flags & DECSET_BIT_AUTOWRAP) != 0;
         self.origin_mode = (self.decset_flags & DECSET_BIT_ORIGIN_MODE) != 0;
-        
+
         // 恢复行绘图状态
         self.use_line_drawing_g0 = self.saved_use_line_drawing_g0;
         self.use_line_drawing_g1 = self.saved_use_line_drawing_g1;
         self.use_line_drawing_uses_g0 = self.saved_use_line_drawing_uses_g0;
-        
+
         // 恢复颜色属性
         self.fore_color = self.saved_fore_color;
         self.back_color = self.saved_back_color;
@@ -2957,7 +3082,7 @@ impl ScreenState {
         for y in 0..self.rows {
             main_indices.push(self.external_to_internal_row(y));
         }
-        
+
         let mut new_main = Vec::with_capacity(max(new_rows as usize, self.buffer.len()));
         for old_idx in main_indices {
             let mut row = self.buffer[old_idx].clone();
@@ -3100,12 +3225,16 @@ impl<'a> Perform for PurePerformHandler<'a> {
             }
             "110" => {
                 // OSC 110 → 重置默认前景色
-                self.state.colors.reset_index(COLOR_INDEX_FOREGROUND as usize);
+                self.state
+                    .colors
+                    .reset_index(COLOR_INDEX_FOREGROUND as usize);
                 self.state.report_colors_changed();
             }
             "111" => {
                 // OSC 111 → 重置默认背景色
-                self.state.colors.reset_index(COLOR_INDEX_BACKGROUND as usize);
+                self.state
+                    .colors
+                    .reset_index(COLOR_INDEX_BACKGROUND as usize);
                 self.state.report_colors_changed();
             }
             "112" => {
@@ -3260,7 +3389,8 @@ impl<'a> Perform for PurePerformHandler<'a> {
                     self.state.repeat_character(*n as i32, c);
                 }
             }
-            'c' => { // DA - 设备属性
+            'c' => {
+                // DA - 设备属性
                 // 报告具有高级功能的 VT102: CSI ? 6 c (或类似的响应)
                 self.state.report_terminal_response("\x1b[?6c");
             }
@@ -3303,7 +3433,8 @@ impl<'a> Perform for PurePerformHandler<'a> {
                 // SGR - 字符属性
                 self.state.handle_sgr(params);
             }
-            'n' => { // DSR - 设备状态报告
+            'n' => {
+                // DSR - 设备状态报告
                 let mode = params.iter().next().and_then(|p| p.first()).unwrap_or(&0);
                 match mode {
                     5 => self.state.report_terminal_response("\x1b[0n"), // 终端 OK
@@ -3311,7 +3442,8 @@ impl<'a> Perform for PurePerformHandler<'a> {
                         // 报告光标位置: CSI R ; C R
                         let r = self.state.cursor_y + 1;
                         let c = self.state.cursor_x + 1;
-                        self.state.report_terminal_response(&format!("\x1b[{};{}R", r, c));
+                        self.state
+                            .report_terminal_response(&format!("\x1b[{};{}R", r, c));
                     }
                     _ => {}
                 }

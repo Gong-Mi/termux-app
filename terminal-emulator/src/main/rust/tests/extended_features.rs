@@ -1,7 +1,7 @@
-use termux_rust::engine::TerminalEngine;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
+use termux_rust::engine::TerminalEngine;
 
 // 解决 *mut SharedScreenBuffer 不满足 Send/Sync 的问题
 // 在测试环境下，我们需要确保 TerminalEngine 可以跨线程使用
@@ -16,16 +16,16 @@ fn test_sixel_extended_parsing() {
     // 发送带有参数的 Sixel 开始序列: DCS 100;100;1 q
     // 100x100 像素，透明背景
     engine.process_bytes(b"\x1bP100;100;1q");
-    
+
     // 发送一些 Sixel 数据
     engine.process_bytes(b"??00??");
-    
+
     // 发送换行符 '!'
     engine.process_bytes(b"!");
-    
+
     // 发送更多数据
     engine.process_bytes(b"~~");
-    
+
     // 结束序列 ST: ESC \
     engine.process_bytes(b"\x1b\\");
 
@@ -43,13 +43,15 @@ fn test_unicode_boundary_conditions() {
 
     // "测试" 的第一个字应该换行到第二行，第二个字也紧随其后
     assert_eq!(engine.state.cursor_y, 1);
-    assert_eq!(engine.state.cursor_x, 4); 
+    assert_eq!(engine.state.cursor_x, 4);
 }
 
 #[test]
 fn test_concurrent_read_write_stress() {
-    let engine = Arc::new(std::sync::RwLock::new(SendSyncEngine(TerminalEngine::new(80, 24, 2000, 10, 20))));
-    
+    let engine = Arc::new(std::sync::RwLock::new(SendSyncEngine(TerminalEngine::new(
+        80, 24, 2000, 10, 20,
+    ))));
+
     let engine_write = Arc::clone(&engine);
     let writer = thread::spawn(move || {
         for i in 0..100 {
@@ -74,7 +76,7 @@ fn test_concurrent_read_write_stress() {
 
     writer.join().unwrap();
     reader.join().unwrap();
-    
+
     let final_guard = engine.read().unwrap();
     assert!(final_guard.0.state.cursor_y >= 0);
 }
@@ -87,9 +89,9 @@ fn test_osc_malformed_sequences() {
     engine.process_bytes(b"\x1b]0;Broken Title");
     // 收到 BEL (0x07) 时应该触发标题更新
     engine.process_bytes(b"\x07Normal Text");
-    
+
     assert_eq!(engine.state.title.as_deref(), Some("Broken Title"));
-    
+
     let mut text = [0u16; 80];
     engine.state.copy_row_text(0, &mut text);
     assert_eq!(text[0] as u8, b'N');

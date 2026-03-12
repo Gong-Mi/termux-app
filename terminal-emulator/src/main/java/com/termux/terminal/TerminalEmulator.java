@@ -1,5 +1,7 @@
 package com.termux.terminal;
 
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Base64;
 
 import java.nio.charset.StandardCharsets;
@@ -12,7 +14,7 @@ import java.util.Stack;
  * Renders text into a screen. Contains all the terminal-specific knowledge and state. Emulates a subset of the X Window
  * System xterm terminal, which in turn is an emulator for a subset of the Digital Equipment Corporation vt100 terminal.
  */
-public final class TerminalEmulator {
+public final class TerminalEmulator implements AutoCloseable {
 
     /** Log unknown or unimplemented escape sequences received from the shell process. */
     private static final boolean LOG_ESCAPE_SEQUENCES = false;
@@ -168,8 +170,11 @@ public final class TerminalEmulator {
     // Rust Full Takeover 逻辑
     // ========================================================================
 
-    /** 指向 Rust 引擎对象的原生指针 */
-    private long mRustEnginePtr = 0;
+    /** 指向 Rust 引擎对象的原生指针 - 使用 volatile 确保多线程可见性 */
+    private volatile long mRustEnginePtr = 0;
+
+    /** 主线程 Handler - 用于将 Rust 回调调度到主线程执行 */
+    private final Handler mMainThreadHandler = new Handler(Looper.getMainLooper());
 
     /**
      * 是否开启 Rust 全接管模式。
@@ -260,93 +265,130 @@ public final class TerminalEmulator {
                 mRustEnginePtr = createEngineRustWithCallback(columns, rows, getTerminalTranscriptRows(transcriptRows), mCellWidthPixels, mCellHeightPixels, new RustEngineCallback() {
                     @Override
                     public void onScreenUpdate() {
-                        if (mClient != null && TerminalEmulator.this.mSession instanceof TerminalSession) {
-                            mClient.onTextChanged((TerminalSession) TerminalEmulator.this.mSession);
-                        }
+                        mMainThreadHandler.post(() -> {
+                            if (mClient != null && TerminalEmulator.this.mSession instanceof TerminalSession) {
+                                mClient.onTextChanged((TerminalSession) TerminalEmulator.this.mSession);
+                            }
+                        });
                     }
 
                     @Override
                     public void reportTitleChange(String title) {
-                        mTitle = title;
-                        if (mClient != null && TerminalEmulator.this.mSession instanceof TerminalSession) {
-                            mClient.onTitleChanged((TerminalSession) TerminalEmulator.this.mSession);
-                        }
+                        mMainThreadHandler.post(() -> {
+                            mTitle = title;
+                            if (mClient != null && TerminalEmulator.this.mSession instanceof TerminalSession) {
+                                mClient.onTitleChanged((TerminalSession) TerminalEmulator.this.mSession);
+                            }
+                        });
                     }
 
                     @Override
                     public void reportColorsChanged() {
-                        syncColorsFromRust();
-                        if (mClient != null && TerminalEmulator.this.mSession instanceof TerminalSession) {
-                            mClient.onColorsChanged((TerminalSession) TerminalEmulator.this.mSession);
-                        }
+                        mMainThreadHandler.post(() -> {
+                            syncColorsFromRust();
+                            if (mClient != null && TerminalEmulator.this.mSession instanceof TerminalSession) {
+                                mClient.onColorsChanged((TerminalSession) TerminalEmulator.this.mSession);
+                            }
+                        });
                     }
 
                     @Override
                     public void reportCursorVisibility(boolean visible) {
-                        if (mClient != null) {
-                            mClient.onTerminalCursorStateChange(visible);
-                        }
+                        mMainThreadHandler.post(() -> {
+                            if (mClient != null) {
+                                mClient.onTerminalCursorStateChange(visible);
+                            }
+                        });
                     }
 
                     @Override
                     public void onCopyTextToClipboard(String text) {
-                        if (mSession != null) {
-                            mSession.onCopyTextToClipboard(text);
-                        }
+                        mMainThreadHandler.post(() -> {
+                            if (mSession != null) {
+                                mSession.onCopyTextToClipboard(text);
+                            }
+                        });
                     }
 
                     @Override
                     public void onPasteTextFromClipboard() {
-                        if (mSession != null) {
-                            mSession.onPasteTextFromClipboard();
-                        }
+                        mMainThreadHandler.post(() -> {
+                            if (mSession != null) {
+                                mSession.onPasteTextFromClipboard();
+                            }
+                        });
                     }
 
                     @Override
                     public void onWriteToSession(String data) {
-                        if (mSession != null) {
-                            mSession.write(data);
-                        }
+                        mMainThreadHandler.post(() -> {
+                            if (mSession != null) {
+                                mSession.write(data);
+                            }
+                        });
                     }
 
                     @Override
                     public void onWriteToSessionBytes(byte[] data) {
-                        if (mSession != null) {
-                            mSession.write(data);
-                        }
+                        mMainThreadHandler.post(() -> {
+                            if (mSession != null) {
+                                mSession.write(data);
+                            }
+                        });
                     }
 
                     @Override
                     public void reportColorResponse(String colorSpec) {
-                        if (mSession != null) {
-                            mSession.write("\u001b]" + colorSpec + "\u0007");
-                        }
+                        mMainThreadHandler.post(() -> {
+                            if (mSession != null) {
+                                mSession.write("\u001b]" + colorSpec + "\u0007");
+                            }
+                        });
                     }
 
                     @Override
                     public void reportTerminalResponse(String response) {
-                        if (mSession != null) {
-                            mSession.write(response);
-                        }
+                        mMainThreadHandler.post(() -> {
+                            if (mSession != null) {
+                                mSession.write(response);
+                            }
+                        });
                     }
                 });
-                
+
                 // 设置 Rust 引擎指针到 TerminalBuffer，以便获取滚动历史行数
                 mScreen.setRustEnginePtr(mRustEnginePtr);
                 mAltBuffer.setRustEnginePtr(mRustEnginePtr);
-            } catch (UnsatisfiedLinkError e) {
+                
+                android.util.Log.i(LOG_TAG, "Rust engine initialized successfully, ptr=" + mRustEnginePtr);
+            } catch (UnsatisfiedLinkError | Exception e) {
+                android.util.Log.e(LOG_TAG, "Failed to initialize Rust engine, terminal will not function", e);
                 mRustEnginePtr = 0;
             }
+        } else if (USE_RUST_FULL_TAKEOVER && !sRustLibLoaded) {
+            android.util.Log.e(LOG_TAG, "Rust library not loaded, terminal will not function. Check if libtermux_rust.so exists.");
         }
     }
 
     /**
      * 销毁终端仿真器，释放底层 Rust 引擎内存。
+     * 此方法可以被多次调用，但只有第一次调用会实际释放资源。
      */
     public void destroy() {
-        if (mRustEnginePtr != 0) {
-            destroyEngineRust(mRustEnginePtr);
+        close();
+    }
+
+    /**
+     * 实现 AutoCloseable 接口，允许使用 try-with-resources 语法。
+     * 确保 Rust 引擎资源被正确释放，不依赖 finalize()。
+     */
+    @Override
+    public void close() {
+        long ptr = mRustEnginePtr;
+        if (ptr != 0) {
+            // 原子性地将指针置零，防止重复释放
             mRustEnginePtr = 0;
+            destroyEngineRust(ptr);
         }
     }
 
@@ -549,89 +591,101 @@ public final class TerminalEmulator {
 
     public final Object mDataLock = new Object();
 
+    /**
+     * 处理来自 PTY 的输入数据。
+     * 优化：缩小同步范围，只在读取指针时同步。
+     */
     public void append(byte[] buffer, int length) {
-        synchronized (mDataLock) {
-            if (mRustEnginePtr != 0) {
-                try {
-                    processEngineRust(mRustEnginePtr, buffer, 0, length);
-                    return;
-                } catch (Exception e) {
-                    android.util.Log.e("Termux", "Rust engine process error", e);
-                }
-            }
-            // 如果 Rust 引擎未就绪，目前不提供备用解析
-        }
-    }
-
-    public void paste(String text) {
-        synchronized (mDataLock) {
-            if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
-                pasteTextFromRust(mRustEnginePtr, text);
+        // 先读取 volatile 指针（原子操作，不需要同步）
+        long ptr = mRustEnginePtr;
+        
+        if (ptr != 0) {
+            try {
+                // 在同步块外调用 native 方法，避免阻塞其他同步操作
+                processEngineRust(ptr, buffer, 0, length);
                 return;
+            } catch (Exception e) {
+                android.util.Log.e("Termux", "Rust engine process error", e);
             }
-            text = text.replaceAll("(\u001B|[\u0080-\u009F])", "");
-            text = text.replaceAll("\r?\n", "\r");
-            boolean bracketed = isDecsetInternalBitSet(DECSET_BIT_BRACKETED_PASTE_MODE);
-            if (bracketed) mSession.write("\033[200~");
-            mSession.write(text);
-            if (bracketed) mSession.write("\033[201~");
         }
+        // 如果 Rust 引擎未就绪，目前不提供备用解析
     }
 
-    public String getSelectedText(int x1, int y1, int x2, int y2) {
-        synchronized (mDataLock) {
-            if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
-                syncScreenBatchFromRust(y1, y2 - y1 + 1);
-            }
-            return mScreen.getSelectedText(x1, y1, x2, y2);
+    /**
+     * 粘贴文本到终端。
+     * 优化：缩小同步范围，只在读取指针时同步。
+     */
+    public void paste(String text) {
+        long ptr = mRustEnginePtr;
+        
+        if (USE_RUST_FULL_TAKEOVER && ptr != 0) {
+            pasteTextFromRust(ptr, text);
+            return;
         }
+        
+        // Java 备用路径 - 不需要同步，因为只读取本地字段
+        text = text.replaceAll("(\\u001B|[\\u0080-\\u009F])", "");
+        text = text.replaceAll("\r?\n", "\r");
+        boolean bracketed = isDecsetInternalBitSet(DECSET_BIT_BRACKETED_PASTE_MODE);
+        if (bracketed) mSession.write("\033[200~");
+        mSession.write(text);
+        if (bracketed) mSession.write("\033[201~");
+    }
+
+    /**
+     * 获取选中的文本。
+     * 优化：缩小同步范围。
+     */
+    public String getSelectedText(int x1, int y1, int x2, int y2) {
+        long ptr = mRustEnginePtr;
+        if (USE_RUST_FULL_TAKEOVER && ptr != 0) {
+            syncScreenBatchFromRust(y1, y2 - y1 + 1);
+        }
+        return mScreen.getSelectedText(x1, y1, x2, y2);
     }
 
     /** 恢复 TerminalView 需要的方法 */
     public int getScrollCounter() {
-        synchronized (mDataLock) {
-            if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
-                return getScrollCounterFromRust(mRustEnginePtr);
-            }
-            return mScrollCounter;
+        long ptr = mRustEnginePtr;
+        if (USE_RUST_FULL_TAKEOVER && ptr != 0) {
+            return getScrollCounterFromRust(ptr);
         }
+        return mScrollCounter;
     }
 
     public void clearScrollCounter() {
-        synchronized (mDataLock) {
-            if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
-                clearScrollCounterFromRust(mRustEnginePtr);
-            }
-            mScrollCounter = 0;
+        long ptr = mRustEnginePtr;
+        if (USE_RUST_FULL_TAKEOVER && ptr != 0) {
+            clearScrollCounterFromRust(ptr);
         }
+        mScrollCounter = 0;
     }
 
     public boolean isAutoScrollDisabled() {
-        synchronized (mDataLock) {
-            if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
-                return isAutoScrollDisabledFromRust(mRustEnginePtr);
-            }
-            return mAutoScrollDisabled;
+        long ptr = mRustEnginePtr;
+        if (USE_RUST_FULL_TAKEOVER && ptr != 0) {
+            return isAutoScrollDisabledFromRust(ptr);
         }
+        return mAutoScrollDisabled;
     }
 
     public void toggleAutoScrollDisabled() {
-        synchronized (mDataLock) {
-            if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
-                toggleAutoScrollDisabledFromRust(mRustEnginePtr);
-            } else {
-                mAutoScrollDisabled = !mAutoScrollDisabled;
-            }
+        long ptr = mRustEnginePtr;
+        if (USE_RUST_FULL_TAKEOVER && ptr != 0) {
+            toggleAutoScrollDisabledFromRust(ptr);
+        } else {
+            mAutoScrollDisabled = !mAutoScrollDisabled;
         }
     }
 
+    /**
+     * @deprecated 使用 {@link #close()} 或 try-with-resources 语法代替
+     */
+    @Deprecated
     @Override
     protected void finalize() throws Throwable {
         try {
-            if (mRustEnginePtr != 0) {
-                destroyEngineRust(mRustEnginePtr);
-                mRustEnginePtr = 0;
-            }
+            close();
         } finally {
             super.finalize();
         }

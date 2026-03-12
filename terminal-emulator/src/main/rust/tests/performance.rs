@@ -244,7 +244,7 @@ fn test_small_batch_performance() {
 #[test]
 fn test_batch_row_read_performance() {
     let mut engine = TerminalEngine::new(COLS, ROWS, 100, 10, 20);
-    
+
     // 填充屏幕内容
     for i in 0..ROWS {
         let line = format!("\r\x1b[{};1HLine {} - Performance Test", i + 1, i);
@@ -285,7 +285,7 @@ fn test_batch_row_read_performance() {
 #[test]
 fn test_full_screen_batch_read_performance() {
     let mut engine = TerminalEngine::new(COLS, ROWS, 100, 10, 20);
-    
+
     // 填充屏幕内容
     for i in 0..ROWS {
         let line = format!("\r\x1b[{};1HLine {} - Full Screen Test", i + 1, i);
@@ -328,7 +328,7 @@ fn test_full_screen_batch_read_performance() {
 #[test]
 fn test_single_vs_batch_read_comparison() {
     let mut engine = TerminalEngine::new(COLS, ROWS, 100, 10, 20);
-    
+
     // 填充屏幕内容
     for i in 0..ROWS {
         let line = format!("\r\x1b[{};1HLine {}", i + 1, i);
