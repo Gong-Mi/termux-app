@@ -1045,3 +1045,33 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getActiv
     let transcript_rows = total_rows.saturating_sub(screen_rows);
     transcript_rows as jint
 }
+
+/// 获取当前 DECSET 标志位
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getDecsetFlagsFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) -> jint {
+    if engine_ptr == 0 {
+        return 0;
+    }
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = engine_lock.read().unwrap();
+    guard.state.decset_flags
+}
+
+/// 检查插入模式是否激活
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isInsertModeActiveFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) -> jni::sys::jboolean {
+    if engine_ptr == 0 {
+        return jni::sys::JNI_FALSE;
+    }
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = engine_lock.read().unwrap();
+    if guard.state.insert_mode { jni::sys::JNI_TRUE } else { jni::sys::JNI_FALSE }
+}
