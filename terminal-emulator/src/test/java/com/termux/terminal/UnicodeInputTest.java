@@ -4,6 +4,12 @@ import java.io.UnsupportedEncodingException;
 
 public class UnicodeInputTest extends TerminalTestCase {
 
+	@Override
+	protected void setUp() throws Exception {
+		super.setUp();
+		TerminalEmulator.sEnableFullSyncForTests = true;
+	}
+
 	public void testIllFormedUtf8SuccessorByteNotConsumed() throws Exception {
 		// The Unicode Standard Version 6.2 – Core Specification (http://www.unicode.org/versions/Unicode6.2.0/ch03.pdf):
 		// "If the converter encounters an ill-formed UTF-8 code unit sequence which starts with a valid first byte, but which does not

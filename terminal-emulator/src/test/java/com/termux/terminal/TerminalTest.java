@@ -4,6 +4,12 @@ import java.io.UnsupportedEncodingException;
 
 public class TerminalTest extends TerminalTestCase {
 
+	@Override
+	protected void setUp() throws Exception {
+		super.setUp();
+		TerminalEmulator.sEnableFullSyncForTests = true;
+	}
+
 	public void testCursorPositioning() throws Exception {
 		withTerminalSized(10, 10).placeCursorAndAssert(1, 2).placeCursorAndAssert(3, 5).placeCursorAndAssert(2, 2).enterString("A")
 				.assertCursorAt(2, 3);
