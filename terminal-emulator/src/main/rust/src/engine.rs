@@ -793,6 +793,7 @@ pub struct ScreenState {
     pub saved_x: i32,
     pub saved_y: i32,
     pub saved_style: u64,
+    pub saved_about_to_wrap: bool,
     // 保存的光标 DECSET 标志（AUTOWRAP, ORIGIN_MODE）
     pub saved_decset_flags: i32,
     // 保存的行绘图状态（DECSC/DECRC）
@@ -813,6 +814,7 @@ pub struct ScreenState {
     pub mouse_button_event: bool,
     pub bracketed_paste: bool,
     pub sgr_mouse: bool,
+    pub about_to_wrap: bool,
     pub leftright_margin_mode: bool, // DECSET 69 - DECLRMM 左右边距模式
     pub send_focus_events: bool,     // DECSET 1004 - 发送焦点事件
 
@@ -947,6 +949,7 @@ impl ScreenState {
             mouse_button_event: false,
             bracketed_paste: false,
             sgr_mouse: false,
+            about_to_wrap: false,
             leftright_margin_mode: false, // DECSET 69 - 默认禁用左右边距模式
             send_focus_events: false,     // DECSET 1004 - 默认不发送焦点事件
             decset_flags: 0,              // 初始 DECSET 标志为 0
@@ -958,6 +961,7 @@ impl ScreenState {
             saved_x: 0,
             saved_y: 0,
             saved_style: STYLE_NORMAL,
+            saved_about_to_wrap: false,
             saved_decset_flags: 0,
             saved_use_line_drawing_g0: false,
             saved_use_line_drawing_g1: false,
@@ -1085,6 +1089,17 @@ impl ScreenState {
             if let Some(vm) = crate::JAVA_VM.get() {
                 if let Ok(mut env) = vm.get_env() {
                     let _ = env.call_method(obj.as_obj(), "reportColorsChanged", "()V", &[]);
+                }
+            }
+        }
+    }
+
+    /// 调用 Java 方法报告响铃事件
+    fn report_bell(&self) {
+        if let Some(obj) = self.java_callback_obj.as_ref() {
+            if let Some(vm) = crate::JAVA_VM.get() {
+                if let Ok(mut env) = vm.get_env() {
+                    let _ = env.call_method(obj.as_obj(), "onBell", "()V", &[]);
                 }
             }
         }
@@ -1924,55 +1939,57 @@ impl ScreenState {
     }
 
     fn print(&mut self, c: char) {
-        // 处理行绘图字符集
+        // 处理行绘图字符集映射
         let c = if (c as u32) >= 0x20 && (c as u32) <= 0x7E {
-            // ASCII 可打印字符范围，检查是否需要映射
             if self.use_line_drawing_uses_g0 && self.use_line_drawing_g0 {
-                // 使用 G0 行绘图
-                Some(map_line_drawing(c as u8))
+                map_line_drawing(c as u8)
             } else if !self.use_line_drawing_uses_g0 && self.use_line_drawing_g1 {
-                // 使用 G1 行绘图
-                Some(map_line_drawing(c as u8))
+                map_line_drawing(c as u8)
             } else {
-                None
+                c
             }
         } else {
-            None
-        }
-        .unwrap_or(c);
+            c
+        };
 
-        let char_width = c.width().unwrap_or(0) as i32;
-        if char_width == 0 {
+        let ucs = c as u32;
+        let char_width = crate::utils::get_char_width(ucs) as i32;
+        if char_width <= 0 {
             return;
         }
 
-        // 自动换行处理 - 当光标位置 + 字符宽度 >= 右边界时换行
-        if self.cursor_x + char_width >= self.right_margin {
-            if self.auto_wrap {
-                self.cursor_x = self.left_margin;
-                if self.cursor_y < self.bottom_margin - 1 {
-                    self.cursor_y += 1;
-                    if self.origin_mode {
-                        self.cursor_y = self.top_margin;
-                    }
-                } else {
-                    self.scroll_up();
-                }
+        // 处理延迟换行 (Wrap-on-advance)
+        if self.about_to_wrap && self.auto_wrap {
+            self.cursor_x = self.left_margin;
+            self.about_to_wrap = false;
+            if self.cursor_y < self.bottom_margin - 1 {
+                self.cursor_y += 1;
             } else {
-                // 非自动换行模式，限制在右边界
-                self.cursor_x = self.right_margin - char_width;
+                self.scroll_up();
+            }
+        }
+
+        // 宽字符在行尾的特殊处理：如果光标在最后一列且要写宽字符，必须强制先换行
+        if char_width == 2 && self.auto_wrap && self.cursor_x == self.right_margin - 1 {
+            self.cursor_x = self.left_margin;
+            if self.cursor_y < self.bottom_margin - 1 {
+                self.cursor_y += 1;
+            } else {
+                self.scroll_up();
             }
         }
 
         // 插入模式处理
-        if self.insert_mode && char_width == 1 {
-            self.insert_character();
+        if self.insert_mode {
+            for _ in 0..char_width {
+                self.insert_character();
+            }
         }
 
+        // 写入缓冲区
         let y_internal = self.external_to_internal_row(self.cursor_y);
         let cursor_x = self.cursor_x as usize;
         let current_style = self.current_style;
-        let mut update_cursor = false;
 
         {
             let buffer = self.get_current_buffer_mut();
@@ -1980,16 +1997,23 @@ impl ScreenState {
             if cursor_x < row.text.len() {
                 row.text[cursor_x] = c;
                 row.styles[cursor_x] = current_style;
+
                 if char_width == 2 && cursor_x + 1 < row.text.len() {
-                    row.text[cursor_x + 1] = '\0'; // Placeholder for second half of wide char
+                    // Java 端 TerminalRow 在宽字符的第二个单元格存储原始字符
+                    // 仅通过标志位识别。这里我们遵循此约定以确保 JNI 同步一致
+                    row.text[cursor_x + 1] = c;
                     row.styles[cursor_x + 1] = current_style;
                 }
-                update_cursor = true;
             }
         }
 
-        if update_cursor {
+        // 更新光标位置
+        if self.cursor_x + char_width < self.right_margin {
             self.cursor_x += char_width;
+        } else {
+            // 触达或超出右边界，标记“即将换行”
+            self.cursor_x = self.right_margin - 1; // 保持在最后一列
+            self.about_to_wrap = true;
         }
     }
 
@@ -2014,7 +2038,10 @@ impl ScreenState {
     fn execute_control(&mut self, byte: u8) -> bool {
         match byte {
             0x00 => true, // NUL - 忽略
-            0x07 => true, // BEL - 响铃（目前忽略）
+            0x07 => {
+                self.report_bell();
+                true
+            } // BEL - 响铃
             0x08 => {
                 self.cursor_x = max(self.left_margin, self.cursor_x - 1);
                 true
@@ -2513,6 +2540,35 @@ impl ScreenState {
         self.cursor_y = 0;
     }
 
+    /// DECSTR - 软终端重置 (http://vt100.net/docs/vt510-rm/DECSTR)
+    pub fn decstr_soft_reset(&mut self) {
+        self.current_style = STYLE_NORMAL;
+        self.reset_sgr();
+
+        // 重置边距
+        self.top_margin = 0;
+        self.bottom_margin = self.rows;
+        self.left_margin = 0;
+        self.right_margin = self.cols;
+
+        // 重置关键 DECSET 标志
+        self.auto_wrap = true;
+        self.origin_mode = false;
+        self.insert_mode = false;
+        self.cursor_enabled = true;
+        self.application_cursor_keys = false;
+        self.application_keypad = false;
+        self.about_to_wrap = false;
+
+        // 重置行绘图状态
+        self.use_line_drawing_g0 = false;
+        self.use_line_drawing_g1 = false;
+        self.use_line_drawing_uses_g0 = true;
+
+        // 通知 Java 层
+        self.report_colors_changed();
+    }
+
     /// RIS - 重置到初始状态 (http://vt100.net/docs/vt510-rm/RIS)
     /// 完整重置：清屏、重置光标、重置样式、重置边距、重置制表位、重置颜色
     pub fn reset_to_initial_state(&mut self) {
@@ -2999,6 +3055,7 @@ impl ScreenState {
         self.saved_x = self.cursor_x;
         self.saved_y = self.cursor_y;
         self.saved_style = self.current_style;
+        self.saved_about_to_wrap = self.about_to_wrap;
         // 保存 DECSET 标志（与 Java 端一致，只保存相关标志）
         // 包括：AUTOWRAP, ORIGIN_MODE
         let mask = DECSET_BIT_AUTOWRAP | DECSET_BIT_ORIGIN_MODE;
@@ -3020,6 +3077,7 @@ impl ScreenState {
         self.cursor_x = self.saved_x;
         self.cursor_y = self.saved_y;
         self.current_style = self.saved_style;
+        self.about_to_wrap = self.saved_about_to_wrap;
         // 恢复 DECSET 标志（只恢复 AUTOWRAP 和 ORIGIN_MODE）
         let mask = DECSET_BIT_AUTOWRAP | DECSET_BIT_ORIGIN_MODE;
         self.decset_flags = (self.decset_flags & !mask) | (self.saved_decset_flags & mask);
