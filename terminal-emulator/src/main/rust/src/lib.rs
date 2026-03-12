@@ -5,6 +5,7 @@
 
 #![warn(clippy::all)]
 #![allow(clippy::missing_safety_doc)]
+#![allow(unsafe_op_in_unsafe_fn)]
 
 use jni::sys::{
     JNI_VERSION_1_6, JNINativeInterface_, jbyteArray, jcharArray, jclass, jint, jintArray, jlong,

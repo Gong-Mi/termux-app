@@ -3296,9 +3296,9 @@ impl<'a> Perform for PurePerformHandler<'a> {
     }
 
     fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], _ignore: bool, action: char) {
-        #[allow(clippy::get_first)]
-        // 检查是否是私有 CSI 序列（intermediates 包含 '?'）
+        // 提前提取所需信息，释放对 self 的借用
         let is_private = intermediates.contains(&b'?');
+        let is_bang = intermediates.contains(&b'!');
 
         match action {
             '@' => {
@@ -3311,6 +3311,7 @@ impl<'a> Perform for PurePerformHandler<'a> {
                 let dist = params.iter().next().and_then(|p| p.first()).unwrap_or(&1);
                 self.state.cursor_y =
                     max(self.state.top_margin, self.state.cursor_y - *dist as i32);
+                self.state.about_to_wrap = false;
             }
             'B' => {
                 // CUD - 光标下移
@@ -3319,6 +3320,7 @@ impl<'a> Perform for PurePerformHandler<'a> {
                     self.state.bottom_margin - 1,
                     self.state.cursor_y + *dist as i32,
                 );
+                self.state.about_to_wrap = false;
             }
             'C' | 'a' => {
                 // CUF/HPR - 光标右移/水平相对
@@ -3330,6 +3332,7 @@ impl<'a> Perform for PurePerformHandler<'a> {
                 let dist = params.iter().next().and_then(|p| p.first()).unwrap_or(&1);
                 self.state.cursor_x =
                     max(self.state.left_margin, self.state.cursor_x - *dist as i32);
+                self.state.about_to_wrap = false;
             }
             'E' => {
                 // CNL - 下一行
@@ -3367,6 +3370,7 @@ impl<'a> Perform for PurePerformHandler<'a> {
                     self.state.left_margin,
                     min(self.state.right_margin - 1, *col as i32 - 1),
                 );
+                self.state.about_to_wrap = false;
             }
             'I' => {
                 // CHT - 光标前进制表
@@ -3379,13 +3383,11 @@ impl<'a> Perform for PurePerformHandler<'a> {
                 // ED - 清屏
                 let mode = params.iter().next().and_then(|p| p.first()).unwrap_or(&0);
                 self.state.erase_in_display(*mode as i32);
-                // ED 后光标位置不变
             }
             'K' => {
                 // EL - 清线
                 let mode = params.iter().next().and_then(|p| p.first()).unwrap_or(&0);
                 self.state.erase_in_line(*mode as i32);
-                // EL 后光标位置不变
             }
             'L' => {
                 // IL - 插入行
@@ -3416,12 +3418,10 @@ impl<'a> Perform for PurePerformHandler<'a> {
                 // ECH - 擦除字符
                 let n = params.iter().next().and_then(|p| p.first()).unwrap_or(&1);
                 self.state.erase_characters(*n as i32);
-                // ECH 后光标位置不变
             }
             'Z' => {
                 // CBT - 光标后退制表
                 let n = params.iter().next().and_then(|p| p.first()).unwrap_or(&1);
-                println!("CBT called with n={}", n);
                 self.state.cursor_backward_tab(*n as i32);
             }
             '`' => {
@@ -3438,7 +3438,6 @@ impl<'a> Perform for PurePerformHandler<'a> {
             }
             'c' => {
                 // DA - 设备属性
-                // 报告具有高级功能的 VT102: CSI ? 6 c (或类似的响应)
                 self.state.report_terminal_response("\x1b[?6c");
             }
             'd' => {
@@ -3459,20 +3458,16 @@ impl<'a> Perform for PurePerformHandler<'a> {
             'h' => {
                 // SM - 设置模式
                 if is_private {
-                    // DECSET - 私有模式设置
                     self.state.handle_decset(params, true);
                 } else {
-                    // 标准模式设置
                     self.state.handle_set_mode(params, true);
                 }
             }
             'l' => {
                 // RM - 重置模式
                 if is_private {
-                    // DECRST - 私有模式重置
                     self.state.handle_decset(params, false);
                 } else {
-                    // 标准模式重置
                     self.state.handle_set_mode(params, false);
                 }
             }
@@ -3484,9 +3479,8 @@ impl<'a> Perform for PurePerformHandler<'a> {
                 // DSR - 设备状态报告
                 let mode = params.iter().next().and_then(|p| p.first()).unwrap_or(&0);
                 match mode {
-                    5 => self.state.report_terminal_response("\x1b[0n"), // 终端 OK
+                    5 => self.state.report_terminal_response("\x1b[0n"),
                     6 => {
-                        // 报告光标位置: CSI R ; C R
                         let r = self.state.cursor_y + 1;
                         let c = self.state.cursor_x + 1;
                         self.state
@@ -3497,7 +3491,7 @@ impl<'a> Perform for PurePerformHandler<'a> {
             }
             'p' => {
                 // 软重置: CSI ! p
-                if intermediates.contains(&b'!') {
+                if is_bang {
                     self.state.decstr_soft_reset();
                 }
             }
@@ -3513,8 +3507,6 @@ impl<'a> Perform for PurePerformHandler<'a> {
                 self.state.set_margins(top, bottom);
             }
             's' => {
-                // DECSC - 保存光标 或 DECSLRM - 设置左右边距
-                // 当 DECLRMM 启用时，DECSLRM 优先
                 if self.state.leftright_margin_mode {
                     let mut iter = params.iter();
                     let left = iter.next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
@@ -3525,12 +3517,10 @@ impl<'a> Perform for PurePerformHandler<'a> {
                         .unwrap_or(self.state.cols as u16) as i32;
                     self.state.set_left_right_margins(left, right);
                 } else {
-                    // 否则保存光标
                     self.state.save_cursor();
                 }
             }
             'u' => {
-                // DECRC - 恢复光标
                 self.state.restore_cursor();
             }
             _ => self.unhandled_sequences.push(format!("CSI {:?}", action)),
