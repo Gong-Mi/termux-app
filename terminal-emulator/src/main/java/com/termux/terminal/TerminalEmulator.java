@@ -208,6 +208,7 @@ public final class TerminalEmulator implements AutoCloseable {
         void reportTitleChange(String title);
         void reportColorsChanged();
         void reportCursorVisibility(boolean visible);
+        void onBell();
         void onCopyTextToClipboard(String text);
         void onPasteTextFromClipboard();
         void onWriteToSession(String data);
@@ -303,6 +304,15 @@ public final class TerminalEmulator implements AutoCloseable {
                         mMainThreadHandler.post(() -> {
                             if (mClient != null) {
                                 mClient.onTerminalCursorStateChange(visible);
+                            }
+                        });
+                    }
+
+                    @Override
+                    public void onBell() {
+                        mMainThreadHandler.post(() -> {
+                            if (mSession != null) {
+                                mSession.onBell();
                             }
                         });
                     }
