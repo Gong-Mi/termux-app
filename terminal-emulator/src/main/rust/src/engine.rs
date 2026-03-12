@@ -2026,6 +2026,7 @@ impl ScreenState {
     fn insert_character(&mut self) {
         let y_internal = self.external_to_internal_row(self.cursor_y);
         let cursor_x = self.cursor_x as usize;
+        let current_style = self.current_style;
         let buffer = self.get_current_buffer_mut();
         let row = &mut buffer[y_internal];
 
@@ -2036,7 +2037,7 @@ impl ScreenState {
         }
         if cursor_x < row.text.len() {
             row.text[cursor_x] = ' ';
-            row.styles[cursor_x] = self.current_style;
+            row.styles[cursor_x] = current_style;
         }
     }
 
@@ -2449,6 +2450,7 @@ impl ScreenState {
         // 清空顶部区域
         for i in 0..lines_to_scroll as usize {
             let clear_idx = self.external_to_internal_row(top_margin + i as i32);
+            let current_style = self.current_style;
             let buffer = self.get_current_buffer_mut();
             buffer[clear_idx].clear(0, cols, current_style);
         }
