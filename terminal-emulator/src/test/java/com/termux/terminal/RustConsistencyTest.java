@@ -21,6 +21,7 @@ public class RustConsistencyTest extends TestCase {
         @Override public void onPasteTextFromClipboard() {}
         @Override public void onBell() {}
         @Override public void onColorsChanged() {}
+        @Override public void onTerminalCursorStateChange(boolean visible) {}
     }
 
     static class MockTerminalSessionClient implements TerminalSessionClient {

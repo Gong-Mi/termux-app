@@ -196,6 +196,12 @@ public final class TerminalEmulator implements AutoCloseable {
         }
     }
 
+    /**
+     * 强制禁用 Rust 引擎的开关。
+     * 仅用于测试目的（一致性对比和基准测试）。
+     */
+    public static boolean sForceDisableRust = false;
+
     /** Rust 回调接口实现 */
     public interface RustEngineCallback {
         void onScreenUpdate();
@@ -260,7 +266,7 @@ public final class TerminalEmulator implements AutoCloseable {
         mTabStop = new boolean[mColumns];
         reset();
 
-        if (USE_RUST_FULL_TAKEOVER && sRustLibLoaded) {
+        if (USE_RUST_FULL_TAKEOVER && sRustLibLoaded && !sForceDisableRust) {
             try {
                 mRustEnginePtr = createEngineRustWithCallback(columns, rows, getTerminalTranscriptRows(transcriptRows), mCellWidthPixels, mCellHeightPixels, new RustEngineCallback() {
                     @Override
@@ -707,10 +713,20 @@ public final class TerminalEmulator implements AutoCloseable {
         setDefaultTabStops();
     }
 
+    public void getRowContent(int row, char[] destText, long[] destStyle) {
+        if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
+            readRowFromRust(mRustEnginePtr, row, destText, destStyle);
+        } else {
+            TerminalRow line = mScreen.allocateFullLineIfNecessary(mScreen.externalToInternalRow(row));
+            System.arraycopy(line.mText, 0, destText, 0, Math.min(line.mText.length, destText.length));
+            System.arraycopy(line.mStyle, 0, destStyle, 0, Math.min(line.mStyle.length, destStyle.length));
+        }
+    }
+
     // Native 方法定义
     private static native long createEngineRustWithCallback(int cols, int rows, int totalRows, int cellWidth, int cellHeight, Object callbackObj);
     private static native void processEngineRust(long enginePtr, byte[] input, int offset, int length);
-    private static native void readRowFromRust(long enginePtr, int row, char[] destText, long[] destStyle);
+    public static native void readRowFromRust(long enginePtr, int row, char[] destText, long[] destStyle);
     private static native void resizeEngineRustFull(long enginePtr, int newCols, int newRows);
     private static native int getCursorColFromRust(long enginePtr);
     private static native int getCursorRowFromRust(long enginePtr);

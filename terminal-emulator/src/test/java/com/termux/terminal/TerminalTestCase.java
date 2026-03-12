@@ -57,6 +57,10 @@ public abstract class TerminalTestCase extends TestCase {
 		public void onColorsChanged() {
 			colorsChanged++;
 		}
+
+		@Override
+		public void onTerminalCursorStateChange(boolean visible) {
+		}
 	}
 
 	public TerminalEmulator mTerminal;
