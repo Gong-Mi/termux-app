@@ -185,43 +185,10 @@ public final class TerminalEmulator implements AutoCloseable {
      */
     public static final boolean USE_RUST_FULL_TAKEOVER = true;
 
-    private static boolean sRustLibLoaded = false;
+    /** Rust 引擎原生指针 */
+    private volatile long mRustEnginePtr = 0;
 
-    static {
-        try {
-            System.loadLibrary("termux_rust");
-            sRustLibLoaded = true;
-        } catch (UnsatisfiedLinkError e) {
-            // 详细打印加载失败的原因
-            System.err.println("JNI LOAD ERROR (default): " + e.getMessage());
-            try {
-                String libName = System.mapLibraryName("termux_rust");
-                String[] possiblePaths = {
-                    "src/main/jniLibs/x86_64/" + libName,
-                    "terminal-emulator/src/main/jniLibs/x86_64/" + libName,
-                    "../terminal-emulator/src/main/jniLibs/x86_64/" + libName,
-                    "terminal-emulator/src/main/rust/target/release/" + libName
-                };
-                for (String path : possiblePaths) {
-                    java.io.File libFile = new java.io.File(path);
-                    if (libFile.exists()) {
-                        System.err.println("JNI ATTEMPTING LOAD: " + libFile.getAbsolutePath());
-                        System.load(libFile.getAbsolutePath());
-                        sRustLibLoaded = true;
-                        break;
-                    }
-                }
-            } catch (Throwable t) {
-                System.err.println("JNI FALLBACK FAILED: " + t.getMessage());
-                t.printStackTrace();
-            }
-        }
-    }
-
-    /**
-     * 强制禁用 Rust 引擎的开关。
-     * 仅用于测试目的（一致性对比和基准测试）。
-     */
+    /** 强制禁用 Rust 引擎的开关 */
     public static boolean sForceDisableRust = false;
 
     /** Rust 回调接口实现 */
@@ -289,7 +256,7 @@ public final class TerminalEmulator implements AutoCloseable {
         mTabStop = new boolean[mColumns];
         reset();
 
-        if (USE_RUST_FULL_TAKEOVER && sRustLibLoaded && !sForceDisableRust) {
+        if (USE_RUST_FULL_TAKEOVER && JNI.sNativeLibrariesLoaded && !sForceDisableRust) {
             try {
                 mRustEnginePtr = createEngineRustWithCallback(columns, rows, getTerminalTranscriptRows(transcriptRows), mCellWidthPixels, mCellHeightPixels, new RustEngineCallback() {
                     @Override

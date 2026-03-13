@@ -19,9 +19,11 @@ final class JNI {
                 String libName = System.mapLibraryName("termux_rust");
                 // Try multiple possible paths for host-side testing
                 String[] possiblePaths = {
+                    "src/main/jniLibs/x86_64/" + libName,
+                    "terminal-emulator/src/main/jniLibs/x86_64/" + libName,
+                    "../terminal-emulator/src/main/jniLibs/x86_64/" + libName,
                     "src/main/rust/target/release/" + libName,
-                    "terminal-emulator/src/main/rust/target/release/" + libName,
-                    "../terminal-emulator/src/main/rust/target/release/" + libName
+                    "terminal-emulator/src/main/rust/target/release/" + libName
                 };
                 for (String path : possiblePaths) {
                     java.io.File libPath = new java.io.File(path);
