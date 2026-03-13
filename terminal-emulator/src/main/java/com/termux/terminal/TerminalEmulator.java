@@ -598,6 +598,22 @@ public final class TerminalEmulator implements AutoCloseable {
             
             readFullScreenFromRust(mRustEnginePtr, text, style);
             
+            // 单元测试环境下的强制诊断：检查第一行是否真的拿到了数据
+            if (rows > 0 && text[0] != null) {
+                boolean allEmpty = true;
+                StringBuilder sb = new StringBuilder();
+                for (int c = 0; c < Math.min(5, mColumns); c++) {
+                    sb.append((int)text[0][c]).append(",");
+                    if (text[0][c] != 0 && text[0][c] != ' ') allEmpty = false;
+                }
+                // 如果是单元测试模式且我们期望有字符却读到了空
+                if (allEmpty && mCursorCol > 0 && mCursorRow == 0) {
+                    mTitle = "DIAG_EMPTY_SCREEN:[" + sb.toString() + "]";
+                } else if (!allEmpty) {
+                    mTitle = "DIAG_SUCCESS:[" + sb.toString() + "]";
+                }
+            }
+            
             mScreen.setScreenFirstRow(0);
             for (int i = 0; i < rows; i++) {
                 TerminalRow row = mScreen.allocateFullLineIfNecessary(i);
