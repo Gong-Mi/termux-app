@@ -46,7 +46,7 @@ jobs:
 
       - name: Run Consistency Test
         run: |
-          ./gradlew :terminal-emulator:test -Dtest.single=RustConsistencyTest
+          ./gradlew :terminal-emulator:test --info
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/terminal-emulator/src/main/jniLibs/x86_64
 
@@ -85,7 +85,7 @@ jobs:
 
       - name: Run Performance Benchmark
         run: |
-          ./gradlew :terminal-emulator:test -Dtest.single=JavaRustPerformanceComparisonTest
+          ./gradlew :terminal-emulator:test --info
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/terminal-emulator/src/main/jniLibs/x86_64
 
