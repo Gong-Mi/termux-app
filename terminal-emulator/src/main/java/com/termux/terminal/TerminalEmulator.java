@@ -605,16 +605,23 @@ public final class TerminalEmulator implements AutoCloseable {
             mInsertMode = isInsertModeActiveFromRust(mRustEnginePtr);
             
             if (sEnableFullSyncForTests) {
-                // 极其重要：将 Rust 侧的屏幕内容全量拉回 Java 缓冲区，供测试断言读取
+                // 极其重要：将 Rust 侧的屏幕内容全量拉回 Java 缓冲区
                 int rows = mRows;
-                char[][] text = new char[rows][mColumns];
-                long[][] style = new long[rows][mColumns];
+                int cols = mColumns;
+                char[][] text = new char[rows][cols];
+                long[][] style = new long[rows][cols];
+                
+                // 直接调用批量读取 JNI (该方法返回的是逻辑可见屏幕内容)
                 readFullScreenFromRust(mRustEnginePtr, text, style);
                 
+                // 单元测试期望 Java 侧的 mScreen 也是平铺的（不带滚动偏移）
+                // 或者是我们要确保 Java 侧的 mScreenFirstRow 被强制重置为 0
+                mScreen.setScreenFirstRow(0);
+                
                 for (int i = 0; i < rows; i++) {
-                    TerminalRow row = mScreen.allocateFullLineIfNecessary(mScreen.externalToInternalRow(i));
-                    System.arraycopy(text[i], 0, row.mText, 0, mColumns);
-                    System.arraycopy(style[i], 0, row.mStyle, 0, mColumns);
+                    TerminalRow row = mScreen.allocateFullLineIfNecessary(i);
+                    System.arraycopy(text[i], 0, row.mText, 0, cols);
+                    System.arraycopy(style[i], 0, row.mStyle, 0, cols);
                     row.updateStatusAfterBatchWrite();
                 }
             }
