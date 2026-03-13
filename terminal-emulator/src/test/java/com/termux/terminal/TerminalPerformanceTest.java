@@ -11,25 +11,26 @@ public class TerminalPerformanceTest extends TerminalTestCase {
     private static final int DATA_SIZE_BYTES = DATA_SIZE_MB * 1024 * 1024;
 
     private void runPerformanceTest(String label, byte[] data, int iterations) {
-        // 1. 测试 Rust 引擎性能
+        MockTerminalOutput output = new MockTerminalOutput();
+        
+        // 1. Rust 引擎 (当前 feature 分支版本，Full Takeover 开启)
         TerminalEmulator.sForceDisableRust = false;
-        withTerminalSized(COLS, ROWS);
+        TerminalEmulator rustTerminal = new TerminalEmulator(output, COLS, ROWS, 13, 15, ROWS * 2, null);
         
         long startRust = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
-            mTerminal.append(data, data.length);
+            rustTerminal.append(data, data.length);
         }
         long endRust = System.nanoTime();
         double rustTime = (endRust - startRust) / 1_000_000_000.0;
         double rustSpeed = (data.length * iterations / (1024.0 * 1024.0)) / rustTime;
 
-        // 2. 测试 Java 引擎性能 (对比项)
-        TerminalEmulator.sForceDisableRust = true;
-        withTerminalSized(COLS, ROWS);
+        // 2. Java 引擎 (从 master 分支提取的原始 Java 代码)
+        JavaTerminalEmulator javaTerminal = new JavaTerminalEmulator(output, COLS, ROWS, 13, 15, ROWS * 2, null);
         
         long startJava = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
-            mTerminal.append(data, data.length);
+            javaTerminal.append(data, data.length);
         }
         long endJava = System.nanoTime();
         double javaTime = (endJava - startJava) / 1_000_000_000.0;
@@ -38,13 +39,10 @@ public class TerminalPerformanceTest extends TerminalTestCase {
         System.out.printf("ENGINE_COMPARE [%s]: Rust=%.2f MB/s, Java=%.2f MB/s, Ratio=%.2fx (Rust is %s)%n",
                 label, rustSpeed, javaSpeed, rustSpeed / javaSpeed,
                 rustSpeed > javaSpeed ? "FASTER" : "SLOWER");
-        
-        // 重置状态
-        TerminalEmulator.sForceDisableRust = false;
     }
 
     public void testRawTextPerformance() {
-        byte[] rawData = new byte[DATA_SIZE_BYTES / 2]; // 5MB for faster CI
+        byte[] rawData = new byte[DATA_SIZE_BYTES / 2]; // 5MB
         new Random(42).nextBytes(rawData);
         for (int i = 0; i < rawData.length; i++) {
             if (rawData[i] < 32 || rawData[i] > 126) rawData[i] = (byte) 'A';
@@ -71,41 +69,30 @@ public class TerminalPerformanceTest extends TerminalTestCase {
     }
 
     /**
-     * 测试屏幕同步性能 (重点验证 DirectByteBuffer 优化)
+     * 测试屏幕同步性能 (验证 DirectByteBuffer 优化)
+     * 注意：由于 JavaTerminalEmulator 本身就在 Java 堆内存操作，它的同步开销几乎为零。
+     * 这里的目的是展示 Rust 即使跨越 JNI 层，也能达到多高的同步效率。
      */
     public void testScreenSyncPerformance() {
-        withTerminalSized(COLS, ROWS);
-        // 先填充屏幕
+        MockTerminalOutput output = new MockTerminalOutput();
+        TerminalEmulator rustTerminal = new TerminalEmulator(output, COLS, ROWS, 13, 15, ROWS * 2, null);
+        
+        // 填充屏幕
         byte[] fillData = new byte[COLS * ROWS];
         for(int i=0; i<fillData.length; i++) fillData[i] = 'X';
-        mTerminal.append(fillData, fillData.length);
+        rustTerminal.append(fillData, fillData.length);
 
-        int iterations = 1000;
+        int iterations = 10000;
         
-        // 1. Rust 模式下的同步性能 (现在使用了 DirectByteBuffer)
-        TerminalEmulator.sForceDisableRust = false;
         long startRust = System.nanoTime();
         for (int i = 0; i < iterations; i++) {
-            mTerminal.syncStateFromRustIfRequired();
+            rustTerminal.syncStateFromRustIfRequired();
         }
         long endRust = System.nanoTime();
         double rustSyncTime = (endRust - startRust) / 1_000_000_000.0;
         double rustSyncSpeed = iterations / rustSyncTime;
 
-        // 2. Java 模式下的同步性能 (实际上 Java 模式不需要从 Rust 同步，这里模拟一下开销)
-        TerminalEmulator.sForceDisableRust = true;
-        long startJava = System.nanoTime();
-        for (int i = 0; i < iterations; i++) {
-            // Java 模式下这个方法基本是空操作或简单的内存拷贝
-            mTerminal.syncStateFromRustIfRequired();
-        }
-        long endJava = System.nanoTime();
-        double javaSyncTime = (endJava - startJava) / 1_000_000_000.0;
-        double javaSyncSpeed = iterations / javaSyncTime;
-
-        System.out.printf("ENGINE_COMPARE [SCREEN_SYNC]: Rust=%.0f syncs/s, Java=%.0f syncs/s, Ratio=%.2fx%n",
-                rustSyncSpeed, javaSyncSpeed, rustSyncSpeed / javaSyncSpeed);
-        
-        TerminalEmulator.sForceDisableRust = false;
+        System.out.printf("ENGINE_COMPARE [SCREEN_SYNC]: Rust=%.0f syncs/s (DirectByteBuffer zero-copy)%n",
+                rustSyncSpeed);
     }
 }
