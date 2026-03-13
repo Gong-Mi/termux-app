@@ -35,7 +35,9 @@ final class JNI {
                 }
             }
         } catch (Throwable t) {
-            // Silently fail, width() and others will have fallbacks
+            System.err.println("CRITICAL JNI LOAD FAILURE!");
+            t.printStackTrace();
+            throw new RuntimeException("Failed to load JNI library: " + t.getMessage(), t);
         }
         sNativeLibrariesLoaded = loaded;
     }
