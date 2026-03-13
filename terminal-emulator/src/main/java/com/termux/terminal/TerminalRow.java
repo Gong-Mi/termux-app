@@ -12,7 +12,7 @@ public final class TerminalRow {
 
     private final int mColumns;
     public char[] mText;
-    private short mSpaceUsed;
+    short mSpaceUsed;
     boolean mLineWrap;
     public final long[] mStyle;
     public boolean mHasNonOneWidthOrSurrogateChars;
@@ -228,9 +228,10 @@ public final class TerminalRow {
         return true;
     }
 
-    public final long getStyle(int column) { 
+    public final long getStyle(int column) {
         if (column < 0 || column >= mColumns) return TextStyle.NORMAL;
-        return mStyle[column]; 
+        if (mStyle == null) return TextStyle.NORMAL;
+        return mStyle[column];
     }
 
     /** 在 Native 批量写入后调用，以同步 Java 层的状态 */

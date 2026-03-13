@@ -270,7 +270,6 @@ public final class TerminalBuffer {
      * @return the new cursor position.
      */
     public int[] resize(int newColumns, int newTotalRows, int newScreenRows, int[] cursor, long style) {
-        // Simple resize implementation
         TerminalRow[] oldLines = mLines;
         int oldTotalRows = mTotalRows;
         int oldColumns = mColumns;
@@ -288,9 +287,17 @@ public final class TerminalBuffer {
         for (int i = 0; i < copyRows; i++) {
             int oldIntRow = (mScreenFirstRow + i) % oldTotalRows;
             int newIntRow = i % newTotalRows;
-            System.arraycopy(oldLines[oldIntRow].mText, 0, mLines[newIntRow].mText, 0, copyCols);
-            System.arraycopy(oldLines[oldIntRow].mStyle, 0, mLines[newIntRow].mStyle, 0, copyCols);
-            mLines[newIntRow].mLineWrap = oldLines[oldIntRow].mLineWrap;
+            TerminalRow oldRow = oldLines[oldIntRow];
+            TerminalRow newRow = mLines[newIntRow];
+            
+            // Copy text and style data safely
+            System.arraycopy(oldRow.mText, 0, newRow.mText, 0, copyCols);
+            System.arraycopy(oldRow.mStyle, 0, newRow.mStyle, 0, copyCols);
+            newRow.mLineWrap = oldRow.mLineWrap;
+            
+            // Update space used and flags for the new row
+            newRow.mSpaceUsed = (short) newColumns;
+            newRow.mHasNonOneWidthOrSurrogateChars = oldRow.mHasNonOneWidthOrSurrogateChars;
         }
 
         mTotalRows = newTotalRows;
