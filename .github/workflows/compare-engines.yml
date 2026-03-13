@@ -92,16 +92,40 @@ jobs:
 
       - name: Run Performance Benchmark
         run: |
-          ./gradlew :terminal-emulator:test --info || true
+          ./gradlew :terminal-emulator:test --info | tee test_output.log || true
           
-      - name: Extract Performance Summary
+      - name: Generate Performance Report
         run: |
-          echo "### ⚡ Performance Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          echo "### ⚡ Engine Comparison Results (Java vs Rust)" >> $GITHUB_STEP_SUMMARY
           echo "| Benchmark | Rust Speed | Java Speed | Ratio | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|------------|------------|-------|--------|" >> $GITHUB_STEP_SUMMARY
-          # 尝试从 stdout/stderr 提取数据（这里需要一些脚本处理，先占位）
-          echo "| ANSI Parsing | 435 GB/s | 120 GB/s | 3.6x | ✅ |" >> $GITHUB_STEP_SUMMARY
-          echo "| Screen Sync | 7741 s/s | 512 s/s | 15.1x | ✅ |" >> $GITHUB_STEP_SUMMARY
+          
+          # 提取 RAW_TEXT 结果
+          RAW_LINE=$(grep "ENGINE_COMPARE \[RAW_TEXT\]" test_output.log | tail -n 1)
+          if [ ! -z "$RAW_LINE" ]; then
+            R_SPEED=$(echo $RAW_LINE | sed -r 's/.*Rust=([^ ]+) MB.*/\1/')
+            J_SPEED=$(echo $RAW_LINE | sed -r 's/.*Java=([^ ]+) MB.*/\1/')
+            RATIO=$(echo $RAW_LINE | sed -r 's/.*Ratio=([^ ]+)x.*/\1/')
+            echo "| Raw Text Parsing | $R_SPEED MB/s | $J_SPEED MB/s | ${RATIO}x | ✅ |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # 提取 ANSI_ESCAPES 结果
+          ANSI_LINE=$(grep "ENGINE_COMPARE \[ANSI_ESCAPES\]" test_output.log | tail -n 1)
+          if [ ! -z "$ANSI_LINE" ]; then
+            R_SPEED=$(echo $ANSI_LINE | sed -r 's/.*Rust=([^ ]+) MB.*/\1/')
+            J_SPEED=$(echo $ANSI_LINE | sed -r 's/.*Java=([^ ]+) MB.*/\1/')
+            RATIO=$(echo $ANSI_LINE | sed -r 's/.*Ratio=([^ ]+)x.*/\1/')
+            echo "| ANSI Escapes | $R_SPEED MB/s | $J_SPEED MB/s | ${RATIO}x | ✅ |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # 提取 SCREEN_SYNC 结果
+          SYNC_LINE=$(grep "ENGINE_COMPARE \[SCREEN_SYNC\]" test_output.log | tail -n 1)
+          if [ ! -z "$SYNC_LINE" ]; then
+            R_SPEED=$(echo $SYNC_LINE | sed -r 's/.*Rust=([^ ]+) syncs.*/\1/')
+            J_SPEED=$(echo $SYNC_LINE | sed -r 's/.*Java=([^ ]+) syncs.*/\1/')
+            RATIO=$(echo $SYNC_LINE | sed -r 's/.*Ratio=([^ ]+)x.*/\1/')
+            echo "| Screen Sync (JNI) | $R_SPEED s/s | $J_SPEED s/s | ${RATIO}x | ✅ |" >> $GITHUB_STEP_SUMMARY
+          fi
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/terminal-emulator/src/main/jniLibs/x86_64
 
