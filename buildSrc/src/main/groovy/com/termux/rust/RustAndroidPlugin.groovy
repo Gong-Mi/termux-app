@@ -8,60 +8,60 @@ import org.gradle.api.tasks.Copy
 class RustAndroidPlugin implements Plugin<Project> {
     void apply(Project project) {
         project.extensions.create("rustAndroid", RustAndroidExtension)
-        
+
         project.afterEvaluate {
             def extension = project.extensions.getByType(RustAndroidExtension)
             def cargoTargetDir = project.file("${extension.rustSrcDir}/target")
             def jniLibsDir = project.file(extension.jniLibsDestDir)
-            
+
             def ndkAbis = project.android.defaultConfig.ndk.abiFilters
             if (!ndkAbis) {
                 ndkAbis = ['arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'] as Set
             }
-            
-            // Build Rust libraries
-            def cargoTask = project.tasks.register("cargoNdkBuild", Exec) {
-                workingDir extension.rustSrcDir
-                
-                def cmd = ['cargo', 'ndk']
-                ndkAbis.each { abi ->
-                    cmd.addAll(['-t', abi])
+
+            // Build Rust libraries for each ABI
+            def cargoTasks = []
+            ndkAbis.each { abi ->
+                def rustArch = getRustArch(abi)
+                def cargoTaskName = "cargoNdkBuild${abi.capitalize()}"
+                def cargoTask = project.tasks.register(cargoTaskName, Exec) {
+                    workingDir extension.rustSrcDir
+
+                    commandLine 'cargo', 'ndk', '-t', abi, '-p', extension.minSdkVersion.toString(), 'build', '--release'
+
+                    doFirst {
+                        println "Compiling Rust for ABI: ${abi}..."
+                    }
                 }
-                cmd.addAll(['-p', extension.minSdkVersion.toString(), 'build', '--release'])
-                
-                commandLine cmd
-                
-                doFirst {
-                    println "Compiling Rust for ABIs: ${ndkAbis.join(', ')}..."
-                }
+                cargoTasks.add(cargoTask)
             }
-            
+
             // Copy built .so files to jniLibs
             def copyTasks = []
             ndkAbis.each { abi ->
                 def rustArch = getRustArch(abi)
                 def copyTaskName = "copyRust${abi.capitalize()}"
                 def copyTask = project.tasks.register(copyTaskName, Copy) {
-                    dependsOn cargoTask
+                    dependsOn "cargoNdkBuild${abi.capitalize()}"
                     from "${cargoTargetDir}/${rustArch}/release/lib${extension.libName}.so"
                     into "${jniLibsDir}/${abi}"
                 }
                 copyTasks.add(copyTask)
             }
-            
+
             def buildAllRust = project.tasks.register("buildAllRust") {
                 dependsOn copyTasks
             }
-            
-            // Hook into Android build process
+
+            // Hook into Android build process - ensure Rust libs are built before mergeJniLibFolders
             project.tasks.whenTaskAdded { task ->
-                if (task.name == "preBuild" || (task.name.startsWith("merge") && task.name.endsWith("JniLibFolders"))) {
+                if (task.name == "preBuild" || task.name.startsWith("merge") && task.name.endsWith("JniLibFolders")) {
                     task.dependsOn buildAllRust
                 }
             }
         }
     }
-    
+
     private String getRustArch(String abi) {
         switch (abi) {
             case 'arm64-v8a': return 'aarch64-linux-android'
