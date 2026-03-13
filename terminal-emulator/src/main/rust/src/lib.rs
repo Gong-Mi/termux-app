@@ -1132,3 +1132,146 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isInsert
     let guard = engine_lock.read().unwrap();
     if guard.state.insert_mode { jni::sys::JNI_TRUE } else { jni::sys::JNI_FALSE }
 }
+
+// ============================================================================
+// 光标控制相关 JNI
+// ============================================================================
+
+/// 设置光标闪烁状态
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorBlinkStateInRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+    visible: jni::sys::jboolean,
+) {
+    if engine_ptr == 0 {
+        return;
+    }
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let mut guard = engine_lock.write().unwrap();
+    guard.state.cursor_blink_state = visible != jni::sys::JNI_FALSE;
+}
+
+/// 设置光标闪烁启用状态
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorBlinkingEnabledInRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+    enabled: jni::sys::jboolean,
+) {
+    if engine_ptr == 0 {
+        return;
+    }
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let mut guard = engine_lock.write().unwrap();
+    guard.state.cursor_blinking_enabled = enabled != jni::sys::JNI_FALSE;
+}
+
+/// 检查光标是否启用
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isCursorEnabledFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) -> jni::sys::jboolean {
+    if engine_ptr == 0 {
+        return jni::sys::JNI_TRUE;
+    }
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = engine_lock.read().unwrap();
+    if guard.state.cursor_enabled { jni::sys::JNI_TRUE } else { jni::sys::JNI_FALSE }
+}
+
+/// 检查光标键是否处于应用模式
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isCursorKeysApplicationModeFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) -> jni::sys::jboolean {
+    if engine_ptr == 0 {
+        return jni::sys::JNI_FALSE;
+    }
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = engine_lock.read().unwrap();
+    // DECSET bit 1: 应用光标键模式
+    if (guard.state.decset_flags & 0x01) != 0 { jni::sys::JNI_TRUE } else { jni::sys::JNI_FALSE }
+}
+
+/// 检查键盘是否处于应用模式
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isKeypadApplicationModeFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) -> jni::sys::jboolean {
+    if engine_ptr == 0 {
+        return jni::sys::JNI_FALSE;
+    }
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = engine_lock.read().unwrap();
+    // DECNKM: 数字键盘应用模式
+    if guard.state.application_keypad { jni::sys::JNI_TRUE } else { jni::sys::JNI_FALSE }
+}
+
+// ============================================================================
+// 鼠标事件和客户端更新
+// ============================================================================
+
+/// 发送鼠标事件到 Rust
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendMouseEventToRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+    button: jint,
+    x: jint,
+    y: jint,
+    pressed: jni::sys::jboolean,
+) {
+    if engine_ptr == 0 {
+        return;
+    }
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let mut guard = engine_lock.write().unwrap();
+    let engine = &mut *guard;
+    engine.state.send_mouse_event(
+        button as u32,
+        x as i32,
+        y as i32,
+        pressed != jni::sys::JNI_FALSE,
+    );
+}
+
+/// 更新 TerminalSessionClient
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_updateTerminalSessionClientFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+    _client: jobject,
+) {
+    // 目前只需存储引用，实际更新在 Java 侧处理
+    if engine_ptr == 0 {
+        return;
+    }
+    // 客户端引用更新已在 createEngineRustWithCallback 中处理
+}
+
+/// 设置自动滚动禁用状态
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_setAutoScrollDisabledInRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+    disabled: jni::sys::jboolean,
+) {
+    if engine_ptr == 0 {
+        return;
+    }
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let mut guard = engine_lock.write().unwrap();
+    guard.state.auto_scroll_disabled = disabled != jni::sys::JNI_FALSE;
+}
