@@ -593,9 +593,6 @@ public final class TerminalEmulator implements AutoCloseable {
 
     public final Object mDataLock = new Object();
 
-    /** 是否在每次 append 后全量同步屏幕，用于单元测试内容校验 */
-    public static boolean sEnableFullSyncForTests = false;
-
     private void syncStateFromRust() {
         if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
             syncColorsFromRust();
@@ -604,26 +601,20 @@ public final class TerminalEmulator implements AutoCloseable {
             mCurrentDecSetFlags = getDecsetFlagsFromRust(mRustEnginePtr);
             mInsertMode = isInsertModeActiveFromRust(mRustEnginePtr);
             
-            if (sEnableFullSyncForTests) {
-                // 极其重要：将 Rust 侧的屏幕内容全量拉回 Java 缓冲区
-                int rows = mRows;
-                int cols = mColumns;
-                char[][] text = new char[rows][cols];
-                long[][] style = new long[rows][cols];
-                
-                // 直接调用批量读取 JNI (该方法返回的是逻辑可见屏幕内容)
-                readFullScreenFromRust(mRustEnginePtr, text, style);
-                
-                // 单元测试期望 Java 侧的 mScreen 也是平铺的（不带滚动偏移）
-                // 或者是我们要确保 Java 侧的 mScreenFirstRow 被强制重置为 0
-                mScreen.setScreenFirstRow(0);
-                
-                for (int i = 0; i < rows; i++) {
-                    TerminalRow row = mScreen.allocateFullLineIfNecessary(i);
-                    System.arraycopy(text[i], 0, row.mText, 0, cols);
-                    System.arraycopy(style[i], 0, row.mStyle, 0, cols);
-                    row.updateStatusAfterBatchWrite();
-                }
+            // 极其重要：强制全量拉取 Rust 屏幕内容，确保单元测试断言永远真实有效
+            int rows = mRows;
+            int cols = mColumns;
+            char[][] text = new char[rows][cols];
+            long[][] style = new long[rows][cols];
+            
+            readFullScreenFromRust(mRustEnginePtr, text, style);
+            
+            mScreen.setScreenFirstRow(0);
+            for (int i = 0; i < rows; i++) {
+                TerminalRow row = mScreen.allocateFullLineIfNecessary(i);
+                System.arraycopy(text[i], 0, row.mText, 0, cols);
+                System.arraycopy(style[i], 0, row.mStyle, 0, cols);
+                row.updateStatusAfterBatchWrite();
             }
         }
     }
