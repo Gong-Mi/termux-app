@@ -46,9 +46,13 @@ jobs:
 
       - name: Run Consistency Test
         run: |
+          echo "Current working directory: $(pwd)"
+          ls -F
           ./gradlew :terminal-emulator:test --info || true
+          echo "Scanning for HTML reports..."
+          find . -name "*.html" | grep "reports/tests" || echo "No HTML reports found!"
           echo "==== BEGIN TEST REPORT ===="
-          find terminal-emulator/build/reports/tests/ -name "*.html" -exec cat {} +
+          find . -path "*/reports/tests/*.html" -exec echo "FILE: {}" \; -exec cat {} +
           echo "==== END TEST REPORT ===="
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/terminal-emulator/src/main/jniLibs/x86_64
