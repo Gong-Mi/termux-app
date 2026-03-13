@@ -244,6 +244,7 @@ public final class TerminalEmulator implements AutoCloseable {
     }
 
     public TerminalEmulator(TerminalOutput session, int columns, int rows, int cellWidthPixels, int cellHeightPixels, Integer transcriptRows, TerminalSessionClient client) {
+        System.out.println("DEBUG_LOAD_STATUS: JNI_LOADED=" + JNI.sNativeLibrariesLoaded + " USE_RUST=" + USE_RUST_FULL_TAKEOVER);
         mSession = session;
         mScreen = mMainBuffer = new TerminalBuffer(columns, getTerminalTranscriptRows(transcriptRows), rows);
         mAltBuffer = new TerminalBuffer(columns, rows, rows);
