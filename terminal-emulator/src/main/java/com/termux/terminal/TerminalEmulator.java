@@ -17,6 +17,12 @@ public final class TerminalEmulator {
     public static final int MOUSE_LEFT_BUTTON = 0;
     public static final int MOUSE_MIDDLE_BUTTON = 1;
     public static final int MOUSE_RIGHT_BUTTON = 2;
+    public static final int MOUSE_LEFT_BUTTON_MOVED = 32;
+    public static final int MOUSE_MIDDLE_BUTTON_MOVED = 33;
+    public static final int MOUSE_RIGHT_BUTTON_MOVED = 34;
+    public static final int MOUSE_WHEELUP_BUTTON = 64;
+    public static final int MOUSE_WHEELDOWN_BUTTON = 65;
+    
     public static final int UNICODE_REPLACEMENT_CHAR = 0xFFFD;
 
     /** Cursor styles. */
@@ -247,6 +253,14 @@ public final class TerminalEmulator {
         return (mRustEnginePtr != 0) ? getCursorStyleFromRust(mRustEnginePtr) : mCursorStyle;
     }
 
+    public boolean isCursorKeysApplicationMode() {
+        return (mRustEnginePtr != 0) ? isCursorKeysApplicationModeFromRust(mRustEnginePtr) : false;
+    }
+
+    public boolean isKeypadApplicationMode() {
+        return (mRustEnginePtr != 0) ? isKeypadApplicationModeFromRust(mRustEnginePtr) : false;
+    }
+
     public void syncScreenBatchFromRust(int startRow, int numRows) {
         if (mRustEnginePtr != 0) {
             char[][] text = new char[numRows][mColumns];
@@ -307,4 +321,6 @@ public final class TerminalEmulator {
     private static native boolean isReverseVideoFromRust(long enginePtr);
     private static native boolean shouldCursorBeVisibleFromRust(long enginePtr);
     private static native int getCursorStyleFromRust(long enginePtr);
+    private static native boolean isCursorKeysApplicationModeFromRust(long enginePtr);
+    private static native boolean isKeypadApplicationModeFromRust(long enginePtr);
 }
