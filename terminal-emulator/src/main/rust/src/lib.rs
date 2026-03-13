@@ -387,9 +387,9 @@ unsafe fn internal_read_screen_batch(
             engine.state.copy_row_text(row as usize, &mut text_vec);
             engine.state.copy_row_styles(row as usize, &mut style_vec);
 
-            // 调试打印
-            if i == 0 && text_vec.iter().any(|&c| c != ' ' as u16) {
-                eprintln!("JNI SYNC SUCCESS: row={} first_chars={:?}", row, &text_vec[0..std::cmp::min(5, copy_cols)]);
+            if i == 0 {
+                // 无论有没有内容，都打印第一行前 5 个字符的码点
+                eprintln!("JNI SYNC TRACE: row={} chars={:?}", row, &text_vec[0..std::cmp::min(5, copy_cols)]);
             }
 
             // 批量写入 Java 数组
