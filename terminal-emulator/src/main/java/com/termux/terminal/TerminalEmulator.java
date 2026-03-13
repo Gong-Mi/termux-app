@@ -78,6 +78,7 @@ public final class TerminalEmulator {
     public final TerminalColors mColors = new TerminalColors();
     private String mTitle;
     private boolean mInsertMode;
+    private boolean mIsSyncingFromRust = false;  // 防止递归调用
 
     // ========================================================================
     // Rust Takeover
@@ -164,47 +165,57 @@ public final class TerminalEmulator {
 
     /** Aggressively synchronizes state from Rust to Java. */
     public synchronized void syncStateFromRustIfRequired() {
+        // 防止递归调用：如果已经在 syncStateFromRust 中，直接返回
+        if (mIsSyncingFromRust) {
+            return;
+        }
         if (mRustEnginePtr != 0) {
             syncStateFromRust();
         }
     }
 
     private void syncStateFromRust() {
-        if (mRustEnginePtr != 0) {
+        if (mRustEnginePtr == 0 || mIsSyncingFromRust) {
+            return;
+        }
+        
+        mIsSyncingFromRust = true;  // 标记开始同步
+        
+        try {
             syncColorsFromRust();
             mCursorCol = getCursorColFromRust(mRustEnginePtr);
             mCursorRow = getCursorRowFromRust(mRustEnginePtr);
             mCurrentDecSetFlags = getDecsetFlagsFromRust(mRustEnginePtr);
             mInsertMode = isInsertModeActiveFromRust(mRustEnginePtr);
-            
+
             if (mSharedBuffer == null) {
                 mSharedBuffer = createSharedBufferRust(mRustEnginePtr);
             }
-            
+
             if (mSharedBuffer != null) {
                 syncToSharedBufferRust(mRustEnginePtr);
-                
+
                 int rows = mRows;
                 int cols = mColumns;
                 int cellCount = rows * cols;
-                
+
                 TerminalBuffer targetBuffer = isAlternateBufferActive() ? mAltBuffer : mMainBuffer;
                 mScreen = targetBuffer;
                 targetBuffer.setScreenFirstRow(0);
-                
+
                 mSharedBuffer.clear();
                 mSharedBuffer.position(12);
                 CharBuffer textChars = mSharedBuffer.asCharBuffer();
-                
+
                 mSharedBuffer.clear();
                 mSharedBuffer.position(12 + cellCount * 2);
                 LongBuffer styleLongs = mSharedBuffer.asLongBuffer();
-                
+
                 for (int i = 0; i < rows; i++) {
                     TerminalRow row = targetBuffer.allocateFullLineIfNecessary(i);
                     textChars.position(i * cols);
                     textChars.get(row.mText, 0, cols);
-                    
+
                     styleLongs.position(i * cols);
                     styleLongs.get(row.mStyle, 0, cols);
                     
@@ -212,6 +223,8 @@ public final class TerminalEmulator {
                 }
                 clearSharedBufferVersionRust(mRustEnginePtr);
             }
+        } finally {
+            mIsSyncingFromRust = false;  // 重置标志
         }
     }
 
