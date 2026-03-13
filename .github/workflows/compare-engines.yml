@@ -13,7 +13,7 @@ on:
 
 env:
   JAVA_VERSION: 17
-  ANDROID_NDK_VERSION: 26.1.10909125
+  ANDROID_NDK_VERSION: 29.0.14206865
   RUST_TOOLCHAIN: stable
 
 jobs:
@@ -21,14 +21,8 @@ jobs:
     name: ⚡ Performance Benchmark
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Current Branch (Rust)
+      - name: Checkout Repository
         uses: actions/checkout@v6
-
-      - name: Checkout Baseline Branch (Java Master)
-        uses: actions/checkout@v6
-        with:
-          ref: master
-          path: baseline-java
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -42,11 +36,27 @@ jobs:
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
 
-      - name: Build & Run Baseline (Pure Java)
+      - name: Setup Rust Caching
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: false
+          shared-key: "termux-rust-engine"
+          target-dir: false
+
+      # ========== Java Performance Test (Master Branch) ==========
+      - name: Checkout Master for Java Baseline
+        uses: actions/checkout@v6
+        with:
+          ref: master
+          path: baseline-java
+
+      - name: Build & Run Java Baseline
         working-directory: baseline-java
         run: |
-          ./gradlew :terminal-emulator:test --tests com.termux.terminal.TerminalPerformanceTest --info | tee ../java_baseline.log || true
+          echo "=== Running Java Performance Test (Master Branch) ==="
+          ./gradlew :terminal-emulator:test --tests "*TerminalPerformanceTest*" --info 2>&1 | tee ../java_baseline.log || true
 
+      # ========== Rust Engine Build ==========
       - name: Build Rust Engine
         run: |
           cd terminal-emulator/src/main/rust
@@ -54,36 +64,120 @@ jobs:
           mkdir -p ../jniLibs/x86_64
           cp target/release/libtermux_rust.so ../jniLibs/x86_64/
 
-      - name: Build & Run Current (Rust Integrated)
+      # ========== Rust Integrated Test ==========
+      - name: Build & Run Rust Integrated
         run: |
-          ./gradlew :terminal-emulator:test --tests com.termux.terminal.TerminalPerformanceTest --info | tee rust_current.log || true
-          
-      - name: Generate Detailed Comparison Report
-        run: |
-          echo "### ⚡ Comprehensive Engine Comparison (Master Java vs Feature Rust)" >> $GITHUB_STEP_SUMMARY
-          echo "| Metric | Master (Java) | Current (Rust) | Speedup | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|--------|---------------|----------------|---------|--------|" >> $GITHUB_STEP_SUMMARY
-          
-          # 定义解析函数
-          extract_speed() {
-            grep "Performance:" $1 | grep "$2" | tail -n 1 | sed -r 's/.*: ([0-9.]+) MB.*/\1/'
-          }
+          echo "=== Running Java Test with Rust Engine ==="
+          ./gradlew :terminal-emulator:test --tests "*TerminalPerformanceTest*" --info 2>&1 | tee rust_integrated.log || true
 
-          J_RAW=$(extract_speed java_baseline.log "Raw Text")
-          R_RAW=$(extract_speed rust_current.log "Raw Text")
-          if [ ! -z "$J_RAW" ] && [ ! -z "$R_RAW" ]; then
-            RATIO=$(echo "scale=2; $R_RAW / $J_RAW" | bc)
-            echo "| Raw Text Throughput | $J_RAW MB/s | $R_RAW MB/s | ${RATIO}x | ✅ |" >> $GITHUB_STEP_SUMMARY
+      # ========== Rust Native Performance Test ==========
+      - name: Run Rust Native Performance Tests
+        run: |
+          echo "=== Running Rust Native Performance Tests ==="
+          cd terminal-emulator/src/main/rust
+          cargo test --test performance --release -- --nocapture 2>&1 | tee rust_perf.log
+
+      # ========== Extract Metrics ==========
+      - name: Extract Java Metrics
+        run: |
+          if [ -f java_baseline.log ]; then
+            J_RAW=$(grep "Raw Text Performance:" java_baseline.log | tail -1 | sed -r 's/.*: ([0-9.]+) MB.*/\1/' || echo "")
+            J_ANSI=$(grep "ANSI Escape Performance:" java_baseline.log | tail -1 | sed -r 's/.*: ([0-9.]+) MB.*/\1/' || echo "")
+            echo "JAVA_RAW_TEXT_MBPS=${J_RAW:-N/A}" >> java_metrics.env
+            echo "JAVA_ANSI_MBPS=${J_ANSI:-N/A}" >> java_metrics.env
+            echo "Java metrics: RAW=${J_RAW:-N/A}, ANSI=${J_ANSI:-N/A}"
           fi
 
-          J_ANSI=$(extract_speed java_baseline.log "ANSI Escape")
-          R_ANSI=$(extract_speed rust_current.log "ANSI Escape")
-          if [ ! -z "$J_ANSI" ] && [ ! -z "$R_ANSI" ]; then
-            RATIO=$(echo "scale=2; $R_ANSI / $J_ANSI" | bc)
-            echo "| ANSI Sequence Heavy | $J_ANSI MB/s | $R_ANSI MB/s | ${RATIO}x | ✅ |" >> $GITHUB_STEP_SUMMARY
+      - name: Extract Rust Metrics
+        run: |
+          if [ -f rust_perf.log ]; then
+            R_RAW=$(grep "RUST_RAW_TEXT_MBPS=" rust_perf.log | tail -1 | sed 's/.*=//' || echo "")
+            R_ANSI=$(grep "RUST_ANSI_MBPS=" rust_perf.log | tail -1 | sed 's/.*=//' || echo "")
+            R_CURSOR=$(grep "RUST_CURSOR_OPS=" rust_perf.log | tail -1 | sed 's/.*=//' || echo "")
+            R_SCROLL=$(grep "RUST_SCROLL_LINES=" rust_perf.log | tail -1 | sed 's/.*=//' || echo "")
+            R_WIDECHAR=$(grep "RUST_WIDECHAR_OPS=" rust_perf.log | tail -1 | sed 's/.*=//' || echo "")
+            R_SMALLBATCH=$(grep "RUST_SMALLBATCH_OPS=" rust_perf.log | tail -1 | sed 's/.*=//' || echo "")
+            
+            echo "RUST_RAW_TEXT_MBPS=${R_RAW:-N/A}" > rust_metrics.env
+            echo "RUST_ANSI_MBPS=${R_ANSI:-N/A}" >> rust_metrics.env
+            echo "RUST_CURSOR_OPS=${R_CURSOR:-N/A}" >> rust_metrics.env
+            echo "RUST_SCROLL_LINES=${R_SCROLL:-N/A}" >> rust_metrics.env
+            echo "RUST_WIDECHAR_OPS=${R_WIDECHAR:-N/A}" >> rust_metrics.env
+            echo "RUST_SMALLBATCH_OPS=${R_SMALLBATCH:-N/A}" >> rust_metrics.env
+            
+            echo "=== Rust Metrics ==="
+            cat rust_metrics.env
           fi
-        env:
-          LD_LIBRARY_PATH: ${{ github.workspace }}/terminal-emulator/src/main/jniLibs/x86_64
+
+      # ========== Generate Report ==========
+      - name: Generate Comparison Report
+        run: |
+          source java_metrics.env 2>/dev/null || true
+          source rust_metrics.env 2>/dev/null || true
+          
+          echo "### ⚡ Java vs Rust Performance Comparison Report" > $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Generated:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "#### 📊 Core Metrics Comparison" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Java (Master) | Rust (Native) | Speedup |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|---------------|---------------|---------|" >> $GITHUB_STEP_SUMMARY
+          
+          # Raw Text
+          if [ -n "$JAVA_RAW_TEXT_MBPS" ] && [ "$JAVA_RAW_TEXT_MBPS" != "N/A" ] && \
+             [ -n "$RUST_RAW_TEXT_MBPS" ] && [ "$RUST_RAW_TEXT_MBPS" != "N/A" ]; then
+            RATIO=$(echo "scale=2; $RUST_RAW_TEXT_MBPS / $JAVA_RAW_TEXT_MBPS" | bc 2>/dev/null || echo "N/A")
+            if [ $(echo "$RATIO >= 1.5" | bc 2>/dev/null || echo "0") -eq 1 ]; then
+              STATUS="🚀 +$(( ($(echo "$RATIO * 100" | bc | cut -d. -f1) - 100) ))%"
+            elif [ $(echo "$RATIO >= 1.0" | bc 2>/dev/null || echo "0") -eq 1 ]; then
+              STATUS="✅ +$(( ($(echo "$RATIO * 100" | bc | cut -d. -f1) - 100) ))%"
+            else
+              STATUS="⚠️ $(( 100 - $(echo "$RATIO * 100" | bc | cut -d. -f1) ))% slower"
+            fi
+            echo "| Raw Text | ${JAVA_RAW_TEXT_MBPS} MB/s | ${RUST_RAW_TEXT_MBPS} MB/s | ${RATIO}x $STATUS |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Raw Text | ${JAVA_RAW_TEXT_MBPS:-N/A} MB/s | ${RUST_RAW_TEXT_MBPS:-N/A} MB/s | N/A |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # ANSI Escape
+          if [ -n "$JAVA_ANSI_MBPS" ] && [ "$JAVA_ANSI_MBPS" != "N/A" ] && \
+             [ -n "$RUST_ANSI_MBPS" ] && [ "$RUST_ANSI_MBPS" != "N/A" ]; then
+            RATIO=$(echo "scale=2; $RUST_ANSI_MBPS / $JAVA_ANSI_MBPS" | bc 2>/dev/null || echo "N/A")
+            if [ $(echo "$RATIO >= 1.5" | bc 2>/dev/null || echo "0") -eq 1 ]; then
+              STATUS="🚀 +$(( ($(echo "$RATIO * 100" | bc | cut -d. -f1) - 100) ))%"
+            elif [ $(echo "$RATIO >= 1.0" | bc 2>/dev/null || echo "0") -eq 1 ]; then
+              STATUS="✅ +$(( ($(echo "$RATIO * 100" | bc | cut -d. -f1) - 100) ))%"
+            else
+              STATUS="⚠️ $(( 100 - $(echo "$RATIO * 100" | bc | cut -d. -f1) ))% slower"
+            fi
+            echo "| ANSI Escape | ${JAVA_ANSI_MBPS} MB/s | ${RUST_ANSI_MBPS} MB/s | ${RATIO}x $STATUS |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| ANSI Escape | ${JAVA_ANSI_MBPS:-N/A} MB/s | ${RUST_ANSI_MBPS:-N/A} MB/s | N/A |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### 🦀 Rust Additional Metrics" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Cursor Movement | ${RUST_CURSOR_OPS:-N/A} K ops/s |" >> $GITHUB_STEP_SUMMARY
+          echo "| Scrolling | ${RUST_SCROLL_LINES:-N/A} K lines/s |" >> $GITHUB_STEP_SUMMARY
+          echo "| Wide Char | ${RUST_WIDECHAR_OPS:-N/A} K chars/s |" >> $GITHUB_STEP_SUMMARY
+          echo "| Small Batch | ${RUST_SMALLBATCH_OPS:-N/A} K calls/s |" >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### 📝 Notes" >> $GITHUB_STEP_SUMMARY
+          echo "- **Java**: Tests run on master branch (pure Java implementation)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Rust**: Native tests run on current branch (Rust implementation)" >> $GITHUB_STEP_SUMMARY
+          echo "- Speedup = Rust / Java (>1 means Rust is faster)" >> $GITHUB_STEP_SUMMARY
+          echo "- All tests use identical input data (same seed: 42) for fair comparison" >> $GITHUB_STEP_SUMMARY
 
   consistency:
     name: 🛡️ Logic Consistency Test
@@ -96,6 +190,13 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Setup Rust Caching
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: false
+          shared-key: "termux-rust-engine"
+          target-dir: false
 
       - name: Run Rust Logic Tests
         run: |

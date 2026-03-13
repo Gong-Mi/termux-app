@@ -1,5 +1,8 @@
 # 全局构建配置（仅用于非 Android 目标）
 [build]
+# 使用稀疏注册表协议，减少 crates.io 索引下载大小（从 ~200MB 降至 ~20MB）
+registry = "sparse"
+
 # 这些是全局 RUSTFLAGS，会在所有 cargo 构建（包括 Android/Linux 交叉编译）时生效。
 #
 # 1. -Wl,-z,max-page-size=16384:
