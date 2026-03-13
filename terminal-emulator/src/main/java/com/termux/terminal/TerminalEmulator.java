@@ -221,6 +221,11 @@ public final class TerminalEmulator {
         return (mRustEnginePtr != 0) ? isAutoScrollDisabledFromRust(mRustEnginePtr) : mAutoScrollDisabled;
     }
 
+    public void toggleAutoScrollDisabled() {
+        mAutoScrollDisabled = !mAutoScrollDisabled;
+        if (mRustEnginePtr != 0) setAutoScrollDisabledInRust(mRustEnginePtr, mAutoScrollDisabled);
+    }
+
     public int getScrollCounter() {
         return (mRustEnginePtr != 0) ? getScrollCounterFromRust(mRustEnginePtr) : mScrollCounter;
     }
@@ -319,6 +324,7 @@ public final class TerminalEmulator {
     private static native boolean isMouseTrackingActiveFromRust(long enginePtr);
     private static native boolean isAlternateBufferActiveFromRust(long enginePtr);
     private static native boolean isAutoScrollDisabledFromRust(long enginePtr);
+    private static native void setAutoScrollDisabledInRust(long enginePtr, boolean disabled);
     private static native int getScrollCounterFromRust(long enginePtr);
     private static native void clearScrollCounterFromRust(long enginePtr);
     private static native void sendMouseEventToRust(long enginePtr, int button, int x, int y, boolean pressed);
