@@ -48,6 +48,15 @@ public final class TerminalRow {
         }
     }
 
+    public void copyRange(TerminalRow dstRow, int sx, int dx, int w) {
+        if (w <= 0) return;
+        for (int i = 0; i < w; i++) {
+            int codePoint = getChar(sx + i);
+            long style = getStyle(sx + i);
+            dstRow.setChar(dx + i, codePoint, style);
+        }
+    }
+
     public int getSpaceUsed() { return mSpaceUsed; }
 
     public final int findStartOfColumn(int column) {
@@ -117,6 +126,19 @@ public final class TerminalRow {
             mHasNonOneWidthOrSurrogateChars = true;
         }
         setCharInternal(columnToSet, codePoint, style, newWidth);
+    }
+
+    public int getChar(int column) {
+        if (column < 0 || column >= mColumns) return ' ';
+        if (!mHasNonOneWidthOrSurrogateChars) return mText[column];
+        
+        int idx = findStartOfColumn(column);
+        if (idx >= mSpaceUsed) return ' ';
+        char c = mText[idx];
+        if (Character.isHighSurrogate(c) && idx + 1 < mSpaceUsed) {
+            return Character.toCodePoint(c, mText[idx+1]);
+        }
+        return c;
     }
 
     /** 批量设置 ASCII 字符，仅在确定目标区域为单宽度字符且无组合字符时使用 */
@@ -206,7 +228,10 @@ public final class TerminalRow {
         return true;
     }
 
-    public final long getStyle(int column) { return mStyle[column]; }
+    public final long getStyle(int column) { 
+        if (column < 0 || column >= mColumns) return TextStyle.NORMAL;
+        return mStyle[column]; 
+    }
 
     /** 在 Native 批量写入后调用，以同步 Java 层的状态 */
     public final void updateStatusAfterBatchWrite() {
