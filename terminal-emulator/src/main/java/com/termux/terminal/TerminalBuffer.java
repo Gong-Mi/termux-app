@@ -41,6 +41,10 @@ public final class TerminalBuffer {
         blockSet(0, 0, columns, screenRows, ' ', TextStyle.NORMAL);
     }
 
+    public void setScreenFirstRow(int screenFirstRow) {
+        this.mScreenFirstRow = screenFirstRow;
+    }
+
     public String getTranscriptText() {
         return getSelectedText(0, -getActiveTranscriptRows(), mColumns, mScreenRows).trim();
     }
