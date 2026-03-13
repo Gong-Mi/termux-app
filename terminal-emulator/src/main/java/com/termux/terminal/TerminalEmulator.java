@@ -2,6 +2,9 @@ package com.termux.terminal;
 
 import android.os.Handler;
 import android.os.Looper;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.LongBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Objects;
@@ -191,11 +194,11 @@ public final class TerminalEmulator {
                 
                 mSharedBuffer.clear();
                 mSharedBuffer.position(12);
-                java.nio.CharBuffer textChars = mSharedBuffer.asCharBuffer();
+                CharBuffer textChars = mSharedBuffer.asCharBuffer();
                 
                 mSharedBuffer.clear();
                 mSharedBuffer.position(12 + cellCount * 2);
-                java.nio.LongBuffer styleLongs = mSharedBuffer.asLongBuffer();
+                LongBuffer styleLongs = mSharedBuffer.asLongBuffer();
                 
                 for (int i = 0; i < rows; i++) {
                     TerminalRow row = targetBuffer.allocateFullLineIfNecessary(i);
