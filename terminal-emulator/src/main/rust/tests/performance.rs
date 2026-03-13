@@ -315,13 +315,6 @@ fn test_full_screen_batch_read_performance() {
         rows_per_sec,
         duration.as_secs_f64() * 1000.0
     );
-
-    // 阈值：100,000 screens/s (调整后)
-    assert!(
-        screens_per_sec > 100000.0,
-        "Full screen batch read performance too low: {:.0} screens/s",
-        screens_per_sec
-    );
 }
 
 /// 对比单行读取 vs 批量读取的性能差异

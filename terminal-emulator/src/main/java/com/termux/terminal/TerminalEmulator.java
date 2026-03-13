@@ -81,6 +81,7 @@ public final class TerminalEmulator {
     // ========================================================================
 
     private volatile long mRustEnginePtr = 0;
+    private ByteBuffer mSharedBuffer;
     private final Handler mMainThreadHandler = new Handler(Looper.getMainLooper());
     public static final boolean USE_RUST_FULL_TAKEOVER = true;
     public static boolean sForceDisableRust = false;
@@ -133,6 +134,7 @@ public final class TerminalEmulator {
                 });
                 mMainBuffer.setRustEnginePtr(mRustEnginePtr);
                 mAltBuffer.setRustEnginePtr(mRustEnginePtr);
+                mSharedBuffer = createSharedBufferRust(mRustEnginePtr);
             } catch (Exception e) {
                 mRustEnginePtr = 0;
             }
@@ -172,21 +174,40 @@ public final class TerminalEmulator {
             mCurrentDecSetFlags = getDecsetFlagsFromRust(mRustEnginePtr);
             mInsertMode = isInsertModeActiveFromRust(mRustEnginePtr);
             
-            int rows = mRows;
-            int cols = mColumns;
-            char[][] text = new char[rows][cols];
-            long[][] style = new long[rows][cols];
-            readFullScreenFromRust(mRustEnginePtr, text, style);
+            if (mSharedBuffer == null) {
+                mSharedBuffer = createSharedBufferRust(mRustEnginePtr);
+            }
             
-            TerminalBuffer targetBuffer = isAlternateBufferActive() ? mAltBuffer : mMainBuffer;
-            mScreen = targetBuffer;
-            
-            targetBuffer.setScreenFirstRow(0);
-            for (int i = 0; i < rows; i++) {
-                TerminalRow row = targetBuffer.allocateFullLineIfNecessary(i);
-                System.arraycopy(text[i], 0, row.mText, 0, cols);
-                System.arraycopy(style[i], 0, row.mStyle, 0, cols);
-                row.updateStatusAfterBatchWrite();
+            if (mSharedBuffer != null) {
+                syncToSharedBufferRust(mRustEnginePtr);
+                
+                int rows = mRows;
+                int cols = mColumns;
+                int cellCount = rows * cols;
+                
+                TerminalBuffer targetBuffer = isAlternateBufferActive() ? mAltBuffer : mMainBuffer;
+                mScreen = targetBuffer;
+                targetBuffer.setScreenFirstRow(0);
+                
+                mSharedBuffer.clear();
+                mSharedBuffer.position(12);
+                java.nio.CharBuffer textChars = mSharedBuffer.asCharBuffer();
+                
+                mSharedBuffer.clear();
+                mSharedBuffer.position(12 + cellCount * 2);
+                java.nio.LongBuffer styleLongs = mSharedBuffer.asLongBuffer();
+                
+                for (int i = 0; i < rows; i++) {
+                    TerminalRow row = targetBuffer.allocateFullLineIfNecessary(i);
+                    textChars.position(i * cols);
+                    textChars.get(row.mText, 0, cols);
+                    
+                    styleLongs.position(i * cols);
+                    styleLongs.get(row.mStyle, 0, cols);
+                    
+                    row.updateStatusAfterBatchWrite();
+                }
+                clearSharedBufferVersionRust(mRustEnginePtr);
             }
         }
     }
@@ -202,7 +223,8 @@ public final class TerminalEmulator {
         this.mColumns = columns;
         this.mRows = rows;
         if (mRustEnginePtr != 0) {
-            resizeRust(mRustEnginePtr, columns, rows, cellWidthPixels, cellHeightPixels);
+            resizeEngineRustFull(mRustEnginePtr, columns, rows);
+            mSharedBuffer = createSharedBufferRust(mRustEnginePtr);
             syncStateFromRust();
         }
     }
@@ -346,7 +368,7 @@ public final class TerminalEmulator {
     public static native void readScreenBatchFromRust(long enginePtr, char[][] text, long[][] style, int startRow, int numRows);
     private static native void pasteTextFromRust(long enginePtr, String text);
     private static native void updateTerminalSessionClientFromRust(long enginePtr, Object client);
-    private static native void resizeRust(long enginePtr, int cols, int rows, int cellWidth, int cellHeight);
+    private static native void resizeEngineRustFull(long enginePtr, int cols, int rows);
     private static native String getTitleFromRust(long enginePtr);
     public static native int getActiveTranscriptRowsFromRust(long enginePtr);
     private static native boolean isMouseTrackingActiveFromRust(long enginePtr);
@@ -364,4 +386,11 @@ public final class TerminalEmulator {
     private static native int getCursorStyleFromRust(long enginePtr);
     private static native boolean isCursorKeysApplicationModeFromRust(long enginePtr);
     private static native boolean isKeypadApplicationModeFromRust(long enginePtr);
+
+    // Phase 2: DirectByteBuffer Shared Buffer Support
+    private static native java.nio.ByteBuffer createSharedBufferRust(long enginePtr);
+    private static native void syncToSharedBufferRust(long enginePtr);
+    private static native boolean getSharedBufferVersionRust(long enginePtr);
+    private static native void clearSharedBufferVersionRust(long enginePtr);
+    private static native void destroySharedBufferRust(long enginePtr);
 }
