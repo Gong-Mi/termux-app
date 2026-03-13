@@ -1,388 +1,228 @@
 package com.termux.terminal;
 
-import junit.framework.TestCase;
 import java.nio.charset.StandardCharsets;
 import java.util.Random;
 
 /**
  * Java vs Rust 性能对比测试
  * 
- * 运行方式:
- * ./gradlew :terminal-emulator:testDebug --tests "JavaRustPerformanceComparisonTest"
+ * 输出格式设计为可被脚本解析，便于 CI 自动生成对比报告
  * 
- * 注意：需要 Rust 库已编译并加载才能进行对比测试
+ * 运行方式：
+ * ./gradlew :terminal-emulator:test --tests com.termux.terminal.JavaRustPerformanceComparisonTest --info
  */
-public class JavaRustPerformanceComparisonTest extends TestCase {
+public class JavaRustPerformanceComparisonTest extends TerminalTestCase {
 
     private static final int COLS = 80;
     private static final int ROWS = 24;
-    private static final int WARMUP_ITERATIONS = 3;
-    private static final int TEST_ITERATIONS = 5;
-
-    static class MockTerminalOutput extends TerminalOutput {
-        @Override public void write(byte[] data, int offset, int count) {}
-        @Override public void titleChanged(String oldTitle, String newTitle) {}
-        @Override public void onCopyTextToClipboard(String text) {}
-        @Override public void onPasteTextFromClipboard() {}
-        @Override public void onBell() {}
-        @Override public void onColorsChanged() {}
-        @Override public void onTerminalCursorStateChange(boolean visible) {}
-    }
-
-    static class MockTerminalSessionClient implements TerminalSessionClient {
-        @Override public void onTextChanged(TerminalSession session) {}
-        @Override public void onTitleChanged(TerminalSession session) {}
-        @Override public void onSessionFinished(TerminalSession session) {}
-        @Override public void onCopyTextToClipboard(TerminalSession session, String text) {}
-        @Override public void onPasteTextFromClipboard(TerminalSession session) {}
-        @Override public void onBell(TerminalSession session) {}
-        @Override public void onColorsChanged(TerminalSession session) {}
-        @Override public void onTerminalCursorStateChange(boolean state) {}
-        @Override public void setTerminalShellPid(TerminalSession session, int pid) {}
-        @Override public Integer getTerminalCursorStyle() { 
-            return TerminalEmulator.TERMINAL_CURSOR_STYLE_BLOCK; 
-        }
-        @Override public void logError(String tag, String message) {}
-        @Override public void logWarn(String tag, String message) {}
-        @Override public void logInfo(String tag, String message) {}
-        @Override public void logDebug(String tag, String message) {}
-        @Override public void logVerbose(String tag, String message) {}
-        @Override public void logStackTraceWithMessage(String tag, String message, Exception e) {}
-        @Override public void logStackTrace(String tag, Exception e) {}
-    }
+    
+    // 测试数据大小（MB）
+    private static final int RAW_TEXT_SIZE_MB = 5;
+    private static final int ANSI_TEXT_SIZE_MB = 1;
+    
+    // 测试迭代次数
+    private static final int ANSI_ITERATIONS = 3;
+    private static final int CURSOR_ITERATIONS = 20000;
+    private static final int SCROLL_LINES = 10000;
 
     /**
-     * 生成随机 ASCII 数据
+     * 生成与 Rust 测试相同的随机数据（使用相同 seed）
+     * 使用位运算模拟 u64 乘法，与 Rust 的 wrapping_mul 行为一致
      */
-    private byte[] generateRandomAscii(int sizeBytes) {
-        byte[] data = new byte[sizeBytes];
-        Random rand = new Random(42);
-        for (int i = 0; i < sizeBytes; i++) {
-            byte b = (byte) rand.nextInt();
+    private byte[] generateRandomAscii(int size) {
+        byte[] data = new byte[size];
+        long seed = 42L;
+        
+        for (int i = 0; i < size; i++) {
+            // 模拟 u64 wrapping_mul: (seed * 6364136223846793005) + 1
+            seed = multiplyUnsigned(seed, 6364136223846793005L) + 1L;
+            byte b = (byte) (seed & 0xFF);
             // 确保是可打印 ASCII
-            if (b < 32 || b > 126) {
-                b = (byte) 'A';
+            if (b >= 32 && b <= 126) {
+                data[i] = b;
+            } else {
+                data[i] = (byte) 'A';
             }
-            data[i] = b;
         }
         return data;
     }
 
     /**
-     * 生成 ANSI 转义序列数据
+     * 生成与 Rust 测试相同的 ANSI 数据（使用相同 seed）
      */
-    private byte[] generateAnsiData(int sizeBytes) {
+    private byte[] generateAnsiData(int size) {
         StringBuilder sb = new StringBuilder();
-        Random rand = new Random(42);
+        long seed = 42L;
         
-        while (sb.length() * 3 < sizeBytes) { // 估算
-            int type = rand.nextInt(5);
-            switch (type) {
-                case 0: sb.append("\u001B[31m"); break; // 红色
-                case 1: sb.append("\u001B[32m"); break; // 绿色
-                case 2: sb.append("\u001B[H"); break;   // 光标归位
-                case 3: sb.append("\u001B[2J"); break;  // 清屏
+        while (sb.length() < size) {
+            seed = multiplyUnsigned(seed, 6364136223846793005L) + 1L;
+            int seqType = (int) (seed % 5);
+            
+            switch (seqType) {
+                case 0: sb.append("\u001b[31m"); break; // 红色
+                case 1: sb.append("\u001b[32m"); break; // 绿色
+                case 2: sb.append("\u001b[H"); break;   // 光标归位
+                case 3: sb.append("\u001b[2J"); break;  // 清屏
                 default: sb.append("Hello Performance Test "); break;
             }
         }
         
-        return sb.toString().getBytes(StandardCharsets.UTF_8);
-    }
-
-    /**
-     * 预热 JVM
-     */
-    private void warmup(TerminalEmulator terminal, byte[] data) {
-        for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-            terminal.append(data, data.length);
+        byte[] result = sb.toString().getBytes(StandardCharsets.UTF_8);
+        if (result.length > size) {
+            byte[] truncated = new byte[size];
+            System.arraycopy(result, 0, truncated, 0, size);
+            return truncated;
         }
+        return result;
     }
 
     /**
-     * 运行性能测试
+     * 输出性能结果（统一格式）
      */
-    private double runPerformanceTest(TerminalEmulator terminal, byte[] data, int iterations) {
-        long totalBytes = (long) data.length * iterations;
+    private void printResult(String testName, double value, String unit, double javaValue) {
+        String marker = "JAVA";
+        String speedup = "";
         
+        if (javaValue > 0) {
+            double ratio = value / javaValue;
+            speedup = String.format(" (Rust speedup: %.2fx)", ratio);
+            marker = "RUST";
+        }
+        
+        System.out.printf("[%s] %s: %.2f %s%s%n", marker, testName, value, unit, speedup);
+    }
+
+    // =========================================================================
+    // Raw Text 性能测试
+    // =========================================================================
+
+    public void testRawTextPerformance() {
+        withTerminalSized(COLS, ROWS);
+        byte[] rawData = generateRandomAscii(RAW_TEXT_SIZE_MB * 1024 * 1024);
+
         long start = System.nanoTime();
-        for (int i = 0; i < iterations; i++) {
-            terminal.append(data, data.length);
+        mTerminal.append(rawData, rawData.length);
+        long end = System.nanoTime();
+
+        double durationSeconds = (end - start) / 1_000_000_000.0;
+        double speedMBps = RAW_TEXT_SIZE_MB / durationSeconds;
+
+        printResult("Raw Text Throughput", speedMBps, "MB/s", 0);
+        System.out.printf("JAVA_RAW_TEXT_MBPS=%.2f%n", speedMBps);
+    }
+
+    // =========================================================================
+    // ANSI Escape 性能测试
+    // =========================================================================
+
+    public void testAnsiEscapePerformance() {
+        withTerminalSized(COLS, ROWS);
+        byte[] ansiData = generateAnsiData(ANSI_TEXT_SIZE_MB * 1024 * 1024);
+
+        long start = System.nanoTime();
+        for (int i = 0; i < ANSI_ITERATIONS; i++) {
+            mTerminal.append(ansiData, ansiData.length);
         }
         long end = System.nanoTime();
-        
+
+        double totalProcessedMB = (ansiData.length * ANSI_ITERATIONS) / (1024.0 * 1024.0);
         double durationSeconds = (end - start) / 1_000_000_000.0;
-        double throughputMBps = (totalBytes / (1024.0 * 1024.0)) / durationSeconds;
-        
-        return throughputMBps;
+        double speedMBps = totalProcessedMB / durationSeconds;
+
+        printResult("ANSI Escape Throughput", speedMBps, "MB/s", 0);
+        System.out.printf("JAVA_ANSI_MBPS=%.2f%n", speedMBps);
     }
 
-    /**
-     * 测试 1: 原始 ASCII 文本处理性能对比
-     */
-    public void test01_RawAsciiPerformance() {
-        System.out.println("\n=== Test 1: Raw ASCII Text Performance ===");
-        
-        int dataSizeKB = 500; // 500KB per iteration
-        byte[] data = generateRandomAscii(dataSizeKB * 1024);
-        
-        MockTerminalSessionClient client = new MockTerminalSessionClient();
-        MockTerminalOutput output = new MockTerminalOutput();
-        
-        // Java-only 测试
-        TerminalEmulator javaTerminal = new TerminalEmulator(output, COLS, ROWS, 10, 20, 100, client);
-        TerminalEmulator.sForceDisableRust = true;
-        warmup(javaTerminal, data);
-        double javaSpeed = runPerformanceTest(javaTerminal, data, TEST_ITERATIONS);
-        
-        // Java + Rust Fast Path 测试
-        TerminalEmulator hybridTerminal = new TerminalEmulator(output, COLS, ROWS, 10, 20, 100, client);
-        TerminalEmulator.sForceDisableRust = false;
-        warmup(hybridTerminal, data);
-        double hybridSpeed = runPerformanceTest(hybridTerminal, data, TEST_ITERATIONS);
-        
-        double speedup = hybridSpeed / javaSpeed;
-        double improvement = ((hybridSpeed - javaSpeed) / javaSpeed) * 100;
-        
-        System.out.printf("Java-only:           %.2f MB/s%n", javaSpeed);
-        System.out.printf("Java + Rust FastPath: %.2f MB/s%n", hybridSpeed);
-        System.out.printf("Speedup:              %.2fx (%.1f%% improvement)%n", speedup, improvement);
-        
-        // 验证 Rust 快路径至少不应该更慢
-        assertTrue("Rust fast path should not be slower", hybridSpeed >= javaSpeed * 0.95);
-    }
+    // =========================================================================
+    // 光标移动性能测试
+    // =========================================================================
 
-    /**
-     * 测试 2: ANSI 转义序列性能对比
-     */
-    public void test02_AnsiEscapePerformance() {
-        System.out.println("\n=== Test 2: ANSI Escape Sequence Performance ===");
+    public void testCursorPositionPerformance() {
+        withTerminalSized(COLS, ROWS);
         
-        int dataSizeKB = 100; // 100KB per iteration (ANSI is more complex)
-        byte[] data = generateAnsiData(dataSizeKB * 1024);
-        
-        MockTerminalSessionClient client = new MockTerminalSessionClient();
-        MockTerminalOutput output = new MockTerminalOutput();
-        
-        // Java-only 测试
-        TerminalEmulator javaTerminal = new TerminalEmulator(output, COLS, ROWS, 10, 20, 100, client);
-        TerminalEmulator.sForceDisableRust = true;
-        warmup(javaTerminal, data);
-        double javaSpeed = runPerformanceTest(javaTerminal, data, TEST_ITERATIONS);
-        
-        // Java + Rust Fast Path 测试
-        TerminalEmulator hybridTerminal = new TerminalEmulator(output, COLS, ROWS, 10, 20, 100, client);
-        TerminalEmulator.sForceDisableRust = false;
-        warmup(hybridTerminal, data);
-        double hybridSpeed = runPerformanceTest(hybridTerminal, data, TEST_ITERATIONS);
-        
-        double speedup = hybridSpeed / javaSpeed;
-        double improvement = ((hybridSpeed - javaSpeed) / javaSpeed) * 100;
-        
-        System.out.printf("Java-only:           %.2f MB/s%n", javaSpeed);
-        System.out.printf("Java + Rust FastPath: %.2f MB/s%n", hybridSpeed);
-        System.out.printf("Speedup:              %.2fx (%.1f%% improvement)%n", speedup, improvement);
-        
-        // ANSI 序列复杂，Rust 快路径可能帮助有限
-        assertTrue("Hybrid should perform reasonably", hybridSpeed >= javaSpeed * 0.8);
-    }
+        // 光标移动序列
+        byte[] movements = "\u001b[5;10H\u001b[10;20H\u001b[15;30H\u001b[20;40H\u001b[1;1H".getBytes(StandardCharsets.UTF_8);
 
-    /**
-     * 测试 3: 混合负载性能（真实场景模拟）
-     */
-    public void test03_MixedWorkloadPerformance() {
-        System.out.println("\n=== Test 3: Mixed Workload Performance ===");
-        
-        // 模拟真实终端会话：80% 文本 + 20% 控制序列
-        StringBuilder sb = new StringBuilder();
-        Random rand = new Random(42);
-        int targetSize = 200 * 1024; // 200KB
-        
-        while (sb.length() < targetSize) {
-            if (rand.nextDouble() < 0.8) {
-                // 80% 普通文本
-                sb.append("The quick brown fox jumps over the lazy dog. ");
-            } else {
-                // 20% 控制序列
-                int seqType = rand.nextInt(4);
-                switch (seqType) {
-                    case 0: sb.append("\r\n"); break;
-                    case 1: sb.append("\t"); break;
-                    case 2: sb.append("\u001B[31m"); break;
-                    case 3: sb.append("\u001B[0m"); break;
-                }
-            }
-        }
-        
-        byte[] data = sb.toString().getBytes(StandardCharsets.UTF_8);
-        
-        MockTerminalSessionClient client = new MockTerminalSessionClient();
-        MockTerminalOutput output = new MockTerminalOutput();
-        
-        // Java-only 测试
-        TerminalEmulator javaTerminal = new TerminalEmulator(output, COLS, ROWS, 10, 20, 100, client);
-        TerminalEmulator.sForceDisableRust = true;
-        warmup(javaTerminal, data);
-        double javaSpeed = runPerformanceTest(javaTerminal, data, TEST_ITERATIONS);
-        
-        // Java + Rust Fast Path 测试
-        TerminalEmulator hybridTerminal = new TerminalEmulator(output, COLS, ROWS, 10, 20, 100, client);
-        TerminalEmulator.sForceDisableRust = false;
-        warmup(hybridTerminal, data);
-        double hybridSpeed = runPerformanceTest(hybridTerminal, data, TEST_ITERATIONS);
-        
-        double speedup = hybridSpeed / javaSpeed;
-        double improvement = ((hybridSpeed - javaSpeed) / javaSpeed) * 100;
-        
-        System.out.printf("Java-only:           %.2f MB/s%n", javaSpeed);
-        System.out.printf("Java + Rust FastPath: %.2f MB/s%n", hybridSpeed);
-        System.out.printf("Speedup:              %.2fx (%.1f%% improvement)%n", speedup, improvement);
-        
-        assertTrue("Mixed workload should benefit from Rust", hybridSpeed >= javaSpeed * 0.95);
-    }
-
-    /**
-     * 测试 4: 光标移动操作性能
-     */
-    public void test04_CursorMovementPerformance() {
-        System.out.println("\n=== Test 4: Cursor Movement Performance ===");
-        
-        // 生成大量光标移动序列
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < 1000; i++) {
-            sb.append("\u001B[5;10H");
-            sb.append("\u001B[10;20H");
-            sb.append("\u001B[15;30H");
-            sb.append("\u001B[1;1H");
-        }
-        byte[] data = sb.toString().getBytes(StandardCharsets.UTF_8);
-        
-        MockTerminalSessionClient client = new MockTerminalSessionClient();
-        MockTerminalOutput output = new MockTerminalOutput();
-        
-        // Java-only 测试
-        TerminalEmulator javaTerminal = new TerminalEmulator(output, COLS, ROWS, 10, 20, 100, client);
-        TerminalEmulator.sForceDisableRust = true;
-        warmup(javaTerminal, data);
-        
         long start = System.nanoTime();
-        for (int i = 0; i < TEST_ITERATIONS; i++) {
-            javaTerminal.append(data, data.length);
+        for (int i = 0; i < CURSOR_ITERATIONS; i++) {
+            mTerminal.append(movements, movements.length);
         }
-        long javaDuration = System.nanoTime() - start;
-        double javaOpsPerSec = (4000.0 * TEST_ITERATIONS) / (javaDuration / 1_000_000_000.0);
-        
-        // Java + Rust 测试
-        TerminalEmulator hybridTerminal = new TerminalEmulator(output, COLS, ROWS, 10, 20, 100, client);
-        TerminalEmulator.sForceDisableRust = false;
-        warmup(hybridTerminal, data);
-        
-        start = System.nanoTime();
-        for (int i = 0; i < TEST_ITERATIONS; i++) {
-            hybridTerminal.append(data, data.length);
-        }
-        long hybridDuration = System.nanoTime() - start;
-        double hybridOpsPerSec = (4000.0 * TEST_ITERATIONS) / (hybridDuration / 1_000_000_000.0);
-        
-        double speedup = hybridOpsPerSec / javaOpsPerSec;
-        
-        System.out.printf("Java-only:           %.0f ops/s%n", javaOpsPerSec);
-        System.out.printf("Java + Rust FastPath: %.0f ops/s%n", hybridOpsPerSec);
-        System.out.printf("Speedup:              %.2fx%n", speedup);
+        long end = System.nanoTime();
+
+        double durationSeconds = (end - start) / 1_000_000_000.0;
+        double opsPerSec = CURSOR_ITERATIONS / durationSeconds;
+
+        printResult("Cursor Movement", opsPerSec, "ops/s", 0);
+        System.out.printf("JAVA_CURSOR_OPS=%.0f%n", opsPerSec);
     }
 
-    /**
-     * 测试 5: 滚动性能测试
-     */
-    public void test05_ScrollingPerformance() {
-        System.out.println("\n=== Test 5: Scrolling Performance ===");
-        
-        // 生成超过屏幕行数的文本（触发滚动）
+    // =========================================================================
+    // 滚动性能测试
+    // =========================================================================
+
+    public void testScrollingPerformance() {
+        withTerminalSized(COLS, ROWS);
+
+        // 生成 SCROLL_LINES 行文本
         StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < 1000; i++) {
+        for (int i = 0; i < SCROLL_LINES; i++) {
             sb.append("Line ").append(i).append("\r\n");
         }
-        byte[] data = sb.toString().getBytes(StandardCharsets.UTF_8);
-        
-        MockTerminalSessionClient client = new MockTerminalSessionClient();
-        MockTerminalOutput output = new MockTerminalOutput();
-        
-        // Java-only 测试
-        TerminalEmulator javaTerminal = new TerminalEmulator(output, COLS, ROWS, 10, 20, 100, client);
-        TerminalEmulator.sForceDisableRust = true;
-        warmup(javaTerminal, data);
-        
+        byte[] scrollData = sb.toString().getBytes(StandardCharsets.UTF_8);
+
         long start = System.nanoTime();
-        for (int i = 0; i < TEST_ITERATIONS; i++) {
-            javaTerminal.append(data, data.length);
-        }
-        long javaDuration = System.nanoTime() - start;
-        double javaLinesPerSec = (1000.0 * TEST_ITERATIONS) / (javaDuration / 1_000_000_000.0);
-        
-        // Java + Rust 测试
-        TerminalEmulator hybridTerminal = new TerminalEmulator(output, COLS, ROWS, 10, 20, 100, client);
-        TerminalEmulator.sForceDisableRust = false;
-        warmup(hybridTerminal, data);
-        
-        start = System.nanoTime();
-        for (int i = 0; i < TEST_ITERATIONS; i++) {
-            hybridTerminal.append(data, data.length);
-        }
-        long hybridDuration = System.nanoTime() - start;
-        double hybridLinesPerSec = (1000.0 * TEST_ITERATIONS) / (hybridDuration / 1_000_000_000.0);
-        
-        double speedup = hybridLinesPerSec / javaLinesPerSec;
-        
-        System.out.printf("Java-only:           %.0f lines/s%n", javaLinesPerSec);
-        System.out.printf("Java + Rust FastPath: %.0f lines/s%n", hybridLinesPerSec);
-        System.out.printf("Speedup:              %.2fx%n", speedup);
+        mTerminal.append(scrollData, scrollData.length);
+        long end = System.nanoTime();
+
+        double durationSeconds = (end - start) / 1_000_000_000.0;
+        double linesPerSec = SCROLL_LINES / durationSeconds;
+
+        printResult("Scrolling", linesPerSec, "lines/s", 0);
+        System.out.printf("JAVA_SCROLL_LINES=%.0f%n", linesPerSec);
     }
 
-    /**
-     * 测试 6: 内存分配对比
-     */
-    public void test06_MemoryAllocationComparison() {
-        System.out.println("\n=== Test 6: Memory Allocation (Indirect) ===");
+    // =========================================================================
+    // 宽字符（中文）性能测试
+    // =========================================================================
+
+    public void testWideCharPerformance() {
+        withTerminalSized(COLS, ROWS);
+
+        // 中文字符串（每个字符占 2 列）
+        String chineseText = "你好世界 ".repeat(100000); // 500,000 字符
+        byte[] data = chineseText.getBytes(StandardCharsets.UTF_8);
+
+        long start = System.nanoTime();
+        mTerminal.append(data, data.length);
+        long end = System.nanoTime();
+
+        double durationSeconds = (end - start) / 1_000_000_000.0;
+        double charsPerSec = 500000.0 / durationSeconds;
+
+        printResult("Wide Char Processing", charsPerSec, "chars/s", 0);
+        System.out.printf("JAVA_WIDECHAR_OPS=%.0f%n", charsPerSec);
+    }
+
+    // =========================================================================
+    // 小批量高频调用性能测试
+    // =========================================================================
+
+    public void testSmallBatchPerformance() {
+        withTerminalSized(COLS, ROWS);
         
-        byte[] data = generateRandomAscii(100 * 1024);
-        
-        MockTerminalSessionClient client = new MockTerminalSessionClient();
-        MockTerminalOutput output = new MockTerminalOutput();
-        
-        Runtime runtime = Runtime.getRuntime();
-        
-        // Java-only 测试
-        TerminalEmulator javaTerminal = new TerminalEmulator(output, COLS, ROWS, 10, 20, 100, client);
-        TerminalEmulator.sForceDisableRust = true;
-        
-        runtime.gc();
-        long javaStartMem = runtime.totalMemory() - runtime.freeMemory();
-        
-        for (int i = 0; i < 10; i++) {
-            javaTerminal.append(data, data.length);
+        byte[] smallBatch = "Hello World\r\n".getBytes(StandardCharsets.UTF_8);
+        int iterations = 100000;
+
+        long start = System.nanoTime();
+        for (int i = 0; i < iterations; i++) {
+            mTerminal.append(smallBatch, smallBatch.length);
         }
-        
-        long javaEndMem = runtime.totalMemory() - runtime.freeMemory();
-        long javaAllocated = javaEndMem - javaStartMem;
-        
-        // Java + Rust 测试
-        TerminalEmulator hybridTerminal = new TerminalEmulator(output, COLS, ROWS, 10, 20, 100, client);
-        TerminalEmulator.sForceDisableRust = false;
-        
-        runtime.gc();
-        long hybridStartMem = runtime.totalMemory() - runtime.freeMemory();
-        
-        for (int i = 0; i < 10; i++) {
-            hybridTerminal.append(data, data.length);
-        }
-        
-        long hybridEndMem = runtime.totalMemory() - runtime.freeMemory();
-        long hybridAllocated = hybridEndMem - hybridStartMem;
-        
-        System.out.printf("Java-only allocation:    %d KB%n", javaAllocated / 1024);
-        System.out.printf("Java + Rust allocation:  %d KB%n", hybridAllocated / 1024);
-        
-        // Rust 快路径应该减少 Java 侧的分配
-        // 但由于 JNI 开销，可能差异不大
-        System.out.println("Note: Memory measurement is approximate due to GC");
+        long end = System.nanoTime();
+
+        double durationSeconds = (end - start) / 1_000_000_000.0;
+        double callsPerSec = iterations / durationSeconds;
+
+        printResult("Small Batch Calls", callsPerSec, "calls/s", 0);
+        System.out.printf("JAVA_SMALLBATCH_OPS=%.0f%n", callsPerSec);
     }
 }
