@@ -202,3 +202,124 @@ jobs:
         run: |
           cd terminal-emulator/src/main/rust
           cargo test --test consistency -- --nocapture
+
+  branch-consistency:
+    name: 🔀 Branch Consistency Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Feature Branch
+        uses: actions/checkout@v6
+        with:
+          path: feature
+
+      - name: Checkout Master Branch
+        uses: actions/checkout@v6
+        with:
+          ref: master
+          path: master
+
+      - name: Compare Test Results
+        run: |
+          echo "### 🔀 Branch Consistency Check Report" > $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Generated:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "**Feature Branch:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # 比较 Rust 测试文件
+          echo "#### 🦀 Rust Test Files Comparison" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          FEATURE_RUST_TEST="feature/terminal-emulator/src/main/rust/tests/consistency.rs"
+          MASTER_RUST_TEST="master/terminal-emulator/src/main/rust/tests/consistency.rs"
+          
+          if [ -f "$FEATURE_RUST_TEST" ] && [ -f "$MASTER_RUST_TEST" ]; then
+            echo "✅ Rust consistency test exists in both branches" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            # 比较测试数量
+            FEATURE_TEST_COUNT=$(grep -c "#\[test\]" "$FEATURE_RUST_TEST" || echo "0")
+            MASTER_TEST_COUNT=$(grep -c "#\[test\]" "$MASTER_RUST_TEST" || echo "0")
+            
+            echo "| Branch | Test Count |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|------------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Feature | $FEATURE_TEST_COUNT |" >> $GITHUB_STEP_SUMMARY
+            echo "| Master | $MASTER_TEST_COUNT |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            if [ "$FEATURE_TEST_COUNT" -eq "$MASTER_TEST_COUNT" ]; then
+              echo "✅ Same number of tests in both branches" >> $GITHUB_STEP_SUMMARY
+            else
+              DIFF=$((FEATURE_TEST_COUNT - MASTER_TEST_COUNT))
+              if [ $DIFF -gt 0 ]; then
+                echo "⚠️ Feature branch has $DIFF more test(s) than master" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "⚠️ Feature branch has $((-DIFF)) fewer test(s) than master" >> $GITHUB_STEP_SUMMARY
+              fi
+            fi
+          else
+            echo "⚠️ Rust consistency test not found in one or both branches" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # 比较 Java 测试文件
+          echo "#### ☕ Java Test Files Comparison" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          FEATURE_JAVA_TEST="feature/terminal-emulator/src/test/java/com/termux/terminal/TerminalPerformanceTest.java"
+          MASTER_JAVA_TEST="master/terminal-emulator/src/test/java/com/termux/terminal/TerminalPerformanceTest.java"
+          
+          if [ -f "$FEATURE_JAVA_TEST" ] && [ -f "$MASTER_JAVA_TEST" ]; then
+            echo "✅ Java performance test exists in both branches" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            # 比较测试方法数量
+            FEATURE_JAVA_COUNT=$(grep -c "public void test" "$FEATURE_JAVA_TEST" || echo "0")
+            MASTER_JAVA_COUNT=$(grep -c "public void test" "$MASTER_JAVA_TEST" || echo "0")
+            
+            echo "| Branch | Test Count |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|------------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Feature | $FEATURE_JAVA_COUNT |" >> $GITHUB_STEP_SUMMARY
+            echo "| Master | $MASTER_JAVA_COUNT |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Java performance test not found in one or both branches" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # 显示文件差异摘要
+          echo "#### 📝 Key File Differences" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "<details>" >> $GITHUB_STEP_SUMMARY
+          echo "<summary>Click to expand file differences</summary>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "##### terminal-emulator/build.gradle" >> $GITHUB_STEP_SUMMARY
+          echo '```diff' >> $GITHUB_STEP_SUMMARY
+          diff -u master/terminal-emulator/build.gradle feature/terminal-emulator/build.gradle 2>/dev/null | head -50 >> $GITHUB_STEP_SUMMARY || echo "No differences or files not found" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "##### Cargo.toml" >> $GITHUB_STEP_SUMMARY
+          echo '```diff' >> $GITHUB_STEP_SUMMARY
+          diff -u master/terminal-emulator/src/main/rust/Cargo.toml feature/terminal-emulator/src/main/rust/Cargo.toml 2>/dev/null | head -50 >> $GITHUB_STEP_SUMMARY || echo "No differences or files not found" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          
+          echo "</details>" >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### ✅ Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- This check compares test files between feature and master branches" >> $GITHUB_STEP_SUMMARY
+          echo "- Use the detailed diff view to understand specific changes" >> $GITHUB_STEP_SUMMARY
+          echo "- Run the Performance Benchmark job for actual test execution results" >> $GITHUB_STEP_SUMMARY
