@@ -162,16 +162,16 @@ public final class JavaJavaTerminalEmulator {
 
 
     /** The normal screen buffer. Stores the characters that appear on the screen of the emulated terminal. */
-    private final TerminalBuffer mMainBuffer;
+    private final JavaJavaTerminalBuffer mMainBuffer;
     /**
      * The alternate screen buffer, exactly as large as the display and contains no additional saved lines (so that when
      * the alternate screen buffer is active, you cannot scroll back to view saved lines).
      * <p>
      * See http://www.xfree86.org/current/ctlseqs.html#The%20Alternate%20Screen%20Buffer
      */
-    final TerminalBuffer mAltBuffer;
+    final JavaJavaTerminalBuffer mAltBuffer;
     /** The current screen buffer, pointing at either {@link #mMainBuffer} or {@link #mAltBuffer}. */
-    private TerminalBuffer mScreen;
+    private JavaJavaTerminalBuffer mScreen;
 
     /** The terminal session this emulator is bound to. */
     private final TerminalOutput mSession;
@@ -325,10 +325,10 @@ public final class JavaJavaTerminalEmulator {
         }
     }
 
-    public JavaTerminalEmulator(TerminalOutput session, int columns, int rows, int cellWidthPixels, int cellHeightPixels, Integer transcriptRows, TerminalSessionClient client) {
+    public JavaJavaTerminalEmulator(TerminalOutput session, int columns, int rows, int cellWidthPixels, int cellHeightPixels, Integer transcriptRows, TerminalSessionClient client) {
         mSession = session;
-        mScreen = mMainBuffer = new TerminalBuffer(columns, getTerminalTranscriptRows(transcriptRows), rows);
-        mAltBuffer = new TerminalBuffer(columns, rows, rows);
+        mScreen = mMainBuffer = new JavaJavaTerminalBuffer(columns, getTerminalTranscriptRows(transcriptRows), rows);
+        mAltBuffer = new JavaJavaTerminalBuffer(columns, rows, rows);
         mClient = client;
         mRows = rows;
         mColumns = columns;
@@ -344,7 +344,7 @@ public final class JavaJavaTerminalEmulator {
         setCursorBlinkState(true);
     }
 
-    public TerminalBuffer getScreen() {
+    public JavaJavaTerminalBuffer getScreen() {
         return mScreen;
     }
 
@@ -1251,7 +1251,7 @@ public final class JavaJavaTerminalEmulator {
             case 1049: {
                 // Set: Save cursor as in DECSC and use Alternate Screen Buffer, clearing it first.
                 // Reset: Use Normal Screen Buffer and restore cursor as in DECRC.
-                TerminalBuffer newScreen = setting ? mAltBuffer : mMainBuffer;
+                JavaJavaTerminalBuffer newScreen = setting ? mAltBuffer : mMainBuffer;
                 if (newScreen != mScreen) {
                     boolean resized = !(newScreen.mColumns == mColumns && newScreen.mScreenRows == mRows);
                     if (setting) saveCursor();
@@ -2482,7 +2482,7 @@ public final class JavaJavaTerminalEmulator {
         int offsetDueToCombiningChar = ((displayWidth <= 0 && mCursorCol > 0 && !mAboutToAutoWrap) ? 1 : 0);
         int column = mCursorCol - offsetDueToCombiningChar;
 
-        // Fix TerminalRow.setChar() ArrayIndexOutOfBoundsException index=-1 exception reported
+        // Fix JavaJavaTerminalRow.setChar() ArrayIndexOutOfBoundsException index=-1 exception reported
         // The offsetDueToCombiningChar would never be 1 if mCursorCol was 0 to get column/index=-1,
         // so was mCursorCol changed after the offsetDueToCombiningChar conditional by another thread?
         // TODO: Check if there are thread synchronization issues with mCursorCol and mCursorRow, possibly causing others bugs too.

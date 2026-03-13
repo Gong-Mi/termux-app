@@ -13,8 +13,7 @@ public class TerminalPerformanceTest extends TerminalTestCase {
     private void runPerformanceTest(String label, byte[] data, int iterations) {
         MockTerminalOutput output = new MockTerminalOutput();
         
-        // 1. Rust 引擎 (当前 feature 分支版本，Full Takeover 开启)
-        TerminalEmulator.sForceDisableRust = false;
+        // 1. Rust 引擎 (当前 feature 分支)
         TerminalEmulator rustTerminal = new TerminalEmulator(output, COLS, ROWS, 13, 15, ROWS * 2, null);
         
         long startRust = System.nanoTime();
@@ -25,7 +24,7 @@ public class TerminalPerformanceTest extends TerminalTestCase {
         double rustTime = (endRust - startRust) / 1_000_000_000.0;
         double rustSpeed = (data.length * iterations / (1024.0 * 1024.0)) / rustTime;
 
-        // 2. Java 引擎 (从 master 分支提取的原始 Java 代码)
+        // 2. Java 引擎 (主线 master 版本, 完全隔离)
         JavaTerminalEmulator javaTerminal = new JavaTerminalEmulator(output, COLS, ROWS, 13, 15, ROWS * 2, null);
         
         long startJava = System.nanoTime();
@@ -68,16 +67,10 @@ public class TerminalPerformanceTest extends TerminalTestCase {
         runPerformanceTest("ANSI_ESCAPES", ansiData, 4);
     }
 
-    /**
-     * 测试屏幕同步性能 (验证 DirectByteBuffer 优化)
-     * 注意：由于 JavaTerminalEmulator 本身就在 Java 堆内存操作，它的同步开销几乎为零。
-     * 这里的目的是展示 Rust 即使跨越 JNI 层，也能达到多高的同步效率。
-     */
     public void testScreenSyncPerformance() {
         MockTerminalOutput output = new MockTerminalOutput();
         TerminalEmulator rustTerminal = new TerminalEmulator(output, COLS, ROWS, 13, 15, ROWS * 2, null);
         
-        // 填充屏幕
         byte[] fillData = new byte[COLS * ROWS];
         for(int i=0; i<fillData.length; i++) fillData[i] = 'X';
         rustTerminal.append(fillData, fillData.length);
