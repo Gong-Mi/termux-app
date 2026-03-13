@@ -29,6 +29,12 @@ public final class TerminalEmulator {
     public static final int TERMINAL_CURSOR_STYLE_BLOCK = 0;
     public static final int TERMINAL_CURSOR_STYLE_UNDERLINE = 1;
     public static final int TERMINAL_CURSOR_STYLE_BAR = 2;
+    public static final int DEFAULT_TERMINAL_CURSOR_STYLE = TERMINAL_CURSOR_STYLE_BLOCK;
+
+    /** Transcript rows constants. */
+    public static final int TERMINAL_TRANSCRIPT_ROWS_MIN = 0;
+    public static final int TERMINAL_TRANSCRIPT_ROWS_MAX = 50000;
+    public static final int DEFAULT_TERMINAL_TRANSCRIPT_ROWS = 2000;
 
     private final TerminalOutput mSession;
     private TerminalBuffer mScreen;
@@ -95,7 +101,8 @@ public final class TerminalEmulator {
     public TerminalEmulator(TerminalOutput session, int columns, int rows, int cellWidthPixels, int cellHeightPixels, Integer transcriptRows, TerminalSessionClient client) {
         sLastLoadStatus = "CALLED: JNI_LOADED=" + JNI.sNativeLibrariesLoaded;
         mSession = session;
-        mScreen = mMainBuffer = new TerminalBuffer(columns, (transcriptRows != null ? transcriptRows : 2000), rows);
+        int actualTranscriptRows = (transcriptRows != null ? transcriptRows : DEFAULT_TERMINAL_TRANSCRIPT_ROWS);
+        mScreen = mMainBuffer = new TerminalBuffer(columns, actualTranscriptRows, rows);
         mAltBuffer = new TerminalBuffer(columns, rows, rows);
         mClient = client;
         mRows = rows;
@@ -105,7 +112,7 @@ public final class TerminalEmulator {
 
         if (USE_RUST_FULL_TAKEOVER && JNI.sNativeLibrariesLoaded && !sForceDisableRust) {
             try {
-                mRustEnginePtr = createEngineRustWithCallback(columns, rows, (transcriptRows != null ? transcriptRows : 2000), cellWidthPixels, cellHeightPixels, new RustEngineCallback() {
+                mRustEnginePtr = createEngineRustWithCallback(columns, rows, actualTranscriptRows, cellWidthPixels, cellHeightPixels, new RustEngineCallback() {
                     @Override public void onScreenUpdate() { mMainThreadHandler.post(() -> { if (mClient != null && mSession instanceof TerminalSession) mClient.onTextChanged((TerminalSession) mSession); }); }
                     @Override public void reportTitleChange(String title) { mMainThreadHandler.post(() -> { mTitle = title; if (mClient != null && mSession instanceof TerminalSession) mClient.onTitleChanged((TerminalSession) mSession); }); }
                     @Override public void reportColorsChanged() { mMainThreadHandler.post(() -> { syncColorsFromRust(); if (mClient != null && mSession instanceof TerminalSession) mClient.onColorsChanged((TerminalSession) mSession); }); }
