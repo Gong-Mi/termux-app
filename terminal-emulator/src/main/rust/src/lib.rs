@@ -464,38 +464,36 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_createSh
     _class: jclass,
     engine_ptr: jlong,
 ) -> jobject {
-    unsafe {
-        if engine_ptr == 0 {
-            return std::ptr::null_mut();
-        }
-        let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-        let mut guard = engine_lock.write().unwrap();
-        let engine = &mut *guard;
-        let mut env = match JNIEnv::from_raw(env_ptr) {
-            Ok(e) => e,
-            Err(_) => return std::ptr::null_mut(),
-        };
+    if engine_ptr == 0 {
+        return std::ptr::null_mut();
+    }
+    let engine_lock = &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>);
+    let mut guard = engine_lock.write().unwrap();
+    let engine = &mut *guard;
+    let mut env = match JNIEnv::from_raw(env_ptr) {
+        Ok(e) => e,
+        Err(_) => return std::ptr::null_mut(),
+    };
 
-        // 创建共享缓冲区
-        if let Some(ref mut flat_buffer) = engine.state.flat_buffer {
-            let shared_ptr = flat_buffer.create_shared_buffer();
-            engine.state.shared_buffer_ptr = shared_ptr;
+    // 创建共享缓冲区
+    if let Some(ref mut flat_buffer) = engine.state.flat_buffer {
+        let shared_ptr = flat_buffer.create_shared_buffer();
+        engine.state.shared_buffer_ptr = shared_ptr;
 
-            if !shared_ptr.is_null() {
-                let buffer_size =
-                    engine::SharedScreenBuffer::required_size(flat_buffer.cols, flat_buffer.rows);
+        if !shared_ptr.is_null() {
+            let buffer_size =
+                engine::SharedScreenBuffer::required_size(flat_buffer.cols, flat_buffer.rows);
 
-                // 创建 DirectByteBuffer
-                match env.new_direct_byte_buffer(shared_ptr as *mut u8, buffer_size) {
-                    Ok(buffer) => buffer.into_raw(),
-                    Err(_) => std::ptr::null_mut(),
-                }
-            } else {
-                std::ptr::null_mut()
+            // 创建 DirectByteBuffer
+            match env.new_direct_byte_buffer(shared_ptr as *mut u8, buffer_size) {
+                Ok(buffer) => buffer.into_raw(),
+                Err(_) => std::ptr::null_mut(),
             }
         } else {
             std::ptr::null_mut()
         }
+    } else {
+        std::ptr::null_mut()
     }
 }
 
@@ -506,36 +504,34 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_syncToSh
     _class: jclass,
     engine_ptr: jlong,
 ) {
-    unsafe {
-        if engine_ptr == 0 {
-            return;
-        }
-        let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-        let mut guard = engine_lock.write().unwrap();
-        let engine = &mut *guard;
+    if engine_ptr == 0 {
+        return;
+    }
+    let engine_lock = &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>);
+    let mut guard = engine_lock.write().unwrap();
+    let engine = &mut *guard;
 
-        // 将当前屏幕数据同步到共享缓冲区
-        if let Some(ref mut flat_buffer) = engine.state.flat_buffer {
-            if !engine.state.shared_buffer_ptr.is_null() {
-                // 从主缓冲区同步数据到 flat_buffer
-                let cols = engine.state.cols as usize;
-                let rows = engine.state.rows as usize;
+    // 将当前屏幕数据同步到共享缓冲区
+    if let Some(ref mut flat_buffer) = engine.state.flat_buffer {
+        if !engine.state.shared_buffer_ptr.is_null() {
+            // 从主缓冲区同步数据到 flat_buffer
+            let cols = engine.state.cols as usize;
+            let rows = engine.state.rows as usize;
 
-                for row in 0..rows {
-                    for col in 0..cols {
-                        let cell_idx = flat_buffer.cell_index(col, row);
-                        if let Some(buffer_row) = engine.state.buffer.get(row) {
-                            if col < buffer_row.text.len() {
-                                flat_buffer.text_data[cell_idx] = buffer_row.text[col] as u16;
-                                flat_buffer.style_data[cell_idx] = buffer_row.styles[col];
-                            }
+            for row in 0..rows {
+                for col in 0..cols {
+                    let cell_idx = flat_buffer.cell_index(col, row);
+                    if let Some(buffer_row) = engine.state.buffer.get(row) {
+                        if col < buffer_row.text.len() {
+                            flat_buffer.text_data[cell_idx] = buffer_row.text[col] as u16;
+                            flat_buffer.style_data[cell_idx] = buffer_row.styles[col];
                         }
                     }
                 }
-
-                // 同步到共享内存
-                flat_buffer.sync_to_shared(engine.state.shared_buffer_ptr);
             }
+
+            // 同步到共享内存
+            flat_buffer.sync_to_shared(engine.state.shared_buffer_ptr);
         }
     }
 }
@@ -592,23 +588,21 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_destroyS
     _class: jclass,
     engine_ptr: jlong,
 ) {
-    unsafe {
-        if engine_ptr == 0 {
-            return;
-        }
-        let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-        let mut guard = engine_lock.write().unwrap();
-        let engine = &mut *guard;
+    if engine_ptr == 0 {
+        return;
+    }
+    let engine_lock = &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>);
+    let mut guard = engine_lock.write().unwrap();
+    let engine = &mut *guard;
 
-        if !engine.state.shared_buffer_ptr.is_null() {
-            let buffer_size = engine::SharedScreenBuffer::required_size(
-                engine.state.cols as usize,
-                engine.state.rows as usize,
-            );
-            let layout = std::alloc::Layout::from_size_align(buffer_size, 8).unwrap();
-            std::alloc::dealloc(engine.state.shared_buffer_ptr as *mut u8, layout);
-            engine.state.shared_buffer_ptr = std::ptr::null_mut();
-        }
+    if !engine.state.shared_buffer_ptr.is_null() {
+        let buffer_size = engine::SharedScreenBuffer::required_size(
+            engine.state.cols as usize,
+            engine.state.rows as usize,
+        );
+        let layout = std::alloc::Layout::from_size_align(buffer_size, 8).unwrap();
+        std::alloc::dealloc(engine.state.shared_buffer_ptr as *mut u8, layout);
+        engine.state.shared_buffer_ptr = std::ptr::null_mut();
     }
 }
 
@@ -620,15 +614,13 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_resizeEn
     new_cols: jint,
     new_rows: jint,
 ) {
-    unsafe {
-        if engine_ptr == 0 {
-            return;
-        }
-        let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-        let mut guard = engine_lock.write().unwrap();
-        let engine = &mut *guard;
-        engine.resize(new_cols, new_rows);
+    if engine_ptr == 0 {
+        return;
     }
+    let engine_lock = &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>);
+    let mut guard = engine_lock.write().unwrap();
+    let engine = &mut *guard;
+    engine.resize(new_cols, new_rows);
 }
 
 #[unsafe(no_mangle)]
@@ -637,12 +629,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_destroyE
     _class: jclass,
     engine_ptr: jlong,
 ) {
-    unsafe {
-        if engine_ptr == 0 {
-            return;
-        }
-        let _ = Box::from_raw(engine_ptr as *mut std::sync::RwLock<TerminalEngine>);
+    if engine_ptr == 0 {
+        return;
     }
+    let _ = Box::from_raw(engine_ptr as *mut std::sync::RwLock<TerminalEngine>);
 }
 
 #[unsafe(no_mangle)]
@@ -652,37 +642,35 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColor
     engine_ptr: jlong,
     colors: jintArray,
 ) {
+    if engine_ptr == 0 {
+        return;
+    }
+    let engine_lock = &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>);
+    let guard = engine_lock.read().unwrap();
+    let engine = &*guard;
+    let env = match JNIEnv::from_raw(env_ptr) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    let internal = env.get_native_interface();
+    let len = ((**internal).GetArrayLength.unwrap())(internal, colors) as usize;
+
+    // 复制颜色数据
+    let mut color_data = vec![0i32; len];
+    for i in 0..std::cmp::min(len, 259) {
+        color_data[i] = engine.state.colors.current_colors[i] as i32;
+    }
+
+    // 写入 Java 数组
     unsafe {
-        if engine_ptr == 0 {
-            return;
-        }
-        let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-        let guard = engine_lock.read().unwrap();
-        let engine = &*guard;
-        let env = match JNIEnv::from_raw(env_ptr) {
-            Ok(e) => e,
-            Err(_) => return,
-        };
-
-        let internal = env.get_native_interface();
-        let len = ((**internal).GetArrayLength.unwrap())(internal, colors) as usize;
-
-        // 复制颜色数据
-        let mut color_data = vec![0i32; len];
-        for i in 0..std::cmp::min(len, 259) {
-            color_data[i] = engine.state.colors.current_colors[i] as i32;
-        }
-
-        // 写入 Java 数组
-        unsafe {
-            ((**internal).SetIntArrayRegion.unwrap())(
-                internal,
-                colors,
-                0,
-                std::cmp::min(len, 259) as jint,
-                color_data.as_ptr(),
-            );
-        }
+        ((**internal).SetIntArrayRegion.unwrap())(
+            internal,
+            colors,
+            0,
+            std::cmp::min(len, 259) as jint,
+            color_data.as_ptr(),
+        );
     }
 }
 
