@@ -14,10 +14,20 @@ public final class TerminalEmulator {
     /** Log tag. */
     private static final String LOG_TAG = "TerminalEmulator";
 
+    public static final int MOUSE_LEFT_BUTTON = 0;
+    public static final int MOUSE_MIDDLE_BUTTON = 1;
+    public static final int MOUSE_RIGHT_BUTTON = 2;
+    public static final int UNICODE_REPLACEMENT_CHAR = 0xFFFD;
+
+    /** Cursor styles. */
+    public static final int TERMINAL_CURSOR_STYLE_BLOCK = 0;
+    public static final int TERMINAL_CURSOR_STYLE_UNDERLINE = 1;
+    public static final int TERMINAL_CURSOR_STYLE_BAR = 2;
+
     private final TerminalOutput mSession;
     private TerminalBuffer mScreen;
     private final TerminalBuffer mMainBuffer;
-    private final TerminalBuffer mAltBuffer;
+    public final TerminalBuffer mAltBuffer;
     private TerminalSessionClient mClient;
 
     public int mRows;
@@ -249,6 +259,12 @@ public final class TerminalEmulator {
                 row.updateStatusAfterBatchWrite();
             }
         }
+    }
+
+    public void getRowContent(int row, char[] text, long[] style) {
+        TerminalRow terminalRow = mScreen.allocateFullLineIfNecessary(row);
+        System.arraycopy(terminalRow.mText, 0, text, 0, mColumns);
+        System.arraycopy(terminalRow.mStyle, 0, style, 0, mColumns);
     }
 
     public String getSelectedText(int x1, int y1, int x2, int y2) {

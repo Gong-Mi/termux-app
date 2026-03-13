@@ -154,6 +154,24 @@ public final class TerminalBuffer {
         return mLines[externalToInternalRow(row)].getStyle(column);
     }
 
+    public long getStyleAt(int row, int column) {
+        return getStyle(column, row);
+    }
+
+    public String getWordAtLocation(int x, int y) {
+        // Simple implementation for tests
+        TerminalRow row = mLines[externalToInternalRow(y)];
+        String line = new String(row.mText, 0, mColumns);
+        if (x < 0 || x >= line.length()) return "";
+        
+        int x1 = x, x2 = x;
+        while (x1 > 0 && line.charAt(x1-1) != ' ') x1--;
+        while (x2 < line.length() && line.charAt(x2) != ' ') x2++;
+        
+        if (x1 == x2) return "";
+        return line.substring(x1, x2);
+    }
+
     /**
      * @param selX1 column of start
      * @param selY1 row of start
