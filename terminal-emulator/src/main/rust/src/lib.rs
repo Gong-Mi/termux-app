@@ -386,6 +386,11 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readScre
             engine.state.copy_row_text(row as usize, &mut text_vec);
             engine.state.copy_row_styles(row as usize, &mut style_vec);
 
+            if i == 0 && !text_vec.is_empty() {
+                // 只打印逻辑第一行的前几个字符进行确认
+                eprintln!("JNI SYNC DEBUG: row={} text[0..5]={:?}", row, &text_vec[0..std::cmp::min(5, text_vec.len())]);
+            }
+
             // 批量写入数据
             ((**internal).SetCharArrayRegion.unwrap())(
                 internal,
