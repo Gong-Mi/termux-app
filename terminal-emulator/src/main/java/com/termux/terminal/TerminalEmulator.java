@@ -567,8 +567,8 @@ public final class TerminalEmulator {
     private static native int getCursorStyleFromRust(long enginePtr);
     private static native boolean isCursorKeysApplicationModeFromRust(long enginePtr);
     private static native boolean isKeypadApplicationModeFromRust(long enginePtr);
-    private static native int getRowsFromRust(long enginePtr);
-    private static native int getColsFromRust(long enginePtr);
+    static native int getRowsFromRust(long enginePtr);
+    static native int getColsFromRust(long enginePtr);
 
     // Phase 2: DirectByteBuffer Shared Buffer Support
     private static native java.nio.ByteBuffer createSharedBufferRust(long enginePtr);
