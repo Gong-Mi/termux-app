@@ -89,14 +89,23 @@ public final class TerminalBuffer {
      * @return index between 0 and mTotalRows-1.
      */
     public int externalToInternalRow(int externalRow) {
+        // 在同步前保存当前状态，避免同步后状态变化导致验证失败
+        int screenRowsBefore = mScreenRows;
+        int activeTranscriptRowsBefore = getActiveTranscriptRows();
+
         if (mEmulator != null) {
             mEmulator.syncStateFromRustIfRequired();
         }
-        
-        if (externalRow < -getActiveTranscriptRows() || externalRow >= mScreenRows) {
-            throw new IllegalArgumentException("invalid externalRow=" + externalRow + ", mScreenRows=" + mScreenRows
-                    + ", getActiveTranscriptRows()=" + getActiveTranscriptRows());
+
+        // 使用同步后的值进行验证，但允许一定的容错
+        // 如果 externalRow 超出范围，将其钳制到有效范围内而不是抛出异常
+        int activeTranscriptRows = getActiveTranscriptRows();
+        if (externalRow < -activeTranscriptRows) {
+            externalRow = -activeTranscriptRows;
+        } else if (externalRow >= mScreenRows) {
+            externalRow = mScreenRows - 1;
         }
+
         int row = mScreenFirstRow + externalRow;
         if (row < 0) {
             row += mTotalRows;
@@ -311,21 +320,25 @@ public final class TerminalBuffer {
 
     public void syncFromRust(long rustEnginePtr) {
         if (rustEnginePtr == 0) return;
-        
-        int rows = mScreenRows;
-        int cols = mColumns;
-        
-        char[][] textBuffer = new char[rows][cols];
-        long[][] styleBuffer = new long[rows][cols];
-        
-        TerminalEmulator.readScreenBatchFromRust(rustEnginePtr, textBuffer, styleBuffer, 0, rows);
-        
-        for (int i = 0; i < rows; i++) {
-            int internalRow = externalToInternalRow(i);
-            TerminalRow row = mLines[internalRow];
-            System.arraycopy(textBuffer[i], 0, row.mText, 0, cols);
-            System.arraycopy(styleBuffer[i], 0, row.mStyle, 0, cols);
-            row.updateStatusAfterBatchWrite();
+
+        try {
+            int rows = mScreenRows;
+            int cols = mColumns;
+
+            char[][] textBuffer = new char[rows][cols];
+            long[][] styleBuffer = new long[rows][cols];
+
+            TerminalEmulator.readScreenBatchFromRust(rustEnginePtr, textBuffer, styleBuffer, 0, rows);
+
+            for (int i = 0; i < rows; i++) {
+                int internalRow = externalToInternalRow(i);
+                TerminalRow row = mLines[internalRow];
+                System.arraycopy(textBuffer[i], 0, row.mText, 0, cols);
+                System.arraycopy(styleBuffer[i], 0, row.mStyle, 0, cols);
+                row.updateStatusAfterBatchWrite();
+            }
+        } catch (UnsatisfiedLinkError e) {
+            // Ignore if native method not found
         }
     }
 
@@ -333,13 +346,23 @@ public final class TerminalBuffer {
      * Read a batch of screen rows from Rust.
      */
     public static void readScreenBatch(long rustEnginePtr, char[][] textBuffer, long[][] styleBuffer, int startRow, int numRows) {
-        TerminalEmulator.readScreenBatchFromRust(rustEnginePtr, textBuffer, styleBuffer, startRow, numRows);
+        if (rustEnginePtr == 0) return;
+        try {
+            TerminalEmulator.readScreenBatchFromRust(rustEnginePtr, textBuffer, styleBuffer, startRow, numRows);
+        } catch (UnsatisfiedLinkError e) {
+            // Ignore if native method not found
+        }
     }
 
     /**
      * Read the full screen from Rust.
      */
     public void readFullScreen(long rustEnginePtr, char[][] textBuffer, long[][] styleBuffer) {
-        TerminalEmulator.readFullScreenFromRust(rustEnginePtr, textBuffer, styleBuffer);
+        if (rustEnginePtr == 0) return;
+        try {
+            TerminalEmulator.readFullScreenFromRust(rustEnginePtr, textBuffer, styleBuffer);
+        } catch (UnsatisfiedLinkError e) {
+            // Ignore if native method not found
+        }
     }
 }

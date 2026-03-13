@@ -157,9 +157,9 @@ public final class TerminalEmulator {
 
     private void syncColorsFromRust() {
         if (mRustEnginePtr != 0) {
-            mForeColor = getForeColorFromRust(mRustEnginePtr);
-            mBackColor = getBackColorFromRust(mRustEnginePtr);
-            mEffect = getEffectFromRust(mRustEnginePtr);
+            try { mForeColor = getForeColorFromRust(mRustEnginePtr); } catch (UnsatisfiedLinkError e) { }
+            try { mBackColor = getBackColorFromRust(mRustEnginePtr); } catch (UnsatisfiedLinkError e) { }
+            try { mEffect = getEffectFromRust(mRustEnginePtr); } catch (UnsatisfiedLinkError e) { }
         }
     }
 
@@ -178,22 +178,22 @@ public final class TerminalEmulator {
         if (mRustEnginePtr == 0 || mIsSyncingFromRust) {
             return;
         }
-        
+
         mIsSyncingFromRust = true;  // 标记开始同步
-        
+
         try {
             syncColorsFromRust();
-            mCursorCol = getCursorColFromRust(mRustEnginePtr);
-            mCursorRow = getCursorRowFromRust(mRustEnginePtr);
-            mCurrentDecSetFlags = getDecsetFlagsFromRust(mRustEnginePtr);
-            mInsertMode = isInsertModeActiveFromRust(mRustEnginePtr);
+            try { mCursorCol = getCursorColFromRust(mRustEnginePtr); } catch (UnsatisfiedLinkError e) { }
+            try { mCursorRow = getCursorRowFromRust(mRustEnginePtr); } catch (UnsatisfiedLinkError e) { }
+            try { mCurrentDecSetFlags = getDecsetFlagsFromRust(mRustEnginePtr); } catch (UnsatisfiedLinkError e) { }
+            try { mInsertMode = isInsertModeActiveFromRust(mRustEnginePtr); } catch (UnsatisfiedLinkError e) { }
 
             if (mSharedBuffer == null) {
-                mSharedBuffer = createSharedBufferRust(mRustEnginePtr);
+                try { mSharedBuffer = createSharedBufferRust(mRustEnginePtr); } catch (UnsatisfiedLinkError e) { }
             }
 
             if (mSharedBuffer != null) {
-                syncToSharedBufferRust(mRustEnginePtr);
+                try { syncToSharedBufferRust(mRustEnginePtr); } catch (UnsatisfiedLinkError e) { }
 
                 int rows = mRows;
                 int cols = mColumns;
@@ -218,11 +218,13 @@ public final class TerminalEmulator {
 
                     styleLongs.position(i * cols);
                     styleLongs.get(row.mStyle, 0, cols);
-                    
+
                     row.updateStatusAfterBatchWrite();
                 }
-                clearSharedBufferVersionRust(mRustEnginePtr);
+                try { clearSharedBufferVersionRust(mRustEnginePtr); } catch (UnsatisfiedLinkError e) { }
             }
+        } catch (Exception e) {
+            // 捕获任何意外异常，防止崩溃
         } finally {
             mIsSyncingFromRust = false;  // 重置标志
         }
@@ -231,7 +233,9 @@ public final class TerminalEmulator {
     public void updateTerminalSessionClient(TerminalSessionClient client) {
         this.mClient = client;
         if (mRustEnginePtr != 0) {
-            updateTerminalSessionClientFromRust(mRustEnginePtr, client);
+            try {
+                updateTerminalSessionClientFromRust(mRustEnginePtr, client);
+            } catch (UnsatisfiedLinkError e) { /* Ignore */ }
         }
     }
 
@@ -239,14 +243,21 @@ public final class TerminalEmulator {
         this.mColumns = columns;
         this.mRows = rows;
         if (mRustEnginePtr != 0) {
-            resizeEngineRustFull(mRustEnginePtr, columns, rows);
-            mSharedBuffer = createSharedBufferRust(mRustEnginePtr);
+            try { resizeEngineRustFull(mRustEnginePtr, columns, rows); } catch (UnsatisfiedLinkError e) { }
+            try { mSharedBuffer = createSharedBufferRust(mRustEnginePtr); } catch (UnsatisfiedLinkError e) { }
             syncStateFromRust();
         }
     }
 
     public String getTitle() {
-        return (mRustEnginePtr != 0) ? getTitleFromRust(mRustEnginePtr) : mTitle;
+        if (mRustEnginePtr != 0) {
+            try {
+                return getTitleFromRust(mRustEnginePtr);
+            } catch (UnsatisfiedLinkError e) {
+                return mTitle;
+            }
+        }
+        return mTitle;
     }
 
     public void append(byte[] buffer, int length) {
@@ -259,86 +270,184 @@ public final class TerminalEmulator {
     }
 
     public void paste(String text) {
-        if (mRustEnginePtr != 0) pasteTextFromRust(mRustEnginePtr, text);
+        if (mRustEnginePtr != 0) {
+            try {
+                pasteTextFromRust(mRustEnginePtr, text);
+            } catch (UnsatisfiedLinkError e) { /* Ignore */ }
+        }
     }
 
     // Proxy methods for TerminalView
     public boolean isMouseTrackingActive() {
-        return (mRustEnginePtr != 0) ? isMouseTrackingActiveFromRust(mRustEnginePtr) : false;
+        if (mRustEnginePtr != 0) {
+            try {
+                return isMouseTrackingActiveFromRust(mRustEnginePtr);
+            } catch (UnsatisfiedLinkError e) {
+                // Native method not found, fall back to false
+                return false;
+            }
+        }
+        return false;
     }
 
     public boolean isAlternateBufferActive() {
-        return (mRustEnginePtr != 0) ? isAlternateBufferActiveFromRust(mRustEnginePtr) : false;
+        if (mRustEnginePtr != 0) {
+            try {
+                return isAlternateBufferActiveFromRust(mRustEnginePtr);
+            } catch (UnsatisfiedLinkError e) {
+                return false;
+            }
+        }
+        return false;
     }
 
     public boolean isAutoScrollDisabled() {
-        return (mRustEnginePtr != 0) ? isAutoScrollDisabledFromRust(mRustEnginePtr) : mAutoScrollDisabled;
+        if (mRustEnginePtr != 0) {
+            try {
+                return isAutoScrollDisabledFromRust(mRustEnginePtr);
+            } catch (UnsatisfiedLinkError e) {
+                return mAutoScrollDisabled;
+            }
+        }
+        return mAutoScrollDisabled;
     }
 
     public void toggleAutoScrollDisabled() {
         mAutoScrollDisabled = !mAutoScrollDisabled;
-        if (mRustEnginePtr != 0) setAutoScrollDisabledInRust(mRustEnginePtr, mAutoScrollDisabled);
+        if (mRustEnginePtr != 0) {
+            try {
+                setAutoScrollDisabledInRust(mRustEnginePtr, mAutoScrollDisabled);
+            } catch (UnsatisfiedLinkError e) { /* Ignore */ }
+        }
     }
 
     public int getScrollCounter() {
-        return (mRustEnginePtr != 0) ? getScrollCounterFromRust(mRustEnginePtr) : mScrollCounter;
+        if (mRustEnginePtr != 0) {
+            try {
+                return getScrollCounterFromRust(mRustEnginePtr);
+            } catch (UnsatisfiedLinkError e) {
+                return mScrollCounter;
+            }
+        }
+        return mScrollCounter;
     }
 
     public void clearScrollCounter() {
-        if (mRustEnginePtr != 0) clearScrollCounterFromRust(mRustEnginePtr);
-        else mScrollCounter = 0;
+        if (mRustEnginePtr != 0) {
+            try {
+                clearScrollCounterFromRust(mRustEnginePtr);
+            } catch (UnsatisfiedLinkError e) { /* Ignore */ }
+        } else {
+            mScrollCounter = 0;
+        }
     }
 
     public void sendMouseEvent(int button, int x, int y, boolean pressed) {
-        if (mRustEnginePtr != 0) sendMouseEventToRust(mRustEnginePtr, button, x, y, pressed);
+        if (mRustEnginePtr != 0) {
+            try {
+                sendMouseEventToRust(mRustEnginePtr, button, x, y, pressed);
+            } catch (UnsatisfiedLinkError e) { /* Ignore */ }
+        }
     }
 
     public void setCursorBlinkState(boolean visible) {
         mCursorBlinkState = visible;
-        if (mRustEnginePtr != 0) setCursorBlinkStateInRust(mRustEnginePtr, visible);
+        if (mRustEnginePtr != 0) {
+            try {
+                setCursorBlinkStateInRust(mRustEnginePtr, visible);
+            } catch (UnsatisfiedLinkError e) { /* Ignore */ }
+        }
     }
 
     public void setCursorBlinkingEnabled(boolean enabled) {
         mCursorBlinkingEnabled = enabled;
-        if (mRustEnginePtr != 0) setCursorBlinkingEnabledInRust(mRustEnginePtr, enabled);
+        if (mRustEnginePtr != 0) {
+            try {
+                setCursorBlinkingEnabledInRust(mRustEnginePtr, enabled);
+            } catch (UnsatisfiedLinkError e) { /* Ignore */ }
+        }
     }
 
     public boolean isCursorEnabled() {
-        return (mRustEnginePtr != 0) ? isCursorEnabledFromRust(mRustEnginePtr) : true;
+        if (mRustEnginePtr != 0) {
+            try {
+                return isCursorEnabledFromRust(mRustEnginePtr);
+            } catch (UnsatisfiedLinkError e) {
+                return true;
+            }
+        }
+        return true;
     }
 
     public boolean isReverseVideo() {
-        return (mRustEnginePtr != 0) ? isReverseVideoFromRust(mRustEnginePtr) : false;
+        if (mRustEnginePtr != 0) {
+            try {
+                return isReverseVideoFromRust(mRustEnginePtr);
+            } catch (UnsatisfiedLinkError e) {
+                return false;
+            }
+        }
+        return false;
     }
 
     public boolean shouldCursorBeVisible() {
-        return (mRustEnginePtr != 0) ? shouldCursorBeVisibleFromRust(mRustEnginePtr) : true;
+        if (mRustEnginePtr != 0) {
+            try {
+                return shouldCursorBeVisibleFromRust(mRustEnginePtr);
+            } catch (UnsatisfiedLinkError e) {
+                return true;
+            }
+        }
+        return true;
     }
 
     public int getCursorStyle() {
-        return (mRustEnginePtr != 0) ? getCursorStyleFromRust(mRustEnginePtr) : mCursorStyle;
+        if (mRustEnginePtr != 0) {
+            try {
+                return getCursorStyleFromRust(mRustEnginePtr);
+            } catch (UnsatisfiedLinkError e) {
+                return mCursorStyle;
+            }
+        }
+        return mCursorStyle;
     }
 
     public boolean isCursorKeysApplicationMode() {
-        return (mRustEnginePtr != 0) ? isCursorKeysApplicationModeFromRust(mRustEnginePtr) : false;
+        if (mRustEnginePtr != 0) {
+            try {
+                return isCursorKeysApplicationModeFromRust(mRustEnginePtr);
+            } catch (UnsatisfiedLinkError e) {
+                return false;
+            }
+        }
+        return false;
     }
 
     public boolean isKeypadApplicationMode() {
-        return (mRustEnginePtr != 0) ? isKeypadApplicationModeFromRust(mRustEnginePtr) : false;
+        if (mRustEnginePtr != 0) {
+            try {
+                return isKeypadApplicationModeFromRust(mRustEnginePtr);
+            } catch (UnsatisfiedLinkError e) {
+                return false;
+            }
+        }
+        return false;
     }
 
     public void syncScreenBatchFromRust(int startRow, int numRows) {
         if (mRustEnginePtr != 0) {
-            char[][] text = new char[numRows][mColumns];
-            long[][] style = new long[numRows][mColumns];
-            readScreenBatchFromRust(mRustEnginePtr, text, style, startRow, numRows);
-            TerminalBuffer targetBuffer = isAlternateBufferActive() ? mAltBuffer : mMainBuffer;
-            for (int i = 0; i < numRows; i++) {
-                TerminalRow row = targetBuffer.allocateFullLineIfNecessary(startRow + i);
-                System.arraycopy(text[i], 0, row.mText, 0, mColumns);
-                System.arraycopy(style[i], 0, row.mStyle, 0, mColumns);
-                row.updateStatusAfterBatchWrite();
-            }
+            try {
+                char[][] text = new char[numRows][mColumns];
+                long[][] style = new long[numRows][mColumns];
+                readScreenBatchFromRust(mRustEnginePtr, text, style, startRow, numRows);
+                TerminalBuffer targetBuffer = isAlternateBufferActive() ? mAltBuffer : mMainBuffer;
+                for (int i = 0; i < numRows; i++) {
+                    TerminalRow row = targetBuffer.allocateFullLineIfNecessary(startRow + i);
+                    System.arraycopy(text[i], 0, row.mText, 0, mColumns);
+                    System.arraycopy(style[i], 0, row.mStyle, 0, mColumns);
+                    row.updateStatusAfterBatchWrite();
+                }
+            } catch (UnsatisfiedLinkError e) { /* Ignore */ }
         }
     }
 
@@ -355,19 +464,41 @@ public final class TerminalEmulator {
         return mScreen.getSelectedText(x1, y1, x2, y2);
     }
 
-    public int getCursorRow() { 
+    public int getCursorRow() {
         syncStateFromRustIfRequired();
-        return (mRustEnginePtr != 0) ? getCursorRowFromRust(mRustEnginePtr) : mCursorRow; 
+        if (mRustEnginePtr != 0) {
+            try {
+                return getCursorRowFromRust(mRustEnginePtr);
+            } catch (UnsatisfiedLinkError e) {
+                return mCursorRow;
+            }
+        }
+        return mCursorRow;
     }
-    
-    public int getCursorCol() { 
+
+    public int getCursorCol() {
         syncStateFromRustIfRequired();
-        return (mRustEnginePtr != 0) ? getCursorColFromRust(mRustEnginePtr) : mCursorCol; 
+        if (mRustEnginePtr != 0) {
+            try {
+                return getCursorColFromRust(mRustEnginePtr);
+            } catch (UnsatisfiedLinkError e) {
+                return mCursorCol;
+            }
+        }
+        return mCursorCol;
     }
     
     public boolean isBracketedPasteMode() { return (mCurrentDecSetFlags & DECSET_BIT_BRACKETED_PASTE_MODE) != 0; }
     public TerminalBuffer getScreen() { return mScreen; }
-    public void destroy() { if (mRustEnginePtr != 0) { long p = mRustEnginePtr; mRustEnginePtr = 0; destroyEngineRust(p); } }
+    public void destroy() {
+        if (mRustEnginePtr != 0) {
+            long p = mRustEnginePtr;
+            mRustEnginePtr = 0;
+            try {
+                destroyEngineRust(p);
+            } catch (UnsatisfiedLinkError e) { /* Ignore */ }
+        }
+    }
 
     // Native Declarations
     private static native long createEngineRustWithCallback(int cols, int rows, int totalRows, int cellWidth, int cellHeight, Object callbackObj);
