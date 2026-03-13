@@ -45,6 +45,11 @@ public final class TerminalBuffer {
         this.mScreenFirstRow = screenFirstRow;
     }
 
+
+    public void setRustEnginePtr(long rustEnginePtr) {
+        // 用于将来支持 DirectByteBuffer 或历史行同步
+    }
+
     public String getTranscriptText() {
         return getSelectedText(0, -getActiveTranscriptRows(), mColumns, mScreenRows).trim();
     }
