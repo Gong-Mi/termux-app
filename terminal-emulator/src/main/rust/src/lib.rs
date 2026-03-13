@@ -335,6 +335,90 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readRowF
 // 批量读取优化 - 减少 JNI 调用次数
 // ============================================================================
 
+/// 内部通用的批量读取实现，不依赖 JNI 导出签名，避免套娃调用失败
+unsafe fn internal_read_screen_batch(
+    env_ptr: *mut *const JNINativeInterface_,
+    engine_ptr: jlong,
+    dest_text: jobjectArray,
+    dest_style: jobjectArray,
+    start_row: jint,
+    num_rows: jint,
+) {
+    if engine_ptr == 0 || num_rows <= 0 {
+        return;
+    }
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let mut guard = engine_lock.write().unwrap();
+    let engine = &mut *guard;
+    
+    let env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    let internal = env.get_native_interface();
+    let rust_cols = engine.state.cols as usize;
+    let count = num_rows as usize;
+
+    for i in 0..count {
+        let row = start_row + i as i32;
+
+        // 获取 Java 二维数组的第 i 行
+        let row_text_array = unsafe {
+            ((**internal).GetObjectArrayElement.unwrap())(internal, dest_text, i as jint)
+        };
+        let row_style_array = unsafe {
+            ((**internal).GetObjectArrayElement.unwrap())(internal, dest_style, i as jint)
+        };
+
+        if !row_text_array.is_null() && !row_style_array.is_null() {
+            let java_cols = unsafe {
+                ((**internal).GetArrayLength.unwrap())(internal, row_text_array) as usize
+            };
+            let style_cols = unsafe {
+                ((**internal).GetArrayLength.unwrap())(internal, row_style_array) as usize
+            };
+
+            let copy_cols = std::cmp::min(rust_cols, std::cmp::min(java_cols, style_cols));
+            let mut text_vec = vec![' ' as u16; copy_cols];
+            let mut style_vec = vec![0i64; copy_cols];
+
+            // 从 Rust 复制数据
+            engine.state.copy_row_text(row as usize, &mut text_vec);
+            engine.state.copy_row_styles(row as usize, &mut style_vec);
+
+            // 调试打印
+            if i == 0 && text_vec.iter().any(|&c| c != ' ' as u16) {
+                eprintln!("JNI SYNC SUCCESS: row={} first_chars={:?}", row, &text_vec[0..std::cmp::min(5, copy_cols)]);
+            }
+
+            // 批量写入 Java 数组
+            unsafe {
+                ((**internal).SetCharArrayRegion.unwrap())(
+                    internal,
+                    row_text_array as jni::sys::jcharArray,
+                    0,
+                    copy_cols as jint,
+                    text_vec.as_ptr(),
+                );
+                ((**internal).SetLongArrayRegion.unwrap())(
+                    internal,
+                    row_style_array as jni::sys::jlongArray,
+                    0,
+                    copy_cols as jint,
+                    style_vec.as_ptr() as *const jlong,
+                );
+            }
+        }
+
+        // 删除局部引用
+        unsafe {
+            ((**internal).DeleteLocalRef.unwrap())(internal, row_text_array);
+            ((**internal).DeleteLocalRef.unwrap())(internal, row_style_array);
+        }
+    }
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readScreenBatchFromRust(
     env_ptr: *mut *const JNINativeInterface_,
@@ -345,73 +429,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readScre
     start_row: jint,
     num_rows: jint,
 ) {
-    if engine_ptr == 0 || num_rows <= 0 {
-        return;
-    }
-    let engine_lock = &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>);
-    let mut guard = engine_lock.write().unwrap();
-    let engine = &mut *guard;
-    let env = match JNIEnv::from_raw(env_ptr) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-
-    let internal = env.get_native_interface();
-    let rust_cols = engine.state.cols as usize;
-    let start = start_row;
-    let count = num_rows as usize;
-
-    for i in 0..count {
-        let row = start + i as i32;
-
-        // 获取 Java 二维数组的第 i 行，并获取其实际长度
-        let row_text_array =
-            ((**internal).GetObjectArrayElement.unwrap())(internal, dest_text, i as jint);
-        let row_style_array =
-            ((**internal).GetObjectArrayElement.unwrap())(internal, dest_style, i as jint);
-
-        if !row_text_array.is_null() && !row_style_array.is_null() {
-            // 获取 Java 数组的实际长度
-            let java_cols = ((**internal).GetArrayLength.unwrap())(internal, row_text_array) as usize;
-            let style_cols = ((**internal).GetArrayLength.unwrap())(internal, row_style_array) as usize;
-            
-            // 使用 Rust 和 Java 中较小的列数，避免数组越界
-            let copy_cols = std::cmp::min(rust_cols, std::cmp::min(java_cols, style_cols));
-            
-            // 预分配 Rust 侧缓冲区
-            let mut text_vec = vec![' ' as u16; copy_cols];
-            let mut style_vec = vec![0i64; copy_cols];
-
-            // 从 Rust 复制数据到临时缓冲区
-            engine.state.copy_row_text(row as usize, &mut text_vec);
-            engine.state.copy_row_styles(row as usize, &mut style_vec);
-
-            if i == 0 && !text_vec.is_empty() {
-                // 只打印逻辑第一行的前几个字符进行确认
-                eprintln!("JNI SYNC DEBUG: row={} text[0..5]={:?}", row, &text_vec[0..std::cmp::min(5, text_vec.len())]);
-            }
-
-            // 批量写入数据
-            ((**internal).SetCharArrayRegion.unwrap())(
-                internal,
-                row_text_array as jni::sys::jcharArray,
-                0,
-                copy_cols as jint,
-                text_vec.as_ptr(),
-            );
-            ((**internal).SetLongArrayRegion.unwrap())(
-                internal,
-                row_style_array as jni::sys::jlongArray,
-                0,
-                copy_cols as jint,
-                style_vec.as_ptr() as *const jlong,
-            );
-        }
-
-        // 删除局部引用，防止 JNI 局部引用表溢出
-        ((**internal).DeleteLocalRef.unwrap())(internal, row_text_array);
-        ((**internal).DeleteLocalRef.unwrap())(internal, row_style_array);
-    }
+    internal_read_screen_batch(env_ptr, engine_ptr, dest_text, dest_style, start_row, num_rows);
 }
 
 /// 读取整个屏幕的优化版本（固定从第 0 行开始）
@@ -426,14 +444,13 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readFull
     if engine_ptr == 0 {
         return;
     }
-    let engine_lock = &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>);
-    let mut guard = engine_lock.write().unwrap();
-    let engine = &mut *guard;
-    let rows = engine.state.rows as jint;
+    let rows = {
+        let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+        let guard = engine_lock.read().unwrap();
+        guard.state.rows as jint
+    };
 
-    Java_com_termux_terminal_TerminalEmulator_readScreenBatchFromRust(
-        env_ptr, _class, engine_ptr, dest_text, dest_style, 0, rows,
-    );
+    internal_read_screen_batch(env_ptr, engine_ptr, dest_text, dest_style, 0, rows);
 }
 
 // ============================================================================
