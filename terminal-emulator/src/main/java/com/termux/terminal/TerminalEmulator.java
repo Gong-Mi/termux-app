@@ -18,7 +18,7 @@ public final class TerminalEmulator {
     private TerminalBuffer mScreen;
     private final TerminalBuffer mMainBuffer;
     private final TerminalBuffer mAltBuffer;
-    private final TerminalSessionClient mClient;
+    private TerminalSessionClient mClient;
 
     private int mRows;
     private int mColumns;
@@ -153,6 +153,28 @@ public final class TerminalEmulator {
         }
     }
 
+    public void updateTerminalSessionClient(TerminalSessionClient client) {
+        this.mClient = client;
+        if (mRustEnginePtr != 0) {
+            updateTerminalSessionClientFromRust(mRustEnginePtr, client);
+        }
+    }
+
+    public void resize(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
+        this.mColumns = columns;
+        this.mRows = rows;
+        if (mRustEnginePtr != 0) {
+            resizeRust(mRustEnginePtr, columns, rows, cellWidthPixels, cellHeightPixels);
+        }
+    }
+
+    public String getTitle() {
+        if (mRustEnginePtr != 0) {
+            return getTitleFromRust(mRustEnginePtr);
+        }
+        return mTitle;
+    }
+
     public void append(byte[] buffer, int length) {
         long ptr = mRustEnginePtr;
         if (ptr != 0) {
@@ -184,6 +206,11 @@ public final class TerminalEmulator {
     private static native int getEffectFromRust(long enginePtr);
     private static native int getDecsetFlagsFromRust(long enginePtr);
     private static native boolean isInsertModeActiveFromRust(long enginePtr);
-    private static native void readFullScreenFromRust(long enginePtr, char[][] text, long[][] style);
+    public static native void readFullScreenFromRust(long enginePtr, char[][] text, long[][] style);
+    public static native void readScreenBatchFromRust(long enginePtr, char[][] text, long[][] style, int startRow, int numRows);
     private static native void pasteTextFromRust(long enginePtr, String text);
+    private static native void updateTerminalSessionClientFromRust(long enginePtr, Object client);
+    private static native void resizeRust(long enginePtr, int cols, int rows, int cellWidth, int cellHeight);
+    private static native String getTitleFromRust(long enginePtr);
+    public static native int getActiveTranscriptRowsFromRust(long enginePtr);
 }
