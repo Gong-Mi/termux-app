@@ -69,6 +69,9 @@ public final class TerminalEmulator {
     public static final boolean USE_RUST_FULL_TAKEOVER = true;
     public static boolean sForceDisableRust = false;
     public static String sLastLoadStatus = "UNKNOWN";
+    
+    /** Flag to track if Java state is out of sync with Rust engine */
+    private volatile boolean mNeedsSync = false;
 
     /** DECSET bits. */
     private static final int DECSET_BIT_APPLICATION_CURSOR_KEYS = 1;
@@ -104,6 +107,8 @@ public final class TerminalEmulator {
         int actualTranscriptRows = (transcriptRows != null ? transcriptRows : DEFAULT_TERMINAL_TRANSCRIPT_ROWS);
         mScreen = mMainBuffer = new TerminalBuffer(columns, actualTranscriptRows, rows);
         mAltBuffer = new TerminalBuffer(columns, rows, rows);
+        mMainBuffer.setEmulator(this);
+        mAltBuffer.setEmulator(this);
         mClient = client;
         mRows = rows;
         mColumns = columns;
@@ -113,7 +118,10 @@ public final class TerminalEmulator {
         if (USE_RUST_FULL_TAKEOVER && JNI.sNativeLibrariesLoaded && !sForceDisableRust) {
             try {
                 mRustEnginePtr = createEngineRustWithCallback(columns, rows, actualTranscriptRows, cellWidthPixels, cellHeightPixels, new RustEngineCallback() {
-                    @Override public void onScreenUpdate() { mMainThreadHandler.post(() -> { if (mClient != null && mSession instanceof TerminalSession) mClient.onTextChanged((TerminalSession) mSession); }); }
+                    @Override public void onScreenUpdate() { 
+                        mNeedsSync = true;
+                        mMainThreadHandler.post(() -> { if (mClient != null && mSession instanceof TerminalSession) mClient.onTextChanged((TerminalSession) mSession); }); 
+                    }
                     @Override public void reportTitleChange(String title) { mMainThreadHandler.post(() -> { mTitle = title; if (mClient != null && mSession instanceof TerminalSession) mClient.onTitleChanged((TerminalSession) mSession); }); }
                     @Override public void reportColorsChanged() { mMainThreadHandler.post(() -> { syncColorsFromRust(); if (mClient != null && mSession instanceof TerminalSession) mClient.onColorsChanged((TerminalSession) mSession); }); }
                     @Override public void reportCursorVisibility(boolean visible) { mMainThreadHandler.post(() -> { if (mClient != null) mClient.onTerminalCursorStateChange(visible); }); }
@@ -125,7 +133,7 @@ public final class TerminalEmulator {
                     @Override public void reportColorResponse(String colorSpec) { if (mSession != null) mSession.write("\u001b]" + colorSpec + "\u0007"); }
                     @Override public void reportTerminalResponse(String response) { if (mSession != null) mSession.write(response); }
                 });
-                mScreen.setRustEnginePtr(mRustEnginePtr);
+                mMainBuffer.setRustEnginePtr(mRustEnginePtr);
                 mAltBuffer.setRustEnginePtr(mRustEnginePtr);
             } catch (Exception e) {
                 mRustEnginePtr = 0;
@@ -151,6 +159,17 @@ public final class TerminalEmulator {
         }
     }
 
+    /**
+     * Synchronizes state from Rust if it's marked as out-of-sync.
+     * Called automatically by TerminalBuffer when data is accessed.
+     */
+    public synchronized void syncStateFromRustIfRequired() {
+        if (mRustEnginePtr != 0 && mNeedsSync) {
+            syncStateFromRust();
+            mNeedsSync = false;
+        }
+    }
+
     private void syncStateFromRust() {
         if (mRustEnginePtr != 0) {
             syncColorsFromRust();
@@ -166,9 +185,11 @@ public final class TerminalEmulator {
             long[][] style = new long[rows][cols];
             readFullScreenFromRust(mRustEnginePtr, text, style);
             
-            mScreen.setScreenFirstRow(0);
+            // 确保使用当前活动的缓冲区进行同步
+            TerminalBuffer targetBuffer = isAlternateBufferActive() ? mAltBuffer : mMainBuffer;
+            targetBuffer.setScreenFirstRow(0);
             for (int i = 0; i < rows; i++) {
-                TerminalRow row = mScreen.allocateFullLineIfNecessary(i);
+                TerminalRow row = targetBuffer.allocateFullLineIfNecessary(i);
                 System.arraycopy(text[i], 0, row.mText, 0, cols);
                 System.arraycopy(style[i], 0, row.mStyle, 0, cols);
                 row.updateStatusAfterBatchWrite();
@@ -188,6 +209,7 @@ public final class TerminalEmulator {
         this.mRows = rows;
         if (mRustEnginePtr != 0) {
             resizeRust(mRustEnginePtr, columns, rows, cellWidthPixels, cellHeightPixels);
+            mNeedsSync = true;
         }
     }
 
@@ -199,7 +221,7 @@ public final class TerminalEmulator {
         if (mRustEnginePtr != 0) {
             try {
                 processEngineRust(mRustEnginePtr, buffer, 0, length);
-                syncStateFromRust();
+                mNeedsSync = true;
             } catch (Exception e) { }
         }
     }
@@ -278,8 +300,9 @@ public final class TerminalEmulator {
             char[][] text = new char[numRows][mColumns];
             long[][] style = new long[numRows][mColumns];
             readScreenBatchFromRust(mRustEnginePtr, text, style, startRow, numRows);
+            TerminalBuffer targetBuffer = isAlternateBufferActive() ? mAltBuffer : mMainBuffer;
             for (int i = 0; i < numRows; i++) {
-                TerminalRow row = mScreen.allocateFullLineIfNecessary(startRow + i);
+                TerminalRow row = targetBuffer.allocateFullLineIfNecessary(startRow + i);
                 System.arraycopy(text[i], 0, row.mText, 0, mColumns);
                 System.arraycopy(style[i], 0, row.mStyle, 0, mColumns);
                 row.updateStatusAfterBatchWrite();
@@ -288,7 +311,9 @@ public final class TerminalEmulator {
     }
 
     public void getRowContent(int row, char[] text, long[] style) {
-        TerminalRow terminalRow = mScreen.allocateFullLineIfNecessary(row);
+        syncStateFromRustIfRequired();
+        TerminalBuffer targetBuffer = isAlternateBufferActive() ? mAltBuffer : mMainBuffer;
+        TerminalRow terminalRow = targetBuffer.allocateFullLineIfNecessary(row);
         System.arraycopy(terminalRow.mText, 0, text, 0, mColumns);
         System.arraycopy(terminalRow.mStyle, 0, style, 0, mColumns);
     }
@@ -297,8 +322,16 @@ public final class TerminalEmulator {
         return mScreen.getSelectedText(x1, y1, x2, y2);
     }
 
-    public int getCursorRow() { return (mRustEnginePtr != 0) ? getCursorRowFromRust(mRustEnginePtr) : mCursorRow; }
-    public int getCursorCol() { return (mRustEnginePtr != 0) ? getCursorColFromRust(mRustEnginePtr) : mCursorCol; }
+    public int getCursorRow() { 
+        syncStateFromRustIfRequired();
+        return (mRustEnginePtr != 0) ? getCursorRowFromRust(mRustEnginePtr) : mCursorRow; 
+    }
+    
+    public int getCursorCol() { 
+        syncStateFromRustIfRequired();
+        return (mRustEnginePtr != 0) ? getCursorColFromRust(mRustEnginePtr) : mCursorCol; 
+    }
+    
     public boolean isBracketedPasteMode() { return (mCurrentDecSetFlags & DECSET_BIT_BRACKETED_PASTE_MODE) != 0; }
     public TerminalBuffer getScreen() { return mScreen; }
     public void destroy() { if (mRustEnginePtr != 0) { long p = mRustEnginePtr; mRustEnginePtr = 0; destroyEngineRust(p); } }

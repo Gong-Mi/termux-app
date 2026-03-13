@@ -23,6 +23,8 @@ public final class TerminalBuffer {
     private boolean mUseRustTranscriptRows = false;
     /** Reference to Rust engine pointer for getting transcript rows. */
     private long mRustEnginePtr = 0;
+    /** Reference to the emulator for state synchronization. */
+    private TerminalEmulator mEmulator;
 
     /**
      * Create a transcript screen.
@@ -42,6 +44,10 @@ public final class TerminalBuffer {
         }
 
         blockSet(0, 0, columns, screenRows, ' ', TextStyle.NORMAL);
+    }
+
+    public void setEmulator(TerminalEmulator emulator) {
+        this.mEmulator = emulator;
     }
 
     public void setScreenFirstRow(int screenFirstRow) {
@@ -83,6 +89,10 @@ public final class TerminalBuffer {
      * @return index between 0 and mTotalRows-1.
      */
     public int externalToInternalRow(int externalRow) {
+        if (mEmulator != null) {
+            mEmulator.syncStateFromRustIfRequired();
+        }
+        
         if (externalRow < -getActiveTranscriptRows() || externalRow >= mScreenRows) {
             throw new IllegalArgumentException("invalid externalRow=" + externalRow + ", mScreenRows=" + mScreenRows
                     + ", getActiveTranscriptRows()=" + getActiveTranscriptRows());
@@ -304,9 +314,11 @@ public final class TerminalBuffer {
         TerminalEmulator.readScreenBatchFromRust(rustEnginePtr, textBuffer, styleBuffer, 0, rows);
         
         for (int i = 0; i < rows; i++) {
-            TerminalRow row = mLines[externalToInternalRow(i)];
+            int internalRow = externalToInternalRow(i);
+            TerminalRow row = mLines[internalRow];
             System.arraycopy(textBuffer[i], 0, row.mText, 0, cols);
             System.arraycopy(styleBuffer[i], 0, row.mStyle, 0, cols);
+            row.updateStatusAfterBatchWrite();
         }
     }
 
