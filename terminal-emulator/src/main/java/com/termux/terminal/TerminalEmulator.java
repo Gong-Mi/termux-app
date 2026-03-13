@@ -69,23 +69,6 @@ public final class TerminalEmulator {
     public static final boolean USE_RUST_FULL_TAKEOVER = true;
     public static boolean sForceDisableRust = false;
     public static String sLastLoadStatus = "UNKNOWN";
-    
-    /** Flag to track if Java state is out of sync with Rust engine */
-    private volatile boolean mNeedsSync = false;
-
-    /** DECSET bits. */
-    private static final int DECSET_BIT_APPLICATION_CURSOR_KEYS = 1;
-    private static final int DECSET_BIT_REVERSE_VIDEO = 1 << 1;
-    private static final int DECSET_BIT_ORIGIN_MODE = 1 << 2;
-    private static final int DECSET_BIT_AUTOWRAP = 1 << 3;
-    private static final int DECSET_BIT_CURSOR_ENABLED = 1 << 4;
-    private static final int DECSET_BIT_APPLICATION_KEYPAD = 1 << 5;
-    private static final int DECSET_BIT_LEFTRIGHT_MARGIN_MODE = 1 << 6;
-    private static final int DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE = 1 << 7;
-    private static final int DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT = 1 << 8;
-    private static final int DECSET_BIT_SEND_FOCUS_EVENTS = 1 << 9;
-    private static final int DECSET_BIT_MOUSE_PROTOCOL_SGR = 1 << 10;
-    private static final int DECSET_BIT_BRACKETED_PASTE_MODE = 1 << 11;
 
     public interface RustEngineCallback {
         void onScreenUpdate();
@@ -119,7 +102,6 @@ public final class TerminalEmulator {
             try {
                 mRustEnginePtr = createEngineRustWithCallback(columns, rows, actualTranscriptRows, cellWidthPixels, cellHeightPixels, new RustEngineCallback() {
                     @Override public void onScreenUpdate() { 
-                        mNeedsSync = true;
                         mMainThreadHandler.post(() -> { if (mClient != null && mSession instanceof TerminalSession) mClient.onTextChanged((TerminalSession) mSession); }); 
                     }
                     @Override public void reportTitleChange(String title) { mMainThreadHandler.post(() -> { mTitle = title; if (mClient != null && mSession instanceof TerminalSession) mClient.onTitleChanged((TerminalSession) mSession); }); }
@@ -160,13 +142,12 @@ public final class TerminalEmulator {
     }
 
     /**
-     * Synchronizes state from Rust if it's marked as out-of-sync.
-     * Called automatically by TerminalBuffer when data is accessed.
+     * Aggressively synchronizes state from Rust to Java.
+     * In unit test environments, we must ensure Java buffer is always up-to-date.
      */
     public synchronized void syncStateFromRustIfRequired() {
-        if (mRustEnginePtr != 0 && mNeedsSync) {
+        if (mRustEnginePtr != 0) {
             syncStateFromRust();
-            mNeedsSync = false;
         }
     }
 
@@ -183,10 +164,13 @@ public final class TerminalEmulator {
             int cols = mColumns;
             char[][] text = new char[rows][cols];
             long[][] style = new long[rows][cols];
+            
+            // 根据当前活动的缓冲区拉取内容
             readFullScreenFromRust(mRustEnginePtr, text, style);
             
-            // 确保使用当前活动的缓冲区进行同步
             TerminalBuffer targetBuffer = isAlternateBufferActive() ? mAltBuffer : mMainBuffer;
+            mScreen = targetBuffer; // 确保 mScreen 引用也是最新的
+            
             targetBuffer.setScreenFirstRow(0);
             for (int i = 0; i < rows; i++) {
                 TerminalRow row = targetBuffer.allocateFullLineIfNecessary(i);
@@ -209,7 +193,7 @@ public final class TerminalEmulator {
         this.mRows = rows;
         if (mRustEnginePtr != 0) {
             resizeRust(mRustEnginePtr, columns, rows, cellWidthPixels, cellHeightPixels);
-            mNeedsSync = true;
+            syncStateFromRust();
         }
     }
 
@@ -221,7 +205,7 @@ public final class TerminalEmulator {
         if (mRustEnginePtr != 0) {
             try {
                 processEngineRust(mRustEnginePtr, buffer, 0, length);
-                mNeedsSync = true;
+                syncStateFromRust();
             } catch (Exception e) { }
         }
     }
@@ -319,6 +303,7 @@ public final class TerminalEmulator {
     }
 
     public String getSelectedText(int x1, int y1, int x2, int y2) {
+        syncStateFromRustIfRequired();
         return mScreen.getSelectedText(x1, y1, x2, y2);
     }
 
