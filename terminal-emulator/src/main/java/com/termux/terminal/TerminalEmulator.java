@@ -153,13 +153,6 @@ public final class TerminalEmulator {
         }
     }
 
-                System.arraycopy(text[i], 0, row.mText, 0, mColumns);
-                System.arraycopy(style[i], 0, row.mStyle, 0, mColumns);
-                row.updateStatusAfterBatchWrite();
-            }
-        }
-    }
-
     public void append(byte[] buffer, int length) {
         long ptr = mRustEnginePtr;
         if (ptr != 0) {
