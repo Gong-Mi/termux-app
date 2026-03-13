@@ -12,126 +12,92 @@ on:
   workflow_dispatch:
 
 env:
-  JAVA_VERSION: '17'
-  ANDROID_NDK_VERSION: '26.1.10909125'
-  RUST_TOOLCHAIN: 'stable'
+  JAVA_VERSION: 17
+  ANDROID_NDK_VERSION: 26.1.10909125
+  RUST_TOOLCHAIN: stable
 
 jobs:
-  # Job 1: 逻辑一致性对比 (Consistency Check)
-  consistency:
-    name: 🛡️ Logic Consistency Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      
-      - name: Set up JDK ${{ env.JAVA_VERSION }}
-        uses: actions/setup-java@v4
-        with:
-          java-version: ${{ env.JAVA_VERSION }}
-          distribution: 'temurin'
-          cache: 'gradle'
-          
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-gnu
-
-      - name: Build Rust Engine (JNI library)
-        run: |
-          cd terminal-emulator/src/main/rust
-          cargo build --release
-          # 将编译好的 .so 放到 JNI 目录以便 Java 加载
-          mkdir -p ../jniLibs/x86_64
-          cp target/release/libtermux_rust.so ../jniLibs/x86_64/
-
-      - name: Run Consistency Test
-        run: |
-          echo "Current working directory: $(pwd)"
-          ls -F
-          ./gradlew :terminal-emulator:test --info || true
-          echo "Scanning for HTML reports..."
-          find . -name "*.html" | grep "reports/tests" || echo "No HTML reports found!"
-          echo "==== BEGIN TEST REPORT ===="
-          find . -path "*/reports/tests/*.html" -exec echo "FILE: {}" \; -exec cat {} +
-          echo "==== END TEST REPORT ===="
-        env:
-          LD_LIBRARY_PATH: ${{ github.workspace }}/terminal-emulator/src/main/jniLibs/x86_64
-
-      - name: Upload Test Report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: consistency-test-results
-          path: terminal-emulator/build/reports/tests/
-
-  # Job 2: 吞吐量与性能基准对比 (Performance Benchmark)
   performance:
     name: ⚡ Performance Benchmark
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      
-      - name: Set up JDK ${{ env.JAVA_VERSION }}
+      - name: Checkout Current Branch (Rust)
+        uses: actions/checkout@v6
+
+      - name: Checkout Baseline Branch (Java Master)
+        uses: actions/checkout@v6
+        with:
+          ref: master
+          path: baseline-java
+
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
           cache: 'gradle'
-          
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-gnu
 
-      - name: Build Rust Engine (JNI library)
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Build & Run Baseline (Pure Java)
+        working-directory: baseline-java
+        run: |
+          ./gradlew :terminal-emulator:test --tests com.termux.terminal.TerminalPerformanceTest --info | tee ../java_baseline.log || true
+
+      - name: Build Rust Engine
         run: |
           cd terminal-emulator/src/main/rust
           cargo build --release
           mkdir -p ../jniLibs/x86_64
           cp target/release/libtermux_rust.so ../jniLibs/x86_64/
 
-      - name: Run Performance Benchmark
+      - name: Build & Run Current (Rust Integrated)
         run: |
-          ./gradlew :terminal-emulator:test --info | tee test_output.log || true
+          ./gradlew :terminal-emulator:test --tests com.termux.terminal.TerminalPerformanceTest --info | tee rust_current.log || true
           
-      - name: Generate Performance Report
+      - name: Generate Detailed Comparison Report
         run: |
-          echo "### ⚡ Engine Comparison Results (Java vs Rust)" >> $GITHUB_STEP_SUMMARY
-          echo "| Benchmark | Rust Speed | Java Speed | Ratio | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----------|------------|------------|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "### ⚡ Comprehensive Engine Comparison (Master Java vs Feature Rust)" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Master (Java) | Current (Rust) | Speedup | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|---------------|----------------|---------|--------|" >> $GITHUB_STEP_SUMMARY
           
-          # 提取 RAW_TEXT 结果
-          RAW_LINE=$(grep "ENGINE_COMPARE \[RAW_TEXT\]" test_output.log | tail -n 1)
-          if [ ! -z "$RAW_LINE" ]; then
-            R_SPEED=$(echo $RAW_LINE | sed -r 's/.*Rust=([^ ]+) MB.*/\1/')
-            J_SPEED=$(echo $RAW_LINE | sed -r 's/.*Java=([^ ]+) MB.*/\1/')
-            RATIO=$(echo $RAW_LINE | sed -r 's/.*Ratio=([^ ]+)x.*/\1/')
-            echo "| Raw Text Parsing | $R_SPEED MB/s | $J_SPEED MB/s | ${RATIO}x | ✅ |" >> $GITHUB_STEP_SUMMARY
+          # 定义解析函数
+          extract_speed() {
+            grep "Performance:" $1 | grep "$2" | tail -n 1 | sed -r 's/.*: ([0-9.]+) MB.*/\1/'
+          }
+
+          J_RAW=$(extract_speed java_baseline.log "Raw Text")
+          R_RAW=$(extract_speed rust_current.log "Raw Text")
+          if [ ! -z "$J_RAW" ] && [ ! -z "$R_RAW" ]; then
+            RATIO=$(echo "scale=2; $R_RAW / $J_RAW" | bc)
+            echo "| Raw Text Throughput | $J_RAW MB/s | $R_RAW MB/s | ${RATIO}x | ✅ |" >> $GITHUB_STEP_SUMMARY
           fi
 
-          # 提取 ANSI_ESCAPES 结果
-          ANSI_LINE=$(grep "ENGINE_COMPARE \[ANSI_ESCAPES\]" test_output.log | tail -n 1)
-          if [ ! -z "$ANSI_LINE" ]; then
-            R_SPEED=$(echo $ANSI_LINE | sed -r 's/.*Rust=([^ ]+) MB.*/\1/')
-            J_SPEED=$(echo $ANSI_LINE | sed -r 's/.*Java=([^ ]+) MB.*/\1/')
-            RATIO=$(echo $ANSI_LINE | sed -r 's/.*Ratio=([^ ]+)x.*/\1/')
-            echo "| ANSI Escapes | $R_SPEED MB/s | $J_SPEED MB/s | ${RATIO}x | ✅ |" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          # 提取 SCREEN_SYNC 结果
-          SYNC_LINE=$(grep "ENGINE_COMPARE \[SCREEN_SYNC\]" test_output.log | tail -n 1)
-          if [ ! -z "$SYNC_LINE" ]; then
-            R_SPEED=$(echo $SYNC_LINE | sed -r 's/.*Rust=([^ ]+) syncs.*/\1/')
-            J_SPEED=$(echo $SYNC_LINE | sed -r 's/.*Java=([^ ]+) syncs.*/\1/')
-            RATIO=$(echo $SYNC_LINE | sed -r 's/.*Ratio=([^ ]+)x.*/\1/')
-            echo "| Screen Sync (JNI) | $R_SPEED s/s | $J_SPEED s/s | ${RATIO}x | ✅ |" >> $GITHUB_STEP_SUMMARY
+          J_ANSI=$(extract_speed java_baseline.log "ANSI Escape")
+          R_ANSI=$(extract_speed rust_current.log "ANSI Escape")
+          if [ ! -z "$J_ANSI" ] && [ ! -z "$R_ANSI" ]; then
+            RATIO=$(echo "scale=2; $R_ANSI / $J_ANSI" | bc)
+            echo "| ANSI Sequence Heavy | $J_ANSI MB/s | $R_ANSI MB/s | ${RATIO}x | ✅ |" >> $GITHUB_STEP_SUMMARY
           fi
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/terminal-emulator/src/main/jniLibs/x86_64
 
-      - name: Upload Benchmark Results
-        if: always()
-        uses: actions/upload-artifact@v4
+  consistency:
+    name: 🛡️ Logic Consistency Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          name: performance-benchmark-results
-          path: terminal-emulator/build/reports/tests/
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Run Rust Logic Tests
+        run: |
+          cd terminal-emulator/src/main/rust
+          cargo test --test consistency -- --nocapture
