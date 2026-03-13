@@ -85,13 +85,22 @@ jobs:
       # ========== Extract Metrics ==========
       - name: Extract Java Metrics
         run: |
+          echo "=== Extracting Java Metrics ==="
+          # 从 java_baseline.log 或 rust_integrated.log 中提取 Java 数据
           if [ -f java_baseline.log ]; then
             J_RAW=$(grep "Raw Text Performance:" java_baseline.log | tail -1 | sed -r 's/.*: ([0-9.]+) MB.*/\1/' || echo "")
             J_ANSI=$(grep "ANSI Escape Performance:" java_baseline.log | tail -1 | sed -r 's/.*: ([0-9.]+) MB.*/\1/' || echo "")
-            echo "JAVA_RAW_TEXT_MBPS=${J_RAW:-N/A}" >> java_metrics.env
-            echo "JAVA_ANSI_MBPS=${J_ANSI:-N/A}" >> java_metrics.env
-            echo "Java metrics: RAW=${J_RAW:-N/A}, ANSI=${J_ANSI:-N/A}"
           fi
+          # 如果 java_baseline.log 没有数据，尝试从 rust_integrated.log 获取
+          if [ -z "$J_RAW" ] || [ "$J_RAW" = "" ]; then
+            if [ -f rust_integrated.log ]; then
+              J_RAW=$(grep "Raw Text Performance:" rust_integrated.log | tail -1 | sed -r 's/.*: ([0-9.]+) MB.*/\1/' || echo "")
+              J_ANSI=$(grep "ANSI Escape Performance:" rust_integrated.log | tail -1 | sed -r 's/.*: ([0-9.]+) MB.*/\1/' || echo "")
+            fi
+          fi
+          echo "JAVA_RAW_TEXT_MBPS=${J_RAW:-N/A}" > java_metrics.env
+          echo "JAVA_ANSI_MBPS=${J_ANSI:-N/A}" >> java_metrics.env
+          echo "Java metrics: RAW=${J_RAW:-N/A}, ANSI=${J_ANSI:-N/A}"
 
       - name: Extract Rust Metrics
         run: |
