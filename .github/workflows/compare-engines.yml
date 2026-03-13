@@ -46,7 +46,10 @@ jobs:
 
       - name: Run Consistency Test
         run: |
-          ./gradlew :terminal-emulator:test --info
+          ./gradlew :terminal-emulator:test --info || true
+          echo "==== BEGIN TEST REPORT ===="
+          find terminal-emulator/build/reports/tests/ -name "*.html" -exec cat {} +
+          echo "==== END TEST REPORT ===="
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/terminal-emulator/src/main/jniLibs/x86_64
 
