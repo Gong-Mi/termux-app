@@ -129,21 +129,30 @@ public final class TerminalEmulator {
     }
 
     private void syncStateFromRust() {
-        if (USE_RUST_FULL_TAKEOVER && mRustEnginePtr != 0) {
+        if (mRustEnginePtr != 0) {
             syncColorsFromRust();
             mCursorCol = getCursorColFromRust(mRustEnginePtr);
             mCursorRow = getCursorRowFromRust(mRustEnginePtr);
             mCurrentDecSetFlags = getDecsetFlagsFromRust(mRustEnginePtr);
             mInsertMode = isInsertModeActiveFromRust(mRustEnginePtr);
             
-            // 单元测试同步逻辑
+            // 全屏物理同步，确保单元测试可见内容
             int rows = mRows;
-            char[][] text = new char[rows][mColumns];
-            long[][] style = new long[rows][mColumns];
+            int cols = mColumns;
+            char[][] text = new char[rows][cols];
+            long[][] style = new long[rows][cols];
             readFullScreenFromRust(mRustEnginePtr, text, style);
+            
             mScreen.setScreenFirstRow(0);
             for (int i = 0; i < rows; i++) {
                 TerminalRow row = mScreen.allocateFullLineIfNecessary(i);
+                System.arraycopy(text[i], 0, row.mText, 0, cols);
+                System.arraycopy(style[i], 0, row.mStyle, 0, cols);
+                row.updateStatusAfterBatchWrite();
+            }
+        }
+    }
+
                 System.arraycopy(text[i], 0, row.mText, 0, mColumns);
                 System.arraycopy(style[i], 0, row.mStyle, 0, mColumns);
                 row.updateStatusAfterBatchWrite();
