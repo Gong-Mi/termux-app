@@ -37,6 +37,9 @@ public final class TerminalBuffer {
         mTotalRows = totalRows;
         mScreenRows = screenRows;
         mLines = new TerminalRow[totalRows];
+        for (int i = 0; i < totalRows; i++) {
+            mLines[i] = new TerminalRow(columns, TextStyle.NORMAL);
+        }
 
         blockSet(0, 0, columns, screenRows, ' ', TextStyle.NORMAL);
     }
@@ -80,7 +83,7 @@ public final class TerminalBuffer {
      * @return index between 0 and mTotalRows-1.
      */
     public int externalToInternalRow(int externalRow) {
-        if (externalRow < -getActiveTranscriptRows() || externalRow > mScreenRows) {
+        if (externalRow < -getActiveTranscriptRows() || externalRow >= mScreenRows) {
             throw new IllegalArgumentException("invalid externalRow=" + externalRow + ", mScreenRows=" + mScreenRows
                     + ", getActiveTranscriptRows()=" + getActiveTranscriptRows());
         }

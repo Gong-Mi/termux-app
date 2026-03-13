@@ -99,7 +99,7 @@ public final class TerminalEmulator {
     }
 
     public TerminalEmulator(TerminalOutput session, int columns, int rows, int cellWidthPixels, int cellHeightPixels, Integer transcriptRows, TerminalSessionClient client) {
-        sLastLoadStatus = "CALLED: JNI_LOADED=" + JNI.sNativeLibrariesLoaded;
+        sLastLoadStatus = "CALLED: JNI_LOADED=" + JNI.sNativeLibrariesLoaded + (USE_RUST_FULL_TAKEOVER ? " USE_RUST=true" : "");
         mSession = session;
         int actualTranscriptRows = (transcriptRows != null ? transcriptRows : DEFAULT_TERMINAL_TRANSCRIPT_ROWS);
         mScreen = mMainBuffer = new TerminalBuffer(columns, actualTranscriptRows, rows);
