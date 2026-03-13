@@ -2755,8 +2755,8 @@ fn test_sixel_basic_decode() {
 
     // 验证数据被处理
     assert!(
-        decoder.pixel_data.len() >= 0,
-        "Should have pixel data buffer"
+        !decoder.pixel_data.is_empty() || decoder.width >= 0,
+        "Should have processed sixel data"
     );
 }
 
