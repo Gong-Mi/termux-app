@@ -1963,19 +1963,8 @@ impl ScreenState {
             return;
         }
 
-        // 处理延迟换行 (Wrap-on-advance)
-        if self.about_to_wrap && self.auto_wrap {
-            self.cursor_x = self.left_margin;
-            self.about_to_wrap = false;
-            if self.cursor_y < self.bottom_margin - 1 {
-                self.cursor_y += 1;
-            } else {
-                self.scroll_up();
-            }
-        }
-
-        // 宽字符在行尾的特殊处理：如果光标在最后一列且要写宽字符，必须强制先换行
-        if char_width == 2 && self.auto_wrap && self.cursor_x == self.right_margin - 1 {
+        // 宽字符预判：如果当前行剩余空间不足以容纳宽字符，强制提前换行
+        if char_width > 1 && self.auto_wrap && self.cursor_x + char_width > self.right_margin {
             self.cursor_x = self.left_margin;
             if self.cursor_y < self.bottom_margin - 1 {
                 self.cursor_y += 1;
@@ -2004,21 +1993,21 @@ impl ScreenState {
                 row.styles[cursor_x] = current_style;
 
                 if char_width == 2 && cursor_x + 1 < row.text.len() {
-                    // Java 端 TerminalRow 在宽字符的第二个单元格存储原始字符
-                    // 仅通过标志位识别。这里我们遵循此约定以确保 JNI 同步一致
                     row.text[cursor_x + 1] = c;
                     row.styles[cursor_x + 1] = current_style;
                 }
             }
         }
 
-        // 更新光标位置
-        if self.cursor_x + char_width < self.right_margin {
-            self.cursor_x += char_width;
-        } else {
-            // 触达或超出右边界，标记“即将换行”
-            self.cursor_x = self.right_margin - 1; // 保持在最后一列
-            self.about_to_wrap = true;
+        // 即时更新光标并处理换行 (Immediate Wrap)
+        self.cursor_x += char_width;
+        if self.auto_wrap && self.cursor_x >= self.right_margin {
+            self.cursor_x = self.left_margin;
+            if self.cursor_y < self.bottom_margin - 1 {
+                self.cursor_y += 1;
+            } else {
+                self.scroll_up();
+            }
         }
     }
 
