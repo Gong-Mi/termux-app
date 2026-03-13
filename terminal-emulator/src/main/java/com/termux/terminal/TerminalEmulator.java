@@ -437,15 +437,28 @@ public final class TerminalEmulator {
     public void syncScreenBatchFromRust(int startRow, int numRows) {
         if (mRustEnginePtr != 0) {
             try {
-                char[][] text = new char[numRows][mColumns];
-                long[][] style = new long[numRows][mColumns];
-                readScreenBatchFromRust(mRustEnginePtr, text, style, startRow, numRows);
+                // 从 Rust 获取实际的行列数，避免 Java/Rust 状态不一致
+                int rustCols = getColsFromRust(mRustEnginePtr);
+                int rustRows = getRowsFromRust(mRustEnginePtr);
+                
+                // 使用 Rust 的实际列数分配数组
+                int colsToUse = Math.max(1, Math.min(rustCols, 1000)); // 防止异常值
+                int rowsToUse = Math.max(1, Math.min(numRows, rustRows));
+                
+                char[][] text = new char[rowsToUse][colsToUse];
+                long[][] style = new long[rowsToUse][colsToUse];
+                readScreenBatchFromRust(mRustEnginePtr, text, style, startRow, rowsToUse);
+                
                 TerminalBuffer targetBuffer = isAlternateBufferActive() ? mAltBuffer : mMainBuffer;
-                for (int i = 0; i < numRows; i++) {
+                for (int i = 0; i < rowsToUse; i++) {
                     TerminalRow row = targetBuffer.allocateFullLineIfNecessary(startRow + i);
-                    System.arraycopy(text[i], 0, row.mText, 0, mColumns);
-                    System.arraycopy(style[i], 0, row.mStyle, 0, mColumns);
-                    row.updateStatusAfterBatchWrite();
+                    // 再次检查边界，确保安全
+                    int copyLength = Math.min(colsToUse, Math.min(text[i].length, row.mText.length));
+                    if (copyLength > 0) {
+                        System.arraycopy(text[i], 0, row.mText, 0, copyLength);
+                        System.arraycopy(style[i], 0, row.mStyle, 0, Math.min(colsToUse, style[i].length));
+                        row.updateStatusAfterBatchWrite();
+                    }
                 }
             } catch (UnsatisfiedLinkError e) { /* Ignore */ }
         }
@@ -490,6 +503,27 @@ public final class TerminalEmulator {
     
     public boolean isBracketedPasteMode() { return (mCurrentDecSetFlags & DECSET_BIT_BRACKETED_PASTE_MODE) != 0; }
     public TerminalBuffer getScreen() { return mScreen; }
+    
+    /** 获取终端行数 - 优先从 Rust 获取 */
+    public int getRows() {
+        if (mRustEnginePtr != 0) {
+            try {
+                return getRowsFromRust(mRustEnginePtr);
+            } catch (UnsatisfiedLinkError e) { }
+        }
+        return mRows;
+    }
+    
+    /** 获取终端列数 - 优先从 Rust 获取 */
+    public int getCols() {
+        if (mRustEnginePtr != 0) {
+            try {
+                return getColsFromRust(mRustEnginePtr);
+            } catch (UnsatisfiedLinkError e) { }
+        }
+        return mColumns;
+    }
+    
     public void destroy() {
         if (mRustEnginePtr != 0) {
             long p = mRustEnginePtr;
@@ -533,6 +567,8 @@ public final class TerminalEmulator {
     private static native int getCursorStyleFromRust(long enginePtr);
     private static native boolean isCursorKeysApplicationModeFromRust(long enginePtr);
     private static native boolean isKeypadApplicationModeFromRust(long enginePtr);
+    private static native int getRowsFromRust(long enginePtr);
+    private static native int getColsFromRust(long enginePtr);
 
     // Phase 2: DirectByteBuffer Shared Buffer Support
     private static native java.nio.ByteBuffer createSharedBufferRust(long enginePtr);

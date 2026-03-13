@@ -322,8 +322,12 @@ public final class TerminalBuffer {
         if (rustEnginePtr == 0) return;
 
         try {
-            int rows = mScreenRows;
-            int cols = mColumns;
+            // 从 Rust 获取实际的行列数，避免 Java/Rust 状态不一致
+            int rustCols = TerminalEmulator.getColsFromRust(rustEnginePtr);
+            int rustRows = TerminalEmulator.getRowsFromRust(rustEnginePtr);
+            
+            int cols = Math.max(1, Math.min(rustCols, mColumns));
+            int rows = Math.max(1, Math.min(rustRows, mScreenRows));
 
             char[][] textBuffer = new char[rows][cols];
             long[][] styleBuffer = new long[rows][cols];
@@ -333,8 +337,9 @@ public final class TerminalBuffer {
             for (int i = 0; i < rows; i++) {
                 int internalRow = externalToInternalRow(i);
                 TerminalRow row = mLines[internalRow];
-                System.arraycopy(textBuffer[i], 0, row.mText, 0, cols);
-                System.arraycopy(styleBuffer[i], 0, row.mStyle, 0, cols);
+                int copyLength = Math.min(cols, Math.min(textBuffer[i].length, row.mText.length));
+                System.arraycopy(textBuffer[i], 0, row.mText, 0, copyLength);
+                System.arraycopy(styleBuffer[i], 0, row.mStyle, 0, Math.min(cols, styleBuffer[i].length));
                 row.updateStatusAfterBatchWrite();
             }
         } catch (UnsatisfiedLinkError e) {

@@ -57,8 +57,8 @@ public final class TerminalRenderer {
     public final void render(TerminalEmulator mEmulator, Canvas canvas, int topRow,
                              int selectionY1, int selectionY2, int selectionX1, int selectionX2) {
         final boolean reverseVideo = mEmulator.isReverseVideo();
-        final int endRow = topRow + mEmulator.mRows;
-        final int columns = mEmulator.mColumns;
+        final int endRow = topRow + mEmulator.getRows();
+        final int columns = mEmulator.getCols();
         final int cursorCol = mEmulator.getCursorCol();
         final int cursorRow = mEmulator.getCursorRow();
         final boolean cursorVisible = mEmulator.shouldCursorBeVisible();
@@ -71,7 +71,7 @@ public final class TerminalRenderer {
 
         final int activeTranscriptRows = screen.getActiveTranscriptRows();
         final int minRow = -activeTranscriptRows;
-        final int maxRow = mEmulator.mRows;
+        final int maxRow = mEmulator.getRows();
 
         // 确保 topRow 和 endRow 在合法范围内
         final int effectiveTopRow = Math.max(minRow, Math.min(maxRow - 1, topRow));
@@ -91,7 +91,7 @@ public final class TerminalRenderer {
             int selx1 = -1, selx2 = -1;
             if (row >= selectionY1 && row <= selectionY2) {
                 if (row == selectionY1) selx1 = selectionX1;
-                selx2 = (row == selectionY2) ? selectionX2 : mEmulator.mColumns;
+                selx2 = (row == selectionY2) ? selectionX2 : mEmulator.getCols();
             }
 
             TerminalRow lineObject = screen.allocateFullLineIfNecessary(screen.externalToInternalRow(row));

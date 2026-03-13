@@ -252,7 +252,8 @@ public final class TerminalView extends View {
                 final boolean mouseTrackingAtStartOfFling = mEmulator.isMouseTrackingActive();
                 float SCALE = 0.25f;
                 if (mouseTrackingAtStartOfFling) {
-                    mScroller.fling(0, 0, 0, -(int) (velocityY * SCALE), 0, 0, -mEmulator.mRows / 2, mEmulator.mRows / 2);
+                    int rows = mEmulator.getRows();
+                    mScroller.fling(0, 0, 0, -(int) (velocityY * SCALE), 0, 0, -rows / 2, rows / 2);
                 } else {
                     mScroller.fling(0, mTopRow, 0, -(int) (velocityY * SCALE), 0, 0, -mEmulator.getScreen().getActiveTranscriptRows(), 0);
                 }
@@ -492,12 +493,12 @@ public final class TerminalView extends View {
 
     @Override
     protected int computeVerticalScrollExtent() {
-        return mEmulator == null ? 1 : mEmulator.mRows;
+        return mEmulator == null ? 1 : mEmulator.getRows();
     }
 
     @Override
     protected int computeVerticalScrollOffset() {
-        return mEmulator == null ? 1 : mEmulator.getScreen().getActiveRows() + mTopRow - mEmulator.mRows;
+        return mEmulator == null ? 1 : mEmulator.getScreen().getActiveRows() + mTopRow - mEmulator.getRows();
     }
 
     public void onScreenUpdated() {
@@ -1046,7 +1047,8 @@ public final class TerminalView extends View {
                 if (shiftDown) {
                     long time = SystemClock.uptimeMillis();
                     MotionEvent motionEvent = MotionEvent.obtain(time, time, MotionEvent.ACTION_DOWN, 0, 0, 0);
-                    doScroll(motionEvent, keyCode == KeyEvent.KEYCODE_PAGE_UP ? -mEmulator.mRows : mEmulator.mRows);
+                    int rows = mEmulator.getRows();
+                    doScroll(motionEvent, keyCode == KeyEvent.KEYCODE_PAGE_UP ? -rows : rows);
                     motionEvent.recycle();
                     return true;
                 }
@@ -1117,7 +1119,7 @@ public final class TerminalView extends View {
         int newColumns = Math.max(4, (int) (viewWidth / mRenderer.mFontWidth));
         int newRows = Math.max(4, (viewHeight - mRenderer.mFontLineSpacingAndAscent) / mRenderer.mFontLineSpacing);
 
-        if (mEmulator == null || (newColumns != mEmulator.mColumns || newRows != mEmulator.mRows)) {
+        if (mEmulator == null || (newColumns != mEmulator.getCols() || newRows != mEmulator.getRows())) {
             mTermSession.updateSize(newColumns, newRows, (int) mRenderer.getFontWidth(), mRenderer.getFontLineSpacing());
             mEmulator = mTermSession.getEmulator();
             mClient.onEmulatorSet();
@@ -1155,7 +1157,7 @@ public final class TerminalView extends View {
     }
 
     private CharSequence getText() {
-        return mEmulator.getScreen().getSelectedText(0, mTopRow, mEmulator.mColumns, mTopRow + mEmulator.mRows);
+        return mEmulator.getScreen().getSelectedText(0, mTopRow, mEmulator.getCols(), mTopRow + mEmulator.getRows());
     }
 
     public int getCursorX(float x) {
@@ -1167,8 +1169,9 @@ public final class TerminalView extends View {
     }
 
     public int getPointX(int cx) {
-        if (cx > mEmulator.mColumns) {
-            cx = mEmulator.mColumns;
+        int cols = mEmulator.getCols();
+        if (cx > cols) {
+            cx = cols;
         }
         return Math.round(cx * mRenderer.mFontWidth);
     }
@@ -1453,11 +1456,12 @@ public final class TerminalView extends View {
                 if (mEmulator != null) {
                     mCursorVisible = !mCursorVisible;
                     mEmulator.setCursorBlinkState(mCursorVisible);
-                    
+
                     // Optimize: only invalidate the cursor area
                     int cursorX = mEmulator.getCursorCol();
                     int cursorY = mEmulator.getCursorRow();
-                    if (cursorY >= mTopRow && cursorY < mTopRow + mEmulator.mRows) {
+                    int rows = mEmulator.getRows();
+                    if (cursorY >= mTopRow && cursorY < mTopRow + rows) {
                         float left = cursorX * mRenderer.mFontWidth;
                         float top = (cursorY - mTopRow) * mRenderer.mFontLineSpacing;
                         float right = left + mRenderer.mFontWidth * 2; // Support double-width chars

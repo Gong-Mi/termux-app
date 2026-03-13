@@ -454,6 +454,40 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readFull
 }
 
 // ============================================================================
+// 状态查询方法
+// ============================================================================
+
+/// 获取终端行数
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getRowsFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) -> jint {
+    if engine_ptr == 0 {
+        return 0;
+    }
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = engine_lock.read().unwrap();
+    guard.state.rows as jint
+}
+
+/// 获取终端列数
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColsFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) -> jint {
+    if engine_ptr == 0 {
+        return 0;
+    }
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = engine_lock.read().unwrap();
+    guard.state.cols as jint
+}
+
+// ============================================================================
 // DirectByteBuffer 零拷贝优化 (阶段 2)
 // ============================================================================
 
