@@ -11,86 +11,42 @@ import java.util.Objects;
  */
 public final class TerminalEmulator {
 
-    /** Log tag for terminal emulator. */
+    /** Log tag. */
     private static final String LOG_TAG = "TerminalEmulator";
 
-    /** The output to which terminal output is written. */
     private final TerminalOutput mSession;
-
-    /** The screen buffer. */
     private TerminalBuffer mScreen;
-
-    /** The main screen buffer. */
     private final TerminalBuffer mMainBuffer;
-
-    /** The alternate screen buffer. */
     private final TerminalBuffer mAltBuffer;
-
-    /** The client for terminal emulator. */
     private final TerminalSessionClient mClient;
 
-    /** The number of rows in the terminal. */
     private int mRows;
-
-    /** The number of columns in the terminal. */
     private int mColumns;
-
-    /** The cursor row. */
     private int mCursorRow;
-
-    /** The cursor column. */
     private int mCursorCol;
-
-    /** The current style. */
     private int mCursorStyle;
-
-    /** The current DECSET flags. */
     private int mCurrentDecSetFlags;
-
-    /** If the cursor should blink. */
     private boolean mCursorBlinkingEnabled;
-
-    /** If the cursor is currently in a visible state (on/off for blinking). */
     private boolean mCursorBlinkState;
 
-    /** The current foreground, background and underline colors. */
     int mForeColor, mBackColor, mUnderlineColor;
-
-    /** Current {@link TextStyle} effect. */
     int mEffect;
-
-    /** The number of scrolled lines since last calling {@link #clearScrollCounter()}. */
     private int mScrollCounter = 0;
-
-    /** If automatic scrolling of terminal is disabled. */
     private boolean mAutoScrollDisabled;
-
-    /** Tab stops. */
     private boolean[] mTabStop;
-
-    /** Terminal colors. */
     public final TerminalColors mColors = new TerminalColors();
-
-    /** Current title. */
     private String mTitle;
-
-    /** If in insert mode. */
     private boolean mInsertMode;
 
     // ========================================================================
-    // Constants
+    // Rust Takeover
     // ========================================================================
 
-    private static final int TERMINAL_TRANSCRIPT_ROWS_MIN = 0;
-    private static final int TERMINAL_TRANSCRIPT_ROWS_MAX = 50000;
-    private static final int DEFAULT_TERMINAL_TRANSCRIPT_ROWS = 2000;
-
-    public static final int DEFAULT_TERMINAL_CURSOR_STYLE = TerminalSessionClient.CURSOR_STYLE_BLOCK;
-    public static final Integer[] TERMINAL_CURSOR_STYLES_LIST = new Integer[]{
-            TerminalSessionClient.CURSOR_STYLE_BLOCK,
-            TerminalSessionClient.CURSOR_STYLE_BAR,
-            TerminalSessionClient.CURSOR_STYLE_UNDERLINE
-    };
+    private volatile long mRustEnginePtr = 0;
+    private final Handler mMainThreadHandler = new Handler(Looper.getMainLooper());
+    public static final boolean USE_RUST_FULL_TAKEOVER = true;
+    public static boolean sForceDisableRust = false;
+    public static String sLastLoadStatus = "UNKNOWN";
 
     /** DECSET bits. */
     private static final int DECSET_BIT_APPLICATION_CURSOR_KEYS = 1;
@@ -106,25 +62,6 @@ public final class TerminalEmulator {
     private static final int DECSET_BIT_MOUSE_PROTOCOL_SGR = 1 << 10;
     private static final int DECSET_BIT_BRACKETED_PASTE_MODE = 1 << 11;
 
-    // ========================================================================
-    // Rust Full Takeover
-    // ========================================================================
-
-    /** 指向 Rust 引擎对象的原生指针 */
-    private volatile long mRustEnginePtr = 0;
-
-    /** 主线程 Handler */
-    private final Handler mMainThreadHandler = new Handler(Looper.getMainLooper());
-
-    /** 是否开启 Rust 全接管模式 */
-    public static final boolean USE_RUST_FULL_TAKEOVER = true;
-
-    /** 强制禁用 Rust 引擎的开关 (测试用) */
-    public static boolean sForceDisableRust = false;
-
-    /** 全量同步开关 (内容校验用) */
-    public static boolean sEnableFullSyncForTests = false;
-
     public interface RustEngineCallback {
         void onScreenUpdate();
         void reportTitleChange(String title);
@@ -139,13 +76,10 @@ public final class TerminalEmulator {
         void reportTerminalResponse(String response);
     }
 
-    // ========================================================================
-    // Constructor and Lifecycle
-    // ========================================================================
-
     public TerminalEmulator(TerminalOutput session, int columns, int rows, int cellWidthPixels, int cellHeightPixels, Integer transcriptRows, TerminalSessionClient client) {
+        sLastLoadStatus = "CALLED: JNI_LOADED=" + JNI.sNativeLibrariesLoaded;
         mSession = session;
-        mScreen = mMainBuffer = new TerminalBuffer(columns, getTerminalTranscriptRows(transcriptRows), rows);
+        mScreen = mMainBuffer = new TerminalBuffer(columns, (transcriptRows != null ? transcriptRows : 2000), rows);
         mAltBuffer = new TerminalBuffer(columns, rows, rows);
         mClient = client;
         mRows = rows;
@@ -155,123 +89,36 @@ public final class TerminalEmulator {
 
         if (USE_RUST_FULL_TAKEOVER && JNI.sNativeLibrariesLoaded && !sForceDisableRust) {
             try {
-                mRustEnginePtr = createEngineRustWithCallback(columns, rows, getTerminalTranscriptRows(transcriptRows), cellWidthPixels, cellHeightPixels, new RustEngineCallback() {
-                    @Override
-                    public void onScreenUpdate() {
-                        mMainThreadHandler.post(() -> {
-                            if (mClient != null && mSession instanceof TerminalSession) {
-                                mClient.onTextChanged((TerminalSession) mSession);
-                            }
-                        });
-                    }
-
-                    @Override
-                    public void reportTitleChange(String title) {
-                        mMainThreadHandler.post(() -> {
-                            mTitle = title;
-                            if (mClient != null && mSession instanceof TerminalSession) {
-                                mClient.onTitleChanged((TerminalSession) mSession);
-                            }
-                        });
-                    }
-
-                    @Override
-                    public void reportColorsChanged() {
-                        mMainThreadHandler.post(() -> {
-                            syncColorsFromRust();
-                            if (mClient != null && mSession instanceof TerminalSession) {
-                                mClient.onColorsChanged((TerminalSession) mSession);
-                            }
-                        });
-                    }
-
-                    @Override
-                    public void reportCursorVisibility(boolean visible) {
-                        mMainThreadHandler.post(() -> {
-                            if (mClient != null) {
-                                mClient.onTerminalCursorStateChange(visible);
-                            }
-                        });
-                    }
-
-                    @Override
-                    public void onBell() {
-                        if (mSession != null) mSession.onBell();
-                    }
-
-                    @Override
-                    public void onCopyTextToClipboard(String text) {
-                        if (mSession != null) mSession.onCopyTextToClipboard(text);
-                    }
-
-                    @Override
-                    public void onPasteTextFromClipboard() {
-                        if (mSession != null) mSession.onPasteTextFromClipboard();
-                    }
-
-                    @Override
-                    public void onWriteToSession(String data) {
-                        if (mSession != null) mSession.write(data);
-                    }
-
-                    @Override
-                    public void onWriteToSessionBytes(byte[] data) {
-                        if (mSession != null) mSession.write(data);
-                    }
-
-                    @Override
-                    public void reportColorResponse(String colorSpec) {
-                        if (mSession != null) mSession.write("\u001b]" + colorSpec + "\u0007");
-                    }
-
-                    @Override
-                    public void reportTerminalResponse(String response) {
-                        if (mSession != null) mSession.write(response);
-                    }
+                mRustEnginePtr = createEngineRustWithCallback(columns, rows, (transcriptRows != null ? transcriptRows : 2000), cellWidthPixels, cellHeightPixels, new RustEngineCallback() {
+                    @Override public void onScreenUpdate() { mMainThreadHandler.post(() -> { if (mClient != null && mSession instanceof TerminalSession) mClient.onTextChanged((TerminalSession) mSession); }); }
+                    @Override public void reportTitleChange(String title) { mMainThreadHandler.post(() -> { mTitle = title; if (mClient != null && mSession instanceof TerminalSession) mClient.onTitleChanged((TerminalSession) mSession); }); }
+                    @Override public void reportColorsChanged() { mMainThreadHandler.post(() -> { syncColorsFromRust(); if (mClient != null && mSession instanceof TerminalSession) mClient.onColorsChanged((TerminalSession) mSession); }); }
+                    @Override public void reportCursorVisibility(boolean visible) { mMainThreadHandler.post(() -> { if (mClient != null) mClient.onTerminalCursorStateChange(visible); }); }
+                    @Override public void onBell() { if (mSession != null) mSession.onBell(); }
+                    @Override public void onCopyTextToClipboard(String text) { if (mSession != null) mSession.onCopyTextToClipboard(text); }
+                    @Override public void onPasteTextFromClipboard() { if (mSession != null) mSession.onPasteTextFromClipboard(); }
+                    @Override public void onWriteToSession(String data) { if (mSession != null) mSession.write(data); }
+                    @Override public void onWriteToSessionBytes(byte[] data) { if (mSession != null) mSession.write(data); }
+                    @Override public void reportColorResponse(String colorSpec) { if (mSession != null) mSession.write("\u001b]" + colorSpec + "\u0007"); }
+                    @Override public void reportTerminalResponse(String response) { if (mSession != null) mSession.write(response); }
                 });
-
                 mScreen.setRustEnginePtr(mRustEnginePtr);
                 mAltBuffer.setRustEnginePtr(mRustEnginePtr);
             } catch (Exception e) {
-                android.util.Log.e(LOG_TAG, "Failed to initialize Rust engine", e);
                 mRustEnginePtr = 0;
             }
         }
     }
 
-    public void close() {
-        long ptr = mRustEnginePtr;
-        if (ptr != 0) {
-            mRustEnginePtr = 0;
-            destroyEngineRust(ptr);
-        }
-    }
-
     public void reset() {
         mCursorRow = mCursorCol = 0;
-        mCurrentDecSetFlags = 0;
-        mCurrentDecSetFlags |= DECSET_BIT_AUTOWRAP;
-        mCurrentDecSetFlags |= DECSET_BIT_CURSOR_ENABLED;
+        mCurrentDecSetFlags = DECSET_BIT_AUTOWRAP | DECSET_BIT_CURSOR_ENABLED;
         mForeColor = TextStyle.COLOR_INDEX_FOREGROUND;
         mBackColor = TextStyle.COLOR_INDEX_BACKGROUND;
         mEffect = 0;
         Arrays.fill(mTabStop, false);
-        setDefaultTabStops();
-    }
-
-    private void setDefaultTabStops() {
         for (int i = 0; i < mColumns; i++) mTabStop[i] = (i & 7) == 0 && i != 0;
     }
-
-    private int getTerminalTranscriptRows(Integer transcriptRows) {
-        if (transcriptRows == null || transcriptRows < TERMINAL_TRANSCRIPT_ROWS_MIN || transcriptRows > TERMINAL_TRANSCRIPT_ROWS_MAX)
-            return DEFAULT_TERMINAL_TRANSCRIPT_ROWS;
-        return transcriptRows;
-    }
-
-    // ========================================================================
-    // State Synchronization
-    // ========================================================================
 
     private void syncColorsFromRust() {
         if (mRustEnginePtr != 0) {
@@ -289,26 +136,20 @@ public final class TerminalEmulator {
             mCurrentDecSetFlags = getDecsetFlagsFromRust(mRustEnginePtr);
             mInsertMode = isInsertModeActiveFromRust(mRustEnginePtr);
             
-            if (sEnableFullSyncForTests) {
-                int rows = mRows;
-                char[][] text = new char[rows][mColumns];
-                long[][] style = new long[rows][mColumns];
-                readFullScreenFromRust(mRustEnginePtr, text, style);
-                
-                mScreen.setScreenFirstRow(0);
-                for (int i = 0; i < rows; i++) {
-                    TerminalRow row = mScreen.allocateFullLineIfNecessary(i);
-                    System.arraycopy(text[i], 0, row.mText, 0, mColumns);
-                    System.arraycopy(style[i], 0, row.mStyle, 0, mColumns);
-                    row.updateStatusAfterBatchWrite();
-                }
+            // 单元测试同步逻辑
+            int rows = mRows;
+            char[][] text = new char[rows][mColumns];
+            long[][] style = new long[rows][mColumns];
+            readFullScreenFromRust(mRustEnginePtr, text, style);
+            mScreen.setScreenFirstRow(0);
+            for (int i = 0; i < rows; i++) {
+                TerminalRow row = mScreen.allocateFullLineIfNecessary(i);
+                System.arraycopy(text[i], 0, row.mText, 0, mColumns);
+                System.arraycopy(style[i], 0, row.mStyle, 0, mColumns);
+                row.updateStatusAfterBatchWrite();
             }
         }
     }
-
-    // ========================================================================
-    // API Methods
-    // ========================================================================
 
     public void append(byte[] buffer, int length) {
         long ptr = mRustEnginePtr;
@@ -316,34 +157,21 @@ public final class TerminalEmulator {
             try {
                 processEngineRust(ptr, buffer, 0, length);
                 syncStateFromRust();
-            } catch (Exception e) {
-                android.util.Log.e(LOG_TAG, "Rust process error", e);
-            }
+            } catch (Exception e) { }
         }
     }
 
     public void paste(String text) {
-        long ptr = mRustEnginePtr;
-        if (ptr != 0) {
-            pasteTextFromRust(ptr, text);
-        } else {
-            // Mainline Java implementation fallback...
-            boolean bracketed = isBracketedPasteMode();
-            if (bracketed) mSession.write("\033[200~");
-            mSession.write(text.replaceAll("\r?\n", "\r"));
-            if (bracketed) mSession.write("\033[201~");
-        }
+        if (mRustEnginePtr != 0) pasteTextFromRust(mRustEnginePtr, text);
     }
 
     public int getCursorRow() { return (mRustEnginePtr != 0) ? getCursorRowFromRust(mRustEnginePtr) : mCursorRow; }
     public int getCursorCol() { return (mRustEnginePtr != 0) ? getCursorColFromRust(mRustEnginePtr) : mCursorCol; }
     public boolean isBracketedPasteMode() { return (mCurrentDecSetFlags & DECSET_BIT_BRACKETED_PASTE_MODE) != 0; }
     public TerminalBuffer getScreen() { return mScreen; }
+    public void destroy() { if (mRustEnginePtr != 0) { long p = mRustEnginePtr; mRustEnginePtr = 0; destroyEngineRust(p); } }
 
-    // ========================================================================
     // Native Declarations
-    // ========================================================================
-
     private static native long createEngineRustWithCallback(int cols, int rows, int totalRows, int cellWidth, int cellHeight, Object callbackObj);
     private static native void processEngineRust(long enginePtr, byte[] input, int offset, int length);
     private static native void destroyEngineRust(long enginePtr);
