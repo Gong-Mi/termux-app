@@ -7,7 +7,6 @@ public class TerminalTest extends TerminalTestCase {
 	@Override
 	protected void setUp() throws Exception {
 		super.setUp();
-		TerminalEmulator.sEnableFullSyncForTests = true;
 	}
 
 	public void testCursorPositioning() throws Exception {

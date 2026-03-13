@@ -7,7 +7,6 @@ public class UnicodeInputTest extends TerminalTestCase {
 	@Override
 	protected void setUp() throws Exception {
 		super.setUp();
-		TerminalEmulator.sEnableFullSyncForTests = true;
 	}
 
 	public void testIllFormedUtf8SuccessorByteNotConsumed() throws Exception {
