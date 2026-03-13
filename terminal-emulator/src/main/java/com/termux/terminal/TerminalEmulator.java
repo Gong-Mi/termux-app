@@ -192,25 +192,28 @@ public final class TerminalEmulator implements AutoCloseable {
             System.loadLibrary("termux_rust");
             sRustLibLoaded = true;
         } catch (UnsatisfiedLinkError e) {
-            // 针对宿主机单元测试环境的库加载路径适配
+            // 详细打印加载失败的原因
+            System.err.println("JNI LOAD ERROR (default): " + e.getMessage());
             try {
                 String libName = System.mapLibraryName("termux_rust");
-                // 尝试多个可能的相对路径（取决于 Gradle 运行的当前目录）
                 String[] possiblePaths = {
                     "src/main/jniLibs/x86_64/" + libName,
                     "terminal-emulator/src/main/jniLibs/x86_64/" + libName,
-                    "../terminal-emulator/src/main/jniLibs/x86_64/" + libName
+                    "../terminal-emulator/src/main/jniLibs/x86_64/" + libName,
+                    "terminal-emulator/src/main/rust/target/release/" + libName
                 };
                 for (String path : possiblePaths) {
                     java.io.File libFile = new java.io.File(path);
                     if (libFile.exists()) {
+                        System.err.println("JNI ATTEMPTING LOAD: " + libFile.getAbsolutePath());
                         System.load(libFile.getAbsolutePath());
                         sRustLibLoaded = true;
                         break;
                     }
                 }
             } catch (Throwable t) {
-                // 静默失败
+                System.err.println("JNI FALLBACK FAILED: " + t.getMessage());
+                t.printStackTrace();
             }
         }
     }
