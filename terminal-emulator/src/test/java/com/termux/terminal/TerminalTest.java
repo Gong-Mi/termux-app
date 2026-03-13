@@ -9,6 +9,10 @@ public class TerminalTest extends TerminalTestCase {
 		super.setUp();
 	}
 
+	public void testJniLoadStatus() {
+		assertEquals("CALLED: JNI_LOADED=true USE_RUST=true", TerminalEmulator.sLastLoadStatus);
+	}
+
 	public void testCursorPositioning() throws Exception {
 		withTerminalSized(10, 10).placeCursorAndAssert(1, 2).placeCursorAndAssert(3, 5).placeCursorAndAssert(2, 2).enterString("A")
 				.assertCursorAt(2, 3);

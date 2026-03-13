@@ -243,9 +243,11 @@ public final class TerminalEmulator implements AutoCloseable {
         }
     }
 
+    public static String sLastLoadStatus = "UNKNOWN";
+
     public TerminalEmulator(TerminalOutput session, int columns, int rows, int cellWidthPixels, int cellHeightPixels, Integer transcriptRows, TerminalSessionClient client) {
-        throw new RuntimeException("KABOOM_DIAG: JNI_LOADED=" + JNI.sNativeLibrariesLoaded + " USE_RUST=" + USE_RUST_FULL_TAKEOVER);
-        // mSession = session; (以下代码已被异常截断)
+        sLastLoadStatus = "CALLED: JNI_LOADED=" + JNI.sNativeLibrariesLoaded + " USE_RUST=" + USE_RUST_FULL_TAKEOVER;
+        mSession = session;
         mScreen = mMainBuffer = new TerminalBuffer(columns, getTerminalTranscriptRows(transcriptRows), rows);
         mAltBuffer = new TerminalBuffer(columns, rows, rows);
         mClient = client;
