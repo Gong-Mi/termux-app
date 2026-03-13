@@ -54,8 +54,8 @@ jobs:
         working-directory: baseline-java
         run: |
           echo "=== Running Java Performance Test (Master Branch) ==="
-          # 尝试多种方式运行测试
-          ./gradlew :terminal-emulator:testDebugUnitTest --tests "*TerminalPerformanceTest*" --info 2>&1 | tee ../java_baseline.log || \
+          # 运行所有单元测试，从日志中提取性能测试结果
+          ./gradlew :terminal-emulator:testDebugUnitTest --info 2>&1 | tee ../java_baseline.log || \
           ./gradlew :terminal-emulator:test --info 2>&1 | tee ../java_baseline.log || \
           echo "Java tests could not be executed"
 
@@ -71,7 +71,7 @@ jobs:
       - name: Build & Run Rust Integrated
         run: |
           echo "=== Running Java Test with Rust Engine ==="
-          ./gradlew :terminal-emulator:testDebugUnitTest --tests "*TerminalPerformanceTest*" --info 2>&1 | tee rust_integrated.log || \
+          ./gradlew :terminal-emulator:testDebugUnitTest --info 2>&1 | tee rust_integrated.log || \
           ./gradlew :terminal-emulator:test --info 2>&1 | tee rust_integrated.log || \
           echo "Java tests with Rust engine could not be executed"
 
