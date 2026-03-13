@@ -14,6 +14,8 @@ public final class TerminalEmulator {
     /** Log tag. */
     private static final String LOG_TAG = "TerminalEmulator";
 
+    // --- Constants ---
+    
     public static final int MOUSE_LEFT_BUTTON = 0;
     public static final int MOUSE_MIDDLE_BUTTON = 1;
     public static final int MOUSE_RIGHT_BUTTON = 2;
@@ -25,16 +27,30 @@ public final class TerminalEmulator {
     
     public static final int UNICODE_REPLACEMENT_CHAR = 0xFFFD;
 
-    /** Cursor styles. */
     public static final int TERMINAL_CURSOR_STYLE_BLOCK = 0;
     public static final int TERMINAL_CURSOR_STYLE_UNDERLINE = 1;
     public static final int TERMINAL_CURSOR_STYLE_BAR = 2;
     public static final int DEFAULT_TERMINAL_CURSOR_STYLE = TERMINAL_CURSOR_STYLE_BLOCK;
 
-    /** Transcript rows constants. */
     public static final int TERMINAL_TRANSCRIPT_ROWS_MIN = 0;
     public static final int TERMINAL_TRANSCRIPT_ROWS_MAX = 50000;
     public static final int DEFAULT_TERMINAL_TRANSCRIPT_ROWS = 2000;
+
+    /** DECSET bits. */
+    private static final int DECSET_BIT_APPLICATION_CURSOR_KEYS = 1;
+    private static final int DECSET_BIT_REVERSE_VIDEO = 1 << 1;
+    private static final int DECSET_BIT_ORIGIN_MODE = 1 << 2;
+    private static final int DECSET_BIT_AUTOWRAP = 1 << 3;
+    private static final int DECSET_BIT_CURSOR_ENABLED = 1 << 4;
+    private static final int DECSET_BIT_APPLICATION_KEYPAD = 1 << 5;
+    private static final int DECSET_BIT_LEFTRIGHT_MARGIN_MODE = 1 << 6;
+    private static final int DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE = 1 << 7;
+    private static final int DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT = 1 << 8;
+    private static final int DECSET_BIT_SEND_FOCUS_EVENTS = 1 << 9;
+    private static final int DECSET_BIT_MOUSE_PROTOCOL_SGR = 1 << 10;
+    private static final int DECSET_BIT_BRACKETED_PASTE_MODE = 1 << 11;
+
+    // --- Fields ---
 
     private final TerminalOutput mSession;
     private TerminalBuffer mScreen;
@@ -141,10 +157,7 @@ public final class TerminalEmulator {
         }
     }
 
-    /**
-     * Aggressively synchronizes state from Rust to Java.
-     * In unit test environments, we must ensure Java buffer is always up-to-date.
-     */
+    /** Aggressively synchronizes state from Rust to Java. */
     public synchronized void syncStateFromRustIfRequired() {
         if (mRustEnginePtr != 0) {
             syncStateFromRust();
@@ -159,17 +172,14 @@ public final class TerminalEmulator {
             mCurrentDecSetFlags = getDecsetFlagsFromRust(mRustEnginePtr);
             mInsertMode = isInsertModeActiveFromRust(mRustEnginePtr);
             
-            // 全屏物理同步
             int rows = mRows;
             int cols = mColumns;
             char[][] text = new char[rows][cols];
             long[][] style = new long[rows][cols];
-            
-            // 根据当前活动的缓冲区拉取内容
             readFullScreenFromRust(mRustEnginePtr, text, style);
             
             TerminalBuffer targetBuffer = isAlternateBufferActive() ? mAltBuffer : mMainBuffer;
-            mScreen = targetBuffer; // 确保 mScreen 引用也是最新的
+            mScreen = targetBuffer;
             
             targetBuffer.setScreenFirstRow(0);
             for (int i = 0; i < rows; i++) {
