@@ -54,6 +54,27 @@ jobs:
           # 运行 Rust 原生一致性测试
           cargo test --test consistency -- --test-threads=1
 
+      - name: Build Rust JNI Libraries
+        run: |
+          cd terminal-emulator/src/main/rust
+          # 为所有 ABI 编译库
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            echo "Building for $abi..."
+            cargo ndk -t $abi -p 24 build --release
+          done
+          
+          # 手动拷贝到 jniLibs 确保 Gradle 能找到
+          mkdir -p ../jniLibs/arm64-v8a ../jniLibs/armeabi-v7a ../jniLibs/x86 ../jniLibs/x86_64
+          cp target/aarch64-linux-android/release/libtermux_rust.so ../jniLibs/arm64-v8a/
+          cp target/armv7-linux-androideabi/release/libtermux_rust.so ../jniLibs/armeabi-v7a/
+          cp target/i686-linux-android/release/libtermux_rust.so ../jniLibs/x86/
+          cp target/x86_64-linux-android/release/libtermux_rust.so ../jniLibs/x86_64/
+
+      - name: Verify JNI Libraries
+        run: |
+          echo "Checking JNI libraries..."
+          ls -R terminal-emulator/src/main/jniLibs/
+
       - name: Build APKs
         shell: bash {0}
         env:
