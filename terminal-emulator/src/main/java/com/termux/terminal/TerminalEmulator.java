@@ -20,8 +20,8 @@ public final class TerminalEmulator {
     private final TerminalBuffer mAltBuffer;
     private TerminalSessionClient mClient;
 
-    private int mRows;
-    private int mColumns;
+    public int mRows;
+    public int mColumns;
     private int mCursorRow;
     private int mCursorCol;
     private int mCursorStyle;
@@ -136,7 +136,7 @@ public final class TerminalEmulator {
             mCurrentDecSetFlags = getDecsetFlagsFromRust(mRustEnginePtr);
             mInsertMode = isInsertModeActiveFromRust(mRustEnginePtr);
             
-            // 全屏物理同步，确保单元测试可见内容
+            // 全屏物理同步
             int rows = mRows;
             int cols = mColumns;
             char[][] text = new char[rows][cols];
@@ -169,17 +169,13 @@ public final class TerminalEmulator {
     }
 
     public String getTitle() {
-        if (mRustEnginePtr != 0) {
-            return getTitleFromRust(mRustEnginePtr);
-        }
-        return mTitle;
+        return (mRustEnginePtr != 0) ? getTitleFromRust(mRustEnginePtr) : mTitle;
     }
 
     public void append(byte[] buffer, int length) {
-        long ptr = mRustEnginePtr;
-        if (ptr != 0) {
+        if (mRustEnginePtr != 0) {
             try {
-                processEngineRust(ptr, buffer, 0, length);
+                processEngineRust(mRustEnginePtr, buffer, 0, length);
                 syncStateFromRust();
             } catch (Exception e) { }
         }
@@ -187,6 +183,76 @@ public final class TerminalEmulator {
 
     public void paste(String text) {
         if (mRustEnginePtr != 0) pasteTextFromRust(mRustEnginePtr, text);
+    }
+
+    // Proxy methods for TerminalView
+    public boolean isMouseTrackingActive() {
+        return (mRustEnginePtr != 0) ? isMouseTrackingActiveFromRust(mRustEnginePtr) : false;
+    }
+
+    public boolean isAlternateBufferActive() {
+        return (mRustEnginePtr != 0) ? isAlternateBufferActiveFromRust(mRustEnginePtr) : false;
+    }
+
+    public boolean isAutoScrollDisabled() {
+        return (mRustEnginePtr != 0) ? isAutoScrollDisabledFromRust(mRustEnginePtr) : mAutoScrollDisabled;
+    }
+
+    public int getScrollCounter() {
+        return (mRustEnginePtr != 0) ? getScrollCounterFromRust(mRustEnginePtr) : mScrollCounter;
+    }
+
+    public void clearScrollCounter() {
+        if (mRustEnginePtr != 0) clearScrollCounterFromRust(mRustEnginePtr);
+        else mScrollCounter = 0;
+    }
+
+    public void sendMouseEvent(int button, int x, int y, boolean pressed) {
+        if (mRustEnginePtr != 0) sendMouseEventToRust(mRustEnginePtr, button, x, y, pressed);
+    }
+
+    public void setCursorBlinkState(boolean visible) {
+        mCursorBlinkState = visible;
+        if (mRustEnginePtr != 0) setCursorBlinkStateInRust(mRustEnginePtr, visible);
+    }
+
+    public void setCursorBlinkingEnabled(boolean enabled) {
+        mCursorBlinkingEnabled = enabled;
+        if (mRustEnginePtr != 0) setCursorBlinkingEnabledInRust(mRustEnginePtr, enabled);
+    }
+
+    public boolean isCursorEnabled() {
+        return (mRustEnginePtr != 0) ? isCursorEnabledFromRust(mRustEnginePtr) : true;
+    }
+
+    public boolean isReverseVideo() {
+        return (mRustEnginePtr != 0) ? isReverseVideoFromRust(mRustEnginePtr) : false;
+    }
+
+    public boolean shouldCursorBeVisible() {
+        return (mRustEnginePtr != 0) ? shouldCursorBeVisibleFromRust(mRustEnginePtr) : true;
+    }
+
+    public int getCursorStyle() {
+        return (mRustEnginePtr != 0) ? getCursorStyleFromRust(mRustEnginePtr) : mCursorStyle;
+    }
+
+    public void syncScreenBatchFromRust(int startRow, int numRows) {
+        if (mRustEnginePtr != 0) {
+            char[][] text = new char[numRows][mColumns];
+            long[][] style = new long[numRows][mColumns];
+            readScreenBatchFromRust(mRustEnginePtr, text, style, startRow, numRows);
+            for (int i = 0; i < numRows; i++) {
+                TerminalRow row = mScreen.allocateFullLineIfNecessary(startRow + i);
+                System.arraycopy(text[i], 0, row.mText, 0, mColumns);
+                System.arraycopy(style[i], 0, row.mStyle, 0, mColumns);
+                row.updateStatusAfterBatchWrite();
+            }
+        }
+    }
+
+    public String getSelectedText(int x1, int y1, int x2, int y2) {
+        return mScreen.getSelectedText(x1, y1, x2, y2);
     }
 
     public int getCursorRow() { return (mRustEnginePtr != 0) ? getCursorRowFromRust(mRustEnginePtr) : mCursorRow; }
@@ -213,4 +279,16 @@ public final class TerminalEmulator {
     private static native void resizeRust(long enginePtr, int cols, int rows, int cellWidth, int cellHeight);
     private static native String getTitleFromRust(long enginePtr);
     public static native int getActiveTranscriptRowsFromRust(long enginePtr);
+    private static native boolean isMouseTrackingActiveFromRust(long enginePtr);
+    private static native boolean isAlternateBufferActiveFromRust(long enginePtr);
+    private static native boolean isAutoScrollDisabledFromRust(long enginePtr);
+    private static native int getScrollCounterFromRust(long enginePtr);
+    private static native void clearScrollCounterFromRust(long enginePtr);
+    private static native void sendMouseEventToRust(long enginePtr, int button, int x, int y, boolean pressed);
+    private static native void setCursorBlinkStateInRust(long enginePtr, boolean visible);
+    private static native void setCursorBlinkingEnabledInRust(long enginePtr, boolean enabled);
+    private static native boolean isCursorEnabledFromRust(long enginePtr);
+    private static native boolean isReverseVideoFromRust(long enginePtr);
+    private static native boolean shouldCursorBeVisibleFromRust(long enginePtr);
+    private static native int getCursorStyleFromRust(long enginePtr);
 }
