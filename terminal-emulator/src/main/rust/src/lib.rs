@@ -807,6 +807,25 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isRevers
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isAlternateBufferActiveFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) -> jni::sys::jboolean {
+    if engine_ptr == 0 {
+        return jni::sys::JNI_FALSE;
+    }
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = engine_lock.read().unwrap();
+    let engine = &*guard;
+    if engine.state.is_alternate_buffer_active() {
+        jni::sys::JNI_TRUE
+    } else {
+        jni::sys::JNI_FALSE
+    }
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getTitleFromRust(
     env_ptr: *mut *const JNINativeInterface_,
     _class: jclass,
