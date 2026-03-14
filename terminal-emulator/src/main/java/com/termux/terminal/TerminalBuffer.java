@@ -130,29 +130,45 @@ public final class TerminalBuffer {
      * @return index between 0 and mTotalRows-1.
      */
     public int externalToInternalRow(int externalRow) {
-        // 在同步前保存当前状态，避免同步后状态变化导致验证失败
-        int screenRowsBefore = mScreenRows;
-        int activeTranscriptRowsBefore = getActiveTranscriptRows();
-
+        // Sync state from Rust if needed
         if (mEmulator != null) {
             mEmulator.syncStateFromRustIfRequired();
         }
 
-        // 使用同步后的值进行验证，但允许一定的容错
-        // 如果 externalRow 超出范围，将其钳制到有效范围内而不是抛出异常
-        int activeTranscriptRows = getActiveTranscriptRows();
-        if (externalRow < -activeTranscriptRows) {
-            externalRow = -activeTranscriptRows;
-        } else if (externalRow >= mScreenRows) {
-            externalRow = mScreenRows - 1;
+        // Handle edge cases - prevent crashes on null/empty arrays
+        if (mTotalRows <= 0 || mLines == null || mLines.length == 0) {
+            return 0;
         }
 
-        int row = mScreenFirstRow + externalRow;
-        if (row < 0) {
-            row += mTotalRows;
-        } else if (row >= mTotalRows) {
-            row -= mTotalRows;
+        // Get current state values after sync
+        int activeTranscriptRows = getActiveTranscriptRows();
+        int screenRows = mScreenRows;
+
+        // Clamp externalRow to valid range: [-activeTranscriptRows, screenRows-1]
+        int minRow = -activeTranscriptRows;
+        int maxRow = screenRows - 1;
+
+        if (externalRow < minRow) {
+            externalRow = minRow;
+        } else if (externalRow > maxRow) {
+            externalRow = maxRow;
         }
+
+        // Calculate internal row index with wraparound for circular buffer
+        int row = mScreenFirstRow + externalRow;
+
+        // Handle wraparound for circular buffer using modulo
+        if (row < 0) {
+            row = ((row % mTotalRows) + mTotalRows) % mTotalRows;
+        } else if (row >= mTotalRows) {
+            row = row % mTotalRows;
+        }
+
+        // Final bounds check to prevent ArrayIndexOutOfBoundsException
+        if (row < 0 || row >= mTotalRows) {
+            row = 0;
+        }
+
         return row;
     }
 
@@ -202,7 +218,12 @@ public final class TerminalBuffer {
     }
 
     public TerminalRow allocateFullLineIfNecessary(int row) {
-        return mLines[externalToInternalRow(row)];
+        int internalRow = externalToInternalRow(row);
+        if (mLines == null || internalRow < 0 || internalRow >= mLines.length) {
+            // Return a fallback row if bounds check fails
+            return (mLines != null && mLines.length > 0) ? mLines[0] : null;
+        }
+        return mLines[internalRow];
     }
 
     public void setChar(int column, int row, int codePoint, long style) {
