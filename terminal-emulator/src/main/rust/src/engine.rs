@@ -2,7 +2,6 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use jni::objects::JValue;
 use std::cmp::{max, min};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use vte::{Params, Parser, Perform};
 
 use crate::utils::map_line_drawing;
@@ -20,17 +19,15 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, base64::DecodeError> {
 /// 内存布局：[text_data (u16 数组)][style_data (u64 数组)]
 #[repr(C)]
 pub struct SharedScreenBuffer {
-    /// 缓冲区版本，用于同步
-    pub version: AtomicBool,
-    /// 填充，确保对齐
-    pub padding: [u8; 3],
+    /// 缓冲区版本，用于同步 (使用 u32 代替 AtomicBool 确保跨平台 4 字节绝对对齐)
+    pub version: u32,
     /// 列数
     pub cols: u32,
     /// 行数
     pub rows: u32,
     /// 样式数据起始偏移量 (针对 Header 的偏移)
     pub style_offset: u32,
-    /// 文本数据起始位置
+    /// 文本数据起始位置 (固定在 16 字节偏移处)
     pub text_data: [u16; 0],
 }
 
@@ -105,14 +102,13 @@ impl FlatScreenBuffer {
             unsafe {
                 let base_ptr = ptr as *mut u8;
                 // 手动写入 Header，确保物理偏移一致
-                std::ptr::write(base_ptr.add(0) as *mut u8, 0u8); // version = false
+                std::ptr::write(base_ptr.add(0) as *mut u32, 0u32); // version = 0
                 std::ptr::write(base_ptr.add(4) as *mut u32, self.cols as u32);
                 std::ptr::write(base_ptr.add(8) as *mut u32, self.rows as u32);
                 std::ptr::write(base_ptr.add(12) as *mut u32, style_offset);
             }
             self.shared_buffer = Some(Arc::new(SharedScreenBuffer {
-                version: AtomicBool::new(true),
-                padding: [0; 3],
+                version: 1, // 1 表示已初始化/有新数据
                 cols: self.cols as u32,
                 rows: self.rows as u32,
                 style_offset,
@@ -177,8 +173,10 @@ impl FlatScreenBuffer {
                 std::ptr::copy_nonoverlapping(self.style_data.as_ptr(), dest_style_ptr, cell_count);
             }
 
-            // 最后更新版本标志
-            (*(shared_ptr)).version.store(true, Ordering::Release);
+            // 最后更新版本标志 (使用裸指针写入)
+            let version_ptr = base_ptr.add(0) as *mut u32;
+            let old_version = std::ptr::read(version_ptr);
+            std::ptr::write(version_ptr, old_version.wrapping_add(1));
         }
     }
 
@@ -1195,13 +1193,14 @@ impl ScreenState {
         self.use_alternate_buffer
     }
 
-    /// 调用 Java 方法报告屏幕刷新
+    /// 标记屏幕已更新 (增加版本号，供 Java 轮询)
     pub fn report_screen_update(&self) {
-        if let Some(obj) = self.java_callback_obj.as_ref() {
-            if let Some(vm) = crate::JAVA_VM.get() {
-                if let Ok(mut env) = vm.get_env() {
-                    let _ = env.call_method(obj.as_obj(), "onScreenUpdate", "()V", &[]);
-                }
+        if !self.shared_buffer_ptr.is_null() {
+            unsafe {
+                // 读取旧版本号并自增 1，强制作为脏标记
+                let version_ptr = self.shared_buffer_ptr as *mut u32;
+                let old_version: u32 = std::ptr::read(version_ptr);
+                std::ptr::write(version_ptr, old_version.wrapping_add(1));
             }
         }
     }

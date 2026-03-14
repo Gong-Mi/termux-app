@@ -680,15 +680,15 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_syncToSh
     }
 }
 
-/// 从共享缓冲区读取版本标志
+/// 从共享缓冲区读取版本号 (返回 int)
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getSharedBufferVersionRust(
     _env_ptr: *mut *const JNINativeInterface_,
     _class: jclass,
     engine_ptr: jlong,
-) -> jni::sys::jboolean {
+) -> jni::sys::jint {
     if engine_ptr == 0 {
-        return jni::sys::JNI_FALSE;
+        return 0;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
     let guard = engine_lock.read().unwrap();
@@ -696,11 +696,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getShare
 
     if !engine.state.shared_buffer_ptr.is_null() {
         let shared = unsafe { &*engine.state.shared_buffer_ptr };
-        if shared.version.load(std::sync::atomic::Ordering::Acquire) {
-            return jni::sys::JNI_TRUE;
-        }
+        return shared.version as jni::sys::jint;
     }
-    jni::sys::JNI_FALSE
+    0
 }
 
 /// 清除共享缓冲区版本标志
@@ -719,9 +717,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_clearSha
 
     if !engine.state.shared_buffer_ptr.is_null() {
         let shared = unsafe { &mut *engine.state.shared_buffer_ptr };
-        shared
-            .version
-            .store(false, std::sync::atomic::Ordering::Release);
+        shared.version = 0;
     }
 }
 

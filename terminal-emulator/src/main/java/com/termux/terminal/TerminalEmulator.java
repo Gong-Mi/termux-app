@@ -596,7 +596,7 @@ public final class TerminalEmulator {
     // Phase 2: DirectByteBuffer Shared Buffer Support
     private static native java.nio.ByteBuffer createSharedBufferRust(long enginePtr);
     private static native void syncToSharedBufferRust(long enginePtr);
-    private static native boolean getSharedBufferVersionRust(long enginePtr);
+    private static native int getSharedBufferVersionRust(long enginePtr);
     private static native void clearSharedBufferVersionRust(long enginePtr);
     private static native void destroySharedBufferRust(long enginePtr);
 }
