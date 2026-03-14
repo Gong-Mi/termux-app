@@ -408,7 +408,7 @@ public final class TerminalBuffer {
             char[][] textBuffer = new char[rows][cols];
             long[][] styleBuffer = new long[rows][cols];
 
-            TerminalEmulator.readScreenBatchFromRust(rustEnginePtr, textBuffer, styleBuffer, 0, rows);
+            TerminalEmulator.readScreenBatchFromRust(rustEnginePtr, textBuffer, styleBuffer, lineWraps, 0, rows);
 
             for (int i = 0; i < rows; i++) {
                 int internalRow = externalToInternalRow(i);
