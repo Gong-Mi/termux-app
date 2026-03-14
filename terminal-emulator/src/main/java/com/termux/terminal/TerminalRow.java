@@ -14,7 +14,7 @@ public final class TerminalRow {
     private static final float SPARE_CAPACITY_FACTOR = 1.5f;
     private static final int MAX_COMBINING_CHARACTERS_PER_COLUMN = 15;
 
-    private final int mColumns;
+    private int mColumns;
 
     // 本地数据（非 Rust 化模式）
     public char[] mText;
@@ -163,24 +163,32 @@ public final class TerminalRow {
         return mSpaceUsed;
     }
 
-    public void updateSharedBuffer(ByteBuffer sharedBuffer, int rowOffset) {
+    public void updateSharedBuffer(ByteBuffer sharedBuffer, int rowOffset, int columns) {
+        boolean columnsChanged = (this.mColumns != columns);
+        this.mColumns = columns;
         mSharedBuffer = sharedBuffer;
+        
+        // 如果列数发生变化，重新分配缓存
+        if (columnsChanged || mTextCache == null || mStyleCache == null) {
+            mTextCache = new char[(int) (SPARE_CAPACITY_FACTOR * mColumns)];
+            mStyleCache = new long[mColumns];
+        }
+        
         // 验证 rowOffset 的有效性
         if (sharedBuffer != null && mColumns > 0) {
             int maxValidRowOffset = sharedBuffer.capacity() / mColumns - 1;
             if (rowOffset < 0 || rowOffset > maxValidRowOffset) {
                 // 无效的 rowOffset，设置为安全值
                 mRowOffset = 0;
-                // 使用 SPARE_CAPACITY_FACTOR 确保有足够空间
-                mTextCache = new char[(int) (SPARE_CAPACITY_FACTOR * mColumns)];
-                mStyleCache = new long[mColumns];
                 Arrays.fill(mTextCache, ' ');
                 Arrays.fill(mStyleCache, TextStyle.NORMAL);
                 mCacheValid = true;
+                mSpaceUsed = (short) mColumns;
                 return;
             }
         }
         mRowOffset = rowOffset;
+        mSpaceUsed = (short) mColumns;
         mCacheValid = false;
     }
 

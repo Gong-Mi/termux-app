@@ -74,14 +74,15 @@ public final class TerminalBuffer {
     /**
      * Update shared buffer reference (e.g., after resize)
      */
-    public void updateSharedBuffer(ByteBuffer sharedBuffer) {
+    public void updateSharedBuffer(ByteBuffer sharedBuffer, int newColumns) {
+        this.mColumns = newColumns;
         mSharedBuffer = sharedBuffer;
         if (sharedBuffer != null) {
             int cellsPerRow = mColumns;
             for (int i = 0; i < mTotalRows; i++) {
                 if (mLines[i] != null && mLines[i].isRustBacked()) {
                     int rowOffset = i * cellsPerRow;
-                    mLines[i].updateSharedBuffer(sharedBuffer, rowOffset);
+                    mLines[i].updateSharedBuffer(sharedBuffer, rowOffset, mColumns);
                 }
             }
         }

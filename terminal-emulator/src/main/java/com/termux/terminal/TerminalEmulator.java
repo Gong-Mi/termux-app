@@ -230,8 +230,8 @@ public final class TerminalEmulator {
             
             // 更新共享缓冲区引用（resize 后缓冲区可能已重新分配）
             if (mSharedBuffer != null) {
-                mMainBuffer.updateSharedBuffer(mSharedBuffer);
-                mAltBuffer.updateSharedBuffer(mSharedBuffer);
+                mMainBuffer.updateSharedBuffer(mSharedBuffer, columns);
+                mAltBuffer.updateSharedBuffer(mSharedBuffer, columns);
             }
             
             syncStateFromRust();
