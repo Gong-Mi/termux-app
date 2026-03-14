@@ -144,7 +144,7 @@ public final class TerminalRenderer {
                         }
                         drawTextRun(canvas, line, palette, heightOffset, lastRunStartColumn, columnWidthSinceLastRun,
                             lastRunStartIndex, charsSinceLastRun, measuredWidthForRun,
-                            cursorColor, cursorShape, lastRunStyle, reverseVideo || invertCursorTextColor || lastRunInsideSelection);
+                            cursorColor, cursorShape, lastRunStyle, reverseVideo || invertCursorTextColor || lastRunInsideSelection, lastRunInsideSelection);
                     }
                     measuredWidthForRun = 0.f;
                     lastRunStyle = style;
@@ -172,13 +172,13 @@ public final class TerminalRenderer {
                 invertCursorTextColor = true;
             }
             drawTextRun(canvas, line, palette, heightOffset, lastRunStartColumn, columnWidthSinceLastRun, lastRunStartIndex, charsSinceLastRun,
-                measuredWidthForRun, cursorColor, cursorShape, lastRunStyle, reverseVideo || invertCursorTextColor || lastRunInsideSelection);
+                measuredWidthForRun, cursorColor, cursorShape, lastRunStyle, reverseVideo || invertCursorTextColor || lastRunInsideSelection, lastRunInsideSelection);
         }
     }
 
     private void drawTextRun(Canvas canvas, char[] text, int[] palette, float y, int startColumn, int runWidthColumns,
                              int startCharIndex, int runWidthChars, float mes, int cursor, int cursorStyle,
-                             long textStyle, boolean reverseVideo) {
+                             long textStyle, boolean reverseVideo, boolean insideSelection) {
         int foreColor = TextStyle.decodeForeColor(textStyle);
         final int effect = TextStyle.decodeEffect(textStyle);
         int backColor = TextStyle.decodeBackColor(textStyle);
@@ -240,7 +240,7 @@ public final class TerminalRenderer {
         
         // 关键修复：处理光标选取后的特定颜色编码
         // 如果是因为选取导致的反色，我们可以应用更亮的高亮色
-        if (lastRunInsideSelection) {
+        if (insideSelection) {
             backColor = palette[TextStyle.COLOR_INDEX_CURSOR]; // 使用光标色作为选取背景
             foreColor = palette[TextStyle.COLOR_INDEX_BACKGROUND]; // 选取文字改为背景色
         }
