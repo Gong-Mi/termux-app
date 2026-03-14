@@ -2871,3 +2871,93 @@ fn test_sixel_image_rendering() {
     // 验证引擎状态正常
     assert!(engine.state.cols > 0, "Engine should still be valid");
 }
+
+// =============================================================================
+// Resize 重排 (Reflow) 验证测试
+// =============================================================================
+
+/// 验证缩小屏幕时的内容重排 (80 -> 40) - ✅ 修复验证
+/// 
+/// 问题描述：在旧版本中，缩小屏幕会导致行尾数据被物理裁剪丢失。
+/// 修复方案：实现逻辑行重排 (Reflow)，溢出内容折叠到下一行。
+#[test]
+fn test_resize_shrink_reflow() {
+    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+
+    // 1. 写入 81 个字符，确保第一行写满并触发自动换行到第二行
+    let mut data = "A".repeat(80).into_bytes();
+    data.push(b'B'); // 第 81 个字符
+    engine.process_bytes(&data);
+    
+    // 验证初始状态：Row 0 是满的，Wrap 为 true
+    assert_eq!(engine.state.buffer[0].line_wrap, true);
+    assert_eq!(engine.state.buffer[0].text[0], 'A');
+    assert_eq!(engine.state.buffer[0].text[79], 'A');
+    assert_eq!(engine.state.buffer[1].text[0], 'B');
+
+    // 2. 模拟缩小到 40 列
+    engine.resize(40, 24);
+
+    // 验证重排结果：
+    // 原本的 81 个字符现在应该占用 3 行 (40 + 40 + 1)
+    assert_eq!(engine.state.cols, 40);
+    
+    // Row 0: 40个A, Wrap: true
+    assert_eq!(engine.state.buffer[0].line_wrap, true);
+    for x in 0..40 { assert_eq!(engine.state.buffer[0].text[x], 'A'); }
+
+    // Row 1: 40个A, Wrap: true
+    assert_eq!(engine.state.buffer[1].line_wrap, true);
+    for x in 0..40 { assert_eq!(engine.state.buffer[1].text[x], 'A'); }
+
+    // Row 2: 1个B
+    assert_eq!(engine.state.buffer[2].text[0], 'B');
+}
+
+/// 验证放大屏幕时的内容重排 (40 -> 80) - ✅ 修复验证
+/// 
+/// 问题描述：在旧版本中，放大屏幕无法恢复之前缩小丢失的数据。
+/// 修复方案：实现逻辑行重排 (Reflow)，折叠的内容缩回上一行。
+#[test]
+fn test_resize_expand_reflow() {
+    // 1. 从 40 列开始，写入两行通过自动换行连接的文本 (总共 80 字符)
+    let mut engine = TerminalEngine::new(40, 24, 100, 10, 20);
+    let data = "B".repeat(80).into_bytes();
+    engine.process_bytes(&data);
+
+    // 验证初始状态：Row 0 满，Row 1 满，Row 0 Wrap 为 true
+    assert_eq!(engine.state.buffer[0].line_wrap, true);
+    assert_eq!(engine.state.buffer[0].text.len(), 40);
+    assert_eq!(engine.state.buffer[1].text.len(), 40);
+
+    // 2. 模拟放大到 80 列
+    engine.resize(80, 24);
+
+    // 验证重排结果：
+    // 两行 (40 字符 * 2) 现在应该缩回一行 (80 字符)
+    assert_eq!(engine.state.cols, 80);
+    assert_eq!(engine.state.buffer[0].text.len(), 80);
+    for x in 0..80 { assert_eq!(engine.state.buffer[0].text[x], 'B'); }
+    
+    // Row 1 应该被清空
+    for x in 0..80 { assert_eq!(engine.state.buffer[1].text[x], ' '); }
+}
+
+/// 验证带样式的重排一致性 - ✅ 修复验证
+#[test]
+fn test_resize_style_reflow() {
+    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+
+    // 1. 设置红色背景并写入 80 字符
+    engine.process_bytes(b"\x1b[41m");
+    let data = "C".repeat(80).into_bytes();
+    engine.process_bytes(&data);
+
+    // 2. 缩小到 40 列
+    engine.resize(40, 24);
+
+    // 3. 验证 Row 1 (溢出的行) 是否保留了红色背景样式
+    // 红色背景索引为 1，存储在 style 的位 16-24
+    let style_row_1 = engine.state.buffer[1].styles[0];
+    assert_eq!((style_row_1 >> 16) & 0x1FF, 1, "Style should be preserved during reflow");
+}

@@ -22,12 +22,14 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, base64::DecodeError> {
 pub struct SharedScreenBuffer {
     /// 缓冲区版本，用于同步
     pub version: AtomicBool,
+    /// 填充，确保对齐
+    pub padding: [u8; 3],
     /// 列数
     pub cols: u32,
     /// 行数
     pub rows: u32,
-    /// 文本数据起始位置（u16 数组，大小 = cols * rows）
-    pub text_data: [u16; 0], // 灵活数组成员
+    /// 文本数据起始位置
+    pub text_data: [u16; 0],
 }
 
 impl SharedScreenBuffer {
@@ -100,11 +102,13 @@ impl FlatScreenBuffer {
                 std::ptr::write(&mut (*ptr).rows, self.rows as u32);
             }
             self.shared_buffer = Some(Arc::new(SharedScreenBuffer {
-                version: AtomicBool::new(false),
+                version: AtomicBool::new(true),
+                padding: [0; 3],
                 cols: self.cols as u32,
                 rows: self.rows as u32,
                 text_data: [],
             }));
+
         }
 
         ptr
@@ -141,18 +145,24 @@ impl FlatScreenBuffer {
 
         unsafe {
             let shared = &mut *shared_ptr;
-            let cell_count = self.cols * self.rows;
+            
+            // 关键修复：同步 Header 字段，使用正确的 u32 类型
+            shared.cols = self.cols as u32;
+            shared.rows = self.rows as u32;
 
-            std::ptr::copy_nonoverlapping(
-                self.text_data.as_ptr(),
-                shared.text_data.as_mut_ptr(),
-                cell_count,
-            );
-            std::ptr::copy_nonoverlapping(
-                self.style_data.as_ptr(),
-                shared.style_data_ptr_mut(),
-                cell_count,
-            );
+            let cell_count = self.cols * self.rows;
+            if cell_count > 0 {
+                std::ptr::copy_nonoverlapping(
+                    self.text_data.as_ptr(),
+                    shared.text_data.as_mut_ptr(),
+                    cell_count,
+                );
+                std::ptr::copy_nonoverlapping(
+                    self.style_data.as_ptr(),
+                    shared.style_data_ptr_mut(),
+                    cell_count,
+                );
+            }
 
             // 更新版本，通知 Java 侧数据已变更
             shared.version.store(true, Ordering::Release);
@@ -3210,43 +3220,140 @@ impl ScreenState {
     }
 
     pub fn resize(&mut self, new_cols: i32, new_rows: i32) {
-        // 1. 先扩容主缓冲区
-        let mut main_indices = Vec::with_capacity(self.rows as usize);
-        for y in 0..self.rows {
-            main_indices.push(self.external_to_internal_row(y));
+        if new_cols <= 0 || new_rows <= 0 { return; }
+        let old_cols = self.cols as usize;
+        let new_cols_u = new_cols as usize;
+        let old_cursor_x = self.cursor_x as usize;
+        let old_cursor_y = self.cursor_y as usize;
+
+        // 1. 提取主缓冲区逻辑行并精确记录光标偏移
+        let mut logical_lines: Vec<Vec<(char, u64)>> = Vec::new();
+        let mut current_line: Vec<(char, u64)> = Vec::new();
+        
+        let mut cursor_logic_line = 0;
+        let mut cursor_offset_in_line = 0;
+        let mut cursor_found = false;
+
+        for y in 0..self.buffer.len() {
+            let row = &self.buffer[y];
+            let is_cursor_row = y == old_cursor_y;
+
+            // 判定提取边界：对标 Java 的 getCodePoint() == 0 停止逻辑
+            let mut end_x = 0;
+            for x in 0..old_cols {
+                // 如果遇到完全空的单元格，停止提取（对标 Java 逻辑）
+                if row.text[x] == '\0' {
+                    break;
+                }
+                end_x = x + 1;
+            }
+            
+            // 如果是换行行，且该行是满的，end_x 应该是 old_cols
+            // 如果不是换行行，我们要剔除尾随空格
+            if !row.line_wrap {
+                let mut last_non_space = 0;
+                for x in 0..end_x {
+                    if row.text[x] != ' ' || row.styles[x] != 0 {
+                        last_non_space = x + 1;
+                    }
+                }
+                end_x = last_non_space;
+            }
+            
+            // 在提取字符前检查光标位置
+            if is_cursor_row && !cursor_found {
+                cursor_logic_line = logical_lines.len();
+                // 如果光标在 end_x 之后，需要特殊处理，但通常它应该在流内
+                cursor_offset_in_line = current_line.len() + min(old_cursor_x, end_x);
+                cursor_found = true;
+            }
+
+            for x in 0..end_x {
+                current_line.push((row.text[x], row.styles[x]));
+            }
+
+            if !row.line_wrap || y == self.buffer.len() - 1 {
+                logical_lines.push(current_line);
+                current_line = Vec::new();
+            }
         }
 
-        let mut new_main = Vec::with_capacity(max(new_rows as usize, self.buffer.len()));
-        for old_idx in main_indices {
-            let mut row = self.buffer[old_idx].clone();
-            row.text.resize(new_cols as usize, ' ');
-            row.styles.resize(new_cols as usize, 0);
-            new_main.push(row);
+        // 2. 重新铺设逻辑行并恢复光标
+        let mut new_main = Vec::new();
+        let mut final_cursor_x = 0;
+        let mut final_cursor_y = 0;
+        let mut cursor_placed = false;
+
+        for (l_idx, line) in logical_lines.iter().enumerate() {
+            // 计算重排后的物理行数，即使空行也要占一行
+            let line_len = line.len();
+            
+            // 特殊处理光标：如果这一逻辑行包含光标，确保计算长度时包含它
+            let effective_len = if cursor_found && l_idx == cursor_logic_line {
+                max(line_len, cursor_offset_in_line)
+            } else {
+                line_len
+            };
+
+            let chunks_count = (effective_len + new_cols_u - 1).checked_div(new_cols_u).unwrap_or(0).max(1);
+            
+            for i in 0..chunks_count {
+                let mut new_row = TerminalRow::new(new_cols_u);
+                let start_idx = i * new_cols_u;
+                
+                // 填充字符数据
+                for x in 0..new_cols_u {
+                    let cell_idx = start_idx + x;
+                    if cell_idx < line_len {
+                        new_row.text[x] = line[cell_idx].0;
+                        new_row.styles[x] = line[cell_idx].1;
+                    }
+                    
+                    // 放置光标：精确匹配逻辑偏移
+                    if cursor_found && !cursor_placed && l_idx == cursor_logic_line && cell_idx == cursor_offset_in_line {
+                        final_cursor_x = x;
+                        final_cursor_y = new_main.len();
+                        cursor_placed = true;
+                    }
+                }
+
+                // 边缘案例：光标恰好在逻辑行末尾（即 cell_idx == line_len）
+                if cursor_found && !cursor_placed && l_idx == cursor_logic_line && cursor_offset_in_line == start_idx + new_cols_u {
+                    final_cursor_x = new_cols_u;
+                    final_cursor_y = new_main.len();
+                    cursor_placed = true;
+                }
+
+                new_row.line_wrap = i < chunks_count - 1;
+                new_main.push(new_row);
+            }
         }
+
+        // 填充至最小行数并更新状态
         while new_main.len() < new_rows as usize {
-            new_main.push(TerminalRow::new(new_cols as usize));
+            new_main.push(TerminalRow::new(new_cols_u));
         }
         self.buffer = new_main;
 
-        // 2. 扩容备用缓冲区
-        let mut new_alt = Vec::with_capacity(new_rows as usize);
-        for row in &self.alt_buffer {
-            let mut new_row = row.clone();
-            new_row.text.resize(new_cols as usize, ' ');
-            new_row.styles.resize(new_cols as usize, 0);
-            new_alt.push(new_row);
+        // 3. 备用缓冲区物理裁剪
+        for row in &mut self.alt_buffer {
+            row.text.resize(new_cols_u, ' ');
+            row.styles.resize(new_cols_u, 0);
         }
-        while new_alt.len() < new_rows as usize {
-            new_alt.push(TerminalRow::new(new_cols as usize));
+        while self.alt_buffer.len() < new_rows as usize {
+            self.alt_buffer.push(TerminalRow::new(new_cols_u));
         }
-        self.alt_buffer = new_alt;
 
-        // 3. 更新状态
-        self.screen_first_row = 0;
         self.cols = new_cols;
         self.rows = new_rows;
         self.bottom_margin = new_rows;
         self.right_margin = new_cols;
+        self.screen_first_row = 0;
+        
+        if cursor_placed {
+            self.cursor_x = final_cursor_x as i32;
+            self.cursor_y = final_cursor_y as i32;
+        }
         self.clamp_cursor();
     }
 }
