@@ -49,13 +49,15 @@ public final class TerminalRow {
 
     /**
      * 构造使用共享内存的 TerminalRow（Rust 化模式 - 只读）
+     * 注意：mTextCache 需要 SPARE_CAPACITY_FACTOR 额外空间，防止渲染宽字符时越界
      */
     public TerminalRow(ByteBuffer sharedBuffer, int rowOffset, int columns) {
         mColumns = columns;
         mSharedBuffer = sharedBuffer;
         mText = null;
         mStyle = null;
-        mTextCache = new char[columns];
+        // 使用 SPARE_CAPACITY_FACTOR 确保有足够空间处理宽字符和组合字符
+        mTextCache = new char[(int) (SPARE_CAPACITY_FACTOR * columns)];
         mStyleCache = new long[columns];
         mCacheValid = false;
         mSpaceUsed = (short) columns;
@@ -168,7 +170,8 @@ public final class TerminalRow {
             if (rowOffset < 0 || rowOffset > maxValidRowOffset) {
                 // 无效的 rowOffset，设置为安全值
                 mRowOffset = 0;
-                mTextCache = new char[mColumns];
+                // 使用 SPARE_CAPACITY_FACTOR 确保有足够空间
+                mTextCache = new char[(int) (SPARE_CAPACITY_FACTOR * mColumns)];
                 mStyleCache = new long[mColumns];
                 Arrays.fill(mTextCache, ' ');
                 Arrays.fill(mStyleCache, TextStyle.NORMAL);
