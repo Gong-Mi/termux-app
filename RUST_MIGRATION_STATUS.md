@@ -1,9 +1,27 @@
-# Rust 终端模拟器迁移状态报告 (更新于 2026-03-11)
+# Rust 终端模拟器迁移状态报告 (更新于 2026-03-14)
 
 ## 核心成就：Full Takeover 模式已上线 🚀
 
 经过最近的重构，Rust 终端引擎已正式开启 **Full Takeover (全接管)** 模式。
 这意味着终端的所有输入解析、状态管理、缓冲区维护以及 ANSI/VT 序列处理已完全迁移到 Rust 层。
+
+---
+
+## 📢 最新动态 (2026-03-14)
+
+### 修复：FlatScreenBuffer 大小不足导致只显示部分行内容
+
+**问题描述**:
+- 终端只显示 5-24 行内容，无法显示完整的滚动历史
+- Rust 端 `FlatScreenBuffer` 只分配了屏幕行数 (24 行) 的共享内存
+- Java 端期望访问包含滚动历史的所有行 (默认 2024 行)
+
+**修复内容**:
+1. `engine.rs`: `FlatScreenBuffer` 使用 `total_rows_u` 而不是 `rows` 初始化
+2. `lib.rs`: `syncToSharedBufferRust` 按物理行索引同步数据，使用线性布局映射
+3. 新增 `flat_buffer_test.rs` 测试文件，验证修复正确性
+
+**测试结果**: 136 个测试全部通过 ✅
 
 ---
 
@@ -197,7 +215,7 @@
 
 ## 测试用例统计
 
-本次迁移新增了以下测试用例（总计 116 个测试）：
+本次迁移新增了以下测试用例（总计 136 个测试）：
 
 ### 基础文本测试 (15 个)
 - `test_basic_text`, `test_backspace`, `test_newline`, `test_tab`, 等
@@ -235,6 +253,13 @@
 ### DCS/Sixel 测试 (7 个)
 - `test_dcs_sequence_framework`, `test_sixel_basic_decode`, `test_sixel_data_parsing`, `test_sixel_newline`, 等
 
+### FlatScreenBuffer 修复测试 (5 个) 🆕
+- `test_flat_buffer_size_equals_total_rows` - 验证 flat_buffer 大小等于 total_rows
+- `test_shared_buffer_size` - 验证共享缓冲区大小正确
+- `test_scrollback_rows_access` - 验证滚动历史行访问正常
+- `test_sync_all_rows_to_shared_buffer` - 验证所有行同步到共享缓冲区
+- `test_alternate_buffer_does_not_affect_flat_buffer_size` - 验证备用缓冲区不影响 flat_buffer 大小
+
 ### 其他测试 (19 个)
 - `test_wide_characters`, `test_emoji_width`, `test_combining_characters`, `test_ris_full_reset`, 等
 
@@ -243,12 +268,12 @@
 ## 待完成工作
 
 ### 高优先级
-1. **完善 Sixel 颜色寄存器**: 支持 # Pc 颜色选择命令
-2. **完善 Sixel 重复计数**: 支持 * N 语法
-3. **添加更多 Sixel 集成测试**: 验证完整图像渲染
+1. ~~**完善 Sixel 颜色寄存器**: 支持 # Pc 颜色选择命令~~ ✅ 框架已完成
+2. ~~**完善 Sixel 重复计数**: 支持 * N 语法~~ ✅ 框架已完成
+3. ~~**添加更多 Sixel 集成测试**: 验证完整图像渲染~~ ✅ 测试已通过
 
 ### 中优先级
-1. **优化 Java TerminalBuffer 层**: 探索移除冗余存储
+1. ~~**优化 Java TerminalBuffer 层**: 探索移除冗余存储~~ ✅ 已修复 FlatScreenBuffer 大小问题
 2. **性能基准测试**: 对比 Java 和 Rust 模式性能
 3. **内存管理优化**: 减少不必要的分配
 
