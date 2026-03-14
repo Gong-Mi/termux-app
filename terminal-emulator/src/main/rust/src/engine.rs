@@ -1993,23 +1993,15 @@ impl ScreenState {
         }
 
         // 1. 处理 Pending Wrap (延迟换行)
-        if self.about_to_wrap && self.auto_wrap {
-            self.about_to_wrap = false;
-            self.cursor_x = self.left_margin;
-            if self.cursor_y < self.bottom_margin - 1 {
-                self.cursor_y += 1;
-            } else {
-                self.scroll_up();
-            }
-        }
-
-        // 2. 宽字符预判：如果当前位置放不下宽字符，立即强制换行
-        if char_width > 1 && self.auto_wrap && self.cursor_x + char_width > self.right_margin {
-            self.cursor_x = self.left_margin;
-            if self.cursor_y < self.bottom_margin - 1 {
-                self.cursor_y += 1;
-            } else {
-                self.scroll_up();
+        if self.auto_wrap {
+            if (self.about_to_wrap && char_width == 1) || (char_width == 2 && self.cursor_x >= self.right_margin - 1) {
+                self.about_to_wrap = false;
+                self.cursor_x = self.left_margin;
+                if self.cursor_y < self.bottom_margin - 1 {
+                    self.cursor_y += 1;
+                } else {
+                    self.scroll_up();
+                }
             }
         }
 
@@ -2029,25 +2021,19 @@ impl ScreenState {
             let buffer = self.get_current_buffer_mut();
             let row = &mut buffer[y_internal];
             if cursor_x < row.text.len() {
-                // 1. 覆盖前的清理逻辑：如果当前格是某个宽字符的右半部分，清理左半部分
+                // 覆盖前的清理逻辑
                 if row.text[cursor_x] == '\0' && cursor_x > 0 {
                     row.text[cursor_x - 1] = ' ';
                 }
-                
-                // 2. 覆盖前的清理逻辑：如果当前格是某个宽字符的左半部分，清理右半部分
                 if char_width == 1 && cursor_x + 1 < row.text.len() && row.text[cursor_x + 1] == '\0' {
                     row.text[cursor_x + 1] = ' ';
                 }
 
-                // 3. 写入新字符 (处理 UTF-16 编码)
+                // 写入新字符 (处理 UTF-16 编码)
                 if ucs <= 0xFFFF {
                     row.text[cursor_x] = c;
                     row.styles[cursor_x] = current_style;
                 } else {
-                    // 对于超过 0xFFFF 的码点 (如 Emoji)，虽然 Rust 内部存 char，
-                    // 但我们需要确保同步给 Java 时逻辑一致。
-                    // 注意：Java 侧的 TerminalRow.mText 通常通过 WcWidth.width 判断宽度。
-                    // 这里我们保持 Rust 的 char 存储，但在 set_cell_text 中处理同步。
                     row.text[cursor_x] = c;
                     row.styles[cursor_x] = current_style;
                 }
@@ -2060,16 +2046,13 @@ impl ScreenState {
             }
         }
 
-        // 3. 更新光标位置与标记 Pending Wrap
+        // 2. 更新状态：如果写完后光标到达或超过边界，标记 pending wrap
         if self.cursor_x + char_width >= self.right_margin {
-            if self.auto_wrap {
-                self.cursor_x = self.right_margin - char_width;
-                self.about_to_wrap = true;
-            } else {
-                self.cursor_x = self.right_margin - char_width;
-            }
+            self.cursor_x = self.right_margin - char_width;
+            self.about_to_wrap = true;
         } else {
             self.cursor_x += char_width;
+            self.about_to_wrap = false;
         }
     }
 

@@ -697,12 +697,12 @@ fn test_auto_wrap() {
     );
     // 10 列屏幕：
     // "123456789" (9 字符) 光标在 9
-    // "0" 触发换行，光标到 (0, 1)，然后写入 "0" 光标到 (1, 1)
-    // "12345678" (8 字符) 光标到 (9, 1)
-    // "9" 触发换行，光标到 (0, 2)，然后写入 "9" 光标到 (1, 2)
-    // "0" 光标到 (2, 2)
-    // 实际上我们的实现是当 cursor_x + width >= cols 时换行
-    assert_eq!(engine.state.cursor_y, 2, "Cursor Y should be 2");
+    // "0" 打印在 (9, 0), about_to_wrap = true, cursor_y 还是 0
+    // 第二个 "1" 触发换行，跳到 (0, 1) 打印 "1", 光标到 (1, 1)
+    // 重复直到最后一个 "0" 打印在 (9, 1), about_to_wrap = true
+    assert_eq!(engine.state.cursor_y, 1, "Cursor Y should be 1 (pending wrap)");
+    assert_eq!(engine.state.cursor_x, 9, "Cursor X should be 9 (last column)");
+    assert_eq!(engine.state.about_to_wrap, true, "Should be about to wrap");
     // 光标位置取决于具体实现，我们只验证 Y
 }
 
@@ -2384,11 +2384,13 @@ fn test_wide_char_at_line_end_with_background() {
         );
     }
 
-    // 验证光标在第二行
-    assert_eq!(
-        engine.state.cursor_y, 1,
-        "Cursor should be on row 1 after wide char wrap"
-    );
+    // 验证光标位置：
+    // "12345678" -> cursor_x = 8
+    // "你" (width 2) -> 此时 8+2=10, 刚好填满行 (right_margin=10)
+    // 根据逻辑：它会填满 8, 9 列，然后 cursor_x 变成 10
+    // 因为 10 >= right_margin，它会触发 pending wrap 逻辑
+    assert_eq!(engine.state.cursor_y, 0, "Cursor should still be on row 0 (fits exactly)");
+    assert_eq!(engine.state.about_to_wrap, true, "Should be about to wrap");
 }
 
 // =============================================================================
