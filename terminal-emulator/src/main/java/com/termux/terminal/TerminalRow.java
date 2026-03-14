@@ -53,7 +53,6 @@ public final class TerminalRow {
     public TerminalRow(ByteBuffer sharedBuffer, int rowOffset, int columns) {
         mColumns = columns;
         mSharedBuffer = sharedBuffer;
-        mRowOffset = rowOffset;
         mText = null;
         mStyle = null;
         mTextCache = new char[columns];
@@ -62,6 +61,22 @@ public final class TerminalRow {
         mSpaceUsed = (short) columns;
         mLineWrap = false;
         mHasNonOneWidthOrSurrogateChars = false;
+        
+        // 验证 rowOffset 的有效性
+        if (sharedBuffer != null && columns > 0) {
+            int maxValidRowOffset = sharedBuffer.capacity() / columns - 1;
+            if (rowOffset < 0 || rowOffset > maxValidRowOffset) {
+                // 无效的 rowOffset，设置为安全值并初始化缓存
+                mRowOffset = 0;
+                Arrays.fill(mTextCache, ' ');
+                Arrays.fill(mStyleCache, TextStyle.NORMAL);
+                mCacheValid = true;
+            } else {
+                mRowOffset = rowOffset;
+            }
+        } else {
+            mRowOffset = 0;
+        }
     }
 
     public boolean isRustBacked() {
@@ -70,6 +85,16 @@ public final class TerminalRow {
 
     private void refreshCache() {
         if (mSharedBuffer != null && !mCacheValid) {
+            // 验证 mRowOffset 的有效性，防止脏数据导致崩溃
+            int maxValidRowOffset = mSharedBuffer.capacity() / mColumns - 1;
+            if (mRowOffset < 0 || mRowOffset > maxValidRowOffset) {
+                // mRowOffset 无效，填充默认值并标记缓存有效
+                Arrays.fill(mTextCache, ' ');
+                Arrays.fill(mStyleCache, TextStyle.NORMAL);
+                mCacheValid = true;
+                return;
+            }
+            
             for (int col = 0; col < mColumns; col++) {
                 mTextCache[col] = getCharUnsafe(col);
                 mStyleCache[col] = getStyleUnsafe(col);
@@ -83,6 +108,12 @@ public final class TerminalRow {
         // FlatScreenBuffer 布局：[header][text_data: u16 数组][style_data: u64 数组]
         // header: version(1) + padding(3) + cols(4) + rows(4) = 12 bytes
         int textByteOffset = 12 + cellIndex * 2;  // u16 = 2 bytes
+        
+        // 边界检查，防止 IndexOutOfBoundsException
+        if (textByteOffset < 0 || textByteOffset + 1 >= mSharedBuffer.capacity()) {
+            return ' ';
+        }
+        
         int low = mSharedBuffer.get(textByteOffset) & 0xFF;
         int high = mSharedBuffer.get(textByteOffset + 1) & 0xFF;
         return (char) (low | (high << 8));
@@ -96,7 +127,12 @@ public final class TerminalRow {
         int rows = mSharedBuffer.getInt(8);  // rows 在 offset 8
         int textDataSize = cols * rows * 2;  // u16 per cell
         int styleByteOffset = 12 + textDataSize + cellIndex * 8;  // u64 = 8 bytes
-        
+
+        // 边界检查，防止 IndexOutOfBoundsException
+        if (styleByteOffset < 0 || styleByteOffset + 8 > mSharedBuffer.capacity()) {
+            return TextStyle.NORMAL;
+        }
+
         long result = 0;
         for (int i = 0; i < 8; i++) {
             result |= (mSharedBuffer.get(styleByteOffset + i) & 0xFFL) << (i * 8);
@@ -126,6 +162,20 @@ public final class TerminalRow {
 
     public void updateSharedBuffer(ByteBuffer sharedBuffer, int rowOffset) {
         mSharedBuffer = sharedBuffer;
+        // 验证 rowOffset 的有效性
+        if (sharedBuffer != null && mColumns > 0) {
+            int maxValidRowOffset = sharedBuffer.capacity() / mColumns - 1;
+            if (rowOffset < 0 || rowOffset > maxValidRowOffset) {
+                // 无效的 rowOffset，设置为安全值
+                mRowOffset = 0;
+                mTextCache = new char[mColumns];
+                mStyleCache = new long[mColumns];
+                Arrays.fill(mTextCache, ' ');
+                Arrays.fill(mStyleCache, TextStyle.NORMAL);
+                mCacheValid = true;
+                return;
+            }
+        }
         mRowOffset = rowOffset;
         mCacheValid = false;
     }
