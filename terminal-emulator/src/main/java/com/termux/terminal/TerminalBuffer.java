@@ -87,6 +87,10 @@ public final class TerminalBuffer {
         }
     }
 
+    public void setEmulator(TerminalEmulator emulator) {
+        this.mEmulator = emulator;
+    }
+
     public void setScreenFirstRow(int screenFirstRow) {
         this.mScreenFirstRow = screenFirstRow;
     }
