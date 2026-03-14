@@ -555,6 +555,45 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_createSh
         engine.state.shared_buffer_ptr = shared_ptr;
 
         if !shared_ptr.is_null() {
+            // 关键修复：创建后立即同步数据，防止 Java 侧看到全 0
+            // 我们手动内联同步逻辑以确保在持有 guard 时完成
+            let cols = engine.state.cols as usize;
+            let screen_rows = engine.state.rows as usize;
+            let buffer_len = engine.state.buffer.len();
+            let screen_first_row = engine.state.screen_first_row;
+
+            for logic_row in 0..screen_rows {
+                let physical_row = (screen_first_row + logic_row) % buffer_len;
+                if let Some(buffer_row) = engine.state.buffer.get(physical_row) {
+                    let row_start_idx = logic_row * cols;
+                    let row_text_len = buffer_row.text.len();
+                    let mut dest_col = 0;
+                    while dest_col < cols && dest_col < row_text_len {
+                        let cell_idx = row_start_idx + dest_col;
+                        let ucs = buffer_row.text[dest_col] as u32;
+                        
+                        if ucs <= 0xFFFF {
+                            flat_buffer.text_data[cell_idx] = ucs as u16;
+                            flat_buffer.style_data[cell_idx] = buffer_row.styles[dest_col];
+                            dest_col += 1;
+                        } else {
+                            let u = ucs - 0x10000;
+                            flat_buffer.text_data[cell_idx] = ((u >> 10) & 0x3FF) as u16 | 0xD800;
+                            flat_buffer.style_data[cell_idx] = buffer_row.styles[dest_col];
+                            if dest_col + 1 < cols {
+                                flat_buffer.text_data[cell_idx + 1] = (u & 0x3FF) as u16 | 0xDC00;
+                                flat_buffer.style_data[cell_idx + 1] = buffer_row.styles[dest_col];
+                                dest_col += 2;
+                            } else {
+                                dest_col += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            // 将 flat_buffer 的本地数据刷入共享内存指针
+            flat_buffer.sync_to_shared(shared_ptr);
+
             let buffer_size =
                 engine::SharedScreenBuffer::required_size(flat_buffer.cols, flat_buffer.rows);
 
@@ -588,54 +627,54 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_syncToSh
     // 将当前屏幕数据同步到共享缓冲区
     if let Some(ref mut flat_buffer) = engine.state.flat_buffer {
         if !engine.state.shared_buffer_ptr.is_null() {
-            // 从主缓冲区同步所有物理行数据到 flat_buffer（包括滚动历史）
-            // 共享内存使用线性布局，flat_buffer 的物理行 i 对应共享内存的行 i
             let cols = engine.state.cols as usize;
+            let screen_rows = engine.state.rows as usize; // 仅同步可见行数
             let buffer_len = engine.state.buffer.len();
+            let screen_first_row = engine.state.screen_first_row;
 
-            // 直接按物理行索引同步，不使用 external_to_internal_row 映射
-            // 因为 flat_buffer 和共享内存都使用线性布局
-            for physical_row in 0..buffer_len {
+            // 核心修复：平铺同步逻辑区 (Logic Row 0..screen_rows)
+            // 映射到共享内存的 0..screen_rows
+            for logic_row in 0..screen_rows {
+                let physical_row = (screen_first_row + logic_row) % buffer_len;
+                
                 if let Some(buffer_row) = engine.state.buffer.get(physical_row) {
+                    let row_start_idx = logic_row * cols; // 在 shared buffer 中的起始位置
                     let mut col = 0;
                     let row_text_len = buffer_row.text.len();
-                    while col < cols && col < row_text_len {
-                        let cell_idx = flat_buffer.cell_index(col, physical_row);
-                        if cell_idx >= flat_buffer.text_data.len() { break; }
 
-                        let c = buffer_row.text[col];
-                        let ucs = c as u32;
+                    let mut dest_col = 0;
+                    while col < row_text_len && dest_col < cols {
+                        let cell_idx = row_start_idx + dest_col;
+                        let ucs = buffer_row.text[col] as u32;
+                        let style = buffer_row.styles[col];
 
                         if ucs <= 0xFFFF {
                             flat_buffer.text_data[cell_idx] = ucs as u16;
-                            flat_buffer.style_data[cell_idx] = buffer_row.styles[col];
-                            col += 1;
+                            flat_buffer.style_data[cell_idx] = style;
+                            dest_col += 1;
                         } else {
-                            // 处理 Emoji 等非 BMP 字符 (修复截断问题)
-                            // 对标 Java 逻辑：第一格存 High Surrogate，第二格存 Low Surrogate
+                            // 处理代理对
                             let u = ucs - 0x10000;
                             let hi = ((u >> 10) & 0x3FF) as u16 | 0xD800;
                             let lo = (u & 0x3FF) as u16 | 0xDC00;
                             
                             flat_buffer.text_data[cell_idx] = hi;
-                            flat_buffer.style_data[cell_idx] = buffer_row.styles[col];
+                            flat_buffer.style_data[cell_idx] = style;
                             
-                            // 检查是否有空间放 Low Surrogate
-                            if col + 1 < cols {
-                                let next_idx = cell_idx + 1;
-                                if next_idx < flat_buffer.text_data.len() {
-                                    // 对标 Java：存入 Low Surrogate
-                                    flat_buffer.text_data[next_idx] = lo;
-                                    flat_buffer.style_data[next_idx] = buffer_row.styles[col];
-                                }
+                            if dest_col + 1 < cols {
+                                flat_buffer.text_data[cell_idx + 1] = lo;
+                                flat_buffer.style_data[cell_idx + 1] = style;
+                                dest_col += 2;
+                            } else {
+                                dest_col += 1;
                             }
-                            col += 2;
                         }
+                        col += 1;
                     }
                 }
             }
 
-            // 同步到共享内存
+            // 同步到共享内存指针
             flat_buffer.sync_to_shared(engine.state.shared_buffer_ptr);
         }
     }

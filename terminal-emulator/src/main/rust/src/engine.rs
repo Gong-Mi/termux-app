@@ -28,6 +28,8 @@ pub struct SharedScreenBuffer {
     pub cols: u32,
     /// 行数
     pub rows: u32,
+    /// 样式数据起始偏移量 (针对 Header 的偏移)
+    pub style_offset: u32,
     /// 文本数据起始位置
     pub text_data: [u16; 0],
 }
@@ -35,11 +37,10 @@ pub struct SharedScreenBuffer {
 impl SharedScreenBuffer {
     /// 计算所需内存大小 (确保样式数据 8 字节对齐)
     pub fn required_size(cols: usize, rows: usize) -> usize {
-        let header_size = std::mem::size_of::<Self>();
-        let text_size = cols * rows * 2; // u16 per cell
-        // 向上对齐到 8 字节
+        let header_size = 16;
+        let text_size = cols * rows * 2;
         let aligned_text_size = (text_size + 7) & !7;
-        let style_size = cols * rows * 8; // u64 per cell
+        let style_size = cols * rows * 8;
         header_size + aligned_text_size + style_size
     }
 
@@ -96,19 +97,27 @@ impl FlatScreenBuffer {
         let ptr = unsafe { std::alloc::alloc(layout) } as *mut SharedScreenBuffer;
 
         if !ptr.is_null() {
+            // 强制使用 16 字节 Header 大小，与 Java 侧保持一致
+            let text_size = (self.cols * self.rows * 2) as usize;
+            let aligned_text_size = (text_size + 7) & !7;
+            let style_offset = (16 + aligned_text_size) as u32;
+
             unsafe {
-                std::ptr::write(&mut (*ptr).version, AtomicBool::new(false));
-                std::ptr::write(&mut (*ptr).cols, self.cols as u32);
-                std::ptr::write(&mut (*ptr).rows, self.rows as u32);
+                let base_ptr = ptr as *mut u8;
+                // 手动写入 Header，确保物理偏移一致
+                std::ptr::write(base_ptr.add(0) as *mut u8, 0u8); // version = false
+                std::ptr::write(base_ptr.add(4) as *mut u32, self.cols as u32);
+                std::ptr::write(base_ptr.add(8) as *mut u32, self.rows as u32);
+                std::ptr::write(base_ptr.add(12) as *mut u32, style_offset);
             }
             self.shared_buffer = Some(Arc::new(SharedScreenBuffer {
                 version: AtomicBool::new(true),
                 padding: [0; 3],
                 cols: self.cols as u32,
                 rows: self.rows as u32,
+                style_offset,
                 text_data: [],
             }));
-
         }
 
         ptr
@@ -144,28 +153,32 @@ impl FlatScreenBuffer {
         }
 
         unsafe {
-            let shared = &mut *shared_ptr;
-            
-            // 关键修复：同步 Header 字段，使用正确的 u32 类型
-            shared.cols = self.cols as u32;
-            shared.rows = self.rows as u32;
+            let base_ptr = shared_ptr as *mut u8;
 
-            let cell_count = self.cols * self.rows;
+            // 强制手动寻址写入 Header
+            std::ptr::write(base_ptr.add(4) as *mut u32, self.cols as u32);
+            std::ptr::write(base_ptr.add(8) as *mut u32, self.rows as u32);
+
+            // 严格计算 StyleOffset: 16 (Header) + 对齐后的 TextData
+            let text_size = (self.cols * self.rows * 2) as usize;
+            let aligned_text_size = (text_size + 7) & !7;
+            let style_offset = (16 + aligned_text_size) as u32;
+
+            std::ptr::write(base_ptr.add(12) as *mut u32, style_offset);
+
+            let cell_count = (self.cols * self.rows) as usize;
             if cell_count > 0 {
-                std::ptr::copy_nonoverlapping(
-                    self.text_data.as_ptr(),
-                    shared.text_data.as_mut_ptr(),
-                    cell_count,
-                );
-                std::ptr::copy_nonoverlapping(
-                    self.style_data.as_ptr(),
-                    shared.style_data_ptr_mut(),
-                    cell_count,
-                );
+                // 1. 文本数据：永远从 16 开始
+                let dest_text_ptr = base_ptr.add(16) as *mut u16;
+                std::ptr::copy_nonoverlapping(self.text_data.as_ptr(), dest_text_ptr, cell_count);
+
+                // 2. 样式数据：从 style_offset 开始
+                let dest_style_ptr = base_ptr.add(style_offset as usize) as *mut u64;
+                std::ptr::copy_nonoverlapping(self.style_data.as_ptr(), dest_style_ptr, cell_count);
             }
 
-            // 更新版本，通知 Java 侧数据已变更
-            shared.version.store(true, Ordering::Release);
+            // 最后更新版本标志
+            (*(shared_ptr)).version.store(true, Ordering::Release);
         }
     }
 

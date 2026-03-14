@@ -394,6 +394,15 @@ public final class TerminalBuffer {
         return new int[]{Math.min(cursor[0], newColumns - 1), Math.min(cursor[1], newScreenRows - 1)};
     }
 
+    public void invalidateAllCaches() {
+        if (mLines == null) return;
+        for (TerminalRow row : mLines) {
+            if (row != null) {
+                row.invalidateCache();
+            }
+        }
+    }
+
     public void syncFromRust(long rustEnginePtr) {
         if (rustEnginePtr == 0) return;
 

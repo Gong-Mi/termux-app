@@ -441,6 +441,22 @@ public final class TerminalEmulator {
                 readScreenBatchFromRust(mRustEnginePtr, text, style, lineWraps, startRow, rowsToUse);
 
                 TerminalBuffer targetBuffer = isAlternateBufferActive() ? mAltBuffer : mMainBuffer;
+                
+                // 关键修复：在 Rust 模式下同步共享内存并强制刷新缓存
+                if (mSharedBuffer != null) {
+                    try { syncToSharedBufferRust(mRustEnginePtr); } catch (UnsatisfiedLinkError e) { }
+                    
+                    // 重新对齐可见行的偏移量（Rust 侧现在是平铺模式）
+                    for (int i = 0; i < mRows; i++) {
+                        TerminalRow row = targetBuffer.allocateFullLineIfNecessary(i);
+                        if (row.isRustBacked()) {
+                            // Rust 同步了 logicRow i 到偏移 i * cols
+                            row.updateSharedBuffer(mSharedBuffer, i * mColumns, mColumns);
+                        }
+                    }
+                    targetBuffer.invalidateAllCaches();
+                }
+
                 for (int i = 0; i < rowsToUse; i++) {
                     TerminalRow row = targetBuffer.allocateFullLineIfNecessary(startRow + i);
                     

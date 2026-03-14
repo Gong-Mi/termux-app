@@ -106,15 +106,12 @@ public final class TerminalRow {
     }
 
     private char getCharUnsafe(int column) {
+        if (mSharedBuffer == null) return ' ';
         int cellIndex = mRowOffset + column;
-        // FlatScreenBuffer 布局：[header][text_data: u16 数组][style_data: u64 数组]
-        // header: version(1) + padding(3) + cols(4) + rows(4) = 12 bytes
-        int textByteOffset = 12 + cellIndex * 2;  // u16 = 2 bytes
+        // FlatScreenBuffer 布局：[Header:16 bytes][text_data][style_data]
+        int textByteOffset = 16 + cellIndex * 2;
         
-        // 边界检查，防止 IndexOutOfBoundsException
-        if (textByteOffset < 0 || textByteOffset + 1 >= mSharedBuffer.capacity()) {
-            return ' ';
-        }
+        if (textByteOffset + 1 >= mSharedBuffer.capacity()) return ' ';
         
         int low = mSharedBuffer.get(textByteOffset) & 0xFF;
         int high = mSharedBuffer.get(textByteOffset + 1) & 0xFF;
@@ -122,25 +119,18 @@ public final class TerminalRow {
     }
 
     private long getStyleUnsafe(int column) {
+        if (mSharedBuffer == null) return TextStyle.NORMAL;
         int cellIndex = mRowOffset + column;
-        // style_data 在 text_data 之后
-        // 先计算 text_data 的总大小并对齐到 8 字节
-        int cols = mColumns;
-        int rows = mSharedBuffer.getInt(8);  // rows 在 offset 8
-        int textDataSize = cols * rows * 2;  // u16 per cell
-        int alignedTextDataSize = (textDataSize + 7) & ~7; // 修复：对标 Rust 的 8 字节对齐
-        int styleByteOffset = 12 + alignedTextDataSize + cellIndex * 8;  // u64 = 8 bytes
+        
+        // 关键测绘修正：从 Header 第 12 字节读取物理偏移
+        int styleBaseOffset = mSharedBuffer.getInt(12);
+        int styleByteOffset = styleBaseOffset + cellIndex * 8;
 
-        // 边界检查，防止 IndexOutOfBoundsException
         if (styleByteOffset < 0 || styleByteOffset + 8 > mSharedBuffer.capacity()) {
             return TextStyle.NORMAL;
         }
 
-        long result = 0;
-        for (int i = 0; i < 8; i++) {
-            result |= (mSharedBuffer.get(styleByteOffset + i) & 0xFFL) << (i * 8);
-        }
-        return result;
+        return mSharedBuffer.getLong(styleByteOffset);
     }
 
     public char[] getTextArray() {
@@ -163,10 +153,17 @@ public final class TerminalRow {
         return mSpaceUsed;
     }
 
+    public void invalidateCache() {
+        mCacheValid = false;
+    }
+
     public void updateSharedBuffer(ByteBuffer sharedBuffer, int rowOffset, int columns) {
         boolean columnsChanged = (this.mColumns != columns);
         this.mColumns = columns;
         mSharedBuffer = sharedBuffer;
+        if (mSharedBuffer != null) {
+            mSharedBuffer.order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        }
         
         // 如果列数发生变化，重新分配缓存
         if (columnsChanged || mTextCache == null || mStyleCache == null) {

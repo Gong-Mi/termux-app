@@ -237,6 +237,13 @@ public final class TerminalRenderer {
             foreColor = backColor;
             backColor = tmp;
         }
+        
+        // 关键修复：处理光标选取后的特定颜色编码
+        // 如果是因为选取导致的反色，我们可以应用更亮的高亮色
+        if (lastRunInsideSelection) {
+            backColor = palette[TextStyle.COLOR_INDEX_CURSOR]; // 使用光标色作为选取背景
+            foreColor = palette[TextStyle.COLOR_INDEX_BACKGROUND]; // 选取文字改为背景色
+        }
 
         float left = startColumn * mFontWidth;
         float right = left + runWidthColumns * mFontWidth;
