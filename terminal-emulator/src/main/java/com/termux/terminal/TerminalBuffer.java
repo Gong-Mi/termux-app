@@ -1,5 +1,6 @@
 package com.termux.terminal;
 
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 /**
@@ -7,6 +8,8 @@ import java.util.Arrays;
  * history.
  * <p>
  * See {@link #externalToInternalRow(int)} for how to map from logical screen rows to array indices.
+ * 
+ * Rust 化版本：支持使用 DirectByteBuffer 共享内存作为数据源
  */
 public final class TerminalBuffer {
 
@@ -25,6 +28,8 @@ public final class TerminalBuffer {
     private long mRustEnginePtr = 0;
     /** Reference to the emulator for state synchronization. */
     private TerminalEmulator mEmulator;
+    /** Shared memory buffer for Rust-backed mode (zero-copy) */
+    private ByteBuffer mSharedBuffer;
 
     /**
      * Create a transcript screen.
@@ -42,12 +47,44 @@ public final class TerminalBuffer {
         for (int i = 0; i < totalRows; i++) {
             mLines[i] = new TerminalRow(columns, TextStyle.NORMAL);
         }
+        mSharedBuffer = null;
 
         blockSet(0, 0, columns, screenRows, ' ', TextStyle.NORMAL);
     }
 
-    public void setEmulator(TerminalEmulator emulator) {
-        this.mEmulator = emulator;
+    /**
+     * Enable Rust-backed mode using shared memory buffer
+     * @param sharedBuffer DirectByteBuffer from Rust
+     * @param rustEnginePtr Native engine pointer
+     */
+    public void enableRustBackedMode(ByteBuffer sharedBuffer, long rustEnginePtr) {
+        mSharedBuffer = sharedBuffer;
+        mRustEnginePtr = rustEnginePtr;
+        mUseRustTranscriptRows = true;
+        
+        // Re-create TerminalRow instances to use shared memory
+        // Each row occupies (cols * 10) bytes in shared buffer (u16 + u64 per cell)
+        int cellsPerRow = mColumns;
+        for (int i = 0; i < mTotalRows; i++) {
+            int rowOffset = i * cellsPerRow;
+            mLines[i] = new TerminalRow(sharedBuffer, rowOffset, mColumns);
+        }
+    }
+
+    /**
+     * Update shared buffer reference (e.g., after resize)
+     */
+    public void updateSharedBuffer(ByteBuffer sharedBuffer) {
+        mSharedBuffer = sharedBuffer;
+        if (sharedBuffer != null) {
+            int cellsPerRow = mColumns;
+            for (int i = 0; i < mTotalRows; i++) {
+                if (mLines[i] != null && mLines[i].isRustBacked()) {
+                    int rowOffset = i * cellsPerRow;
+                    mLines[i].updateSharedBuffer(sharedBuffer, rowOffset);
+                }
+            }
+        }
     }
 
     public void setScreenFirstRow(int screenFirstRow) {
@@ -183,13 +220,15 @@ public final class TerminalBuffer {
     public String getWordAtLocation(int x, int y) {
         // Simple implementation for tests
         TerminalRow row = mLines[externalToInternalRow(y)];
-        String line = new String(row.mText, 0, mColumns);
+        // Rust 化模式：使用 getTextArray()
+        char[] text = row.isRustBacked() ? row.getTextArray() : row.mText;
+        String line = new String(text, 0, mColumns);
         if (x < 0 || x >= line.length()) return "";
-        
+
         int x1 = x, x2 = x;
         while (x1 > 0 && line.charAt(x1-1) != ' ') x1--;
         while (x2 < line.length() && line.charAt(x2) != ' ') x2++;
-        
+
         if (x1 == x2) return "";
         return line.substring(x1, x2);
     }
@@ -228,7 +267,8 @@ public final class TerminalBuffer {
             int x1p = lineObject.findStartOfColumn(x1);
             int x2p = lineObject.findStartOfColumn(x2);
 
-            char[] line = lineObject.mText;
+            // Rust 化模式：使用 getTextArray()
+            char[] line = lineObject.isRustBacked() ? lineObject.getTextArray() : lineObject.mText;
             int lastPrintingCharIndex = -1;
             int i;
             boolean rowLineWrap = getLineWrap(row);
@@ -298,12 +338,22 @@ public final class TerminalBuffer {
             int newIntRow = i % newTotalRows;
             TerminalRow oldRow = oldLines[oldIntRow];
             TerminalRow newRow = mLines[newIntRow];
-            
+
             // Copy text and style data safely
-            System.arraycopy(oldRow.mText, 0, newRow.mText, 0, copyCols);
-            System.arraycopy(oldRow.mStyle, 0, newRow.mStyle, 0, copyCols);
-            newRow.mLineWrap = oldRow.mLineWrap;
+            // Rust 化模式：使用 getTextArray() 和 getStyleArray()
+            char[] oldText = oldRow.isRustBacked() ? oldRow.getTextArray() : oldRow.mText;
+            long[] oldStyle = oldRow.isRustBacked() ? oldRow.getStyleArray() : oldRow.mStyle;
+            char[] newText = newRow.isRustBacked() ? newRow.getTextArray() : newRow.mText;
+            long[] newStyle = newRow.isRustBacked() ? newRow.getStyleArray() : newRow.mStyle;
             
+            if (oldText != null && newText != null) {
+                System.arraycopy(oldText, 0, newText, 0, copyCols);
+            }
+            if (oldStyle != null && newStyle != null) {
+                System.arraycopy(oldStyle, 0, newStyle, 0, copyCols);
+            }
+            newRow.mLineWrap = oldRow.mLineWrap;
+
             // Update space used and flags for the new row
             newRow.mSpaceUsed = (short) newColumns;
             newRow.mHasNonOneWidthOrSurrogateChars = oldRow.mHasNonOneWidthOrSurrogateChars;
@@ -325,7 +375,7 @@ public final class TerminalBuffer {
             // 从 Rust 获取实际的行列数，避免 Java/Rust 状态不一致
             int rustCols = TerminalEmulator.getColsFromRust(rustEnginePtr);
             int rustRows = TerminalEmulator.getRowsFromRust(rustEnginePtr);
-            
+
             int cols = Math.max(1, Math.min(rustCols, mColumns));
             int rows = Math.max(1, Math.min(rustRows, mScreenRows));
 
@@ -337,10 +387,17 @@ public final class TerminalBuffer {
             for (int i = 0; i < rows; i++) {
                 int internalRow = externalToInternalRow(i);
                 TerminalRow row = mLines[internalRow];
+                
+                // Rust 化模式下不使用此方法，数据已在共享内存中
+                if (row.isRustBacked()) continue;
+                
                 int copyLength = Math.min(cols, Math.min(textBuffer[i].length, row.mText.length));
-                System.arraycopy(textBuffer[i], 0, row.mText, 0, copyLength);
-                System.arraycopy(styleBuffer[i], 0, row.mStyle, 0, Math.min(cols, styleBuffer[i].length));
-                row.updateStatusAfterBatchWrite();
+                int styleCopyLength = Math.min(copyLength, row.mStyle.length);
+                if (copyLength > 0 && styleCopyLength > 0) {
+                    System.arraycopy(textBuffer[i], 0, row.mText, 0, copyLength);
+                    System.arraycopy(styleBuffer[i], 0, row.mStyle, 0, styleCopyLength);
+                    row.updateStatusAfterBatchWrite();
+                }
             }
         } catch (UnsatisfiedLinkError e) {
             // Ignore if native method not found

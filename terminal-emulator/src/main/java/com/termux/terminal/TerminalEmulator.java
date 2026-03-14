@@ -122,8 +122,8 @@ public final class TerminalEmulator {
         if (USE_RUST_FULL_TAKEOVER && JNI.sNativeLibrariesLoaded && !sForceDisableRust) {
             try {
                 mRustEnginePtr = createEngineRustWithCallback(columns, rows, actualTranscriptRows, cellWidthPixels, cellHeightPixels, new RustEngineCallback() {
-                    @Override public void onScreenUpdate() { 
-                        mMainThreadHandler.post(() -> { if (mClient != null && mSession instanceof TerminalSession) mClient.onTextChanged((TerminalSession) mSession); }); 
+                    @Override public void onScreenUpdate() {
+                        mMainThreadHandler.post(() -> { if (mClient != null && mSession instanceof TerminalSession) mClient.onTextChanged((TerminalSession) mSession); });
                     }
                     @Override public void reportTitleChange(String title) { mMainThreadHandler.post(() -> { mTitle = title; if (mClient != null && mSession instanceof TerminalSession) mClient.onTitleChanged((TerminalSession) mSession); }); }
                     @Override public void reportColorsChanged() { mMainThreadHandler.post(() -> { syncColorsFromRust(); if (mClient != null && mSession instanceof TerminalSession) mClient.onColorsChanged((TerminalSession) mSession); }); }
@@ -139,6 +139,12 @@ public final class TerminalEmulator {
                 mMainBuffer.setRustEnginePtr(mRustEnginePtr);
                 mAltBuffer.setRustEnginePtr(mRustEnginePtr);
                 mSharedBuffer = createSharedBufferRust(mRustEnginePtr);
+                
+                // 启用 Rust 化模式（零拷贝）
+                if (mSharedBuffer != null) {
+                    mMainBuffer.enableRustBackedMode(mSharedBuffer, mRustEnginePtr);
+                    mAltBuffer.enableRustBackedMode(mSharedBuffer, mRustEnginePtr);
+                }
             } catch (Exception e) {
                 mRustEnginePtr = 0;
             }
@@ -188,39 +194,15 @@ public final class TerminalEmulator {
             try { mCurrentDecSetFlags = getDecsetFlagsFromRust(mRustEnginePtr); } catch (UnsatisfiedLinkError e) { }
             try { mInsertMode = isInsertModeActiveFromRust(mRustEnginePtr); } catch (UnsatisfiedLinkError e) { }
 
-            if (mSharedBuffer == null) {
-                try { mSharedBuffer = createSharedBufferRust(mRustEnginePtr); } catch (UnsatisfiedLinkError e) { }
-            }
-
             if (mSharedBuffer != null) {
+                // Rust 化模式：数据已在共享内存中，只需同步到共享缓冲区
                 try { syncToSharedBufferRust(mRustEnginePtr); } catch (UnsatisfiedLinkError e) { }
-
-                int rows = mRows;
-                int cols = mColumns;
-                int cellCount = rows * cols;
 
                 TerminalBuffer targetBuffer = isAlternateBufferActive() ? mAltBuffer : mMainBuffer;
                 mScreen = targetBuffer;
                 targetBuffer.setScreenFirstRow(0);
-
-                mSharedBuffer.clear();
-                mSharedBuffer.position(12);
-                CharBuffer textChars = mSharedBuffer.asCharBuffer();
-
-                mSharedBuffer.clear();
-                mSharedBuffer.position(12 + cellCount * 2);
-                LongBuffer styleLongs = mSharedBuffer.asLongBuffer();
-
-                for (int i = 0; i < rows; i++) {
-                    TerminalRow row = targetBuffer.allocateFullLineIfNecessary(i);
-                    textChars.position(i * cols);
-                    textChars.get(row.mText, 0, cols);
-
-                    styleLongs.position(i * cols);
-                    styleLongs.get(row.mStyle, 0, cols);
-
-                    row.updateStatusAfterBatchWrite();
-                }
+                
+                // 刷新缓存版本标志
                 try { clearSharedBufferVersionRust(mRustEnginePtr); } catch (UnsatisfiedLinkError e) { }
             }
         } catch (Exception e) {
@@ -245,6 +227,13 @@ public final class TerminalEmulator {
         if (mRustEnginePtr != 0) {
             try { resizeEngineRustFull(mRustEnginePtr, columns, rows); } catch (UnsatisfiedLinkError e) { }
             try { mSharedBuffer = createSharedBufferRust(mRustEnginePtr); } catch (UnsatisfiedLinkError e) { }
+            
+            // 更新共享缓冲区引用（resize 后缓冲区可能已重新分配）
+            if (mSharedBuffer != null) {
+                mMainBuffer.updateSharedBuffer(mSharedBuffer);
+                mAltBuffer.updateSharedBuffer(mSharedBuffer);
+            }
+            
             syncStateFromRust();
         }
     }
@@ -437,26 +426,32 @@ public final class TerminalEmulator {
     public void syncScreenBatchFromRust(int startRow, int numRows) {
         if (mRustEnginePtr != 0) {
             try {
-                // 从 Rust 获取实际的行列数，避免 Java/Rust 状态不一致
+                // 从 Rust 获取实际的行列数
                 int rustCols = getColsFromRust(mRustEnginePtr);
                 int rustRows = getRowsFromRust(mRustEnginePtr);
-                
-                // 使用 Rust 的实际列数分配数组
-                int colsToUse = Math.max(1, Math.min(rustCols, 1000)); // 防止异常值
-                int rowsToUse = Math.max(1, Math.min(numRows, rustRows));
-                
+
+                // 使用 Java 端的列数（TerminalRow 的大小基于此）
+                // 如果 Rust 列数更大，只复制 Java 能容纳的部分
+                int colsToUse = Math.max(1, Math.min(mColumns, 1000));
+                int rowsToUse = Math.max(1, Math.min(numRows, mRows));
+
                 char[][] text = new char[rowsToUse][colsToUse];
                 long[][] style = new long[rowsToUse][colsToUse];
                 readScreenBatchFromRust(mRustEnginePtr, text, style, startRow, rowsToUse);
-                
+
                 TerminalBuffer targetBuffer = isAlternateBufferActive() ? mAltBuffer : mMainBuffer;
                 for (int i = 0; i < rowsToUse; i++) {
                     TerminalRow row = targetBuffer.allocateFullLineIfNecessary(startRow + i);
-                    // 再次检查边界，确保安全
+                    
+                    // Rust 化模式下跳过，数据已在共享内存中
+                    if (row.isRustBacked()) continue;
+                    
+                    // 确保复制长度不超过目标数组的大小
                     int copyLength = Math.min(colsToUse, Math.min(text[i].length, row.mText.length));
-                    if (copyLength > 0) {
+                    int styleCopyLength = Math.min(copyLength, row.mStyle.length);
+                    if (copyLength > 0 && styleCopyLength > 0) {
                         System.arraycopy(text[i], 0, row.mText, 0, copyLength);
-                        System.arraycopy(style[i], 0, row.mStyle, 0, Math.min(colsToUse, style[i].length));
+                        System.arraycopy(style[i], 0, row.mStyle, 0, styleCopyLength);
                         row.updateStatusAfterBatchWrite();
                     }
                 }
@@ -468,8 +463,15 @@ public final class TerminalEmulator {
         syncStateFromRustIfRequired();
         TerminalBuffer targetBuffer = isAlternateBufferActive() ? mAltBuffer : mMainBuffer;
         TerminalRow terminalRow = targetBuffer.allocateFullLineIfNecessary(row);
-        System.arraycopy(terminalRow.mText, 0, text, 0, mColumns);
-        System.arraycopy(terminalRow.mStyle, 0, style, 0, mColumns);
+        
+        // Rust 化模式：使用 getTextArray() 和 getStyleArray()
+        char[] rowText = terminalRow.isRustBacked() ? terminalRow.getTextArray() : terminalRow.mText;
+        long[] rowStyle = terminalRow.isRustBacked() ? terminalRow.getStyleArray() : terminalRow.mStyle;
+        
+        if (rowText != null && rowStyle != null) {
+            System.arraycopy(rowText, 0, text, 0, mColumns);
+            System.arraycopy(rowStyle, 0, style, 0, mColumns);
+        }
     }
 
     public String getSelectedText(int x1, int y1, int x2, int y2) {

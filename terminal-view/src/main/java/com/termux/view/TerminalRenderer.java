@@ -95,7 +95,8 @@ public final class TerminalRenderer {
             }
 
             TerminalRow lineObject = screen.allocateFullLineIfNecessary(screen.externalToInternalRow(row));
-            final char[] line = lineObject.mText;
+            // Rust 化模式：使用 getTextArray() 获取文本数组
+            final char[] line = lineObject.isRustBacked() ? lineObject.getTextArray() : lineObject.mText;
             final int charsUsedInLine = lineObject.getSpaceUsed();
 
             long lastRunStyle = 0;

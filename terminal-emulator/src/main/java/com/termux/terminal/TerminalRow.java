@@ -1,9 +1,13 @@
 package com.termux.terminal;
 
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 /**
  * A row in a terminal, composed of a fixed number of cells.
+ * 
+ * Rust 化版本：支持直接从 DirectByteBuffer 读取数据（零拷贝）
+ * 当 mSharedBuffer 不为 null 时，数据从共享内存读取（只读模式）；否则使用本地数组。
  */
 public final class TerminalRow {
 
@@ -11,20 +15,158 @@ public final class TerminalRow {
     private static final int MAX_COMBINING_CHARACTERS_PER_COLUMN = 15;
 
     private final int mColumns;
-    public char[] mText;
+    
+    // 本地数据（非 Rust 化模式）
+    private char[] mText;
+    private long[] mStyle;
+    
+    // 共享内存引用（Rust 化模式 - 只读）
+    private ByteBuffer mSharedBuffer;
+    private int mRowOffset;  // 该行在共享内存中的偏移（以 cell 为单位）
+    
+    // 缓存（用于 Rust 化模式下需要数组访问的场景）
+    private char[] mTextCache;
+    private long[] mStyleCache;
+    private boolean mCacheValid;
+    
     short mSpaceUsed;
     boolean mLineWrap;
-    public final long[] mStyle;
     public boolean mHasNonOneWidthOrSurrogateChars;
 
+    /**
+     * 构造使用本地数组的 TerminalRow（传统模式）
+     */
     public TerminalRow(int columns, long style) {
         mColumns = columns;
         mText = new char[(int) (SPARE_CAPACITY_FACTOR * columns)];
         mStyle = new long[columns];
+        mSharedBuffer = null;
+        mTextCache = null;
+        mStyleCache = null;
+        mCacheValid = false;
         clear(style);
     }
 
+    /**
+     * 构造使用共享内存的 TerminalRow（Rust 化模式 - 只读）
+     * @param sharedBuffer 共享内存缓冲区
+     * @param rowOffset 该行在共享内存中的起始偏移（以 cell 为单位）
+     * @param columns 列数
+     */
+    public TerminalRow(ByteBuffer sharedBuffer, int rowOffset, int columns) {
+        mColumns = columns;
+        mSharedBuffer = sharedBuffer;
+        mRowOffset = rowOffset;
+        mText = null;
+        mStyle = null;
+        mTextCache = new char[columns];
+        mStyleCache = new long[columns];
+        mCacheValid = false;
+        mSpaceUsed = (short) columns;
+        mLineWrap = false;
+        mHasNonOneWidthOrSurrogateChars = false;
+    }
+
+    /**
+     * 检查是否使用 Rust 后端（共享内存）
+     */
+    public boolean isRustBacked() {
+        return mSharedBuffer != null;
+    }
+
+    /**
+     * 从共享内存刷新缓存
+     */
+    private void refreshCache() {
+        if (mSharedBuffer != null && !mCacheValid) {
+            for (int col = 0; col < mColumns; col++) {
+                mTextCache[col] = getCharUnsafe(col);
+                mStyleCache[col] = getStyleUnsafe(col);
+            }
+            mCacheValid = true;
+        }
+    }
+
+    /**
+     * 获取指定列的字符（Rust 化模式从共享内存读取）
+     */
+    public char getChar(int column) {
+        if (mSharedBuffer != null && column >= 0 && column < mColumns) {
+            return getCharUnsafe(column);
+        }
+        return mText != null && column >= 0 && column < mText.length ? mText[column] : ' ';
+    }
+
+    /**
+     * 获取字符（不检查边界，内部使用）
+     */
+    private char getCharUnsafe(int column) {
+        int cellIndex = mRowOffset + column;
+        int byteOffset = cellIndex * 10;  // u16(2) + u64(8) = 10 bytes per cell
+        return mSharedBuffer.getChar(byteOffset);
+    }
+
+    /**
+     * 获取指定列的样式（Rust 化模式从共享内存读取）
+     */
+    public long getStyle(int column) {
+        if (mSharedBuffer != null && column >= 0 && column < mColumns) {
+            return getStyleUnsafe(column);
+        }
+        return mStyle != null && column >= 0 && column < mStyle.length ? mStyle[column] : TextStyle.NORMAL;
+    }
+
+    /**
+     * 获取样式（不检查边界，内部使用）
+     */
+    private long getStyleUnsafe(int column) {
+        int cellIndex = mRowOffset + column;
+        int byteOffset = cellIndex * 10 + 2;  // 跳过 2 字节的 u16
+        return mSharedBuffer.getLong(byteOffset);
+    }
+
+    /**
+     * 获取文本数组（Rust 化模式返回缓存）
+     */
+    public char[] getTextArray() {
+        if (mSharedBuffer != null) {
+            refreshCache();
+            return mTextCache;
+        }
+        return mText;
+    }
+
+    /**
+     * 获取样式数组（Rust 化模式返回缓存）
+     */
+    public long[] getStyleArray() {
+        if (mSharedBuffer != null) {
+            refreshCache();
+            return mStyleCache;
+        }
+        return mStyle;
+    }
+
+    /**
+     * 获取实际使用的空间
+     */
+    public int getSpaceUsed() {
+        return mSpaceUsed;
+    }
+
+    /**
+     * 设置共享内存缓冲区版本（用于 resize 后更新）
+     */
+    public void updateSharedBuffer(ByteBuffer sharedBuffer, int rowOffset) {
+        mSharedBuffer = sharedBuffer;
+        mRowOffset = rowOffset;
+        mCacheValid = false;
+    }
+
     public void copyInterval(TerminalRow line, int sourceX1, int sourceX2, int destinationX) {
+        // Rust 化模式下不支持此操作
+        if (isRustBacked() || line.isRustBacked()) return;
+        
         mHasNonOneWidthOrSurrogateChars |= line.mHasNonOneWidthOrSurrogateChars;
         final int x1 = line.findStartOfColumn(sourceX1);
         final int x2 = line.findStartOfColumn(sourceX2);
@@ -49,6 +191,9 @@ public final class TerminalRow {
     }
 
     public void copyRange(TerminalRow dstRow, int sx, int dx, int w) {
+        // Rust 化模式下不支持此操作
+        if (isRustBacked() || dstRow.isRustBacked()) return;
+        
         if (w <= 0) return;
         for (int i = 0; i < w; i++) {
             int codePoint = getChar(sx + i);
@@ -57,23 +202,26 @@ public final class TerminalRow {
         }
     }
 
-    public int getSpaceUsed() { return mSpaceUsed; }
-
     public final int findStartOfColumn(int column) {
         if (column == mColumns) return mSpaceUsed;
+        
+        // Rust 化模式使用缓存
+        char[] text = isRustBacked() ? getTextArray() : mText;
+        if (text == null) return 0;
+        
         int currentColumn = 0;
         int currentCharIndex = 0;
         while (currentCharIndex < mSpaceUsed) {
             int newCharIndex = currentCharIndex;
-            char c = mText[newCharIndex++];
-            int codePoint = Character.isHighSurrogate(c) ? Character.toCodePoint(c, mText[newCharIndex++]) : c;
+            char c = text[newCharIndex++];
+            int codePoint = Character.isHighSurrogate(c) ? Character.toCodePoint(c, text[newCharIndex++]) : c;
             int wcwidth = WcWidth.width(codePoint);
             if (wcwidth > 0) {
                 currentColumn += wcwidth;
                 if (currentColumn == column) {
                     while (newCharIndex < mSpaceUsed) {
-                        char nc = mText[newCharIndex];
-                        int ncp = Character.isHighSurrogate(nc) ? Character.toCodePoint(nc, mText[newCharIndex+1]) : nc;
+                        char nc = text[newCharIndex];
+                        int ncp = Character.isHighSurrogate(nc) ? Character.toCodePoint(nc, text[newCharIndex+1]) : nc;
                         if (WcWidth.width(ncp) <= 0) newCharIndex += (ncp > 65535 ? 2 : 1);
                         else break;
                     }
@@ -86,10 +234,12 @@ public final class TerminalRow {
     }
 
     public final boolean wideDisplayCharacterStartingAt(int column) {
+        char[] text = isRustBacked() ? getTextArray() : mText;
+        if (text == null) return false;
+        
         for (int currentCharIndex = 0, currentColumn = 0; currentCharIndex < mSpaceUsed; ) {
-            int oldCharIndex = currentCharIndex;
-            char c = mText[currentCharIndex++];
-            int codePoint = Character.isHighSurrogate(c) ? Character.toCodePoint(c, mText[currentCharIndex++]) : c;
+            char c = text[currentCharIndex++];
+            int codePoint = Character.isHighSurrogate(c) ? Character.toCodePoint(c, text[currentCharIndex++]) : c;
             int wcwidth = WcWidth.width(codePoint);
             if (wcwidth > 0) {
                 if (currentColumn == column && wcwidth == 2) return true;
@@ -101,6 +251,9 @@ public final class TerminalRow {
     }
 
     public void clear(long style) {
+        // Rust 化模式下不支持此操作
+        if (isRustBacked()) return;
+        
         Arrays.fill(mText, ' ');
         Arrays.fill(mStyle, style);
         mSpaceUsed = (short) mColumns;
@@ -108,16 +261,19 @@ public final class TerminalRow {
     }
 
     public final void setChar(int columnToSet, final int codePoint, final long style) {
+        // Rust 化模式下不支持此操作
+        if (isRustBacked()) return;
+        
         if (columnToSet < 0 || columnToSet >= mColumns) return;
 
         final int newWidth = WcWidth.width(codePoint);
-        
+
         // 设置样式：宽字符需要设置两列的样式
         mStyle[columnToSet] = style;
         if (newWidth == 2 && columnToSet + 1 < mColumns) {
             mStyle[columnToSet + 1] = style;
         }
-        
+
         if (!mHasNonOneWidthOrSurrogateChars) {
             if (newWidth == 1 && codePoint < 65536) {
                 mText[columnToSet] = (char) codePoint;
