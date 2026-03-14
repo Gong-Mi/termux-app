@@ -407,6 +407,7 @@ public final class TerminalBuffer {
 
             char[][] textBuffer = new char[rows][cols];
             long[][] styleBuffer = new long[rows][cols];
+            boolean[] lineWraps = new boolean[rows];
 
             TerminalEmulator.readScreenBatchFromRust(rustEnginePtr, textBuffer, styleBuffer, lineWraps, 0, rows);
 
