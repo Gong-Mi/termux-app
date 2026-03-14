@@ -114,21 +114,8 @@ public final class TerminalRenderer {
             float measuredWidthForRun = 0.f;
 
             for (int column = 0; column < columns; ) {
-                // 边界检查：防止 currentCharIndex 超出 line 数组长度
-                if (currentCharIndex >= line.length) {
-                    // 填充剩余列为空格
-                    break;
-                }
-                
                 final char charAtIndex = line[currentCharIndex];
                 final boolean charIsHighsurrogate = Character.isHighSurrogate(charAtIndex);
-                
-                // 边界检查：防止访问 line[currentCharIndex + 1] 时越界
-                if (charIsHighsurrogate && currentCharIndex + 1 >= line.length) {
-                    // 不完整的高代理对，视为空格
-                    break;
-                }
-                
                 final int charsForCodePoint = charIsHighsurrogate ? 2 : 1;
                 final int codePoint = charIsHighsurrogate ? Character.toCodePoint(charAtIndex, line[currentCharIndex + 1]) : charAtIndex;
                 final int codePointWcWidth = WcWidth.width(codePoint);
@@ -170,10 +157,9 @@ public final class TerminalRenderer {
                 measuredWidthForRun += measuredCodePointWidth;
                 column += codePointWcWidth;
                 currentCharIndex += charsForCodePoint;
-                while (currentCharIndex < charsUsedInLine && currentCharIndex < line.length && WcWidth.width(line, currentCharIndex) <= 0) {
+                while (currentCharIndex < charsUsedInLine && WcWidth.width(line, currentCharIndex) <= 0) {
                     // Eat combining chars so that they are treated as part of the last non-combining code point,
                     // instead of e.g. being considered inside the cursor in the next run.
-                    if (currentCharIndex + 1 >= line.length) break;
                     currentCharIndex += Character.isHighSurrogate(line[currentCharIndex]) ? 2 : 1;
                 }
             }
