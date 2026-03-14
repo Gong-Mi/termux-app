@@ -551,8 +551,9 @@ public final class TerminalEmulator {
     private static native int getEffectFromRust(long enginePtr);
     private static native int getDecsetFlagsFromRust(long enginePtr);
     private static native boolean isInsertModeActiveFromRust(long enginePtr);
-    public static native void readFullScreenFromRust(long enginePtr, char[][] text, long[][] style);
-    public static native void readScreenBatchFromRust(long enginePtr, char[][] text, long[][] style, int startRow, int numRows);
+    public static native void readFullScreenFromRust(long enginePtr, char[][] text, long[][] style, boolean[] lineWraps);
+    public static native void readScreenBatchFromRust(long enginePtr, char[][] text, long[][] style, boolean[] lineWraps, int startRow, int numRows);
+    private static native long calculateChecksumFromRust(long enginePtr);
     private static native void pasteTextFromRust(long enginePtr, String text);
     private static native void updateTerminalSessionClientFromRust(long enginePtr, Object client);
     private static native void resizeEngineRustFull(long enginePtr, int cols, int rows);
