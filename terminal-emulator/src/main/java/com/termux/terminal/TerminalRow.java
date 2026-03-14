@@ -80,14 +80,28 @@ public final class TerminalRow {
 
     private char getCharUnsafe(int column) {
         int cellIndex = mRowOffset + column;
-        int byteOffset = cellIndex * 10;
-        return mSharedBuffer.getChar(byteOffset);
+        // FlatScreenBuffer 布局：[header][text_data: u16 数组][style_data: u64 数组]
+        // header: version(1) + padding(3) + cols(4) + rows(4) = 12 bytes
+        int textByteOffset = 12 + cellIndex * 2;  // u16 = 2 bytes
+        int low = mSharedBuffer.get(textByteOffset) & 0xFF;
+        int high = mSharedBuffer.get(textByteOffset + 1) & 0xFF;
+        return (char) (low | (high << 8));
     }
 
     private long getStyleUnsafe(int column) {
         int cellIndex = mRowOffset + column;
-        int byteOffset = cellIndex * 10 + 2;
-        return mSharedBuffer.getLong(byteOffset);
+        // style_data 在 text_data 之后
+        // 先计算 text_data 的总大小
+        int cols = mColumns;
+        int rows = mSharedBuffer.getInt(8);  // rows 在 offset 8
+        int textDataSize = cols * rows * 2;  // u16 per cell
+        int styleByteOffset = 12 + textDataSize + cellIndex * 8;  // u64 = 8 bytes
+        
+        long result = 0;
+        for (int i = 0; i < 8; i++) {
+            result |= (mSharedBuffer.get(styleByteOffset + i) & 0xFFL) << (i * 8);
+        }
+        return result;
     }
 
     public char[] getTextArray() {
