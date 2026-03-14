@@ -557,11 +557,39 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_syncToSh
             // 因为 flat_buffer 和共享内存都使用线性布局
             for physical_row in 0..buffer_len {
                 if let Some(buffer_row) = engine.state.buffer.get(physical_row) {
-                    for col in 0..cols.min(buffer_row.text.len()) {
+                    let mut col = 0;
+                    let row_text_len = buffer_row.text.len();
+                    while col < cols && col < row_text_len {
                         let cell_idx = flat_buffer.cell_index(col, physical_row);
-                        if cell_idx < flat_buffer.text_data.len() {
-                            flat_buffer.text_data[cell_idx] = buffer_row.text[col] as u16;
+                        if cell_idx >= flat_buffer.text_data.len() { break; }
+
+                        let c = buffer_row.text[col];
+                        let ucs = c as u32;
+
+                        if ucs <= 0xFFFF {
+                            flat_buffer.text_data[cell_idx] = ucs as u16;
                             flat_buffer.style_data[cell_idx] = buffer_row.styles[col];
+                            col += 1;
+                        } else {
+                            // 处理 Emoji 等非 BMP 字符 (修复截断问题)
+                            // 对标 Java 逻辑：第一格存 High Surrogate，第二格存 Low Surrogate
+                            let u = ucs - 0x10000;
+                            let hi = ((u >> 10) & 0x3FF) as u16 | 0xD800;
+                            let lo = (u & 0x3FF) as u16 | 0xDC00;
+                            
+                            flat_buffer.text_data[cell_idx] = hi;
+                            flat_buffer.style_data[cell_idx] = buffer_row.styles[col];
+                            
+                            // 检查是否有空间放 Low Surrogate
+                            if col + 1 < cols {
+                                let next_idx = cell_idx + 1;
+                                if next_idx < flat_buffer.text_data.len() {
+                                    // 对标 Java：存入 Low Surrogate
+                                    flat_buffer.text_data[next_idx] = lo;
+                                    flat_buffer.style_data[next_idx] = buffer_row.styles[col];
+                                }
+                            }
+                            col += 2;
                         }
                     }
                 }
@@ -1152,11 +1180,8 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getActiv
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
     let guard = engine_lock.read().unwrap();
     let engine = &*guard;
-    // 计算滚动历史行数 = 总行数 - 屏幕行数
-    let total_rows = engine.state.buffer.len();
-    let screen_rows = engine.state.rows as usize;
-    let transcript_rows = total_rows.saturating_sub(screen_rows);
-    transcript_rows as jint
+    // 返回实际有效的滚动历史行数 (修复 001)
+    engine.state.active_transcript_rows as jint
 }
 
 /// 获取当前 DECSET 标志位

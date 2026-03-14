@@ -124,11 +124,12 @@ public final class TerminalRow {
     private long getStyleUnsafe(int column) {
         int cellIndex = mRowOffset + column;
         // style_data 在 text_data 之后
-        // 先计算 text_data 的总大小
+        // 先计算 text_data 的总大小并对齐到 8 字节
         int cols = mColumns;
         int rows = mSharedBuffer.getInt(8);  // rows 在 offset 8
         int textDataSize = cols * rows * 2;  // u16 per cell
-        int styleByteOffset = 12 + textDataSize + cellIndex * 8;  // u64 = 8 bytes
+        int alignedTextDataSize = (textDataSize + 7) & ~7; // 修复：对标 Rust 的 8 字节对齐
+        int styleByteOffset = 12 + alignedTextDataSize + cellIndex * 8;  // u64 = 8 bytes
 
         // 边界检查，防止 IndexOutOfBoundsException
         if (styleByteOffset < 0 || styleByteOffset + 8 > mSharedBuffer.capacity()) {

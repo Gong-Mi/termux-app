@@ -31,23 +31,32 @@ pub struct SharedScreenBuffer {
 }
 
 impl SharedScreenBuffer {
-    /// 计算所需内存大小
+    /// 计算所需内存大小 (确保样式数据 8 字节对齐)
     pub fn required_size(cols: usize, rows: usize) -> usize {
-        std::mem::size_of::<Self>() + (cols * rows * (2 + 8)) // u16 + u64 per cell
+        let header_size = std::mem::size_of::<Self>();
+        let text_size = cols * rows * 2; // u16 per cell
+        // 向上对齐到 8 字节
+        let aligned_text_size = (text_size + 7) & !7;
+        let style_size = cols * rows * 8; // u64 per cell
+        header_size + aligned_text_size + style_size
     }
 
     /// 获取样式数据起始位置
     pub fn style_data_ptr(&self) -> *const u64 {
         let text_ptr = self.text_data.as_ptr();
         let cell_count = self.cols as usize * self.rows as usize;
-        unsafe { text_ptr.add(cell_count) as *const u64 }
+        let text_size = cell_count * 2;
+        let aligned_text_size = (text_size + 7) & !7;
+        unsafe { (text_ptr as *const u8).add(aligned_text_size) as *const u64 }
     }
 
     /// 获取可变样式数据指针
     pub fn style_data_ptr_mut(&mut self) -> *mut u64 {
         let text_ptr = self.text_data.as_ptr() as *mut u16;
         let cell_count = self.cols as usize * self.rows as usize;
-        unsafe { text_ptr.add(cell_count) as *mut u64 }
+        let text_size = cell_count * 2;
+        let aligned_text_size = (text_size + 7) & !7;
+        unsafe { (text_ptr as *mut u8).add(aligned_text_size) as *mut u64 }
     }
 }
 
@@ -156,12 +165,35 @@ impl FlatScreenBuffer {
         row * self.cols + col
     }
 
-    /// 设置单元格文本
+    /// 设置单元格文本 (增加双宽字符清理与 UTF-16 处理)
     #[inline]
-    pub fn set_cell_text(&mut self, col: usize, row: usize, ch: u16) {
+    pub fn set_cell_text(&mut self, col: usize, row: usize, code_point: u32) {
         let idx = self.cell_index(col, row);
-        if idx < self.text_data.len() {
-            self.text_data[idx] = ch;
+        if idx >= self.text_data.len() {
+            return;
+        }
+
+        // 1. 覆盖前的清理逻辑
+        if col > 0 && self.text_data[idx] == 0 {
+            // 如果当前是占位符，清理前一个格
+            self.text_data[idx - 1] = ' ' as u16;
+        }
+
+        // 2. 写入字符 (处理 UTF-16)
+        if code_point <= 0xFFFF {
+            self.text_data[idx] = code_point as u16;
+        } else {
+            // 对于 Emoji (U+1Fxxx)，将其拆分为代理对存入两个格子
+            // 这样 Java 侧直接读取时就能识别出 Emoji
+            let u = code_point - 0x10000;
+            let hi = ((u >> 10) & 0x3FF) as u16 | 0xD800;
+            let lo = (u & 0x3FF) as u16 | 0xDC00;
+            
+            self.text_data[idx] = hi;
+            if col < self.cols - 1 {
+                self.text_data[idx + 1] = lo;
+                return; // 跳过后面的常规写入
+            }
         }
     }
 
@@ -827,6 +859,7 @@ pub struct ScreenState {
     // 主屏幕缓冲区（包含滚动历史）
     pub buffer: Vec<TerminalRow>,
     pub screen_first_row: usize, // 逻辑第 0 行在物理 buffer 中的索引
+    pub active_transcript_rows: usize, // 当前有效的滚动历史行数 (修复 001)
 
     // ========================================================================
     // 新增功能字段
@@ -956,6 +989,7 @@ impl ScreenState {
             tab_stops,
             buffer,
             screen_first_row: 0,
+            active_transcript_rows: 0,
 
             // 保存状态字段初始化
             saved_x: 0,
@@ -1053,12 +1087,6 @@ impl ScreenState {
                 internal as usize
             }
         }
-    }
-
-    /// 获取当前缓冲区的总行数
-    #[inline]
-    fn buffer_len(&self) -> usize {
-        self.get_current_buffer().len()
     }
 
     /// 设置 Java 回调环境
@@ -1964,7 +1992,18 @@ impl ScreenState {
             return;
         }
 
-        // 宽字符预判：如果当前行剩余空间不足以容纳宽字符，强制提前换行
+        // 1. 处理 Pending Wrap (延迟换行)
+        if self.about_to_wrap && self.auto_wrap {
+            self.about_to_wrap = false;
+            self.cursor_x = self.left_margin;
+            if self.cursor_y < self.bottom_margin - 1 {
+                self.cursor_y += 1;
+            } else {
+                self.scroll_up();
+            }
+        }
+
+        // 2. 宽字符预判：如果当前位置放不下宽字符，立即强制换行
         if char_width > 1 && self.auto_wrap && self.cursor_x + char_width > self.right_margin {
             self.cursor_x = self.left_margin;
             if self.cursor_y < self.bottom_margin - 1 {
@@ -1990,25 +2029,47 @@ impl ScreenState {
             let buffer = self.get_current_buffer_mut();
             let row = &mut buffer[y_internal];
             if cursor_x < row.text.len() {
-                row.text[cursor_x] = c;
-                row.styles[cursor_x] = current_style;
+                // 1. 覆盖前的清理逻辑：如果当前格是某个宽字符的右半部分，清理左半部分
+                if row.text[cursor_x] == '\0' && cursor_x > 0 {
+                    row.text[cursor_x - 1] = ' ';
+                }
+                
+                // 2. 覆盖前的清理逻辑：如果当前格是某个宽字符的左半部分，清理右半部分
+                if char_width == 1 && cursor_x + 1 < row.text.len() && row.text[cursor_x + 1] == '\0' {
+                    row.text[cursor_x + 1] = ' ';
+                }
+
+                // 3. 写入新字符 (处理 UTF-16 编码)
+                if ucs <= 0xFFFF {
+                    row.text[cursor_x] = c;
+                    row.styles[cursor_x] = current_style;
+                } else {
+                    // 对于超过 0xFFFF 的码点 (如 Emoji)，虽然 Rust 内部存 char，
+                    // 但我们需要确保同步给 Java 时逻辑一致。
+                    // 注意：Java 侧的 TerminalRow.mText 通常通过 WcWidth.width 判断宽度。
+                    // 这里我们保持 Rust 的 char 存储，但在 set_cell_text 中处理同步。
+                    row.text[cursor_x] = c;
+                    row.styles[cursor_x] = current_style;
+                }
 
                 if char_width == 2 && cursor_x + 1 < row.text.len() {
-                    row.text[cursor_x + 1] = c;
+                    // 对齐 Java 逻辑：第二格必须存占位符 0
+                    row.text[cursor_x + 1] = '\0'; 
                     row.styles[cursor_x + 1] = current_style;
                 }
             }
         }
 
-        // 即时更新光标并处理换行 (Immediate Wrap)
-        self.cursor_x += char_width;
-        if self.auto_wrap && self.cursor_x >= self.right_margin {
-            self.cursor_x = self.left_margin;
-            if self.cursor_y < self.bottom_margin - 1 {
-                self.cursor_y += 1;
+        // 3. 更新光标位置与标记 Pending Wrap
+        if self.cursor_x + char_width >= self.right_margin {
+            if self.auto_wrap {
+                self.cursor_x = self.right_margin - char_width;
+                self.about_to_wrap = true;
             } else {
-                self.scroll_up();
+                self.cursor_x = self.right_margin - char_width;
             }
+        } else {
+            self.cursor_x += char_width;
         }
     }
 
@@ -2124,8 +2185,15 @@ impl ScreenState {
 
         if top == 0 && bottom == self.rows {
             // 全屏滚动：直接移动起始指针
-            let buffer_len = self.buffer_len();
+            let buffer_len = self.buffer.len();
             self.screen_first_row = (self.screen_first_row + 1) % buffer_len;
+            
+            // 增加有效滚动行数计数器 (修复 001)
+            let max_transcript = buffer_len.saturating_sub(self.rows as usize);
+            if self.active_transcript_rows < max_transcript {
+                self.active_transcript_rows += 1;
+            }
+
             // 清理新出现的那一行（逻辑最后一行）
             let last_row_internal = self.external_to_internal_row(self.rows - 1);
             let cols = self.cols as usize;
