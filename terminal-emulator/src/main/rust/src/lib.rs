@@ -548,15 +548,18 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_syncToSh
     // 将当前屏幕数据同步到共享缓冲区
     if let Some(ref mut flat_buffer) = engine.state.flat_buffer {
         if !engine.state.shared_buffer_ptr.is_null() {
-            // 从主缓冲区同步数据到 flat_buffer
+            // 从主缓冲区同步所有物理行数据到 flat_buffer（包括滚动历史）
+            // 共享内存使用线性布局，flat_buffer 的物理行 i 对应共享内存的行 i
             let cols = engine.state.cols as usize;
-            let rows = engine.state.rows as usize;
+            let buffer_len = engine.state.buffer.len();
 
-            for row in 0..rows {
-                for col in 0..cols {
-                    let cell_idx = flat_buffer.cell_index(col, row);
-                    if let Some(buffer_row) = engine.state.buffer.get(row) {
-                        if col < buffer_row.text.len() {
+            // 直接按物理行索引同步，不使用 external_to_internal_row 映射
+            // 因为 flat_buffer 和共享内存都使用线性布局
+            for physical_row in 0..buffer_len {
+                if let Some(buffer_row) = engine.state.buffer.get(physical_row) {
+                    for col in 0..cols.min(buffer_row.text.len()) {
+                        let cell_idx = flat_buffer.cell_index(col, physical_row);
+                        if cell_idx < flat_buffer.text_data.len() {
                             flat_buffer.text_data[cell_idx] = buffer_row.text[col] as u16;
                             flat_buffer.style_data[cell_idx] = buffer_row.styles[col];
                         }

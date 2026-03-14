@@ -1001,7 +1001,8 @@ impl ScreenState {
             saved_main_screen_first_row: 0,
 
             // DirectByteBuffer 零拷贝支持初始化
-            flat_buffer: Some(FlatScreenBuffer::new(cols as usize, rows as usize)),
+            // 使用 total_rows_u 而不是 rows，确保共享内存缓冲区包含所有滚动历史行
+            flat_buffer: Some(FlatScreenBuffer::new(cols as usize, total_rows_u)),
             shared_buffer_ptr: std::ptr::null_mut(),
 
             // Sixel 图形支持初始化

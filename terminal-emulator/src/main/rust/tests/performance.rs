@@ -263,8 +263,8 @@ fn test_batch_row_read_performance() {
         duration.as_secs_f64() * 1000.0
     );
 
-    // 阈值：1,000,000 rows/s
-    assert!(rows_per_sec > 1000000.0, "Batch row read performance too low: {:.0} rows/s", rows_per_sec);
+    // 阈值：100,000 rows/s（考虑到现在需要同步所有行，包括滚动历史）
+    assert!(rows_per_sec > 100000.0, "Batch row read performance too low: {:.0} rows/s", rows_per_sec);
 }
 
 /// 测试全屏批量读取性能
