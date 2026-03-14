@@ -341,6 +341,7 @@ unsafe fn internal_read_screen_batch(
     engine_ptr: jlong,
     dest_text: jobjectArray,
     dest_style: jobjectArray,
+    dest_line_wraps: jni::sys::jbooleanArray,
     start_row: jint,
     num_rows: jint,
 ) {
@@ -359,6 +360,12 @@ unsafe fn internal_read_screen_batch(
     let internal = env.get_native_interface();
     let rust_cols = engine.state.cols as usize;
     let count = num_rows as usize;
+
+    let mut line_wraps_vec = if !dest_line_wraps.is_null() {
+        vec![jni::sys::JNI_FALSE; count]
+    } else {
+        Vec::new()
+    };
 
     for i in 0..count {
         let row = start_row + i as i32;
@@ -387,9 +394,13 @@ unsafe fn internal_read_screen_batch(
             engine.state.copy_row_text(row as usize, &mut text_vec);
             engine.state.copy_row_styles(row as usize, &mut style_vec);
 
-            if i == 0 {
-                // 无论有没有内容，都打印第一行前 5 个字符的码点
-                eprintln!("JNI SYNC TRACE: row={} chars={:?}", row, &text_vec[0..std::cmp::min(5, copy_cols)]);
+            // 同步换行标志
+            if !dest_line_wraps.is_null() {
+                line_wraps_vec[i] = if engine.state.get_line_wrap(row as usize) {
+                    jni::sys::JNI_TRUE
+                } else {
+                    jni::sys::JNI_FALSE
+                };
             }
 
             // 批量写入 Java 数组
@@ -417,6 +428,19 @@ unsafe fn internal_read_screen_batch(
             ((**internal).DeleteLocalRef.unwrap())(internal, row_style_array);
         }
     }
+
+    // 最后统一写入换行标志数组
+    if !dest_line_wraps.is_null() {
+        unsafe {
+            ((**internal).SetBooleanArrayRegion.unwrap())(
+                internal,
+                dest_line_wraps,
+                0,
+                count as jint,
+                line_wraps_vec.as_ptr(),
+            );
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -426,10 +450,11 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readScre
     engine_ptr: jlong,
     dest_text: jobjectArray,
     dest_style: jobjectArray,
+    dest_line_wraps: jni::sys::jbooleanArray,
     start_row: jint,
     num_rows: jint,
 ) {
-    internal_read_screen_batch(env_ptr, engine_ptr, dest_text, dest_style, start_row, num_rows);
+    internal_read_screen_batch(env_ptr, engine_ptr, dest_text, dest_style, dest_line_wraps, start_row, num_rows);
 }
 
 /// 读取整个屏幕的优化版本（固定从第 0 行开始）
@@ -440,6 +465,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readFull
     engine_ptr: jlong,
     dest_text: jobjectArray,
     dest_style: jobjectArray,
+    dest_line_wraps: jni::sys::jbooleanArray,
 ) {
     if engine_ptr == 0 {
         return;
@@ -450,12 +476,26 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readFull
         guard.state.rows as jint
     };
 
-    internal_read_screen_batch(env_ptr, engine_ptr, dest_text, dest_style, 0, rows);
+    internal_read_screen_batch(env_ptr, engine_ptr, dest_text, dest_style, dest_line_wraps, 0, rows);
 }
 
 // ============================================================================
 // 状态查询方法
 // ============================================================================
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_calculateChecksumFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) -> jlong {
+    if engine_ptr == 0 {
+        return 0;
+    }
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = engine_lock.read().unwrap();
+    guard.state.calculate_checksum() as jlong
+}
 
 /// 获取终端行数
 #[unsafe(no_mangle)]

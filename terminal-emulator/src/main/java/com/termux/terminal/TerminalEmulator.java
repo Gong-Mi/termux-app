@@ -437,11 +437,15 @@ public final class TerminalEmulator {
 
                 char[][] text = new char[rowsToUse][colsToUse];
                 long[][] style = new long[rowsToUse][colsToUse];
-                readScreenBatchFromRust(mRustEnginePtr, text, style, startRow, rowsToUse);
+                boolean[] lineWraps = new boolean[rowsToUse];
+                readScreenBatchFromRust(mRustEnginePtr, text, style, lineWraps, startRow, rowsToUse);
 
                 TerminalBuffer targetBuffer = isAlternateBufferActive() ? mAltBuffer : mMainBuffer;
                 for (int i = 0; i < rowsToUse; i++) {
                     TerminalRow row = targetBuffer.allocateFullLineIfNecessary(startRow + i);
+                    
+                    // 同步换行标志
+                    row.mLineWrap = lineWraps[i];
                     
                     // Rust 化模式下跳过，数据已在共享内存中
                     if (row.isRustBacked()) continue;

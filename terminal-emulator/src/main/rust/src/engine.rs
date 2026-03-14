@@ -486,6 +486,7 @@ impl Default for SixelDecoder {
 pub struct TerminalRow {
     pub text: Vec<char>,
     pub styles: Vec<u64>,
+    pub line_wrap: bool,
 }
 
 impl TerminalRow {
@@ -493,6 +494,7 @@ impl TerminalRow {
         Self {
             text: vec![' '; cols],
             styles: vec![STYLE_NORMAL; cols],
+            line_wrap: false,
         }
     }
 
@@ -1995,6 +1997,10 @@ impl ScreenState {
         // 1. 处理 Pending Wrap (延迟换行)
         if self.auto_wrap {
             if (self.about_to_wrap && char_width == 1) || (char_width == 2 && self.cursor_x >= self.right_margin - 1) {
+                // 标记当前行为自动换行逻辑行
+                let y_wrapped = self.external_to_internal_row(self.cursor_y);
+                self.get_current_buffer_mut()[y_wrapped].line_wrap = true;
+
                 self.about_to_wrap = false;
                 self.cursor_x = self.left_margin;
                 if self.cursor_y < self.bottom_margin - 1 {
@@ -3129,6 +3135,40 @@ impl ScreenState {
         self.back_color = self.saved_back_color;
     }
 
+    pub fn calculate_checksum(&self) -> u64 {
+        let mut hasher: u64 = 0xcbf29ce484222325;
+        let fnv_prime: u64 = 0x100000001b3;
+
+        for row in &self.buffer {
+            let text_ptr = row.text.as_ptr() as *const u8;
+            let text_len = row.text.len() * 2;
+            let text_bytes = unsafe { std::slice::from_raw_parts(text_ptr, text_len) };
+            for &b in text_bytes {
+                hasher = (hasher ^ (b as u64)).wrapping_mul(fnv_prime);
+            }
+
+            let style_ptr = row.styles.as_ptr() as *const u8;
+            let style_len = row.styles.len() * 8;
+            let style_bytes = unsafe { std::slice::from_raw_parts(style_ptr, style_len) };
+            for &b in style_bytes {
+                hasher = (hasher ^ (b as u64)).wrapping_mul(fnv_prime);
+            }
+
+            hasher = (hasher ^ (if row.line_wrap { 1u64 } else { 0u64 })).wrapping_mul(fnv_prime);
+        }
+        hasher
+    }
+
+    pub fn get_line_wrap(&self, row: usize) -> bool {
+        let y_internal = self.external_to_internal_row(row as i32);
+        self.get_current_buffer()[y_internal].line_wrap
+    }
+
+    pub fn set_line_wrap(&mut self, row: usize, wrap: bool) {
+        let y_internal = self.external_to_internal_row(row as i32);
+        self.get_current_buffer_mut()[y_internal].line_wrap = wrap;
+    }
+
     pub fn copy_row_text(&self, row: usize, dest: &mut [u16]) {
         let idx = self.external_to_internal_row(row as i32);
         let buffer = self.get_current_buffer();
@@ -3739,6 +3779,7 @@ impl<'a> Perform for PurePerformHandler<'a> {
         }
     }
 }
+
 
 pub struct TerminalEngine {
     pub parser: Parser,

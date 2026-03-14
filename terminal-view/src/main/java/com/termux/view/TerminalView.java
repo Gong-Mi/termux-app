@@ -565,6 +565,7 @@ public final class TerminalView extends View {
     public void setTextSize(int textSize) {
         mRenderer = new TerminalRenderer(textSize, mRenderer == null ? Typeface.MONOSPACE : mRenderer.mTypeface);
         updateSize();
+        invalidate(); // 修复：缩放后强制触发重绘，即使行列数未变
     }
 
     public void setTypeface(Typeface newTypeface) {
