@@ -433,10 +433,10 @@ public final class TerminalBuffer {
     /**
      * Read a batch of screen rows from Rust.
      */
-    public static void readScreenBatch(long rustEnginePtr, char[][] textBuffer, long[][] styleBuffer, int startRow, int numRows) {
+    public static void readScreenBatch(long rustEnginePtr, char[][] textBuffer, long[][] styleBuffer, boolean[] lineWraps, int startRow, int numRows) {
         if (rustEnginePtr == 0) return;
         try {
-            TerminalEmulator.readScreenBatchFromRust(rustEnginePtr, textBuffer, styleBuffer, startRow, numRows);
+            TerminalEmulator.readScreenBatchFromRust(rustEnginePtr, textBuffer, styleBuffer, lineWraps, startRow, numRows);
         } catch (UnsatisfiedLinkError e) {
             // Ignore if native method not found
         }
@@ -445,10 +445,10 @@ public final class TerminalBuffer {
     /**
      * Read the full screen from Rust.
      */
-    public void readFullScreen(long rustEnginePtr, char[][] textBuffer, long[][] styleBuffer) {
+    public void readFullScreen(long rustEnginePtr, char[][] textBuffer, long[][] styleBuffer, boolean[] lineWraps) {
         if (rustEnginePtr == 0) return;
         try {
-            TerminalEmulator.readFullScreenFromRust(rustEnginePtr, textBuffer, styleBuffer);
+            TerminalEmulator.readFullScreenFromRust(rustEnginePtr, textBuffer, styleBuffer, lineWraps);
         } catch (UnsatisfiedLinkError e) {
             // Ignore if native method not found
         }
