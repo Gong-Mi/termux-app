@@ -35,11 +35,6 @@ jobs:
         with:
           targets: aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
 
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "terminal-emulator/src/main/rust -> target"
-
       - name: Build APKs (includes Rust automated build)
         shell: bash {0}
         env:
