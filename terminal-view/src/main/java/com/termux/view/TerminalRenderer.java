@@ -81,6 +81,10 @@ public final class TerminalRenderer {
             mEmulator.syncScreenBatchFromRust(effectiveTopRow, effectiveEndRow - effectiveTopRow);
         }
 
+        // 关键修复：从共享内存获取当前 Rust 引擎的实际列数，确保渲染同步
+        final int rustCols = mEmulator.getSharedBufferColsRust();
+        final int actualCols = (rustCols > 0) ? Math.min(columns, rustCols) : columns;
+
         float heightOffset = mFontLineSpacingAndAscent;
         for (int row = topRow; row < endRow; row++) {
             heightOffset += mFontLineSpacing;
@@ -91,7 +95,7 @@ public final class TerminalRenderer {
             int selx1 = -1, selx2 = -1;
             if (row >= selectionY1 && row <= selectionY2) {
                 if (row == selectionY1) selx1 = selectionX1;
-                selx2 = (row == selectionY2) ? selectionX2 : mEmulator.getCols();
+                selx2 = (row == selectionY2) ? selectionX2 : columns;
             }
 
             TerminalRow lineObject = screen.allocateFullLineIfNecessary(screen.externalToInternalRow(row));
@@ -102,7 +106,8 @@ public final class TerminalRenderer {
             final char[] line = lineObject.isRustBacked() ? lineObject.getTextArray() : lineObject.mText;
             if (line == null) continue;
             
-            final int charsUsedInLine = lineObject.getSpaceUsed();
+            // 关键修复：使用行内实际使用的字符数（getSpaceUsed），防止读取到缓冲区残留的空格
+            final int charsUsedInLine = Math.min(lineObject.getSpaceUsed(), actualCols * 2); // 宽字符可能占用两倍空间
 
             long lastRunStyle = 0;
             boolean lastRunInsideCursor = false;
@@ -113,7 +118,7 @@ public final class TerminalRenderer {
             int currentCharIndex = 0;
             float measuredWidthForRun = 0.f;
 
-            for (int column = 0; column < columns && currentCharIndex < charsUsedInLine; ) {
+            for (int column = 0; column < actualCols && currentCharIndex < charsUsedInLine; ) {
                 final char charAtIndex = line[currentCharIndex];
                 final boolean charIsHighsurrogate = Character.isHighSurrogate(charAtIndex);
                 final int charsForCodePoint = charIsHighsurrogate ? 2 : 1;
