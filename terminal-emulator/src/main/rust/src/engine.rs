@@ -2067,8 +2067,8 @@ impl ScreenState {
                 }
 
                 if char_width == 2 && cursor_x + 1 < row.text.len() {
-                    // 对齐 Java 逻辑：第二格必须存占位符 0
-                    row.text[cursor_x + 1] = '\0'; 
+                    // 修复：第二格存储空格而不是'\0'，避免 Java 侧显示 null 字节
+                    row.text[cursor_x + 1] = ' ';
                     row.styles[cursor_x + 1] = current_style;
                 }
             }
@@ -3378,6 +3378,7 @@ pub struct PurePerformHandler<'a> {
 
 impl<'a> Perform for PurePerformHandler<'a> {
     fn print(&mut self, c: char) {
+        eprintln!("[TRACE] WRITE(U+{:04X})", c as u32);
         self.last_printed_char = Some(c);
         self.state.print(c);
     }
