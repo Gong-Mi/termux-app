@@ -132,7 +132,7 @@ public final class TerminalEmulator {
                     @Override public void onCopyTextToClipboard(String text) { if (mSession != null) mSession.onCopyTextToClipboard(text); }
                     @Override public void onPasteTextFromClipboard() { if (mSession != null) mSession.onPasteTextFromClipboard(); }
                     @Override public void onWriteToSession(String data) { if (mSession != null) mSession.write(data); }
-                    @Override public void onWriteToSessionBytes(byte[] data) { if (mSession != null) mSession.write(data); }
+                    @Override public void onWriteToSessionBytes(byte[] data) { if (mSession != null) mSession.write(data, 0, data.length); }
                     @Override public void reportColorResponse(String colorSpec) { if (mSession != null) mSession.write("\u001b]" + colorSpec + "\u0007"); }
                     @Override public void reportTerminalResponse(String response) { if (mSession != null) mSession.write(response); }
                 });

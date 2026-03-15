@@ -1,8 +1,13 @@
+package com.termux.terminal;
+
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 /**
  * A row in a terminal, composed of a fixed number of cells.
+ *
+ * Rust 化版本：支持直接从 DirectByteBuffer 读取数据（零拷贝）
+ * 当 mSharedBuffer 不为 null 时，数据 from 共享内存读取（只读模式）；否则使用本地数组。
  */
 public final class TerminalRow {
 
@@ -10,11 +15,10 @@ public final class TerminalRow {
     private static final int MAX_COMBINING_CHARACTERS_PER_COLUMN = 15;
 
     private int mColumns;
+
+    // 本地数据（非 Rust 化模式）
     public char[] mText;
-    private short mSpaceUsed;
-    boolean mLineWrap;
     public final long[] mStyle;
-    public boolean mHasNonOneWidthOrSurrogateChars;
 
     // 共享内存引用（Rust 化模式 - 只读）
     private ByteBuffer mSharedBuffer;
@@ -25,6 +29,13 @@ public final class TerminalRow {
     private long[] mStyleCache;
     private boolean mCacheValid;
 
+    short mSpaceUsed;
+    boolean mLineWrap;
+    public boolean mHasNonOneWidthOrSurrogateChars;
+
+    /**
+     * 构造使用本地数组的 TerminalRow（传统模式）
+     */
     public TerminalRow(int columns, long style) {
         mColumns = columns;
         mText = new char[(int) (SPARE_CAPACITY_FACTOR * columns)];
@@ -38,47 +49,88 @@ public final class TerminalRow {
 
     /**
      * 构造使用共享内存的 TerminalRow（Rust 化模式 - 只读）
+     * 注意：mTextCache 需要 SPARE_CAPACITY_FACTOR 额外空间，防止渲染宽字符时越界
      */
     public TerminalRow(ByteBuffer sharedBuffer, int rowOffset, int columns) {
         mColumns = columns;
         mSharedBuffer = sharedBuffer;
         mText = null;
         mStyle = null;
+        // 使用 SPARE_CAPACITY_FACTOR 确保有足够空间处理宽字符和组合字符
         mTextCache = new char[(int) (SPARE_CAPACITY_FACTOR * columns)];
         mStyleCache = new long[columns];
         mCacheValid = false;
         mSpaceUsed = (short) columns;
         mLineWrap = false;
         mHasNonOneWidthOrSurrogateChars = false;
-        mRowOffset = rowOffset;
+        
+        // 验证 rowOffset 的有效性
+        if (sharedBuffer != null && columns > 0) {
+            int maxValidRowOffset = sharedBuffer.capacity() / columns - 1;
+            if (rowOffset < 0 || rowOffset > maxValidRowOffset) {
+                // 无效的 rowOffset，设置为安全值并初始化缓存
+                mRowOffset = 0;
+                Arrays.fill(mTextCache, ' ');
+                Arrays.fill(mStyleCache, TextStyle.NORMAL);
+                mCacheValid = true;
+            } else {
+                mRowOffset = rowOffset;
+            }
+        } else {
+            mRowOffset = 0;
+        }
     }
 
     public boolean isRustBacked() {
         return mSharedBuffer != null;
     }
 
-    public void updateSharedBuffer(ByteBuffer sharedBuffer, int rowOffset, int columns) {
-        this.mSharedBuffer = sharedBuffer;
-        this.mRowOffset = rowOffset;
-        this.mColumns = columns;
-        this.mCacheValid = false;
-    }
-
     private void refreshCache() {
         if (mSharedBuffer != null && !mCacheValid) {
-            // Header 偏移 16 字节，StyleOffset 在 12 字节处
-            int styleOffset = mSharedBuffer.getInt(12);
-            int cellCount = mColumns;
+            // 验证 mRowOffset 的有效性，防止脏数据导致崩溃
+            int maxValidRowOffset = mSharedBuffer.capacity() / mColumns - 1;
+            if (mRowOffset < 0 || mRowOffset > maxValidRowOffset) {
+                // mRowOffset 无效，填充默认值并标记缓存有效
+                Arrays.fill(mTextCache, ' ');
+                Arrays.fill(mStyleCache, TextStyle.NORMAL);
+                mCacheValid = true;
+                return;
+            }
             
-            for (int col = 0; col < cellCount; col++) {
-                int cellIdx = mRowOffset + col;
-                // 文本：Header(16) + index * 2
-                mTextCache[col] = mSharedBuffer.getChar(16 + cellIdx * 2);
-                // 样式：styleOffset + index * 8
-                mStyleCache[col] = mSharedBuffer.getLong(styleOffset + cellIdx * 8);
+            for (int col = 0; col < mColumns; col++) {
+                mTextCache[col] = getCharUnsafe(col);
+                mStyleCache[col] = getStyleUnsafe(col);
             }
             mCacheValid = true;
         }
+    }
+
+    private char getCharUnsafe(int column) {
+        if (mSharedBuffer == null) return ' ';
+        int cellIndex = mRowOffset + column;
+        // FlatScreenBuffer 布局：[Header:16 bytes][text_data][style_data]
+        int textByteOffset = 16 + cellIndex * 2;
+        
+        if (textByteOffset + 1 >= mSharedBuffer.capacity()) return ' ';
+        
+        int low = mSharedBuffer.get(textByteOffset) & 0xFF;
+        int high = mSharedBuffer.get(textByteOffset + 1) & 0xFF;
+        return (char) (low | (high << 8));
+    }
+
+    private long getStyleUnsafe(int column) {
+        if (mSharedBuffer == null) return TextStyle.NORMAL;
+        int cellIndex = mRowOffset + column;
+        
+        // 关键测绘修正：从 Header 第 12 字节读取物理偏移
+        int styleBaseOffset = mSharedBuffer.getInt(12);
+        int styleByteOffset = styleBaseOffset + cellIndex * 8;
+
+        if (styleByteOffset < 0 || styleByteOffset + 8 > mSharedBuffer.capacity()) {
+            return TextStyle.NORMAL;
+        }
+
+        return mSharedBuffer.getLong(styleByteOffset);
     }
 
     public char[] getTextArray() {
@@ -97,7 +149,49 @@ public final class TerminalRow {
         return mStyle;
     }
 
+    public int getSpaceUsed() {
+        return mSpaceUsed;
+    }
+
+    public void invalidateCache() {
+        mCacheValid = false;
+    }
+
+    public void updateSharedBuffer(ByteBuffer sharedBuffer, int rowOffset, int columns) {
+        boolean columnsChanged = (this.mColumns != columns);
+        this.mColumns = columns;
+        mSharedBuffer = sharedBuffer;
+        if (mSharedBuffer != null) {
+            mSharedBuffer.order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        }
+        
+        // 如果列数发生变化，重新分配缓存
+        if (columnsChanged || mTextCache == null || mStyleCache == null) {
+            mTextCache = new char[(int) (SPARE_CAPACITY_FACTOR * mColumns)];
+            mStyleCache = new long[mColumns];
+        }
+        
+        // 验证 rowOffset 的有效性
+        if (sharedBuffer != null && mColumns > 0) {
+            int maxValidRowOffset = sharedBuffer.capacity() / mColumns - 1;
+            if (rowOffset < 0 || rowOffset > maxValidRowOffset) {
+                // 无效的 rowOffset，设置为安全值
+                mRowOffset = 0;
+                Arrays.fill(mTextCache, ' ');
+                Arrays.fill(mStyleCache, TextStyle.NORMAL);
+                mCacheValid = true;
+                mSpaceUsed = (short) mColumns;
+                return;
+            }
+        }
+        mRowOffset = rowOffset;
+        mSpaceUsed = (short) mColumns;
+        mCacheValid = false;
+    }
+
     public void copyInterval(TerminalRow line, int sourceX1, int sourceX2, int destinationX) {
+        if (isRustBacked() || line.isRustBacked()) return;
+
         mHasNonOneWidthOrSurrogateChars |= line.mHasNonOneWidthOrSurrogateChars;
         final int x1 = line.findStartOfColumn(sourceX1);
         final int x2 = line.findStartOfColumn(sourceX2);
@@ -121,23 +215,34 @@ public final class TerminalRow {
         }
     }
 
-    public int getSpaceUsed() { return mSpaceUsed; }
+    public void copyRange(TerminalRow dstRow, int sx, int dx, int w) {
+        if (isRustBacked() || dstRow.isRustBacked()) return;
+        if (w <= 0) return;
+        for (int i = 0; i < w; i++) {
+            int codePoint = getChar(sx + i);
+            long style = getStyle(sx + i);
+            dstRow.setChar(dx + i, codePoint, style);
+        }
+    }
 
     public final int findStartOfColumn(int column) {
         if (column == mColumns) return mSpaceUsed;
+        char[] text = isRustBacked() ? getTextArray() : mText;
+        if (text == null) return 0;
+
         int currentColumn = 0;
         int currentCharIndex = 0;
         while (currentCharIndex < mSpaceUsed) {
             int newCharIndex = currentCharIndex;
-            char c = mText[newCharIndex++];
-            int codePoint = Character.isHighSurrogate(c) ? Character.toCodePoint(c, mText[newCharIndex++]) : c;
+            char c = text[newCharIndex++];
+            int codePoint = Character.isHighSurrogate(c) ? Character.toCodePoint(c, text[newCharIndex++]) : c;
             int wcwidth = WcWidth.width(codePoint);
             if (wcwidth > 0) {
                 currentColumn += wcwidth;
                 if (currentColumn == column) {
                     while (newCharIndex < mSpaceUsed) {
-                        char nc = mText[newCharIndex];
-                        int ncp = Character.isHighSurrogate(nc) ? Character.toCodePoint(nc, mText[newCharIndex+1]) : nc;
+                        char nc = text[newCharIndex];
+                        int ncp = Character.isHighSurrogate(nc) ? Character.toCodePoint(nc, text[newCharIndex+1]) : nc;
                         if (WcWidth.width(ncp) <= 0) newCharIndex += (ncp > 65535 ? 2 : 1);
                         else break;
                     }
@@ -150,10 +255,12 @@ public final class TerminalRow {
     }
 
     public final boolean wideDisplayCharacterStartingAt(int column) {
+        char[] text = isRustBacked() ? getTextArray() : mText;
+        if (text == null) return false;
+
         for (int currentCharIndex = 0, currentColumn = 0; currentCharIndex < mSpaceUsed; ) {
-            int oldCharIndex = currentCharIndex;
-            char c = mText[currentCharIndex++];
-            int codePoint = Character.isHighSurrogate(c) ? Character.toCodePoint(c, mText[currentCharIndex++]) : c;
+            char c = text[currentCharIndex++];
+            int codePoint = Character.isHighSurrogate(c) ? Character.toCodePoint(c, text[currentCharIndex++]) : c;
             int wcwidth = WcWidth.width(codePoint);
             if (wcwidth > 0) {
                 if (currentColumn == column && wcwidth == 2) return true;
@@ -165,7 +272,7 @@ public final class TerminalRow {
     }
 
     public void clear(long style) {
-        if (mSharedBuffer != null) return;
+        if (isRustBacked()) return;
         Arrays.fill(mText, ' ');
         Arrays.fill(mStyle, style);
         mSpaceUsed = (short) mColumns;
@@ -173,9 +280,15 @@ public final class TerminalRow {
     }
 
     public final void setChar(int columnToSet, final int codePoint, final long style) {
+        if (isRustBacked()) return;
         if (columnToSet < 0 || columnToSet >= mColumns) return;
-        mStyle[columnToSet] = style;
+
         final int newWidth = WcWidth.width(codePoint);
+        mStyle[columnToSet] = style;
+        if (newWidth == 2 && columnToSet + 1 < mColumns) {
+            mStyle[columnToSet + 1] = style;
+        }
+
         if (!mHasNonOneWidthOrSurrogateChars) {
             if (newWidth == 1 && codePoint < 65536) {
                 mText[columnToSet] = (char) codePoint;
@@ -186,22 +299,37 @@ public final class TerminalRow {
         setCharInternal(columnToSet, codePoint, style, newWidth);
     }
 
-    /** 批量设置 ASCII 字符，仅在确定目标区域为单宽度字符且无组合字符时使用 */
+    public int getChar(int column) {
+        if (column < 0 || column >= mColumns) return ' ';
+        char[] text = isRustBacked() ? getTextArray() : mText;
+        if (text == null) return ' ';
+        if (!mHasNonOneWidthOrSurrogateChars) return text[column];
+
+        int idx = findStartOfColumn(column);
+        if (idx >= mSpaceUsed) return ' ';
+        char c = text[idx];
+        if (Character.isHighSurrogate(c) && idx + 1 < mSpaceUsed) {
+            return Character.toCodePoint(c, text[idx+1]);
+        }
+        return c;
+    }
+
+    public final long getStyle(int column) {
+        if (column < 0 || column >= mColumns) return TextStyle.NORMAL;
+        long[] style = isRustBacked() ? getStyleArray() : mStyle;
+        if (style == null) return TextStyle.NORMAL;
+        return style[column];
+    }
+
     public final void setChars(int columnStart, byte[] buffer, int offset, int length, long style) {
         if (columnStart < 0 || columnStart + length > mColumns) return;
-        
-        // 批量更新样式
         Arrays.fill(mStyle, columnStart, columnStart + length, style);
-        
         if (!mHasNonOneWidthOrSurrogateChars) {
-            // 最快路径：直接拷贝字节到字符数组
             for (int i = 0; i < length; i++) {
                 mText[columnStart + i] = (char) (buffer[offset + i] & 0xFF);
             }
             return;
         }
-        
-        // 如果行内已有复杂字符，则回退到逐个处理以保持内部变长存储的正确性
         for (int i = 0; i < length; i++) {
             setChar(columnStart + i, buffer[offset + i] & 0xFF, style);
         }
@@ -210,8 +338,9 @@ public final class TerminalRow {
     private void setCharInternal(int columnToSet, int codePoint, long style, int newWidth) {
         final boolean newIsCombining = newWidth <= 0;
         boolean wasWide = (columnToSet > 0) && wideDisplayCharacterStartingAt(columnToSet - 1);
-        if (newIsCombining) { if (wasWide) columnToSet--; }
-        else {
+        if (newIsCombining) {
+            if (wasWide) columnToSet--;
+        } else {
             if (wasWide) setChar(columnToSet - 1, ' ', style);
             if (newWidth == 2 && wideDisplayCharacterStartingAt(columnToSet + 1)) setChar(columnToSet + 1, ' ', style);
         }
@@ -241,7 +370,9 @@ public final class TerminalRow {
             System.arraycopy(mText, 0, nt, 0, index);
             System.arraycopy(mText, index, nt, index + 1, mSpaceUsed - index);
             mText = nt;
-        } else System.arraycopy(mText, index, mText, index + 1, mSpaceUsed - index);
+        } else {
+            System.arraycopy(mText, index, mText, index + 1, mSpaceUsed - index);
+        }
         mText[index] = ' ';
         mSpaceUsed++;
     }
@@ -251,11 +382,9 @@ public final class TerminalRow {
         if (col == mColumns - 2) mSpaceUsed = (short) idx;
         else {
             int nidx = idx;
-            // 跳过要被覆盖的列起始字符及其所有组合字符
             nidx += (Character.isHighSurrogate(mText[nidx]) ? 2 : 1);
             while (nidx < mSpaceUsed && WcWidth.width(mText, nidx) <= 0)
                 nidx += (Character.isHighSurrogate(mText[nidx]) ? 2 : 1);
-
             System.arraycopy(mText, nidx, mText, idx, mSpaceUsed - nidx);
             mSpaceUsed -= (nidx - idx);
         }
@@ -266,15 +395,6 @@ public final class TerminalRow {
         return true;
     }
 
-    public final long getStyle(int column) {
-        if (mSharedBuffer != null) {
-            int styleOffset = mSharedBuffer.getInt(12);
-            return mSharedBuffer.getLong(styleOffset + (mRowOffset + column) * 8);
-        }
-        return mStyle[column];
-    }
-
-    /** 在 Native 批量写入后调用，以同步 Java 层的状态 */
     public final void updateStatusAfterBatchWrite() {
         mSpaceUsed = (short) mColumns;
     }
