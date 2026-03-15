@@ -253,4 +253,9 @@ afterEvaluate {
             it.dependsOn(downloadBootstraps)
         }
     }
+
+    // 关键修复：确保 App 模块合并 JNI 库之前，Rust 库已经编译完成
+    tasks.matching { it.name.startsWith("merge") && it.name.endsWith("JniLibFolders") }.configureEach {
+        it.dependsOn(":terminal-emulator:buildAllRust")
+    }
 }
