@@ -12,6 +12,9 @@ on:
     branches:
       - master
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -23,6 +26,8 @@ jobs:
     steps:
       - name: Clone repository
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Setup java 17
         uses: actions/setup-java@v5
@@ -35,8 +40,19 @@ jobs:
         with:
           targets: aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
 
+      - name: Install cargo-ndk
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk@3.5.0
+
+      - name: Run Rust Tests
+        run: |
+          cd terminal-emulator/src/main/rust
+          # 运行 Rust 原生一致性测试
+          cargo test --test consistency -- --test-threads=1
+
       - name: Build APKs (includes Rust automated build)
-        shell: bash {0}
+        shell: bash
         env:
           PACKAGE_VARIANT: ${{ matrix.package_variant }}
         run: |
@@ -69,7 +85,7 @@ jobs:
           export TERMUX_APP_VERSION_NAME="${RELEASE_VERSION_NAME/v/}" # Used by app/build.gradle
           export TERMUX_APK_VERSION_TAG="$APK_VERSION_TAG" # Used by app/build.gradle
           export TERMUX_PACKAGE_VARIANT="${{ env.PACKAGE_VARIANT }}" # Used by app/build.gradle
-          if ! ./gradlew assembleDebug; then
+          if ! ./gradlew assembleDebug --parallel; then
             exit_on_error "Build failed for '$APK_VERSION_TAG' build."
           fi
 
