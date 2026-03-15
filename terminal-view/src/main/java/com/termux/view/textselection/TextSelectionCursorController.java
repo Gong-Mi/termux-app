@@ -101,8 +101,7 @@ public class TextSelectionCursorController implements CursorController {
             while (mSelX1 > 0 && !"".equals(screen.getSelectedText(mSelX1 - 1, mSelY1, mSelX1 - 1, mSelY1))) {
                 mSelX1--;
             }
-            int cols = terminalView.mEmulator.getCols();
-            while (mSelX2 < cols - 1 && !"".equals(screen.getSelectedText(mSelX2 + 1, mSelY1, mSelX2 + 1, mSelY1))) {
+            while (mSelX2 < terminalView.mEmulator.mColumns - 1 && !"".equals(screen.getSelectedText(mSelX2 + 1, mSelY1, mSelX2 + 1, mSelY1))) {
                 mSelX2++;
             }
         }
@@ -218,8 +217,7 @@ public class TextSelectionCursorController implements CursorController {
     @Override
     public void updatePosition(TextSelectionHandleView handle, int x, int y) {
         TerminalBuffer screen = terminalView.mEmulator.getScreen();
-        int rows = terminalView.mEmulator.getRows();
-        final int scrollRows = screen.getActiveRows() - rows;
+        final int scrollRows = screen.getActiveRows() - terminalView.mEmulator.mRows;
         if (handle == mStartHandle) {
             mSelX1 = terminalView.getCursorX(x);
             mSelY1 = terminalView.getCursorY(y);
@@ -230,8 +228,8 @@ public class TextSelectionCursorController implements CursorController {
             if (mSelY1 < -scrollRows) {
                 mSelY1 = -scrollRows;
 
-            } else if (mSelY1 > rows - 1) {
-                mSelY1 = rows - 1;
+            } else if (mSelY1 > terminalView.mEmulator.mRows - 1) {
+                mSelY1 = terminalView.mEmulator.mRows - 1;
 
             }
 
@@ -250,7 +248,7 @@ public class TextSelectionCursorController implements CursorController {
                     if (topRow < -scrollRows) {
                         topRow = -scrollRows;
                     }
-                } else if (mSelY1 >= topRow + rows) {
+                } else if (mSelY1 >= topRow + terminalView.mEmulator.mRows) {
                     topRow++;
                     if (topRow > 0) {
                         topRow = 0;
@@ -271,8 +269,8 @@ public class TextSelectionCursorController implements CursorController {
 
             if (mSelY2 < -scrollRows) {
                 mSelY2 = -scrollRows;
-            } else if (mSelY2 > rows - 1) {
-                mSelY2 = rows - 1;
+            } else if (mSelY2 > terminalView.mEmulator.mRows - 1) {
+                mSelY2 = terminalView.mEmulator.mRows - 1;
             }
 
             if (mSelY1 > mSelY2) {
@@ -290,7 +288,7 @@ public class TextSelectionCursorController implements CursorController {
                     if (topRow < -scrollRows) {
                         topRow = -scrollRows;
                     }
-                } else if (mSelY2 >= topRow + rows) {
+                } else if (mSelY2 >= topRow + terminalView.mEmulator.mRows) {
                     topRow++;
                     if (topRow > 0) {
                         topRow = 0;
