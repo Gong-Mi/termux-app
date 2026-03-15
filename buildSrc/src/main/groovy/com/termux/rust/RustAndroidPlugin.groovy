@@ -14,7 +14,8 @@ class RustAndroidPlugin implements Plugin<Project> {
             def rustSrcDir = project.file(rustExt.rustDir)
             def jniLibsDir = project.file("src/main/jniLibs")
 
-            def targets = [
+            // ABI 到 Rust Target 的映射（用于定位编译产物）
+            def abiToTarget = [
                 "arm64-v8a": "aarch64-linux-android",
                 "armeabi-v7a": "armv7-linux-androideabi",
                 "x86_64": "x86_64-linux-android",
@@ -23,7 +24,7 @@ class RustAndroidPlugin implements Plugin<Project> {
 
             def buildAllRust = project.task("buildAllRust")
 
-            targets.each { abi, target ->
+            abiToTarget.each { abi, target ->
                 def buildTask = project.tasks.create("buildRust-${abi}", Exec) {
                     group = "rust"
                     workingDir = rustSrcDir
@@ -31,7 +32,8 @@ class RustAndroidPlugin implements Plugin<Project> {
                     def buildType = project.gradle.startParameter.taskNames.any { it.contains("Release") } ? "release" : "debug"
                     def cargoFlags = buildType == "release" ? ["--release"] : []
                     
-                    commandLine "cargo", "build", "--target", target, *cargoFlags
+                    // 同步您之前的参数：使用 cargo-ndk, 指定 API 24
+                    commandLine "cargo", "ndk", "-t", abi, "-p", "24", "build", *cargoFlags
                     
                     inputs.dir(project.file("${rustExt.rustDir}/src"))
                     inputs.file(project.file("${rustExt.rustDir}/Cargo.toml"))
@@ -48,13 +50,15 @@ class RustAndroidPlugin implements Plugin<Project> {
                                 from sourceLib
                                 into destDir
                             }
+                        } else {
+                            println "Warning: Could not find Rust library at ${sourceLib.absolutePath}"
                         }
                     }
                 }
                 buildAllRust.dependsOn(buildTask)
             }
 
-            // Gradle 8.x/9.x 任务挂载
+            // 挂载到 Android 编译生命周期
             project.tasks.configureEach { task ->
                 if (task.name.startsWith("merge") && task.name.endsWith("JniLibFolders")) {
                     task.dependsOn(buildAllRust)
