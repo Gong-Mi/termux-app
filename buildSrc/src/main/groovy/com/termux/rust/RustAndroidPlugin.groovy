@@ -26,6 +26,16 @@ class RustAndroidPlugin implements Plugin<Project> {
                 def cargoTaskName = "cargoNdkBuild${abi.capitalize()}"
                 def cargoTask = project.tasks.register(cargoTaskName, Exec) {
                     workingDir extension.rustSrcDir
+                    
+                    // 跟踪 Rust 源代码作为输入，确保增量构建生效
+                    inputs.dir("${extension.rustSrcDir}/src")
+                    inputs.file("${extension.rustSrcDir}/Cargo.toml")
+                    if (project.file("${extension.rustSrcDir}/Cargo.lock").exists()) {
+                        inputs.file("${extension.rustSrcDir}/Cargo.lock")
+                    }
+                    
+                    // 指定输出文件
+                    outputs.file("${cargoTargetDir}/${rustArch}/release/lib${extension.libName}.so")
 
                     commandLine 'cargo', 'ndk', '-t', abi, '-p', extension.minSdkVersion.toString(), 'build', '--release'
 
