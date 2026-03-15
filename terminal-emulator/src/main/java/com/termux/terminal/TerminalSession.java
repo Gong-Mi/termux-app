@@ -279,11 +279,6 @@ public final class TerminalSession extends TerminalOutput {
         // Stop the reader and writer threads, and close the I/O streams
         mTerminalToProcessIOQueue.close();
         mProcessToTerminalIOQueue.close();
-
-        if (mEmulator != null) {
-            mEmulator.destroy();
-        }
-
         if (mTerminalFileDescriptor != -1 && JNI.sNativeLibrariesLoaded) {
             try {
                 JNI.close(mTerminalFileDescriptor);
