@@ -64,8 +64,8 @@ class RustAndroidPlugin implements Plugin<Project> {
             }
 
             // Hook into Android build process - ensure Rust libs are built before mergeJniLibFolders
-            project.tasks.whenTaskAdded { task ->
-                if (task.name == "preBuild" || task.name.startsWith("merge") && task.name.endsWith("JniLibFolders")) {
+            project.tasks.configureEach { task ->
+                if (task.name == "preBuild" || (task.name.startsWith("merge") && task.name.endsWith("JniLibFolders"))) {
                     task.dependsOn buildAllRust
                 }
             }
