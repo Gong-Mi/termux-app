@@ -1,5 +1,11 @@
 apply plugin: 'com.android.library'
 apply plugin: 'maven-publish'
+apply plugin: com.termux.rust.RustAndroidPlugin
+
+rust {
+    rustDir = "src/main/rust"
+    moduleName = "termux_rust"
+}
 
 android {
     namespace "com.termux.terminal"
@@ -52,7 +58,7 @@ android {
 
 project.afterEvaluate {
     tasks.named("preBuild").configure {
-        // Rust 编译现在由 CMakeLists.txt 管理
+        // Rust compilation is now handled by RustAndroidPlugin
     }
 }
 
