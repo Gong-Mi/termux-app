@@ -81,8 +81,8 @@ public final class TerminalRenderer {
             mEmulator.syncScreenBatchFromRust(effectiveTopRow, effectiveEndRow - effectiveTopRow);
         }
 
-        // 关键修复：从共享内存获取当前 Rust 引擎的实际列数，确保渲染同步
-        final int rustCols = mEmulator.getSharedBufferColsRust();
+        // 关键修复：从 Rust 引擎获取当前实际列数，确保渲染同步
+        final int rustCols = mEmulator.getCols();
         final int actualCols = (rustCols > 0) ? Math.min(columns, rustCols) : columns;
 
         float heightOffset = mFontLineSpacingAndAscent;
