@@ -199,11 +199,21 @@ public final class TerminalRenderer {
         }
 
         // Map indexed colors to palette (non-truecolor)
-        if ((style & TextStyle.CHARACTER_ATTRIBUTE_TRUECOLOR_FOREGROUND) == 0) {
-            foregroundColor = palette[foregroundColor];
+        // Check if color is an indexed color by looking at its value (ARGB)
+        // If the color isn't a truecolor (highest bits aren't 0xFF), then it must be an index
+        if ((foregroundColor & 0xff000000) != 0xff000000) {
+            if (foregroundColor >= 0 && foregroundColor < palette.length) {
+                foregroundColor = palette[foregroundColor];
+            } else {
+                foregroundColor = palette[TextStyle.COLOR_INDEX_FOREGROUND];
+            }
         }
-        if ((style & TextStyle.CHARACTER_ATTRIBUTE_TRUECOLOR_BACKGROUND) == 0) {
-            backgroundColor = palette[backgroundColor];
+        if ((backgroundColor & 0xff000000) != 0xff000000) {
+            if (backgroundColor >= 0 && backgroundColor < palette.length) {
+                backgroundColor = palette[backgroundColor];
+            } else {
+                backgroundColor = palette[TextStyle.COLOR_INDEX_BACKGROUND];
+            }
         }
 
         if (insideCursor) {

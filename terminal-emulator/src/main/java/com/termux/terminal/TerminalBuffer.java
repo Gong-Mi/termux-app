@@ -1,5 +1,6 @@
 package com.termux.terminal;
 
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 /**
@@ -19,6 +20,12 @@ public final class TerminalBuffer {
     private int mActiveTranscriptRows = 0;
     /** The index in the circular buffer where the visible screen starts. */
     private int mScreenFirstRow = 0;
+    /** Whether to get active transcript rows from Rust (Full Takeover mode). */
+    private boolean mUseRustTranscriptRows = false;
+    /** Reference to Rust engine pointer for getting transcript rows. */
+    private long mRustEnginePtr = 0;
+    /** Shared memory buffer for Rust-backed mode (zero-copy) */
+    private ByteBuffer mSharedBuffer;
 
     /**
      * Create a transcript screen.
@@ -33,8 +40,51 @@ public final class TerminalBuffer {
         mTotalRows = totalRows;
         mScreenRows = screenRows;
         mLines = new TerminalRow[totalRows];
+        for (int i = 0; i < totalRows; i++) {
+            mLines[i] = new TerminalRow(columns, TextStyle.NORMAL);
+        }
+        mSharedBuffer = null;
 
         blockSet(0, 0, columns, screenRows, ' ', TextStyle.NORMAL);
+    }
+
+    /**
+     * Enable Rust-backed mode using shared memory buffer
+     * @param sharedBuffer DirectByteBuffer from Rust
+     * @param rustEnginePtr Native engine pointer
+     */
+    public void enableRustBackedMode(ByteBuffer sharedBuffer, long rustEnginePtr) {
+        mSharedBuffer = sharedBuffer;
+        mRustEnginePtr = rustEnginePtr;
+        mUseRustTranscriptRows = true;
+        
+        // Re-create TerminalRow instances to use shared memory
+        int cellsPerRow = mColumns;
+        for (int i = 0; i < mTotalRows; i++) {
+            int rowOffset = i * cellsPerRow;
+            mLines[i] = new TerminalRow(sharedBuffer, rowOffset, mColumns);
+        }
+    }
+
+    /**
+     * Update shared buffer reference (e.g., after resize)
+     */
+    public void updateSharedBuffer(ByteBuffer sharedBuffer, int newColumns) {
+        this.mColumns = newColumns;
+        mSharedBuffer = sharedBuffer;
+        if (sharedBuffer != null) {
+            int cellsPerRow = mColumns;
+            for (int i = 0; i < mTotalRows; i++) {
+                if (mLines[i] != null && mLines[i].isRustBacked()) {
+                    int rowOffset = i * cellsPerRow;
+                    mLines[i].updateSharedBuffer(sharedBuffer, rowOffset, mColumns);
+                }
+            }
+        }
+    }
+
+    public void setRustEnginePtr(long rustEnginePtr) {
+        this.mRustEnginePtr = rustEnginePtr;
     }
 
     public String getTranscriptText() {
@@ -145,6 +195,13 @@ public final class TerminalBuffer {
     }
 
     public int getActiveTranscriptRows() {
+        if (mUseRustTranscriptRows && mRustEnginePtr != 0) {
+            try {
+                return TerminalEmulator.getActiveTranscriptRowsFromRust(mRustEnginePtr);
+            } catch (UnsatisfiedLinkError e) {
+                return mActiveTranscriptRows;
+            }
+        }
         return mActiveTranscriptRows;
     }
 

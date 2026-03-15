@@ -1,5 +1,4 @@
-package com.termux.terminal;
-
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 /**
@@ -10,18 +9,92 @@ public final class TerminalRow {
     private static final float SPARE_CAPACITY_FACTOR = 1.5f;
     private static final int MAX_COMBINING_CHARACTERS_PER_COLUMN = 15;
 
-    private final int mColumns;
+    private int mColumns;
     public char[] mText;
     private short mSpaceUsed;
     boolean mLineWrap;
     public final long[] mStyle;
     public boolean mHasNonOneWidthOrSurrogateChars;
 
+    // 共享内存引用（Rust 化模式 - 只读）
+    private ByteBuffer mSharedBuffer;
+    private int mRowOffset;
+
+    // 缓存（用于 Rust 化模式下需要数组访问的场景）
+    private char[] mTextCache;
+    private long[] mStyleCache;
+    private boolean mCacheValid;
+
     public TerminalRow(int columns, long style) {
         mColumns = columns;
         mText = new char[(int) (SPARE_CAPACITY_FACTOR * columns)];
         mStyle = new long[columns];
+        mSharedBuffer = null;
+        mTextCache = null;
+        mStyleCache = null;
+        mCacheValid = false;
         clear(style);
+    }
+
+    /**
+     * 构造使用共享内存的 TerminalRow（Rust 化模式 - 只读）
+     */
+    public TerminalRow(ByteBuffer sharedBuffer, int rowOffset, int columns) {
+        mColumns = columns;
+        mSharedBuffer = sharedBuffer;
+        mText = null;
+        mStyle = null;
+        mTextCache = new char[(int) (SPARE_CAPACITY_FACTOR * columns)];
+        mStyleCache = new long[columns];
+        mCacheValid = false;
+        mSpaceUsed = (short) columns;
+        mLineWrap = false;
+        mHasNonOneWidthOrSurrogateChars = false;
+        mRowOffset = rowOffset;
+    }
+
+    public boolean isRustBacked() {
+        return mSharedBuffer != null;
+    }
+
+    public void updateSharedBuffer(ByteBuffer sharedBuffer, int rowOffset, int columns) {
+        this.mSharedBuffer = sharedBuffer;
+        this.mRowOffset = rowOffset;
+        this.mColumns = columns;
+        this.mCacheValid = false;
+    }
+
+    private void refreshCache() {
+        if (mSharedBuffer != null && !mCacheValid) {
+            // Header 偏移 16 字节，StyleOffset 在 12 字节处
+            int styleOffset = mSharedBuffer.getInt(12);
+            int cellCount = mColumns;
+            
+            for (int col = 0; col < cellCount; col++) {
+                int cellIdx = mRowOffset + col;
+                // 文本：Header(16) + index * 2
+                mTextCache[col] = mSharedBuffer.getChar(16 + cellIdx * 2);
+                // 样式：styleOffset + index * 8
+                mStyleCache[col] = mSharedBuffer.getLong(styleOffset + cellIdx * 8);
+            }
+            mCacheValid = true;
+        }
+    }
+
+    public char[] getTextArray() {
+        if (mSharedBuffer != null) {
+            refreshCache();
+            return mTextCache;
+        }
+        return mText;
+    }
+
+    public long[] getStyleArray() {
+        if (mSharedBuffer != null) {
+            refreshCache();
+            return mStyleCache;
+        }
+        return mStyle;
     }
 
     public void copyInterval(TerminalRow line, int sourceX1, int sourceX2, int destinationX) {
@@ -92,6 +165,7 @@ public final class TerminalRow {
     }
 
     public void clear(long style) {
+        if (mSharedBuffer != null) return;
         Arrays.fill(mText, ' ');
         Arrays.fill(mStyle, style);
         mSpaceUsed = (short) mColumns;
@@ -192,7 +266,13 @@ public final class TerminalRow {
         return true;
     }
 
-    public final long getStyle(int column) { return mStyle[column]; }
+    public final long getStyle(int column) {
+        if (mSharedBuffer != null) {
+            int styleOffset = mSharedBuffer.getInt(12);
+            return mSharedBuffer.getLong(styleOffset + (mRowOffset + column) * 8);
+        }
+        return mStyle[column];
+    }
 
     /** 在 Native 批量写入后调用，以同步 Java 层的状态 */
     public final void updateStatusAfterBatchWrite() {
