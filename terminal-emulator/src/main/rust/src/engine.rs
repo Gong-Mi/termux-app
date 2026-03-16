@@ -3750,6 +3750,21 @@ impl ScreenState {
         self.title.as_deref()
     }
 
+    /// getCursorRow - 获取光标行（复制 Java getCursorRow 实现）
+    pub fn get_cursor_row(&self) -> i32 {
+        self.cursor_y
+    }
+
+    /// getCursorCol - 获取光标列（复制 Java getCursorCol 实现）
+    pub fn get_cursor_col(&self) -> i32 {
+        self.cursor_x
+    }
+
+    /// getCursorStyle - 获取光标样式（复制 Java getCursorStyle 实现）
+    pub fn get_cursor_style(&self) -> i32 {
+        self.cursor_style
+    }
+
     // ========================================================================
     // 设备状态报告（复制 Java TerminalEmulator 实现）
     // ========================================================================
