@@ -528,6 +528,14 @@ impl TerminalRow {
             }
         }
     }
+
+    /// setChar - 设置单个字符（复制 Java TerminalRow.setChar 实现）
+    pub fn set_char(&mut self, column: usize, code_point: u32, style: u64) {
+        if column < self.text.len() {
+            self.text[column] = std::char::from_u32(code_point).unwrap_or(' ');
+            self.styles[column] = style;
+        }
+    }
 }
 
 /// SGR 样式位字段定义（与 Java TextStyle 格式兼容）
@@ -1216,14 +1224,22 @@ impl ScreenState {
     // 备用屏幕缓冲区辅助方法
     // ========================================================================
 
-    /// 清除备用缓冲区
+    /// 清除备用缓冲区（复制 Java TerminalEmulator 实现）
+    /// 使用 blockSet 方法清除整个备用缓冲区区域
     fn clear_alt_buffer(&mut self) {
-        let cols = self.cols as usize;
-        let alt_len = self.alt_buffer.len();
-        for i in 0..alt_len {
-            let row_cols = self.alt_buffer[i].text.len();
-            self.alt_buffer[i].clear(0, row_cols.min(cols), STYLE_NORMAL);
-        }
+        let cols = self.cols;
+        let rows = self.rows as i32;
+        let current_style = self.current_style;
+        
+        // 临时切换到备用缓冲区
+        let was_alt = self.use_alternate_buffer;
+        self.use_alternate_buffer = true;
+        
+        // 使用 block_set 清除整个备用缓冲区（与 Java 一致）
+        self.block_set(0, 0, cols, rows, ' ' as u32, current_style);
+        
+        // 恢复之前的缓冲区状态
+        self.use_alternate_buffer = was_alt;
     }
 
     /// 检查是否使用备用缓冲区
@@ -2265,6 +2281,57 @@ impl ScreenState {
             let buffer = self.get_current_buffer_mut();
             buffer[clear_idx].clear(0, cols, current_style);
         }
+    }
+
+    /// blockSet - 批量设置字符块（复制 Java TerminalBuffer.blockSet 实现）
+    /// 用于清除或填充矩形区域的字符
+    /// 
+    /// # 参数
+    /// * `sx` - 起始列（0-based）
+    /// * `sy` - 起始行（0-based）
+    /// * `w` - 宽度（列数）
+    /// * `h` - 高度（行数）
+    /// * `val` - 字符值（如空格 ' ' = 32）
+    /// * `style` - 样式
+    pub fn block_set(&mut self, sx: i32, sy: i32, w: i32, h: i32, val: u32, style: u64) {
+        let cols = self.cols;
+        let rows = self.rows;
+        
+        // 边界检查（与 Java 实现一致）
+        if sx < 0 || sx + w > cols || sy < 0 || sy + h > rows {
+            eprintln!("Illegal arguments! blockSet({}, {}, {}, {}, {}, {}, {})", 
+                     sx, sy, w, h, val, cols, rows);
+            return;
+        }
+        
+        // 逐行设置字符
+        for y in 0..h {
+            for x in 0..w {
+                self.set_char(sx + x, sy + y, val, style);
+            }
+        }
+    }
+
+    /// blockClear - 清除矩形区域（用空格填充）
+    pub fn block_clear(&mut self, sx: i32, sy: i32, w: i32, h: i32) {
+        self.block_set(sx, sy, w, h, ' ' as u32, self.current_style);
+    }
+
+    /// setChar - 设置单个字符（复制 Java TerminalBuffer.setChar 实现）
+    pub fn set_char(&mut self, column: i32, row: i32, code_point: u32, style: u64) {
+        let cols = self.cols;
+        let screen_rows = self.rows;
+        
+        // 边界检查
+        if row < 0 || row >= screen_rows || column < 0 || column >= cols {
+            eprintln!("TerminalBuffer.setChar(): row={}, column={}, screen_rows={}, cols={}", 
+                     row, column, screen_rows, cols);
+            return;
+        }
+        
+        let internal_row = self.external_to_internal_row(row);
+        let buffer = self.get_current_buffer_mut();
+        buffer[internal_row].set_char(column as usize, code_point, style);
     }
 
     fn erase_in_display(&mut self, mode: i32) {
