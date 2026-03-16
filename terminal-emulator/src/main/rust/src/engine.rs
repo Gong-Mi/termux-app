@@ -3765,6 +3765,11 @@ impl ScreenState {
         self.cursor_style
     }
 
+    /// getTerminalTranscriptRows - 获取终端滚动历史行数（复制 Java getTerminalTranscriptRows 实现）
+    pub fn get_terminal_transcript_rows(&self) -> i32 {
+        self.active_transcript_rows as i32
+    }
+
     // ========================================================================
     // 设备状态报告（复制 Java TerminalEmulator 实现）
     // ========================================================================
