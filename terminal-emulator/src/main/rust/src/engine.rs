@@ -2756,6 +2756,35 @@ impl ScreenState {
         }
     }
 
+    /// setCursorBlinkingEnabled - 设置光标闪烁启用状态（复制 Java setCursorBlinkingEnabled 实现）
+    pub fn set_cursor_blinking_enabled(&mut self, enabled: bool) {
+        self.cursor_blinking_enabled = enabled;
+    }
+
+    /// setCursorBlinkState - 设置光标闪烁状态（复制 Java setCursorBlinkState 实现）
+    pub fn set_cursor_blink_state(&mut self, state: bool) {
+        self.cursor_blink_state = state;
+    }
+
+    /// isKeypadApplicationMode - 检查数字键盘是否处于应用模式（复制 Java isKeypadApplicationMode 实现）
+    /// DECSET 66 - DECNKM
+    pub fn is_keypad_application_mode(&self) -> bool {
+        self.application_keypad
+    }
+
+    /// isCursorKeysApplicationMode - 检查光标键是否处于应用模式（复制 Java isCursorKeysApplicationMode 实现）
+    /// DECSET 1 - DECCKM
+    pub fn is_cursor_keys_application_mode(&self) -> bool {
+        self.application_cursor_keys
+    }
+
+    /// isMouseTrackingActive - 检查鼠标跟踪是否激活（复制 Java isMouseTrackingActive 实现）
+    /// DECSET 1000 或 DECSET 1002
+    pub fn is_mouse_tracking_active(&self) -> bool {
+        (self.decset_flags & DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE) != 0
+            || (self.decset_flags & DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT) != 0
+    }
+
     /// blockSet - 批量设置字符块（复制 Java TerminalBuffer.blockSet 实现）
     /// 用于清除或填充矩形区域的字符
     /// 
