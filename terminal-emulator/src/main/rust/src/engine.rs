@@ -536,6 +536,22 @@ impl TerminalRow {
             self.styles[column] = style;
         }
     }
+
+    /// getSelectedText - 获取选定区域的文本（简化版本）
+    /// 
+    /// # 参数
+    /// * `x1` - 起始列
+    /// * `x2` - 结束列
+    pub fn get_selected_text(&self, x1: usize, x2: usize) -> String {
+        let start = min(x1, self.text.len());
+        let end = min(x2, self.text.len());
+        
+        if start >= end {
+            return String::new();
+        }
+        
+        self.text[start..end].iter().collect()
+    }
 }
 
 /// SGR 样式位字段定义（与 Java TextStyle 格式兼容）
@@ -3303,6 +3319,60 @@ impl ScreenState {
     /// 编码当前前景色、背景色和效果
     pub fn get_style(&self) -> u64 {
         encode_style(self.fore_color, self.back_color, self.effect)
+    }
+
+    /// getTitle - 获取终端会话标题（复制 Java getTitle 实现）
+    /// 
+    /// # 返回
+    /// 当前标题（如果没有设置则返回 None）
+    pub fn get_title(&self) -> Option<&str> {
+        self.title.as_deref()
+    }
+
+    /// getSelectedText - 获取选定区域的文本（复制 Java getSelectedText 实现）
+    /// 
+    /// # 参数
+    /// * `x1` - 起始列
+    /// * `y1` - 起始行
+    /// * `x2` - 结束列
+    /// * `y2` - 结束行
+    /// 
+    /// # 返回
+    /// 选定的文本
+    pub fn get_selected_text(&self, x1: i32, y1: i32, x2: i32, y2: i32) -> String {
+        let buffer = self.get_current_buffer();
+        let cols = self.cols as usize;
+        let screen_rows = self.rows as usize;
+        
+        // 限制选择范围在有效区域内
+        let sel_y1 = y1.max(0).min(screen_rows as i32 - 1);
+        let sel_y2 = y2.max(0).min(screen_rows as i32 - 1);
+        let sel_x1 = x1.max(0).min(cols as i32 - 1);
+        let sel_x2 = x2.max(0).min(cols as i32 - 1);
+        
+        let mut result = String::new();
+        
+        for row in sel_y1..=sel_y2 {
+            let internal_row = self.external_to_internal_row(row);
+            let line = &buffer[internal_row];
+            
+            let x1_col = if row == sel_y1 { sel_x1 as usize } else { 0 };
+            let x2_col = if row == sel_y2 { 
+                (sel_x2 as usize + 1).min(cols) 
+            } else { 
+                cols 
+            };
+            
+            let line_text = line.get_selected_text(x1_col, x2_col);
+            result.push_str(&line_text);
+            
+            // 如果不是最后一行，添加换行符
+            if row < sel_y2 {
+                result.push('\n');
+            }
+        }
+        
+        result
     }
 
     /// 清除制表位 (TBC) - CSI {N} g
