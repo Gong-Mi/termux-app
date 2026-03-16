@@ -2832,6 +2832,28 @@ impl ScreenState {
         self.scroll_counter = 0;
     }
 
+    /// doLinefeed - 处理换行符（复制 Java TerminalEmulator.doLinefeed 实现）
+    /// LF (Line Feed) - 光标下移一行，如果在滚动区域底部则滚动
+    pub fn do_linefeed(&mut self) {
+        let below_scrolling_region = self.cursor_y >= self.bottom_margin;
+        let new_cursor_row = self.cursor_y + 1;
+        
+        if below_scrolling_region {
+            // 在滚动区域下方：只要不在最后一行就下移
+            if self.cursor_y != self.rows - 1 {
+                self.set_cursor_row(new_cursor_row);
+            }
+        } else {
+            // 在滚动区域内
+            if new_cursor_row == self.bottom_margin {
+                self.scroll_down_one_line_wrapper();
+                self.set_cursor_row(self.bottom_margin - 1);
+            } else {
+                self.set_cursor_row(new_cursor_row);
+            }
+        }
+    }
+
     /// blockSet - 批量设置字符块（复制 Java TerminalBuffer.blockSet 实现）
     /// 用于清除或填充矩形区域的字符
     /// 
