@@ -275,6 +275,27 @@ public final class TerminalEmulator {
         return 80;
     }
 
+    /** 获取活动滚动历史行数 */
+    public int getActiveTranscriptRows() {
+        if (mEnginePtr != 0) {
+            return getActiveTranscriptRowsFromRust(mEnginePtr);
+        }
+        return 0;
+    }
+
+    /** 获取活动总行数（屏幕 + 滚动历史） */
+    public int getActiveRows() {
+        return getActiveTranscriptRows() + getRows();
+    }
+
+    /** 获取选定区域的文本 */
+    public String getSelectedText(int x1, int y1, int x2, int y2) {
+        if (mEnginePtr != 0) {
+            return getSelectedTextFromRust(mEnginePtr, x1, y1, x2, y2);
+        }
+        return "";
+    }
+
     public TerminalBuffer getScreen() {
         // 返回 null，实际屏幕数据通过 Rust 共享内存访问
         // TerminalView 需要适配这个变化
@@ -337,6 +358,8 @@ public final class TerminalEmulator {
     private static native int getRowsFromRust(long enginePtr);
 
     private static native int getColsFromRust(long enginePtr);
+
+    private static native String getSelectedTextFromRust(long enginePtr, int x1, int y1, int x2, int y2);
 
     private static native void clearScrollCounterFromRust(long enginePtr);
 

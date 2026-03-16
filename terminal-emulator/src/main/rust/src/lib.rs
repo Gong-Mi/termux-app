@@ -527,6 +527,35 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColsF
     guard.state.cols as jint
 }
 
+/// 获取选定区域的文本
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getSelectedTextFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+    x1: jint,
+    y1: jint,
+    x2: jint,
+    y2: jint,
+) -> jstring {
+    if engine_ptr == 0 {
+        return std::ptr::null_mut();
+    }
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = engine_lock.read().unwrap();
+    let text = guard.state.get_selected_text(x1, y1, x2, y2);
+    
+    let mut env = match JNIEnv::from_raw(_env_ptr) {
+        Ok(e) => e,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    
+    match env.new_string(text) {
+        Ok(s) => s.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
 // ============================================================================
 // DirectByteBuffer 零拷贝优化 (阶段 2)
 // ============================================================================

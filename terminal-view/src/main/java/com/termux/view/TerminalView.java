@@ -252,9 +252,9 @@ public final class TerminalView extends View {
                 final boolean mouseTrackingAtStartOfFling = mEmulator.isMouseTrackingActive();
                 float SCALE = 0.25f;
                 if (mouseTrackingAtStartOfFling) {
-                    mScroller.fling(0, 0, 0, -(int) (velocityY * SCALE), 0, 0, -mEmulator.mRows / 2, mEmulator.mRows / 2);
+                    mScroller.fling(0, 0, 0, -(int) (velocityY * SCALE), 0, 0, -mEmulator.getRows() / 2, mEmulator.getRows() / 2);
                 } else {
-                    mScroller.fling(0, mTopRow, 0, -(int) (velocityY * SCALE), 0, 0, -mEmulator.getScreen().getActiveTranscriptRows(), 0);
+                    mScroller.fling(0, mTopRow, 0, -(int) (velocityY * SCALE), 0, 0, -mEmulator.getActiveTranscriptRows(), 0);
                 }
 
                 post(new Runnable() {
@@ -487,17 +487,17 @@ public final class TerminalView extends View {
 
     @Override
     protected int computeVerticalScrollRange() {
-        return mEmulator == null ? 1 : mEmulator.getScreen().getActiveRows();
+        return mEmulator == null ? 1 : mEmulator.getActiveRows();
     }
 
     @Override
     protected int computeVerticalScrollExtent() {
-        return mEmulator == null ? 1 : mEmulator.mRows;
+        return mEmulator == null ? 1 : mEmulator.getRows();
     }
 
     @Override
     protected int computeVerticalScrollOffset() {
-        return mEmulator == null ? 1 : mEmulator.getScreen().getActiveRows() + mTopRow - mEmulator.mRows;
+        return mEmulator == null ? 1 : mEmulator.getActiveRows() + mTopRow - mEmulator.getRows();
     }
 
     public void onScreenUpdated() {
@@ -507,7 +507,7 @@ public final class TerminalView extends View {
     public void onScreenUpdated(boolean skipScrolling) {
         if (mEmulator == null) return;
 
-        int rowsInHistory = mEmulator.getScreen().getActiveTranscriptRows();
+        int rowsInHistory = mEmulator.getActiveTranscriptRows();
         if (mTopRow < -rowsInHistory) mTopRow = -rowsInHistory;
 
         if (isSelectingText() || mEmulator.isAutoScrollDisabled()) {
@@ -632,7 +632,7 @@ public final class TerminalView extends View {
                 // e.g. less, which shifts to the alt screen without mouse handling.
                 handleKeyCode(up ? KeyEvent.KEYCODE_DPAD_UP : KeyEvent.KEYCODE_DPAD_DOWN, 0);
             } else {
-                mTopRow = Math.min(0, Math.max(-(mEmulator.getScreen().getActiveTranscriptRows()), mTopRow + (up ? -1 : 1)));
+                mTopRow = Math.min(0, Math.max(-(mEmulator.getActiveTranscriptRows()), mTopRow + (up ? -1 : 1)));
                 if (!awakenScrollBars()) invalidate();
             }
         }
@@ -985,7 +985,7 @@ public final class TerminalView extends View {
                 if (shiftDown) {
                     long time = SystemClock.uptimeMillis();
                     MotionEvent motionEvent = MotionEvent.obtain(time, time, MotionEvent.ACTION_DOWN, 0, 0, 0);
-                    doScroll(motionEvent, keyCode == KeyEvent.KEYCODE_PAGE_UP ? -mEmulator.mRows : mEmulator.mRows);
+                    doScroll(motionEvent, keyCode == KeyEvent.KEYCODE_PAGE_UP ? -mEmulator.getRows() : mEmulator.getRows());
                     motionEvent.recycle();
                     return true;
                 }
@@ -1056,7 +1056,7 @@ public final class TerminalView extends View {
         int newColumns = Math.max(4, (int) (viewWidth / mRenderer.mFontWidth));
         int newRows = Math.max(4, (viewHeight - mRenderer.mFontLineSpacingAndAscent) / mRenderer.mFontLineSpacing);
 
-        if (mEmulator == null || (newColumns != mEmulator.mColumns || newRows != mEmulator.mRows)) {
+        if (mEmulator == null || (newColumns != mEmulator.getCols() || newRows != mEmulator.getRows())) {
             mTermSession.updateSize(newColumns, newRows, (int) mRenderer.getFontWidth(), mRenderer.getFontLineSpacing());
             mEmulator = mTermSession.getEmulator();
             mClient.onEmulatorSet();
@@ -1094,7 +1094,7 @@ public final class TerminalView extends View {
     }
 
     private CharSequence getText() {
-        return mEmulator.getScreen().getSelectedText(0, mTopRow, mEmulator.mColumns, mTopRow + mEmulator.mRows);
+        return mEmulator.getSelectedText(0, mTopRow, mEmulator.getCols(), mTopRow + mEmulator.getRows());
     }
 
     public int getCursorX(float x) {
@@ -1106,8 +1106,8 @@ public final class TerminalView extends View {
     }
 
     public int getPointX(int cx) {
-        if (cx > mEmulator.mColumns) {
-            cx = mEmulator.mColumns;
+        if (cx > mEmulator.getCols()) {
+            cx = mEmulator.getCols();
         }
         return Math.round(cx * mRenderer.mFontWidth);
     }
@@ -1396,7 +1396,7 @@ public final class TerminalView extends View {
                     // Optimize: only invalidate the cursor area
                     int cursorX = mEmulator.getCursorCol();
                     int cursorY = mEmulator.getCursorRow();
-                    if (cursorY >= mTopRow && cursorY < mTopRow + mEmulator.mRows) {
+                    if (cursorY >= mTopRow && cursorY < mTopRow + mEmulator.getRows()) {
                         float left = cursorX * mRenderer.mFontWidth;
                         float top = (cursorY - mTopRow) * mRenderer.mFontLineSpacing;
                         float right = left + mRenderer.mFontWidth * 2; // Support double-width chars
