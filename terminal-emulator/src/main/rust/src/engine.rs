@@ -2699,6 +2699,63 @@ impl ScreenState {
         }
     }
 
+    // ========================================================================
+    // 光标样式和状态方法（复制 Java TerminalEmulator 实现）
+    // ========================================================================
+
+    /// setCursorStyle - 设置终端光标样式（复制 Java setCursorStyle 实现）
+    /// 从客户端获取光标样式设置
+    pub fn set_cursor_style(&mut self) {
+        // 从客户端获取光标样式（如果有）
+        let cursor_style = self.get_terminal_cursor_style();
+        
+        // 验证光标样式是否有效
+        if cursor_style.is_none() || !Self::is_valid_cursor_style(cursor_style) {
+            self.cursor_style = 0; // 默认块状光标
+        } else {
+            self.cursor_style = cursor_style.unwrap();
+        }
+    }
+
+    /// getTerminalCursorStyle - 获取终端光标样式（从客户端）
+    fn get_terminal_cursor_style(&self) -> Option<i32> {
+        // 目前返回 None，使用默认值
+        // 未来可以通过 JNI 从 Java 客户端获取
+        None
+    }
+
+    /// isValidCursorStyle - 检查光标样式是否有效
+    fn is_valid_cursor_style(style: Option<i32>) -> bool {
+        match style {
+            Some(s) => s >= 0 && s <= 2, // 0=block, 1=underline, 2=bar
+            None => false,
+        }
+    }
+
+    /// isReverseVideo - 检查反显模式是否启用（复制 Java isReverseVideo 实现）
+    pub fn is_reverse_video(&self) -> bool {
+        self.reverse_video
+    }
+
+    /// isCursorEnabled - 检查光标是否启用（复制 Java isCursorEnabled 实现）
+    pub fn is_cursor_enabled(&self) -> bool {
+        self.cursor_enabled
+    }
+
+    /// shouldCursorBeVisible - 判断光标是否应该可见（复制 Java shouldCursorBeVisible 实现）
+    pub fn should_cursor_be_visible(&self) -> bool {
+        if !self.is_cursor_enabled() {
+            return false;
+        } else {
+            // 如果启用了光标闪烁，返回当前闪烁状态
+            if self.cursor_blinking_enabled {
+                self.cursor_blink_state
+            } else {
+                true
+            }
+        }
+    }
+
     /// blockSet - 批量设置字符块（复制 Java TerminalBuffer.blockSet 实现）
     /// 用于清除或填充矩形区域的字符
     /// 
@@ -3344,7 +3401,7 @@ impl ScreenState {
     /// 使用户可以与终端交互，无论当前状态如何
     pub fn reset(&mut self) {
         // 重置光标样式
-        self.cursor_style = 0; // block cursor
+        self.set_cursor_style();
         
         // 重置参数索引和转义状态
         self.reset_args();
