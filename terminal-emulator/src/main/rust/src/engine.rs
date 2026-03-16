@@ -3553,11 +3553,30 @@ impl ScreenState {
     }
 
     /// getTitle - 获取终端会话标题（复制 Java getTitle 实现）
-    /// 
+    ///
     /// # 返回
     /// 当前标题（如果没有设置则返回 None）
     pub fn get_title(&self) -> Option<&str> {
         self.title.as_deref()
+    }
+
+    // ========================================================================
+    // 设备状态报告（复制 Java TerminalEmulator 实现）
+    // ========================================================================
+
+    /// sendDeviceStatusReport - 发送设备状态报告（DSR - CSI 5 n）
+    /// 响应：CSI 0 n（终端正常）
+    pub fn send_device_status_report(&mut self) {
+        self.write_to_session("\x1b[0n");
+    }
+
+    /// sendCursorPositionReport - 发送光标位置报告（CPR - CSI 6 n）
+    /// 响应：CSI row ; col R
+    pub fn send_cursor_position_report(&mut self) {
+        // Java 中使用 1-based 行号和列号
+        let row = self.cursor_y + 1;
+        let col = self.cursor_x + 1;
+        self.write_to_session(&format!("\x1b[{};{}R", row, col));
     }
 
     /// getSelectedText - 获取选定区域的文本（复制 Java getSelectedText 实现）
