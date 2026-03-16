@@ -2820,6 +2820,18 @@ impl ScreenState {
         self.rows
     }
 
+    /// getActiveTranscriptRows - 获取活动滚动历史行数（复制 Java TerminalBuffer.getActiveTranscriptRows 实现）
+    pub fn get_active_transcript_rows(&self) -> i32 {
+        self.active_transcript_rows as i32
+    }
+
+    /// clearTranscript - 清除滚动历史（复制 Java TerminalBuffer.clearTranscript 实现）
+    pub fn clear_transcript(&mut self) {
+        self.active_transcript_rows = 0;
+        self.screen_first_row = 0;
+        self.scroll_counter = 0;
+    }
+
     /// blockSet - 批量设置字符块（复制 Java TerminalBuffer.blockSet 实现）
     /// 用于清除或填充矩形区域的字符
     /// 
