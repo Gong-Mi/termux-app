@@ -2596,6 +2596,28 @@ impl ScreenState {
         self.about_to_wrap = false;
     }
 
+    /// setCursorRow - 设置光标行（复制 Java setCursorRow 实现）
+    pub fn set_cursor_row(&mut self, row: i32) {
+        self.cursor_y = row.max(0).min(self.rows - 1);
+        self.about_to_wrap = false;
+    }
+
+    /// setCursorCol - 设置光标列（复制 Java setCursorCol 实现）
+    pub fn set_cursor_col(&mut self, col: i32) {
+        self.cursor_x = col.max(0).min(self.cols - 1);
+        self.about_to_wrap = false;
+    }
+
+    /// setCursorColRespectingOriginMode - 设置光标列（考虑原点模式）
+    pub fn set_cursor_col_respecting_origin_mode(&mut self, col: i32) {
+        // 如果原点模式启用，使用 setCursorPosition 逻辑
+        if self.origin_mode {
+            self.set_cursor_position(col, self.cursor_y);
+        } else {
+            self.set_cursor_col(col);
+        }
+    }
+
     /// blockSet - 批量设置字符块（复制 Java TerminalBuffer.blockSet 实现）
     /// 用于清除或填充矩形区域的字符
     /// 
