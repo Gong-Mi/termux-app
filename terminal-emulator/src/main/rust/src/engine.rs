@@ -2820,13 +2820,6 @@ impl ScreenState {
         self.rows
     }
 
-    /// getScreen - 获取当前屏幕缓冲区（复制 Java getScreen 实现）
-    pub fn get_screen(&self) -> &TerminalBuffer {
-        // 返回当前缓冲区的引用
-        // 注意：这里简化处理，实际应该返回 mScreen 的引用
-        unimplemented!("getScreen: 需要返回当前屏幕缓冲区引用")
-    }
-
     /// blockSet - 批量设置字符块（复制 Java TerminalBuffer.blockSet 实现）
     /// 用于清除或填充矩形区域的字符
     /// 
@@ -3579,7 +3572,126 @@ impl ScreenState {
         self.write_to_session(&format!("\x1b[{};{}R", row, col));
     }
 
-    /// getSelectedText - 获取选定区域的文本（复制 Java getSelectedText 实现）
+    // ========================================================================
+    // 矩形区域操作（复制 Java TerminalEmulator 实现）
+    // ========================================================================
+
+    /// decfra - 填充矩形区域（DECFRA - CSI Pch; Pt; Pl; Pb; Pr 'x'）
+    /// 用指定字符填充矩形区域
+    /// 
+    /// # 参数
+    /// * `fill_char` - 填充字符
+    /// * `top` - 上边界（1-based）
+    /// * `left` - 左边界（1-based）
+    /// * `bottom` - 下边界（1-based）
+    /// * `right` - 右边界（1-based）
+    pub fn decfra(&mut self, fill_char: u32, top: i32, left: i32, bottom: i32, right: i32) {
+        // 验证字符范围（32-126 或 160-255）
+        if !((fill_char >= 32 && fill_char <= 126) || (fill_char >= 160 && fill_char <= 255)) {
+            return;
+        }
+
+        let style = self.get_style();
+        let effective_top = if self.origin_mode { self.top_margin } else { 0 };
+        let effective_bottom = if self.origin_mode { self.bottom_margin } else { self.rows };
+        let effective_left = if self.origin_mode { self.left_margin } else { 0 };
+        let effective_right = if self.origin_mode { self.right_margin } else { self.cols };
+
+        let t = (top - 1 + effective_top).min(effective_bottom);
+        let l = (left - 1 + effective_left).min(effective_right);
+        let b = bottom.min(effective_bottom);
+        let r = right.min(effective_right);
+
+        for row in t..b {
+            for col in l..r {
+                self.set_char(col, row, fill_char, style);
+            }
+        }
+    }
+
+    /// decera - 擦除矩形区域（DECERA - CSI $ {TOP};{LEFT};{BOTTOM};{RIGHT} $z）
+    /// 用空格擦除矩形区域
+    pub fn decera(&mut self, top: i32, left: i32, bottom: i32, right: i32) {
+        self.decfra(' ' as u32, top, left, bottom, right);
+    }
+
+    /// decsera - 选择性擦除矩形区域（DECSERA - CSI { TOP};{LEFT};{BOTTOM};{RIGHT} $ {）
+    /// 只擦除非保护区域
+    pub fn decsera(&mut self, top: i32, left: i32, bottom: i32, right: i32) {
+        // 简化实现：与 DECERA 相同，忽略保护属性
+        self.decera(top, left, bottom, right);
+    }
+
+    /// deccara - 改变矩形区域属性（DECCARA - CSI {ATTRIBUTES};{TOP};{LEFT};{BOTTOM};{RIGHT} $r）
+    /// 
+    /// # 参数
+    /// * `attributes` - 属性列表（SGR 代码）
+    /// * `top` - 上边界
+    /// * `left` - 左边界
+    /// * `bottom` - 下边界
+    /// * `right` - 右边界
+    pub fn deccara(&mut self, attributes: &[i32], top: i32, left: i32, bottom: i32, right: i32) {
+        // 简化实现：应用属性到区域
+        // TODO: 完整实现需要逐单元格应用属性
+        let _ = (attributes, top, left, bottom, right); // 暂时占位
+    }
+
+    /// decrara - 反转矩形区域属性（DECRARA - CSI {ATTRIBUTES};{TOP};{LEFT};{BOTTOM};{RIGHT} $t）
+    pub fn decrara(&mut self, attributes: &[i32], top: i32, left: i32, bottom: i32, right: i32) {
+        // 简化实现：反转属性
+        let _ = (attributes, top, left, bottom, right); // 暂时占位
+    }
+
+    /// deccra - 复制矩形区域（DECCRA - CSI Pt; Pl; Pb; Pr; Pdy; Pdx; Pdy; Pdx $v）
+    /// 
+    /// # 参数
+    /// * `src_top` - 源区域上边界
+    /// * `src_left` - 源区域左边界
+    /// * `src_bottom` - 源区域下边界
+    /// * `src_right` - 源区域右边界
+    /// * `dest_top` - 目标区域上边界
+    /// * `dest_left` - 目标区域左边界
+    pub fn deccra(&mut self, src_top: i32, src_left: i32, src_bottom: i32, src_right: i32,
+                  dest_top: i32, dest_left: i32) {
+        let effective_top = if self.origin_mode { self.top_margin } else { 0 };
+        let effective_bottom = if self.origin_mode { self.bottom_margin } else { self.rows };
+        let effective_left = if self.origin_mode { self.left_margin } else { 0 };
+        let effective_right = if self.origin_mode { self.right_margin } else { self.cols };
+
+        let ts = (src_top - 1 + effective_top).min(effective_bottom);
+        let ls = (src_left - 1 + effective_left).min(effective_right);
+        let bs = src_bottom.min(effective_bottom);
+        let rs = src_right.min(effective_right);
+        let td = (dest_top - 1 + effective_top).min(effective_bottom);
+        let ld = (dest_left - 1 + effective_left).min(effective_right);
+
+        let height_to_copy = (effective_bottom - td).min(bs - ts);
+        let width_to_copy = (effective_right - ld).min(rs - ls);
+
+        // 逐行复制
+        for dy in 0..height_to_copy {
+            for dx in 0..width_to_copy {
+                let src_col = ls + dx;
+                let src_row = ts + dy;
+                let dest_col = ld + dx;
+                let dest_row = td + dy;
+                
+                // 获取源字符和样式
+                let buffer = self.get_current_buffer();
+                let src_internal_row = self.external_to_internal_row(src_row);
+                if src_col < self.cols && dest_col < self.cols {
+                    let ch = buffer[src_internal_row].text.get(src_col as usize).copied().unwrap_or(' ');
+                    let style = buffer[src_internal_row].styles.get(src_col as usize).copied().unwrap_or(STYLE_NORMAL);
+                    
+                    // 设置到目标位置
+                    let _ = buffer; // 保持 borrow 直到这里
+                    self.set_char(dest_col, dest_row, ch as u32, style);
+                }
+            }
+        }
+    }
+
+    /// blockSet - 批量设置字符块（复制 Java TerminalBuffer.blockSet 实现）
     /// 
     /// # 参数
     /// * `x1` - 起始列
