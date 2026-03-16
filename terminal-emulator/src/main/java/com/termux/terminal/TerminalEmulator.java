@@ -31,6 +31,9 @@ public final class TerminalEmulator {
     public static final int MOUSE_MIDDLE_BUTTON_MOVED = 33;
     public static final int MOUSE_WHEELUP_BUTTON = 64;
     public static final int MOUSE_WHEELDOWN_BUTTON = 65;
+    
+    // Unicode 替换字符
+    public static final int UNICODE_REPLACEMENT_CHAR = 0xFFFD;
 
     static {
         // 加载 Rust 库
@@ -238,8 +241,43 @@ public final class TerminalEmulator {
         return transcriptRows != null ? transcriptRows : 2000;
     }
 
+    // ========================================================================
+    // 公共字段访问器（供 TerminalView 使用）
+    // ========================================================================
+    
+    /** @deprecated 使用 getRows() 代替 */
+    @Deprecated
+    public int getmRows() {
+        return getRows();
+    }
+    
+    /** @deprecated 使用 getCols() 代替 */
+    @Deprecated
+    public int getmColumns() {
+        return getCols();
+    }
+    
+    /** 获取终端行数 */
+    public int getRows() {
+        // 通过 JNI 获取 Rust 侧的行数
+        if (mEnginePtr != 0) {
+            return getRowsFromRust(mEnginePtr);
+        }
+        return 24;
+    }
+    
+    /** 获取终端列数 */
+    public int getCols() {
+        // 通过 JNI 获取 Rust 侧的列数
+        if (mEnginePtr != 0) {
+            return getColsFromRust(mEnginePtr);
+        }
+        return 80;
+    }
+
     public TerminalBuffer getScreen() {
         // 返回 null，实际屏幕数据通过 Rust 共享内存访问
+        // TerminalView 需要适配这个变化
         return null;
     }
 
@@ -295,6 +333,10 @@ public final class TerminalEmulator {
     private static native boolean isInsertModeActiveFromRust(long enginePtr);
 
     private static native int getScrollCounterFromRust(long enginePtr);
+
+    private static native int getRowsFromRust(long enginePtr);
+
+    private static native int getColsFromRust(long enginePtr);
 
     private static native void clearScrollCounterFromRust(long enginePtr);
 
