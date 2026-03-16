@@ -2901,6 +2901,69 @@ impl ScreenState {
         // 如果不是 ST，继续 APC 序列
     }
 
+    /// doCsiQuestionMark - 处理 CSI ? 序列（复制 Java TerminalEmulator.doCsiQuestionMark 实现）
+    /// 
+    /// # 参数
+    /// * `b` - 最终字节
+    pub fn do_csi_question_mark(&mut self, b: u8) {
+        match b {
+            b'J' | b'K' => {
+                // CSI ? J - DECSED（选择性擦除显示）
+                // CSI ? K - DECSEL（选择性擦除行）
+                self.about_to_wrap = false;
+                
+                let just_row = b == b'K';
+                let arg = self.get_arg0(0);
+                
+                let (start_col, start_row, end_col, end_row) = match arg {
+                    0 => {
+                        // 从活动位置到末尾
+                        (self.cursor_x, self.cursor_y, 
+                         self.cols, 
+                         if just_row { self.cursor_y + 1 } else { self.rows })
+                    }
+                    1 => {
+                        // 从开始到活动位置
+                        (0, if just_row { self.cursor_y } else { 0 },
+                         self.cursor_x + 1, self.cursor_y + 1)
+                    }
+                    2 => {
+                        // 擦除全部
+                        (0, if just_row { self.cursor_y } else { 0 },
+                         self.cols, if just_row { self.cursor_y + 1 } else { self.rows })
+                    }
+                    _ => return, // 未知参数，忽略
+                };
+                
+                let style = self.get_style();
+                for row in start_row..end_row {
+                    for col in start_col..end_col {
+                        self.set_char(col, row, ' ' as u32, style);
+                    }
+                }
+            }
+            b'h' | b'l' => {
+                // CSI ? h / CSI ? l - DECSET / DECRST
+                // 由 handle_decset 处理
+            }
+            b'n' => {
+                // CSI ? n - 设备状态报告（DSR）
+                // 目前忽略
+            }
+            b'r' => {
+                // CSI ? r - 恢复 DECSTBM 边距
+                // 目前忽略
+            }
+            b's' => {
+                // CSI ? s - 保存 DECSTBM 边距
+                // 目前忽略
+            }
+            _ => {
+                // 未知序列，忽略
+            }
+        }
+    }
+
     /// blockSet - 批量设置字符块（复制 Java TerminalBuffer.blockSet 实现）
     /// 用于清除或填充矩形区域的字符
     /// 
