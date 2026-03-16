@@ -2854,6 +2854,28 @@ impl ScreenState {
         }
     }
 
+    /// doCsiBiggerThan - 处理 CSI > 序列（复制 Java TerminalEmulator.doCsiBiggerThan 实现）
+    /// 
+    /// # 参数
+    /// * `b` - 最终字节
+    pub fn do_csi_bigger_than(&mut self, b: u8) {
+        match b {
+            b'c' => {
+                // CSI > c - 次要设备属性（DA2）
+                // 响应：CSI > 41; 320; 0 c
+                // 41 = VT420 类型，320 = xterm 版本号，0 = 键盘 ID
+                self.write_to_session("\x1b[>41;320;0c");
+            }
+            b'm' => {
+                // CSI > m - 修改键盘资源（xterm 扩展）
+                // 目前忽略，不实现
+            }
+            _ => {
+                // 未知序列，忽略
+            }
+        }
+    }
+
     /// blockSet - 批量设置字符块（复制 Java TerminalBuffer.blockSet 实现）
     /// 用于清除或填充矩形区域的字符
     /// 
