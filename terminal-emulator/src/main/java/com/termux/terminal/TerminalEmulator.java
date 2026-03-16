@@ -230,13 +230,6 @@ public final class TerminalEmulator {
         }
     }
 
-    public int getActiveTranscriptRows() {
-        if (mEnginePtr != 0) {
-            return getActiveTranscriptRowsFromRust(mEnginePtr);
-        }
-        return 0;
-    }
-
     public int getTerminalTranscriptRows(Integer transcriptRows) {
         return transcriptRows != null ? transcriptRows : 2000;
     }
