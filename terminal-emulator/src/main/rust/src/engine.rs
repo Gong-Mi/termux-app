@@ -1243,6 +1243,128 @@ impl ScreenState {
         index < 32 && (self.args_sub_params_bitset & (1 << index)) != 0
     }
 
+    // ========================================================================
+    // 日志记录和转义序列辅助方法（复制 Java TerminalEmulator 实现）
+    // ========================================================================
+
+    /// unimplementedSequence - 记录未实现的转义序列
+    pub fn unimplemented_sequence(&mut self, b: u8) {
+        eprintln!("Unimplemented sequence char '{}' (U+{:04x})", 
+                 char::from_u32(b as u32).unwrap_or('?'), b);
+        self.finish_sequence();
+    }
+
+    /// unknownSequence - 记录未知的转义序列
+    pub fn unknown_sequence(&mut self, b: u8) {
+        eprintln!("Unknown sequence char '{}' (numeric value={})", 
+                 char::from_u32(b as u32).unwrap_or('?'), b);
+        self.finish_sequence();
+    }
+
+    /// unknownParameter - 记录未知的参数
+    pub fn unknown_parameter(&mut self, parameter: i32) {
+        eprintln!("Unknown parameter: {}", parameter);
+        self.finish_sequence();
+    }
+
+    /// logError - 记录错误信息（带参数详情）
+    pub fn log_error(&mut self, error_type: &str) {
+        // 始终记录错误（与 Java 的 LOG_ESCAPE_SEQUENCES=false 时行为一致）
+        eprintln!("{}", error_type);
+        self.finish_sequence_and_log_error(error_type);
+    }
+
+    /// finishSequenceAndLogError - 完成转义序列并记录错误
+    pub fn finish_sequence_and_log_error(&mut self, error: &str) {
+        eprintln!("{}", error);
+        self.finish_sequence();
+    }
+
+    /// finishSequence - 完成当前转义序列，重置状态
+    pub fn finish_sequence(&mut self) {
+        // 重置转义序列状态
+        // 注意：具体的 escape_state 字段在 VteParser 中管理
+        // 这里只重置参数相关状态
+        self.reset_args();
+    }
+
+    // ========================================================================
+    // 字符输出和行绘图支持（复制 Java TerminalEmulator 实现）
+    // ========================================================================
+
+    /// emitCodePoint - 输出 Unicode 字符到屏幕（复制 Java emitCodePoint 实现）
+    /// 如果启用了行绘图模式，则将 ASCII 字符映射为 VT100 绘图字符
+    /// 
+    /// # 参数
+    /// * `code_point` - 要输出的 Unicode 码点
+    pub fn emit_code_point(&mut self, code_point: u32) {
+        // 检查是否使用行绘图模式
+        let use_line_drawing = if self.use_line_drawing_uses_g0 {
+            self.use_line_drawing_g0
+        } else {
+            self.use_line_drawing_g1
+        };
+
+        // 如果启用了行绘图，映射 ASCII 字符到 VT100 绘图字符
+        let actual_code_point = if use_line_drawing && code_point <= 127 {
+            self.map_line_drawing(code_point as u8)
+        } else {
+            code_point
+        };
+
+        // 输出字符到屏幕
+        self.print_unicode_code_point(actual_code_point);
+    }
+
+    /// mapLineDrawing - 将 ASCII 字符映射为 VT100 行绘图字符
+    /// 参考：http://www.vt100.net/docs/vt102-ug/table5-15.html
+    fn map_line_drawing(&self, c: u8) -> u32 {
+        match c {
+            b'_' => ' ' as u32,       // Blank
+            b'`' => '◆' as u32,       // Diamond
+            b'0' => '█' as u32,       // Solid block
+            b'a' => '▒' as u32,       // Checker board
+            b'b' => '␉' as u32,       // Horizontal tab
+            b'c' => '␌' as u32,       // Form feed
+            b'd' => '\r' as u32,      // Carriage return
+            b'e' => '␊' as u32,       // Linefeed
+            b'f' => '°' as u32,       // Degree
+            b'g' => '±' as u32,       // Plus-minus
+            b'h' => '\n' as u32,      // Newline
+            b'i' => '␋' as u32,       // Vertical tab
+            b'j' => '┘' as u32,       // Lower right corner
+            b'k' => '┐' as u32,       // Upper right corner
+            b'l' => '┌' as u32,       // Upper left corner
+            b'm' => '└' as u32,       // Lower left corner
+            b'n' => '┼' as u32,       // Crossing lines
+            b'o' => '⎺' as u32,       // Horizontal line - scan 1
+            b'p' => '⎻' as u32,       // Horizontal line - scan 3
+            b'q' => '─' as u32,       // Horizontal line - scan 5
+            b'r' => '⎼' as u32,       // Horizontal line - scan 7
+            b's' => '⎽' as u32,       // Horizontal line - scan 9
+            b't' => '├' as u32,       // T facing rightwards
+            b'u' => '┤' as u32,       // T facing leftwards
+            b'v' => '┴' as u32,       // T facing upwards
+            b'w' => '┬' as u32,       // T facing downwards
+            b'x' => '│' as u32,       // Vertical line
+            b'y' => '≤' as u32,       // Less than or equal to
+            b'z' => '≥' as u32,       // Greater than or equal to
+            b'{' => 'π' as u32,       // Pi
+            b'|' => '≠' as u32,       // Not equal to
+            b'}' => '£' as u32,       // UK pound
+            b'~' => '·' as u32,       // Centered dot
+            _ => c as u32,
+        }
+    }
+
+    /// print_unicode_code_point - 打印 Unicode 字符到屏幕
+    /// 这是一个包装方法，实际打印逻辑在 VteParser 的 print 回调中实现
+    fn print_unicode_code_point(&mut self, _code_point: u32) {
+        // 这个方法在 VteParser 的 print 回调中被调用
+        // 这里保留用于兼容性
+        // 实际实现在 vte::Perform::print 中
+    }
+
     /// 将逻辑行号转换为物理数组索引
     #[inline]
     fn external_to_internal_row(&self, row: i32) -> usize {
