@@ -2806,6 +2806,27 @@ impl ScreenState {
             || (self.decset_flags & DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT) != 0
     }
 
+    // ========================================================================
+    // Getter 方法（复制 Java TerminalEmulator 实现）
+    // ========================================================================
+
+    /// getCols - 获取列数
+    pub fn get_cols(&self) -> i32 {
+        self.cols
+    }
+
+    /// getRows - 获取行数
+    pub fn get_rows(&self) -> i32 {
+        self.rows
+    }
+
+    /// getScreen - 获取当前屏幕缓冲区（复制 Java getScreen 实现）
+    pub fn get_screen(&self) -> &TerminalBuffer {
+        // 返回当前缓冲区的引用
+        // 注意：这里简化处理，实际应该返回 mScreen 的引用
+        unimplemented!("getScreen: 需要返回当前屏幕缓冲区引用")
+    }
+
     /// blockSet - 批量设置字符块（复制 Java TerminalBuffer.blockSet 实现）
     /// 用于清除或填充矩形区域的字符
     /// 
@@ -4114,6 +4135,11 @@ impl ScreenState {
     pub fn set_line_wrap(&mut self, row: usize, wrap: bool) {
         let y_internal = self.external_to_internal_row(row as i32);
         self.get_current_buffer_mut()[y_internal].line_wrap = wrap;
+    }
+
+    pub fn clear_line_wrap(&mut self, row: usize) {
+        let y_internal = self.external_to_internal_row(row as i32);
+        self.get_current_buffer_mut()[y_internal].line_wrap = false;
     }
 
     pub fn copy_row_text(&self, row: usize, dest: &mut [u16]) {
