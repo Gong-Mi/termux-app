@@ -986,6 +986,17 @@ pub struct ScreenState {
 
     // Sixel 解码器
     pub sixel_decoder: SixelDecoder,
+
+    // ========================================================================
+    // 参数解析支持（复制 Java 的 mArgs/mArgIndex/mArgsSubParamsBitSet）
+    // ========================================================================
+
+    // CSI 参数存储（最多 32 个参数，包括子参数）
+    pub args: [i32; 32],
+    // 当前参数索引
+    pub arg_index: usize,
+    // 子参数位掩码（位 N 为 1 表示第 N 个参数是子参数，用:分隔）
+    pub args_sub_params_bitset: u32,
 }
 
 impl ScreenState {
@@ -1111,6 +1122,11 @@ impl ScreenState {
 
             // Sixel 图形支持初始化
             sixel_decoder: SixelDecoder::new(),
+
+            // 参数解析支持初始化
+            args: [-1; 32], // 初始化为 -1 表示未设置（与 Java 一致）
+            arg_index: 0,
+            args_sub_params_bitset: 0,
         }
     }
 
@@ -1132,6 +1148,99 @@ impl ScreenState {
         } else {
             &mut self.buffer
         }
+    }
+
+    // ========================================================================
+    // 参数解析辅助方法（复制 Java TerminalEmulator 实现）
+    // ========================================================================
+
+    /// parseArg - 解析参数字符（复制 Java parseArg 实现）
+    /// 处理数字、分号（参数分隔符）和冒号（子参数分隔符）
+    /// 
+    /// # 参数
+    /// * `b` - 要解析的字符
+    /// 
+    /// # 返回
+    /// * `Ok(())` - 解析成功
+    /// * `Err(&'static str)` - 解析失败（未知序列或太多参数）
+    pub fn parse_arg(&mut self, b: u8) -> Result<(), &'static str> {
+        if b >= b'0' && b <= b'9' {
+            if self.arg_index < self.args.len() {
+                let old_value = self.args[self.arg_index];
+                let this_digit = (b - b'0') as i32;
+                let value = if old_value >= 0 {
+                    old_value * 10 + this_digit
+                } else {
+                    this_digit
+                };
+                // 限制最大值为 9999（与 Java 一致）
+                self.args[self.arg_index] = value.min(9999);
+            }
+            Ok(())
+        } else if b == b';' || b == b':' {
+            if self.arg_index + 1 < self.args.len() {
+                self.arg_index += 1;
+                if b == b':' {
+                    // 标记为子参数
+                    self.args_sub_params_bitset |= 1 << self.arg_index;
+                }
+            } else {
+                return Err("Too many parameters");
+            }
+            Ok(())
+        } else {
+            Err("Unknown sequence")
+        }
+    }
+
+    /// getArg - 获取参数值（复制 Java getArg 实现）
+    /// 
+    /// # 参数
+    /// * `index` - 参数索引
+    /// * `default_value` - 默认值
+    /// * `treat_zero_as_default` - 是否将 0 视为默认值
+    pub fn get_arg(&self, index: usize, default_value: i32, treat_zero_as_default: bool) -> i32 {
+        if index >= self.args.len() {
+            return default_value;
+        }
+        let result = self.args[index];
+        if result < 0 || (result == 0 && treat_zero_as_default) {
+            default_value
+        } else {
+            result
+        }
+    }
+
+    /// getArg0 - 获取第一个参数（默认值 1）
+    pub fn get_arg0(&self, default_value: i32) -> i32 {
+        self.get_arg(0, default_value, true)
+    }
+
+    /// getArg1 - 获取第二个参数（默认值 1）
+    pub fn get_arg1(&self, default_value: i32) -> i32 {
+        self.get_arg(1, default_value, true)
+    }
+
+    /// collectOscArgs - 收集 OSC 参数字符串
+    pub fn collect_osc_args(&mut self, _b: u8) -> Result<(), &'static str> {
+        // OSC 参数收集在 osc_dispatch 中通过 vte 处理
+        // 这里保留接口用于兼容性
+        Ok(())
+    }
+
+    /// resetArgs - 重置参数状态（用于开始新的转义序列）
+    pub fn reset_args(&mut self) {
+        self.arg_index = 0;
+        self.args_sub_params_bitset = 0;
+        // 只重置使用的部分，避免不必要的内存操作
+        for i in 0..self.args.len() {
+            self.args[i] = -1;
+        }
+    }
+
+    /// isSubParam - 检查参数是否为子参数（用:分隔）
+    pub fn is_sub_param(&self, index: usize) -> bool {
+        index < 32 && (self.args_sub_params_bitset & (1 << index)) != 0
     }
 
     /// 将逻辑行号转换为物理数组索引
