@@ -3205,6 +3205,106 @@ impl ScreenState {
         self.report_colors_changed();
     }
 
+    /// setDefaultTabStops - 设置默认制表位（每 8 列一个）
+    /// 复制 Java TerminalEmulator.setDefaultTabStops 实现
+    pub fn set_default_tab_stops(&mut self) {
+        let cols = self.cols as usize;
+        // 重置所有制表位
+        for stop in &mut self.tab_stops {
+            *stop = false;
+        }
+        // 每 8 列设置一个制表位（从位置 8 开始：8, 16, 24, ...）
+        for i in (8..cols).step_by(8) {
+            if i < self.tab_stops.len() {
+                self.tab_stops[i] = true;
+            }
+        }
+    }
+
+    /// reset - 重置终端状态（复制 Java TerminalEmulator.reset 实现）
+    /// 使用户可以与终端交互，无论当前状态如何
+    pub fn reset(&mut self) {
+        // 重置光标样式
+        self.cursor_style = 0; // block cursor
+        
+        // 重置参数索引和转义状态
+        self.reset_args();
+        
+        // 重置插入模式
+        self.insert_mode = false;
+        
+        // 重置边距
+        self.top_margin = 0;
+        self.left_margin = 0;
+        self.bottom_margin = self.rows;
+        self.right_margin = self.cols;
+        
+        // 重置自动换行标志
+        self.about_to_wrap = false;
+        
+        // 重置颜色为默认值
+        self.fore_color = COLOR_INDEX_FOREGROUND;
+        self.back_color = COLOR_INDEX_BACKGROUND;
+        
+        // 重置保存的状态
+        self.saved_main_effect = 0;
+        self.saved_main_decset_flags = 0;
+        self.saved_alt_effect = 0;
+        self.saved_alt_decset_flags = 0;
+        
+        // 设置默认制表位
+        self.set_default_tab_stops();
+        
+        // 重置行绘图状态
+        self.use_line_drawing_g0 = false;
+        self.use_line_drawing_g1 = false;
+        self.use_line_drawing_uses_g0 = true;
+        
+        // 重置 DECSET 标志
+        self.decset_flags = 0;
+        
+        // 初始自动换行启用（即使在小屏幕上也更有用）
+        self.auto_wrap = true;
+        self.update_decset_flag(DECSET_BIT_AUTOWRAP, true);
+        
+        // 光标启用
+        self.cursor_enabled = true;
+        self.update_decset_flag(DECSET_BIT_CURSOR_ENABLED, true);
+        
+        // 保存的 DECSET 标志
+        self.saved_main_decset_flags = self.decset_flags & (DECSET_BIT_AUTOWRAP | DECSET_BIT_ORIGIN_MODE);
+        self.saved_alt_decset_flags = self.decset_flags & (DECSET_BIT_AUTOWRAP | DECSET_BIT_ORIGIN_MODE);
+        
+        // 重置 UTF-8 输入缓冲区
+        // Rust 中由 vte 处理
+        
+        // 重置颜色
+        self.colors.reset();
+        
+        // 通知 Java 层颜色变化
+        self.report_colors_changed();
+    }
+
+    // ========================================================================
+    // 辅助方法（复制 Java TerminalEmulator 实现）
+    // ========================================================================
+
+    /// getScrollCounter - 获取滚动计数器（用于选择跟随滚动）
+    pub fn get_scroll_counter(&self) -> i32 {
+        self.scroll_counter
+    }
+
+    /// isAutoScrollDisabled - 检查自动滚动是否禁用
+    pub fn is_auto_scroll_disabled(&self) -> bool {
+        self.auto_scroll_disabled
+    }
+
+    /// getStyle - 获取当前样式（复制 Java getStyle 实现）
+    /// 编码当前前景色、背景色和效果
+    pub fn get_style(&self) -> u64 {
+        encode_style(self.fore_color, self.back_color, self.effect)
+    }
+
     /// 清除制表位 (TBC) - CSI {N} g
     fn clear_tab_stop(&mut self, mode: i32) {
         match mode {
