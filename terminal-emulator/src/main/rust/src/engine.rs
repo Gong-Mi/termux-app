@@ -3017,6 +3017,103 @@ impl ScreenState {
         }
     }
 
+    /// doDeviceControl - 处理 DCS（设备控制）序列（复制 Java doDeviceControl 实现）
+    /// DCS (Device Control String) - ESC P ... ESC \
+    /// 
+    /// # 参数
+    /// * `dcs_string` - DCS 序列内容（不包括终止符）
+    pub fn do_device_control(&mut self, dcs_string: &str) {
+        // DCS $ q P t ST - DECRQSS (Request Status String)
+        if dcs_string.starts_with("$q") {
+            if dcs_string == "$q\"p" {
+                // DECSCL - 一致性级别
+                // 响应：DCS 1 $ r 64;1"p ST
+                self.write_to_session("\x1bP1$r64;1\"p\x1b\\");
+            } else {
+                // 未识别的 DECRQSS 字符串
+                eprintln!("Unrecognized DECRQSS string: '{}'", dcs_string);
+            }
+        } else if dcs_string.starts_with("+q") {
+            // 请求 Termcap/Terminfo 字符串
+            let parts: Vec<&str> = dcs_string[2..].split(';').collect();
+            
+            for part in parts {
+                if part.len() % 2 != 0 {
+                    eprintln!("Invalid device termcap/terminfo encoded name: '{}'", part);
+                    self.write_to_session(&format!("\x1bP0+r{}\x1b\\", part));
+                    continue;
+                }
+                
+                // 解码十六进制字符串
+                let mut decoded = String::new();
+                let mut valid = true;
+                for i in (0..part.len()).step_by(2) {
+                    if let Ok(byte) = u8::from_str_radix(&part[i..i+2], 16) {
+                        decoded.push(byte as char);
+                    } else {
+                        valid = false;
+                        break;
+                    }
+                }
+                
+                if !valid {
+                    self.write_to_session(&format!("\x1bP0+r{}\x1b\\", part));
+                    continue;
+                }
+                
+                // 处理请求
+                let response_value = match decoded.as_str() {
+                    "Co" | "colors" => Some("256"), // 颜色数量
+                    "TN" | "name" => Some("xterm"), // 终端名称
+                    _ => {
+                        // 其他 termcap/terminfo 名称 - 目前返回 None
+                        None
+                    }
+                };
+                
+                match response_value {
+                    Some(value) => {
+                        // 编码响应为十六进制
+                        let hex_encoded: String = value.bytes()
+                            .map(|b| format!("{:02X}", b))
+                            .collect();
+                        self.write_to_session(&format!("\x1bP1+r{}={}\x1b\\", part, hex_encoded));
+                    }
+                    None => {
+                        // 未处理的请求
+                        eprintln!("Unhandled termcap/terminfo name: '{}'", decoded);
+                        self.write_to_session(&format!("\x1bP0+r{}\x1b\\", part));
+                    }
+                }
+            }
+        } else {
+            // 其他 DCS 序列 - 忽略
+        }
+    }
+
+    /// doSetMode - 处理 SM/RM 模式设置（复制 Java doSetMode 实现）
+    /// 
+    /// # 参数
+    /// * `set` - true=设置 (SM), false=重置 (RM)
+    /// * `mode_bit` - 模式编号
+    pub fn do_set_mode(&mut self, set: bool, mode_bit: i32) {
+        match mode_bit {
+            4 => {
+                // IRM - 插入模式
+                self.insert_mode = set;
+            }
+            20 => {
+                // LNM - 自动换行（忽略，由 Rust 自动处理）
+            }
+            34 => {
+                // 普通光标可见性（忽略）
+            }
+            _ => {
+                // 未知模式，忽略
+            }
+        }
+    }
+
     /// blockSet - 批量设置字符块（复制 Java TerminalBuffer.blockSet 实现）
     /// 用于清除或填充矩形区域的字符
     /// 
