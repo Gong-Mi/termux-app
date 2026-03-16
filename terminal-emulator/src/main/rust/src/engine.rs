@@ -2876,6 +2876,31 @@ impl ScreenState {
         }
     }
 
+    /// doApc - 处理 APC 序列（复制 Java TerminalEmulator.doApc 实现）
+    /// APC (Application Program Command) - 应用程​​序命令序列
+    /// 
+    /// # 参数
+    /// * `b` - 当前字节
+    pub fn do_apc(&mut self, b: u8) {
+        if b == 27 {
+            // ESC 字符，可能开始字符串终止符
+            // 目前静默忽略 APC 序列
+        }
+        // APC 序列静默忽略
+    }
+
+    /// doApcEscape - 处理 APC 序列中的 ESC 字符（复制 Java TerminalEmulator.doApcEscape 实现）
+    /// 
+    /// # 参数
+    /// * `b` - 当前字节
+    pub fn do_apc_escape(&mut self, b: u8) {
+        if b == b'\\' {
+            // 字符串终止符（ST），结束 APC 序列
+            // 目前静默忽略 APC 序列
+        }
+        // 如果不是 ST，继续 APC 序列
+    }
+
     /// blockSet - 批量设置字符块（复制 Java TerminalBuffer.blockSet 实现）
     /// 用于清除或填充矩形区域的字符
     /// 
