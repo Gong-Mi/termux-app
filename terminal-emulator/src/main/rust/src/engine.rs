@@ -2549,6 +2549,27 @@ impl ScreenState {
         self.cursor_x = min(self.right_margin - 1, max(self.left_margin, new_col));
     }
 
+    /// nextTabStop - 找到下一个制表位（复制 Java nextTabStop 实现）
+    /// 
+    /// # 参数
+    /// * `num_tabs` - 要前进的制表位数量
+    /// 
+    /// # 返回
+    /// 下一个制表位的列位置
+    pub fn next_tab_stop(&self, num_tabs: i32) -> i32 {
+        let mut tabs_remaining = num_tabs;
+        for i in (self.cursor_x + 1)..self.cols {
+            if self.tab_stops.get(i as usize).copied().unwrap_or(false) {
+                tabs_remaining -= 1;
+                if tabs_remaining == 0 {
+                    return i.min(self.right_margin - 1);
+                }
+            }
+        }
+        // 如果没有找到足够的制表位，返回右边距
+        self.right_margin - 1
+    }
+
     /// 光标后退到上一个制表位
     fn cursor_backward_tab(&mut self, n: i32) {
         let mut count = n;
