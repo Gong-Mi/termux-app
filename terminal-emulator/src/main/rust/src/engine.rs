@@ -1752,18 +1752,30 @@ impl ScreenState {
         }
     }
 
-    /// 处理括号粘贴模式 - 开始粘贴
-    pub fn paste_start(&mut self, text: &str) {
+    /// 处理括号粘贴模式 - 开始粘贴（复制 Java TerminalEmulator.paste 实现）
+    /// 
+    /// 粘贴文本处理流程：
+    /// 1. 移除转义键和 C1 控制字符 [0x80-0x9F]
+    /// 2. 将所有换行符 (\n) 或 CRLF (\r\n) 替换为回车符 (\r)
+    /// 3. 如果启用了括号粘贴模式（DECSET 2004），添加开始/结束标记
+    pub fn paste(&mut self, text: &str) {
+        // 第一步：移除转义键和 C1 控制字符 [0x80-0x9F]
+        let cleaned = text.replace(|c: char| c == '\x1b' || ('\u{0080}'..='\u{009f}').contains(&c), "");
+        
+        // 第二步：将所有换行符或 CRLF 替换为回车符
+        let normalized = cleaned.replace("\r\n", "\r").replace('\n', "\r");
+        
+        // 第三步：实现括号粘贴模式
         if self.bracketed_paste {
             // 发送粘贴开始标记
             self.write_to_session("\x1b[200~");
             // 发送粘贴内容
-            self.write_to_session(text);
+            self.write_to_session(&normalized);
             // 发送粘贴结束标记
             self.write_to_session("\x1b[201~");
         } else {
             // 非括号粘贴模式，直接发送内容
-            self.write_to_session(text);
+            self.write_to_session(&normalized);
         }
     }
 

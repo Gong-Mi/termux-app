@@ -1040,7 +1040,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_pasteTex
 
     if let Ok(rust_text) = env.get_string(&unsafe { jni::objects::JString::from_raw(text) }) {
         let text_str: String = rust_text.into();
-        engine.state.paste_start(&text_str);
+        engine.state.paste(&text_str);
     }
 }
 
