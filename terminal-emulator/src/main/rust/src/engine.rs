@@ -2964,6 +2964,12 @@ impl ScreenState {
         }
     }
 
+    /// updateTerminalSessionClient - 更新终端会话客户端（复制 Java updateTerminalSessionClient 实现）
+    pub fn update_terminal_session_client(&mut self, _client: *mut jni::objects::JObject) {
+        // 更新客户端引用
+        // 目前由 JNI 层处理
+    }
+
     /// blockSet - 批量设置字符块（复制 Java TerminalBuffer.blockSet 实现）
     /// 用于清除或填充矩形区域的字符
     /// 
