@@ -2253,7 +2253,7 @@ impl ScreenState {
             // 全屏滚动：直接移动起始指针
             let buffer_len = self.buffer.len();
             self.screen_first_row = (self.screen_first_row + 1) % buffer_len;
-            
+
             // 增加有效滚动行数计数器 (修复 001)
             let max_transcript = buffer_len.saturating_sub(self.rows as usize);
             if self.active_transcript_rows < max_transcript {
@@ -2281,6 +2281,72 @@ impl ScreenState {
             let buffer = self.get_current_buffer_mut();
             buffer[clear_idx].clear(0, cols, current_style);
         }
+    }
+
+    /// scrollDownOneLine - 向下滚动一行（复制 Java TerminalEmulator.scrollDownOneLine 实现）
+    /// 处理水平边距的情况
+    pub fn scroll_down_one_line_wrapper(&mut self) {
+        self.scroll_counter += 1;
+        let current_style = self.current_style;
+        
+        // 检查是否有水平边距
+        if self.left_margin != 0 || self.right_margin != self.cols {
+            // 水平边距：不将任何内容放入滚动历史，只将非边距部分的屏幕向上移动
+            let width = self.right_margin - self.left_margin;
+            let height = self.bottom_margin - self.top_margin - 1;
+            
+            // 向上复制区域
+            self.block_copy(
+                self.left_margin, 
+                self.top_margin + 1, 
+                width, 
+                height, 
+                self.left_margin, 
+                self.top_margin
+            );
+            
+            // 清空边距之间的底部行
+            self.block_set(
+                self.left_margin, 
+                self.bottom_margin - 1, 
+                width, 
+                1, 
+                ' ' as u32, 
+                current_style
+            );
+        } else {
+            // 无边距：使用标准滚动
+            self.scroll_down_one_line(self.top_margin, self.bottom_margin, current_style);
+        }
+    }
+
+    /// setCursorPosition - 设置光标位置（复制 Java TerminalEmulator.setCursorPosition 实现）
+    /// 注意：参数遵循 DECSET_BIT_ORIGIN_MODE（原点模式）
+    /// 
+    /// # 参数
+    /// * `x` - 水平位置（相对于左边距的偏移）
+    /// * `y` - 垂直位置（相对于上边距的偏移）
+    pub fn set_cursor_position(&mut self, x: i32, y: i32) {
+        let origin_mode = self.origin_mode;
+        
+        // 根据原点模式计算有效边距
+        let effective_top = if origin_mode { self.top_margin } else { 0 };
+        let effective_bottom = if origin_mode { self.bottom_margin } else { self.rows };
+        let effective_left = if origin_mode { self.left_margin } else { 0 };
+        let effective_right = if origin_mode { self.right_margin } else { self.cols };
+        
+        // 计算新位置，限制在有效范围内
+        let new_row = effective_top.max((effective_top + y).min(effective_bottom - 1));
+        let new_col = effective_left.max((effective_left + x).min(effective_right - 1));
+        
+        self.set_cursor_row_col(new_row, new_col);
+    }
+
+    /// setCursorRowCol - 设置光标行列（绝对位置，不考虑边距）
+    pub fn set_cursor_row_col(&mut self, row: i32, col: i32) {
+        self.cursor_y = row.max(0).min(self.rows - 1);
+        self.cursor_x = col.max(0).min(self.cols - 1);
+        self.about_to_wrap = false;
     }
 
     /// blockSet - 批量设置字符块（复制 Java TerminalBuffer.blockSet 实现）
@@ -2321,17 +2387,122 @@ impl ScreenState {
     pub fn set_char(&mut self, column: i32, row: i32, code_point: u32, style: u64) {
         let cols = self.cols;
         let screen_rows = self.rows;
-        
+
         // 边界检查
         if row < 0 || row >= screen_rows || column < 0 || column >= cols {
-            eprintln!("TerminalBuffer.setChar(): row={}, column={}, screen_rows={}, cols={}", 
+            eprintln!("TerminalBuffer.setChar(): row={}, column={}, screen_rows={}, cols={}",
                      row, column, screen_rows, cols);
             return;
         }
-        
+
         let internal_row = self.external_to_internal_row(row);
         let buffer = self.get_current_buffer_mut();
         buffer[internal_row].set_char(column as usize, code_point, style);
+    }
+
+    /// blockCopy - 批量复制字符块（复制 Java TerminalBuffer.blockCopy 实现）
+    /// 用于滚动、插入/删除行等操作
+    /// 
+    /// # 参数
+    /// * `sx` - 源起始列
+    /// * `sy` - 源起始行
+    /// * `w` - 宽度
+    /// * `h` - 高度
+    /// * `dx` - 目标起始列
+    /// * `dy` - 目标起始行
+    pub fn block_copy(&mut self, sx: i32, sy: i32, w: i32, h: i32, dx: i32, dy: i32) {
+        if w == 0 {
+            return;
+        }
+        
+        let cols = self.cols;
+        let rows = self.rows;
+        
+        // 边界检查
+        if sx < 0 || sx + w > cols || sy < 0 || sy + h > rows 
+           || dx < 0 || dx + w > cols || dy < 0 || dy + h > rows {
+            eprintln!("Illegal arguments! blockCopy({}, {}, {}, {}, {}, {}, {}, {})", 
+                     sx, sy, w, h, dx, dy, cols, rows);
+            return;
+        }
+        
+        // 确定复制方向（避免重叠时数据覆盖）
+        let copying_up = sy > dy;
+        
+        for y in 0..h {
+            let y2 = if copying_up { y } else { h - (y + 1) };
+            let src_row = self.external_to_internal_row(sy + y2);
+            let dest_row = self.external_to_internal_row(dy + y2);
+            
+            let buffer = self.get_current_buffer_mut();
+            // 克隆源行数据
+            let src_data = buffer[src_row].text[sx as usize..(sx + w) as usize].to_vec();
+            let src_styles = buffer[src_row].styles[sx as usize..(sx + w) as usize].to_vec();
+            
+            // 复制到目标位置
+            for (i, col) in (dx..dx + w).enumerate() {
+                if i < src_data.len() {
+                    buffer[dest_row].text[col as usize] = src_data[i];
+                    buffer[dest_row].styles[col as usize] = src_styles[i];
+                }
+            }
+        }
+    }
+
+    /// blockCopyLinesDown - 向下复制多行（用于 scrollDownOneLine 辅助方法）
+    /// 复制从 sy 开始的 count 行到 sy+1
+    fn block_copy_lines_down(&mut self, sy: i32, count: i32) {
+        if count <= 0 {
+            return;
+        }
+        
+        // 从下向上复制，避免数据覆盖
+        for i in (0..count).rev() {
+            let src_row = self.external_to_internal_row(sy + i);
+            let dest_row = self.external_to_internal_row(sy + i + 1);
+            
+            let buffer = self.get_current_buffer_mut();
+            buffer[dest_row] = buffer[src_row].clone();
+        }
+    }
+
+    /// scrollDownOneLine - 向下滚动一行（复制 Java TerminalBuffer.scrollDownOneLine 实现）
+    /// 
+    /// # 参数
+    /// * `top_margin` - 上边距
+    /// * `bottom_margin` - 下边距（滚动区域的下一行）
+    /// * `style` - 新空白行的样式
+    pub fn scroll_down_one_line(&mut self, top_margin: i32, bottom_margin: i32, style: u64) {
+        let cols = self.cols as usize;
+        let screen_rows = self.rows as usize;
+        
+        // 边界检查
+        if top_margin > bottom_margin - 1 || top_margin < 0 || bottom_margin > self.rows {
+            eprintln!("scrollDownOneLine: topMargin={}, bottomMargin={}, screenRows={}", 
+                     top_margin, bottom_margin, screen_rows);
+            return;
+        }
+        
+        // 复制顶部固定行，使其保持在屏幕相同位置
+        self.block_copy_lines_down(0, top_margin);
+        
+        // 复制底部固定行，使其保持在屏幕相同位置
+        if bottom_margin < self.rows {
+            self.block_copy_lines_down(bottom_margin, screen_rows as i32 - bottom_margin);
+        }
+        
+        // 更新屏幕在环形缓冲区中的位置
+        self.screen_first_row = (self.screen_first_row + 1) % self.buffer.len();
+        
+        // 滚动历史增加（如果未满）
+        if self.active_transcript_rows < self.buffer.len() - screen_rows {
+            self.active_transcript_rows += 1;
+        }
+        
+        // 清空下边距上方的新行
+        let blank_row = self.external_to_internal_row(bottom_margin - 1);
+        let buffer = self.get_current_buffer_mut();
+        buffer[blank_row].clear(0, cols, style);
     }
 
     fn erase_in_display(&mut self, mode: i32) {
