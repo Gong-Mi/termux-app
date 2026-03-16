@@ -2806,18 +2806,6 @@ impl ScreenState {
             || (self.decset_flags & DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT) != 0
     }
 
-    // ========================================================================
-    // 调试和字符串表示方法
-    // ========================================================================
-
-    /// toString - 返回终端模拟器的字符串表示（复制 Java toString 实现）
-    pub fn to_string(&self) -> String {
-        format!(
-            "TerminalEmulator[size={}x{}, margins={{{},{},{},{}}}]",
-            self.cols, self.rows, self.top_margin, self.right_margin, self.bottom_margin, self.left_margin
-        )
-    }
-
     /// blockSet - 批量设置字符块（复制 Java TerminalBuffer.blockSet 实现）
     /// 用于清除或填充矩形区域的字符
     /// 
