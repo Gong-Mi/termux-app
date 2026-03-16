@@ -289,6 +289,14 @@ public final class TerminalEmulator {
         return "";
     }
 
+    /** 获取当前颜色数组（用于渲染） */
+    public int[] getCurrentColors() {
+        if (mEnginePtr != 0) {
+            return getColorsFromRust(mEnginePtr);
+        }
+        return new int[259]; // 默认颜色数组
+    }
+
     public TerminalBuffer getScreen() {
         // 返回 null，实际屏幕数据通过 Rust 共享内存访问
         // TerminalView 需要适配这个变化
