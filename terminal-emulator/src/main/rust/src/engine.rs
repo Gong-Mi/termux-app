@@ -2970,6 +2970,53 @@ impl ScreenState {
         // 目前由 JNI 层处理
     }
 
+    /// startEscapeSequence - 开始转义序列（复制 Java startEscapeSequence 实现）
+    pub fn start_escape_sequence(&mut self) {
+        // 重置参数
+        self.reset_args();
+        // 转义状态由 vte 解析器管理
+    }
+
+    /// continueSequence - 继续转义序列（复制 Java continueSequence 实现）
+    pub fn continue_sequence(&mut self, _state: i32) {
+        // 转义状态由 vte 解析器管理
+        // 此方法在 Rust 中不需要
+    }
+
+    /// doEscPound - 处理 ESC # 序列（复制 Java doEscPound 实现）
+    /// ESC # 8 - DECALN 屏幕对齐测试
+    /// 
+    /// # 参数
+    /// * `b` - 最终字节
+    pub fn do_esc_pound(&mut self, b: u8) {
+        match b {
+            b'8' => {
+                // ESC # 8 - DECALN 屏幕对齐测试
+                // 用'E'填充整个屏幕
+                self.decfra('E' as u32, 1, 1, self.rows, self.cols);
+            }
+            _ => {
+                // 未知序列，忽略
+            }
+        }
+    }
+
+    /// doOscEsc - 处理 OSC 序列中的 ESC 字符（复制 Java doOscEsc 实现）
+    /// 
+    /// # 参数
+    /// * `b` - 当前字节
+    pub fn do_osc_esc(&mut self, b: u8) {
+        match b {
+            b'\\' => {
+                // ST（字符串终止符），结束 OSC 序列
+                // 由 vte 处理
+            }
+            _ => {
+                // 继续 OSC 序列
+            }
+        }
+    }
+
     /// blockSet - 批量设置字符块（复制 Java TerminalBuffer.blockSet 实现）
     /// 用于清除或填充矩形区域的字符
     /// 
