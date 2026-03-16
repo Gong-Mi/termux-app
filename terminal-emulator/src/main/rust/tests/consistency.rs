@@ -1326,7 +1326,7 @@ fn test_bracketed_paste_mode() {
     assert_eq!(engine.state.bracketed_paste, true);
 
     // 粘贴文本
-    engine.state.paste_start("Hello Paste");
+    engine.state.paste("Hello Paste");
     // 应该发送 \x1b[200~Hello Paste\x1b[201~
 
     // 禁用括号粘贴模式
@@ -1334,7 +1334,7 @@ fn test_bracketed_paste_mode() {
     assert_eq!(engine.state.bracketed_paste, false);
 
     // 粘贴文本（无括号）
-    engine.state.paste_start("Hello Direct");
+    engine.state.paste("Hello Direct");
     // 应该直接发送 Hello Direct
 }
 
