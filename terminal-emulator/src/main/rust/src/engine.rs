@@ -537,20 +537,89 @@ impl TerminalRow {
         }
     }
 
-    /// getSelectedText - 获取选定区域的文本（简化版本）
+    /// getSelectedText - 获取选定区域的文本（复制 Java TerminalRow 实现）
+    /// 支持宽字符（如中文、emoji）的正确选择
     /// 
     /// # 参数
     /// * `x1` - 起始列
     /// * `x2` - 结束列
     pub fn get_selected_text(&self, x1: usize, x2: usize) -> String {
-        let start = min(x1, self.text.len());
-        let end = min(x2, self.text.len());
+        let cols = self.text.len();
         
-        if start >= end {
+        // 找到起始列的字符索引
+        let start_index = self.find_start_of_column(x1);
+        // 找到结束列的字符索引
+        let end_index = if x2 >= cols {
+            self.get_space_used()
+        } else {
+            self.find_start_of_column(x2)
+        };
+        
+        if start_index >= end_index || start_index >= cols {
             return String::new();
         }
         
-        self.text[start..end].iter().collect()
+        // 提取文本
+        self.text[start_index..end_index.min(cols)].iter().collect()
+    }
+
+    /// findStartOfColumn - 找到列起始位置的字符索引（复制 Java TerminalRow.findStartOfColumn）
+    /// 处理宽字符（如中文占用 2 列）的情况
+    /// 
+    /// # 参数
+    /// * `column` - 列号
+    /// 
+    /// # 返回
+    /// 该列在 text 数组中的起始索引
+    fn find_start_of_column(&self, column: usize) -> usize {
+        if column >= self.text.len() {
+            return self.get_space_used();
+        }
+
+        let mut current_column = 0;
+        let mut current_char_index = 0;
+
+        while current_char_index < self.text.len() {
+            let c = self.text[current_char_index];
+            let char_width = crate::utils::get_char_width(c as u32);
+
+            if char_width > 0 {
+                current_column += char_width;
+                if current_column == column {
+                    // 跳过组合字符（零宽度字符）
+                    let mut next_index = current_char_index + 1;
+                    while next_index < self.text.len() {
+                        let next_c = self.text[next_index];
+                        if crate::utils::get_char_width(next_c as u32) <= 0 {
+                            next_index += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    return next_index;
+                } else if current_column > column {
+                    // 宽字符跨越列边界，返回宽字符的起始位置
+                    return current_char_index;
+                }
+            }
+            current_char_index += 1;
+        }
+
+        self.get_space_used()
+    }
+
+    /// getSpaceUsed - 获取实际使用的字符数
+    fn get_space_used(&self) -> usize {
+        // 计算非空格字符的数量
+        let mut count = self.text.len();
+        for i in (0..self.text.len()).rev() {
+            if self.text[i] == ' ' && self.styles[i] == STYLE_NORMAL {
+                count = i;
+            } else {
+                break;
+            }
+        }
+        count
     }
 }
 
