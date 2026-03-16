@@ -937,11 +937,31 @@ pub struct ScreenState {
     // 当前使用的缓冲区 (true = 备用缓冲区)
     pub use_alternate_buffer: bool,
 
-    // 保存的主屏幕状态 (用于 DECSET 1049)
+    // 保存的主屏幕状态 (用于 DECSET 1049) - 完全复制 Java SavedScreenState
     pub saved_main_cursor_x: i32,
     pub saved_main_cursor_y: i32,
+    pub saved_main_effect: u64,
+    pub saved_main_fore_color: u64,
+    pub saved_main_back_color: u64,
     pub saved_main_decset_flags: i32,
-    pub saved_main_screen_first_row: usize,
+    pub saved_main_use_line_drawing_g0: bool,
+    pub saved_main_use_line_drawing_g1: bool,
+    pub saved_main_use_line_drawing_uses_g0: bool,
+
+    // 保存的备用屏幕状态 (用于 DECSET 1049)
+    pub saved_alt_cursor_x: i32,
+    pub saved_alt_cursor_y: i32,
+    pub saved_alt_effect: u64,
+    pub saved_alt_fore_color: u64,
+    pub saved_alt_back_color: u64,
+    pub saved_alt_decset_flags: i32,
+    pub saved_alt_use_line_drawing_g0: bool,
+    pub saved_alt_use_line_drawing_g1: bool,
+    pub saved_alt_use_line_drawing_uses_g0: bool,
+
+    // DECSET 1048 专用的保存状态（独立于 1049）
+    pub saved_main_cursor_x_1048: i32,
+    pub saved_main_cursor_y_1048: i32,
 
     // ========================================================================
     // DirectByteBuffer 零拷贝支持 (新增)
@@ -1052,10 +1072,29 @@ impl ScreenState {
             // 备用屏幕缓冲区初始化
             alt_buffer,
             use_alternate_buffer: false,
+            // 保存的主屏幕状态初始化 (DECSET 1049)
             saved_main_cursor_x: 0,
             saved_main_cursor_y: 0,
+            saved_main_effect: 0,
+            saved_main_fore_color: COLOR_INDEX_FOREGROUND,
+            saved_main_back_color: COLOR_INDEX_BACKGROUND,
             saved_main_decset_flags: 0,
-            saved_main_screen_first_row: 0,
+            saved_main_use_line_drawing_g0: false,
+            saved_main_use_line_drawing_g1: false,
+            saved_main_use_line_drawing_uses_g0: true,
+            // 保存的备用屏幕状态初始化 (DECSET 1049)
+            saved_alt_cursor_x: 0,
+            saved_alt_cursor_y: 0,
+            saved_alt_effect: 0,
+            saved_alt_fore_color: COLOR_INDEX_FOREGROUND,
+            saved_alt_back_color: COLOR_INDEX_BACKGROUND,
+            saved_alt_decset_flags: 0,
+            saved_alt_use_line_drawing_g0: false,
+            saved_alt_use_line_drawing_g1: false,
+            saved_alt_use_line_drawing_uses_g0: true,
+            // DECSET 1048 专用状态初始化
+            saved_main_cursor_x_1048: 0,
+            saved_main_cursor_y_1048: 0,
 
             // DirectByteBuffer 零拷贝支持初始化
             // 使用 total_rows_u 而不是 rows，确保共享内存缓冲区包含所有滚动历史行
@@ -3021,45 +3060,59 @@ impl ScreenState {
                         self.update_decset_flag(DECSET_BIT_BRACKETED_PASTE_MODE, set);
                     }
                     1048 => {
-                        // 备用光标 (保存/恢复光标位置)
+                        // DECSET 1048: Save cursor as in DECSC / Restore cursor as in DECRC
+                        // 完全复制 upstream Java 实现
                         if set {
-                            // 保存当前光标位置
-                            self.saved_main_cursor_x = self.cursor_x;
-                            self.saved_main_cursor_y = self.cursor_y;
+                            self.save_cursor();
                         } else {
-                            // 恢复光标位置
-                            self.cursor_x = self.saved_main_cursor_x;
-                            self.cursor_y = self.saved_main_cursor_y;
-                            self.clamp_cursor();
+                            self.restore_cursor();
                         }
                     }
-                    1049 => {
-                        // 备用屏幕缓冲区 (包含 1048 的光标保存/恢复)
-                        if set {
-                            // 切换到备用缓冲区
-                            // 保存当前光标位置
-                            self.saved_main_cursor_x = self.cursor_x;
-                            self.saved_main_cursor_y = self.cursor_y;
-                            self.saved_main_decset_flags = self.decset_flags;
-                            self.saved_main_screen_first_row = self.screen_first_row;
-
-                            // 切换到备用缓冲区
-                            self.use_alternate_buffer = true;
-
-                            // 清除备用缓冲区
-                            self.clear_alt_buffer();
-
-                            // 重置光标到左上角
-                            self.cursor_x = 0;
-                            self.cursor_y = 0;
-                        } else {
-                            // 切换到主缓冲区
-                            self.use_alternate_buffer = false;
-
-                            // 恢复光标位置
-                            self.cursor_x = self.saved_main_cursor_x;
-                            self.cursor_y = self.saved_main_cursor_y;
-                            self.clamp_cursor();
+                    47 | 1047 | 1049 => {
+                        // DECSET 47/1047/1049: Alternate Screen Buffer
+                        // 完全复制 upstream Java 实现
+                        // Set: Save cursor as in DECSC and use Alternate Screen Buffer, clearing it first.
+                        // Reset: Use Normal Screen Buffer and restore cursor as in DECRC.
+                        
+                        let new_is_alt_buffer = set;
+                        let old_is_alt_buffer = self.use_alternate_buffer;
+                        
+                        if new_is_alt_buffer != old_is_alt_buffer {
+                            // 检查是否发生了大小变化（用于调整屏幕）
+                            let resized = false; // Rust 实现暂不需要此逻辑
+                            
+                            // Set 时保存光标
+                            if set {
+                                self.save_cursor();
+                            }
+                            
+                            // 切换缓冲区
+                            self.use_alternate_buffer = new_is_alt_buffer;
+                            
+                            // Reset 时恢复光标
+                            if !set {
+                                // 保存需要恢复的光标位置（用于 resized 情况）
+                                let saved_col = self.saved_main_cursor_x;
+                                let saved_row = self.saved_main_cursor_y;
+                                
+                                self.restore_cursor();
+                                
+                                // 如果发生了 resize，恢复原始光标位置（让 resize 处理边界）
+                                if resized {
+                                    self.cursor_x = saved_col;
+                                    self.cursor_y = saved_row;
+                                }
+                            }
+                            
+                            // 检查是否需要调整屏幕大小
+                            if resized {
+                                // Rust 实现暂不需要
+                            }
+                            
+                            // 如果切换到备用缓冲区，清除它
+                            if new_is_alt_buffer {
+                                self.clear_alt_buffer();
+                            }
                         }
                     }
                     _ => {
@@ -3112,49 +3165,72 @@ impl ScreenState {
         self.cursor_y = 0;
     }
 
-    /// 保存光标 (DECSC)
+    /// 保存光标 (DECSC) - 完全复制 upstream Java 实现
     /// 保存：光标位置、样式、DECSET 标志、行绘图状态、颜色属性
+    /// 根据当前缓冲区保存到不同的状态（与 Java SavedScreenState 一致）
     fn save_cursor(&mut self) {
-        self.saved_x = self.cursor_x;
-        self.saved_y = self.cursor_y;
-        self.saved_style = self.current_style;
-        self.saved_about_to_wrap = self.about_to_wrap;
-        // 保存 DECSET 标志（与 Java 端一致，只保存相关标志）
-        // 包括：AUTOWRAP, ORIGIN_MODE
-        let mask = DECSET_BIT_AUTOWRAP | DECSET_BIT_ORIGIN_MODE;
-        self.saved_decset_flags = self.decset_flags & mask;
-
-        // 保存行绘图状态
-        self.saved_use_line_drawing_g0 = self.use_line_drawing_g0;
-        self.saved_use_line_drawing_g1 = self.use_line_drawing_g1;
-        self.saved_use_line_drawing_uses_g0 = self.use_line_drawing_uses_g0;
-
-        // 保存颜色属性
-        self.saved_fore_color = self.fore_color;
-        self.saved_back_color = self.back_color;
+        if self.use_alternate_buffer {
+            // 保存到备用缓冲区状态
+            self.saved_alt_cursor_x = self.cursor_x;
+            self.saved_alt_cursor_y = self.cursor_y;
+            self.saved_alt_effect = self.effect;
+            self.saved_alt_fore_color = self.fore_color;
+            self.saved_alt_back_color = self.back_color;
+            self.saved_alt_decset_flags = self.decset_flags;
+            self.saved_alt_use_line_drawing_g0 = self.use_line_drawing_g0;
+            self.saved_alt_use_line_drawing_g1 = self.use_line_drawing_g1;
+            self.saved_alt_use_line_drawing_uses_g0 = self.use_line_drawing_uses_g0;
+        } else {
+            // 保存到主缓冲区状态
+            self.saved_main_cursor_x = self.cursor_x;
+            self.saved_main_cursor_y = self.cursor_y;
+            self.saved_main_effect = self.effect;
+            self.saved_main_fore_color = self.fore_color;
+            self.saved_main_back_color = self.back_color;
+            self.saved_main_decset_flags = self.decset_flags;
+            self.saved_main_use_line_drawing_g0 = self.use_line_drawing_g0;
+            self.saved_main_use_line_drawing_g1 = self.use_line_drawing_g1;
+            self.saved_main_use_line_drawing_uses_g0 = self.use_line_drawing_uses_g0;
+        }
     }
 
-    /// 恢复光标 (DECRC)
+    /// 恢复光标 (DECRC) - 完全复制 upstream Java 实现
     /// 恢复：光标位置、样式、DECSET 标志、行绘图状态、颜色属性
+    /// 根据当前缓冲区从不同的状态恢复（与 Java SavedScreenState 一致）
     fn restore_cursor(&mut self) {
-        self.cursor_x = self.saved_x;
-        self.cursor_y = self.saved_y;
-        self.current_style = self.saved_style;
-        self.about_to_wrap = self.saved_about_to_wrap;
-        // 恢复 DECSET 标志（只恢复 AUTOWRAP 和 ORIGIN_MODE）
-        let mask = DECSET_BIT_AUTOWRAP | DECSET_BIT_ORIGIN_MODE;
-        self.decset_flags = (self.decset_flags & !mask) | (self.saved_decset_flags & mask);
-        self.auto_wrap = (self.decset_flags & DECSET_BIT_AUTOWRAP) != 0;
-        self.origin_mode = (self.decset_flags & DECSET_BIT_ORIGIN_MODE) != 0;
-
-        // 恢复行绘图状态
-        self.use_line_drawing_g0 = self.saved_use_line_drawing_g0;
-        self.use_line_drawing_g1 = self.saved_use_line_drawing_g1;
-        self.use_line_drawing_uses_g0 = self.saved_use_line_drawing_uses_g0;
-
-        // 恢复颜色属性
-        self.fore_color = self.saved_fore_color;
-        self.back_color = self.saved_back_color;
+        if self.use_alternate_buffer {
+            // 从备用缓冲区状态恢复
+            self.cursor_x = self.saved_alt_cursor_x;
+            self.cursor_y = self.saved_alt_cursor_y;
+            self.effect = self.saved_alt_effect;
+            self.fore_color = self.saved_alt_fore_color;
+            self.back_color = self.saved_alt_back_color;
+            // 恢复 DECSET 标志（只恢复 AUTOWRAP 和 ORIGIN_MODE）
+            let mask = DECSET_BIT_AUTOWRAP | DECSET_BIT_ORIGIN_MODE;
+            self.decset_flags = (self.decset_flags & !mask) | (self.saved_alt_decset_flags & mask);
+            self.auto_wrap = (self.decset_flags & DECSET_BIT_AUTOWRAP) != 0;
+            self.origin_mode = (self.decset_flags & DECSET_BIT_ORIGIN_MODE) != 0;
+            self.use_line_drawing_g0 = self.saved_alt_use_line_drawing_g0;
+            self.use_line_drawing_g1 = self.saved_alt_use_line_drawing_g1;
+            self.use_line_drawing_uses_g0 = self.saved_alt_use_line_drawing_uses_g0;
+        } else {
+            // 从主缓冲区状态恢复
+            self.cursor_x = self.saved_main_cursor_x;
+            self.cursor_y = self.saved_main_cursor_y;
+            self.effect = self.saved_main_effect;
+            self.fore_color = self.saved_main_fore_color;
+            self.back_color = self.saved_main_back_color;
+            // 恢复 DECSET 标志（只恢复 AUTOWRAP 和 ORIGIN_MODE）
+            let mask = DECSET_BIT_AUTOWRAP | DECSET_BIT_ORIGIN_MODE;
+            self.decset_flags = (self.decset_flags & !mask) | (self.saved_main_decset_flags & mask);
+            self.auto_wrap = (self.decset_flags & DECSET_BIT_AUTOWRAP) != 0;
+            self.origin_mode = (self.decset_flags & DECSET_BIT_ORIGIN_MODE) != 0;
+            self.use_line_drawing_g0 = self.saved_main_use_line_drawing_g0;
+            self.use_line_drawing_g1 = self.saved_main_use_line_drawing_g1;
+            self.use_line_drawing_uses_g0 = self.saved_main_use_line_drawing_uses_g0;
+        }
+        // 边界检查光标位置
+        self.clamp_cursor();
     }
 
     pub fn calculate_checksum(&self) -> u64 {
