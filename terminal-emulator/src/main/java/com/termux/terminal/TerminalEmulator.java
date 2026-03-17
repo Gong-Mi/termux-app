@@ -21,6 +21,13 @@ public final class TerminalEmulator {
     public static final int TERMINAL_CURSOR_STYLE_BLOCK = 0;
     public static final int TERMINAL_CURSOR_STYLE_UNDERLINE = 1;
     public static final int TERMINAL_CURSOR_STYLE_BAR = 2;
+    public static final int DEFAULT_TERMINAL_CURSOR_STYLE = TERMINAL_CURSOR_STYLE_BLOCK;
+    public static final Integer[] TERMINAL_CURSOR_STYLES_LIST = {TERMINAL_CURSOR_STYLE_BLOCK, TERMINAL_CURSOR_STYLE_UNDERLINE, TERMINAL_CURSOR_STYLE_BAR};
+    
+    // 滚动历史行数常量
+    public static final int TERMINAL_TRANSCRIPT_ROWS_MIN = 100;
+    public static final int TERMINAL_TRANSCRIPT_ROWS_MAX = 50000;
+    public static final int DEFAULT_TERMINAL_TRANSCRIPT_ROWS = 2000;
     
     // 鼠标按钮常量
     public static final int MOUSE_LEFT_BUTTON = 0;
