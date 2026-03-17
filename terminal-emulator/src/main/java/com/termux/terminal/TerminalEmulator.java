@@ -45,7 +45,7 @@ public final class TerminalEmulator {
     static {
         // 加载 Rust 库
         try {
-            System.loadLibrary("termux_rust_new");
+            System.loadLibrary("termux_rust");
         } catch (UnsatisfiedLinkError e) {
             // 库可能尚未加载，将在使用时处理
         }
