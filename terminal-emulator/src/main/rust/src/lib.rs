@@ -122,12 +122,12 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_createEn
     _class: jclass,
     cols: jint,
     rows: jint,
-    total_rows: jint,
     cell_width: jint,
     cell_height: jint,
+    transcript_rows: jint,
     callback_obj: jobject,
 ) -> jlong {
-    let mut engine_inner = TerminalEngine::new(cols, rows, total_rows, cell_width, cell_height);
+    let mut engine_inner = TerminalEngine::new(cols, rows, transcript_rows, cell_width, cell_height);
 
     // 创建全局引用
     if let Ok(env) = unsafe { JNIEnv::from_raw(env_ptr) } {
