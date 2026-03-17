@@ -380,6 +380,8 @@ public final class TerminalEmulator {
 
     private static native int getActiveTranscriptRowsFromRust(long enginePtr);
 
+    private static native int[] getColorsFromRust(long enginePtr);
+
     private static native void updateTerminalSessionClientFromRust(
         long enginePtr, TerminalSessionClient client
     );
