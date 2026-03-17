@@ -304,6 +304,13 @@ public final class TerminalEmulator {
         return new int[259]; // 默认颜色数组
     }
 
+    /** 重置颜色为默认值 */
+    public void resetColors() {
+        if (mEnginePtr != 0) {
+            resetColorsFromRust(mEnginePtr);
+        }
+    }
+
     public TerminalBuffer getScreen() {
         // 返回 null，实际屏幕数据通过 Rust 共享内存访问
         // TerminalView 需要适配这个变化
@@ -388,6 +395,8 @@ public final class TerminalEmulator {
     private static native int getActiveTranscriptRowsFromRust(long enginePtr);
 
     private static native int[] getColorsFromRust(long enginePtr);
+
+    private static native void resetColorsFromRust(long enginePtr);
 
     private static native void updateTerminalSessionClientFromRust(
         long enginePtr, TerminalSessionClient client

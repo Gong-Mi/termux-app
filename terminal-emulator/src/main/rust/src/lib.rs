@@ -843,6 +843,21 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColor
     }
 }
 
+/// 重置颜色
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_resetColorsFromRust(
+    _env_ptr: *mut *const JNINativeInterface_,
+    _class: jclass,
+    engine_ptr: jlong,
+) {
+    if engine_ptr == 0 {
+        return;
+    }
+    let engine_lock = &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>);
+    let mut guard = engine_lock.write().unwrap();
+    guard.state.colors.reset();
+}
+
 /// 获取当前前景色
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getForeColorFromRust(
