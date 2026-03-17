@@ -303,7 +303,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readRowF
         return;
     }
 
-    let env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return,
     };
@@ -369,7 +369,7 @@ unsafe fn internal_read_screen_batch(
     let mut guard = engine_lock.write().unwrap();
     let engine = &mut *guard;
     
-    let env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return,
     };
@@ -832,7 +832,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColor
         return;
     }
 
-    let env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return,
     };
@@ -1127,7 +1127,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_pasteTex
         Err(_) => return,
     };
     let engine = &mut *guard;
-    let env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return,
     };
