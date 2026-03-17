@@ -157,8 +157,14 @@ public final class TerminalSession extends TerminalOutput {
                             int read = termIn.read(buffer);
                             if (read == -1) return;
                             if (!mProcessToTerminalIOQueue.write(buffer, 0, read)) return;
-                            if (!mMainThreadHandler.hasMessages(MSG_NEW_INPUT)) {
-                                mMainThreadHandler.sendEmptyMessage(MSG_NEW_INPUT);
+                            
+                            try {
+                                if (!mMainThreadHandler.hasMessages(MSG_NEW_INPUT)) {
+                                    mMainThreadHandler.sendEmptyMessage(MSG_NEW_INPUT);
+                                }
+                            } catch (IllegalStateException e) {
+                                // Handler's thread is dead, stop reading.
+                                return;
                             }
                         }
                     } catch (Exception e) {
@@ -274,6 +280,11 @@ public final class TerminalSession extends TerminalOutput {
         synchronized (this) {
             mShellPid = -1;
             mShellExitStatus = exitStatus;
+        }
+
+        // 显式销毁原生引擎，防止悬空回调导致的崩溃
+        if (mEmulator != null) {
+            mEmulator.destroy();
         }
 
         // Stop the reader and writer threads, and close the I/O streams
