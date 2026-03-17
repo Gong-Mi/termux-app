@@ -292,51 +292,60 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_writeASC
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readRowFromRust(
-    env_ptr: *mut *const JNINativeInterface_,
+    env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
     row: jint,
     dest_text: jcharArray,
     dest_style: jlongArray,
 ) {
-    if engine_ptr == 0 {
+    if engine_ptr == 0 || dest_text.is_null() || dest_style.is_null() {
         return;
     }
-    let engine_lock = &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>);
-    let mut guard = engine_lock.write().unwrap();
-    let engine = &mut *guard;
-    let env = match JNIEnv::from_raw(env_ptr) {
+
+    let env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return,
     };
 
-    let internal = env.get_native_interface();
-    let text_len = ((**internal).GetArrayLength.unwrap())(internal, dest_text) as usize;
-    let style_len = ((**internal).GetArrayLength.unwrap())(internal, dest_style) as usize;
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
 
-    // 为避免 Critical 锁定过长或 JNI 冲突，我们在 Rust 侧准备好数据后再写入
-    let mut text_vec = vec![' ' as u16; text_len];
-    let mut style_vec = vec![0i64; style_len];
+    // 步骤 1: 在读锁保护下拷贝数据到局部向量
+    let (text_vec, style_vec) = {
+        let guard = match engine_lock.read() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
 
-    // 核心逻辑在 Rust 侧完成（无 JNI）
-    engine.state.copy_row_text(row as usize, &mut text_vec);
-    engine.state.copy_row_styles(row as usize, &mut style_vec);
+        let mut t_vec = vec![0u16; 0];
+        let mut s_vec = vec![0i64; 0];
 
-    // 使用 SetRegion 批量写入数据，这是最安全的 JNI 方式
-    ((**internal).SetCharArrayRegion.unwrap())(
-        internal,
-        dest_text,
-        0,
-        text_len as jint,
-        text_vec.as_ptr(),
-    );
-    ((**internal).SetLongArrayRegion.unwrap())(
-        internal,
-        dest_style,
-        0,
-        style_len as jint,
-        style_vec.as_ptr() as *const jlong,
-    );
+        // 假设 copy_row 方法会自动调整 vector 大小或使用预定义大小
+        // 这里手动初始化以防万一
+        let cols = guard.state.cols as usize;
+        t_vec.resize(cols, ' ' as u16);
+        s_vec.resize(cols, 0i64);
+
+        guard.state.copy_row_text(row as usize, &mut t_vec);
+        guard.state.copy_row_styles(row as usize, &mut s_vec);
+        (t_vec, s_vec)
+    }; // 锁在这里被释放
+
+    // 步骤 2: 使用安全 JNI 接口写回 Java
+    let j_text = unsafe { jni::objects::JCharArray::from_raw(dest_text) };
+    let j_style = unsafe { jni::objects::JLongArray::from_raw(dest_style) };
+
+    let text_len = match env.get_array_length(&j_text) {
+        Ok(l) => l as usize,
+        Err(_) => return,
+    };
+    let style_len = match env.get_array_length(&j_style) {
+        Ok(l) => l as usize,
+        Err(_) => return,
+    };
+
+    let _ = env.set_char_array_region(&j_text, 0, &text_vec[..std::cmp::min(text_len, text_vec.len())]);
+    let _ = env.set_long_array_region(&j_style, 0, &style_vec[..std::cmp::min(style_len, style_vec.len())]);
 }
 
 // ============================================================================
@@ -873,7 +882,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_resetCol
 /// 获取当前前景色
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getForeColorFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) -> jint {
@@ -881,14 +890,17 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getForeC
         return 256;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return 256,
+    };
     guard.state.fore_color as jint
 }
 
 /// 获取当前背景色
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getBackColorFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) -> jint {
@@ -896,14 +908,17 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getBackC
         return 257;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return 257,
+    };
     guard.state.back_color as jint
 }
 
 /// 获取当前效果标志
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getEffectFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) -> jint {
@@ -911,7 +926,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getEffec
         return 0;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return 0,
+    };
     guard.state.effect as jint
 }
 
@@ -921,7 +939,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getEffec
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCursorColFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) -> jint {
@@ -929,14 +947,16 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCurso
         return -1;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
-    let engine = &*guard;
-    engine.state.cursor_x as jint
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return -1,
+    };
+    guard.state.cursor_x as jint
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCursorRowFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) -> jint {
@@ -944,14 +964,16 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCurso
         return -1;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
-    let engine = &*guard;
-    engine.state.cursor_y as jint
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return -1,
+    };
+    guard.state.cursor_y as jint
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCursorStyleFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) -> jint {
@@ -959,14 +981,16 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCurso
         return 0;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
-    let engine = &*guard;
-    engine.state.cursor_style as jint
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return 0,
+    };
+    guard.state.cursor_style as jint
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_shouldCursorBeVisibleFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) -> jni::sys::jboolean {
@@ -974,9 +998,11 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_shouldCu
         return jni::sys::JNI_FALSE;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
-    let engine = &*guard;
-    if engine.state.cursor_enabled && engine.state.cursor_blink_state {
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return jni::sys::JNI_FALSE,
+    };
+    if guard.state.cursor_enabled && guard.state.cursor_blink_state {
         jni::sys::JNI_TRUE
     } else {
         jni::sys::JNI_FALSE
@@ -985,7 +1011,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_shouldCu
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isReverseVideoFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) -> jni::sys::jboolean {
@@ -993,9 +1019,11 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isRevers
         return jni::sys::JNI_FALSE;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
-    let engine = &*guard;
-    if engine.state.reverse_video {
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return jni::sys::JNI_FALSE,
+    };
+    if guard.state.reverse_video {
         jni::sys::JNI_TRUE
     } else {
         jni::sys::JNI_FALSE
@@ -1023,7 +1051,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isAltern
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getTitleFromRust(
-    env_ptr: *mut *const JNINativeInterface_,
+    env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) -> jstring {
@@ -1031,14 +1059,21 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getTitle
         return std::ptr::null_mut();
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
-    let engine = &*guard;
+    let title = {
+        let guard = match engine_lock.read() {
+            Ok(g) => g,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        guard.state.title.clone()
+    };
+
     let env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return std::ptr::null_mut(),
     };
-    match &engine.state.title {
-        Some(title) => match env.new_string(title) {
+
+    match title {
+        Some(t) => match env.new_string(t) {
             Ok(s) => s.into_raw(),
             Err(_) => std::ptr::null_mut(),
         },
@@ -1078,18 +1113,21 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_reportFo
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_pasteTextFromRust(
-    env_ptr: *mut *const JNINativeInterface_,
+    env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
     text: jstring,
 ) {
-    if engine_ptr == 0 {
+    if engine_ptr == 0 || text.is_null() {
         return;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let mut guard = engine_lock.write().unwrap();
+    let mut guard = match engine_lock.write() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
     let engine = &mut *guard;
-    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+    let env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return,
     };
@@ -1102,7 +1140,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_pasteTex
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getScrollCounterFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) -> jint {
@@ -1110,14 +1148,16 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getScrol
         return 0;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
-    let engine = &*guard;
-    engine.state.scroll_counter
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return 0,
+    };
+    guard.state.scroll_counter
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_clearScrollCounterFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) {
@@ -1125,9 +1165,11 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_clearScr
         return;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let mut guard = engine_lock.write().unwrap();
-    let engine = &mut *guard;
-    engine.state.clear_scroll_counter();
+    let mut guard = match engine_lock.write() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+    guard.state.clear_scroll_counter();
 }
 
 #[unsafe(no_mangle)]
@@ -1301,7 +1343,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendKeyC
 /// 获取 Rust 侧滚动历史行数
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getActiveTranscriptRowsFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) -> jint {
@@ -1309,10 +1351,12 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getActiv
         return 0;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
-    let engine = &*guard;
-    // 返回实际有效的滚动历史行数 (修复 001)
-    engine.state.active_transcript_rows as jint
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return 0,
+    };
+    // 返回实际有效的滚动历史行数
+    guard.state.active_transcript_rows as jint
 }
 
 /// 获取当前 DECSET 标志位
