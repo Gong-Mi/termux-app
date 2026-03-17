@@ -126,7 +126,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_processB
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_createEngineRustWithCallback(
-    env_ptr: *mut *const JNINativeInterface_,
+    env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     cols: jint,
     rows: jint,
@@ -138,76 +138,61 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_createEn
     let mut engine_inner = TerminalEngine::new(cols, rows, transcript_rows, cell_width, cell_height);
 
     // 创建全局引用
-    if let Ok(env) = unsafe { JNIEnv::from_raw(env_ptr) } {
+    if let Ok(mut env) = unsafe { JNIEnv::from_raw(env_ptr) } {
         if let Ok(global_obj) =
             env.new_global_ref(unsafe { jni::objects::JObject::from_raw(callback_obj) })
         {
             // 设置 Java 回调
             engine_inner.state.set_java_callback(global_obj);
+            eprintln!("[Termux-JNI] Global callback reference established.");
         }
     }
 
-    Box::into_raw(Box::new(std::sync::RwLock::new(engine_inner))) as jlong
+    let engine_ptr = Box::into_raw(Box::new(std::sync::RwLock::new(engine_inner))) as jlong;
+    eprintln!("[Termux-Rust] Engine created at ptr: {:p}", engine_ptr as *const ());
+    engine_ptr
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_processEngineRust(
-    env_ptr: *mut *const JNINativeInterface_,
+    env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
     input: jbyteArray,
     offset: jint,
     length: jint,
 ) {
-    if engine_ptr == 0 || length == 0 {
+    if engine_ptr == 0 || length <= 0 || input.is_null() {
         return;
     }
 
-    let env = unsafe { JNIEnv::from_raw(env_ptr).unwrap() };
-    let internal = env.get_native_interface();
+    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+        Ok(e) => e,
+        Err(_) => return,
+    };
 
-    // 1. 获取数组长度（不需要临界区）
-    let input_len = unsafe { ((**internal).GetArrayLength.unwrap())(internal, input) as usize };
-    let start = offset as usize;
+    let j_array = unsafe { jni::objects::JByteArray::from_raw(input) };
     let len = length as usize;
-
-    if start + len > input_len {
+    let mut data_vec = vec![0i8; len];
+    
+    if env.get_byte_array_region(&j_array, offset, &mut data_vec).is_err() {
         return;
     }
+    
+    // 转换为 u8 向量
+    let data_u8: Vec<u8> = data_vec.iter().map(|&b| b as u8).collect();
 
-    // 2. 进入临界区，拷贝数据
-    let mut is_copy = jni::sys::JNI_FALSE;
-    let input_ptr =
-        unsafe { ((**internal).GetPrimitiveArrayCritical.unwrap())(internal, input, &mut is_copy) }
-            as *const u8;
-
-    if input_ptr.is_null() {
-        return;
-    }
-
-    // 拷贝到 Rust Vec
-    let data_vec = unsafe { std::slice::from_raw_parts(input_ptr.add(start), len).to_vec() };
-
-    // 3. 立即释放临界区（允许后续 JNI 回调）
-    unsafe {
-        ((**internal).ReleasePrimitiveArrayCritical.unwrap())(
-            internal,
-            input,
-            input_ptr as *mut _,
-            jni::sys::JNI_ABORT,
-        );
-    }
-
-    // 4. 执行解析（现在可以安全地进行 JNI 回调）
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
     {
-        let mut guard = engine_lock.write().unwrap();
-        let engine = &mut *guard;
-        engine.process_bytes(&data_vec);
+        let mut guard = match engine_lock.write() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        guard.process_bytes(&data_u8);
     }
 
-    // 5. 解析完成后通知 Java 刷新界面
-    if let Ok(guard) = engine_lock.try_read() {
+    // 解析完成后通知 Java 刷新界面
+    if let Ok(guard) = engine_lock.read() {
         guard.state.report_screen_update();
     }
 }
@@ -808,16 +793,17 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_resizeEn
     let engine = &mut *guard;
     engine.resize(new_cols, new_rows);
 }
-
+/// 销毁原生引擎
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_destroyEngineRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) {
     if engine_ptr == 0 {
         return;
     }
+    eprintln!("[Termux-Rust] Destroying engine at ptr: {:p}", engine_ptr as *const ());
     let _ = Box::from_raw(engine_ptr as *mut std::sync::RwLock<TerminalEngine>);
 }
 

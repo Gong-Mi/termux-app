@@ -315,6 +315,7 @@ public final class TerminalView extends View {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             setAlpha(0.999f);
             setFilterTouchesWhenObscured(false);
+            android.util.Log.d("Termux-View", "Android 14+ detected. Applied occlusion fix (alpha=0.999).");
         }
     }
 

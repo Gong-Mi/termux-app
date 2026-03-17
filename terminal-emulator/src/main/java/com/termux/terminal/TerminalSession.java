@@ -151,6 +151,7 @@ public final class TerminalSession extends TerminalOutput {
             new Thread("TermSessionInputReader[pid=" + mShellPid + "]") {
                 @Override
                 public void run() {
+                    android.util.Log.d("Termux-Session", "InputReader thread started for PID: " + mShellPid);
                     try (InputStream termIn = new FileInputStream(terminalFileDescriptorWrapped)) {
                         final byte[] buffer = new byte[4096];
                         while (true) {
@@ -164,6 +165,7 @@ public final class TerminalSession extends TerminalOutput {
                                 }
                             } catch (IllegalStateException e) {
                                 // Handler's thread is dead, stop reading.
+                                android.util.Log.w("Termux-Session", "MainThreadHandler dead, stopping InputReader.");
                                 return;
                             }
                         }
