@@ -814,41 +814,43 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_destroyE
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColorsFromRust(
-    env_ptr: *mut *const JNINativeInterface_,
+    env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
     colors: jintArray,
 ) {
-    if engine_ptr == 0 {
+    if engine_ptr == 0 || colors.is_null() {
         return;
     }
-    let engine_lock = &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>);
-    let guard = engine_lock.read().unwrap();
-    let engine = &*guard;
-    let env = match JNIEnv::from_raw(env_ptr) {
+
+    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return,
     };
 
-    let internal = env.get_native_interface();
-    let len = ((**internal).GetArrayLength.unwrap())(internal, colors) as usize;
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+    let engine = &*guard;
+
+    // 使用安全包装器获取长度
+    let len = match unsafe { env.get_array_length(&jni::objects::JObject::from_raw(colors as jobject)) } {
+        Ok(l) => l as usize,
+        Err(_) => return,
+    };
 
     // 复制颜色数据
     let mut color_data = vec![0i32; len];
-    for i in 0..std::cmp::min(len, 259) {
+    let to_copy = std::cmp::min(len, 259);
+    for i in 0..to_copy {
         color_data[i] = engine.state.colors.current_colors[i] as i32;
     }
 
-    // 写入 Java 数组
-    unsafe {
-        ((**internal).SetIntArrayRegion.unwrap())(
-            internal,
-            colors,
-            0,
-            std::cmp::min(len, 259) as jint,
-            color_data.as_ptr(),
-        );
-    }
+    // 使用安全包装器写入 Java 数组
+    let j_array = unsafe { jni::objects::JIntArray::from_raw(colors) };
+    let _ = env.set_int_array_region(&j_array, 0, &color_data[..to_copy]);
 }
 
 /// 重置颜色
