@@ -309,6 +309,13 @@ public final class TerminalView extends View {
         mScroller = new Scroller(context);
         AccessibilityManager am = (AccessibilityManager) context.getSystemService(Context.ACCESSIBILITY_SERVICE);
         mAccessibilityEnabled = am.isEnabled();
+
+        // Fix for Android 14/MIUI: Untrusted touch due to occlusion.
+        // If alpha is exactly 1.0, system may drop events if it thinks the view is obscuring others.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            setAlpha(0.999f);
+            setFilterTouchesWhenObscured(false);
+        }
     }
 
 

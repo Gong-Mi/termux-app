@@ -39,8 +39,16 @@ macro_rules! catch_panic {
             $($tokens)*
         })) {
             Ok(v) => v,
-            Err(_) => {
-                // 如果在调试模式，可以打印 log
+            Err(e) => {
+                // 将错误信息打印到 logcat，方便调试 Rust Crash
+                let msg = if let Some(s) = e.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = e.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "Unknown Rust Panic".to_string()
+                };
+                eprintln!("[Termux-Rust-Panic] {}", msg);
                 Default::default()
             }
         }
