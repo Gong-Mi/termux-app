@@ -823,7 +823,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColor
         return;
     }
 
-    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+    let env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return,
     };
@@ -835,8 +835,11 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColor
     };
     let engine = &*guard;
 
-    // 使用安全包装器获取长度
-    let len = match unsafe { env.get_array_length(&jni::objects::JObject::from_raw(colors as jobject)) } {
+    // 将 raw 指针包装为安全的 JIntArray 对象
+    let j_array = unsafe { jni::objects::JIntArray::from_raw(colors) };
+
+    // 获取数组长度
+    let len = match env.get_array_length(&j_array) {
         Ok(l) => l as usize,
         Err(_) => return,
     };
@@ -848,8 +851,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColor
         color_data[i] = engine.state.colors.current_colors[i] as i32;
     }
 
-    // 使用安全包装器写入 Java 数组
-    let j_array = unsafe { jni::objects::JIntArray::from_raw(colors) };
+    // 写入 Java 数组
     let _ = env.set_int_array_region(&j_array, 0, &color_data[..to_copy]);
 }
 

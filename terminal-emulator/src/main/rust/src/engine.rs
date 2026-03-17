@@ -387,22 +387,21 @@ impl SixelDecoder {
                         if pixel_row < self.pixel_data.len() {
                             let mask = 1u8 << bit;
                             if (sixel_value & mask) != 0 {
-                                // 设置当前颜色
-                                self.pixel_data[pixel_row][self.current_col] =
-                                    self.current_color as u8;
+                                // 检查 current_col 是否越界，如果越界则扩展宽度
+                                if self.current_col >= self.pixel_data[pixel_row].len() {
+                                    for row_data in &mut self.pixel_data {
+                                        row_data.resize(self.current_col + 1, 0);
+                                    }
+                                    self.width = self.pixel_data[0].len();
+                                }
+                                // 安全设置颜色
+                                self.pixel_data[pixel_row][self.current_col] = self.current_color as u8;
                             }
                         }
                     }
 
                     // 移动到下一列
                     self.current_col += 1;
-                    if self.current_col >= self.pixel_data[0].len() {
-                        // 自动扩展宽度
-                        for row in &mut self.pixel_data {
-                            row.push(0);
-                        }
-                        self.width = self.pixel_data[0].len();
-                    }
                 }
                 b'!' => {
                     // 图形结束，换行到下一行
@@ -1727,19 +1726,15 @@ impl ScreenState {
                     if let Ok(java_image_data) = env.new_byte_array(image_data.len() as i32) {
                         let data_vec: Vec<i8> = image_data.iter().map(|&b| b as i8).collect();
 
-                        // 保存原始引用用于后续调用
-                        let image_obj_raw = java_image_data.as_raw();
+                        let _ = env.set_byte_array_region(&java_image_data, 0, data_vec.as_slice());
 
-                        let _ = env.set_byte_array_region(java_image_data, 0, data_vec.as_slice());
-
-                        // 调用 Java 方法 - 使用原始引用重建 JObject
-                        let image_obj = unsafe { jni::objects::JObject::from_raw(image_obj_raw) };
+                        // 调用 Java 方法 - 直接传递已创建的 java_image_data
                         let _ = env.call_method(
                             obj.as_obj(),
                             "onSixelImage",
                             "([BIIII)V",
                             &[
-                                JValue::Object(&image_obj),
+                                JValue::Object(&java_image_data),
                                 JValue::Int(width as i32),
                                 JValue::Int(height as i32),
                                 JValue::Int(x),
