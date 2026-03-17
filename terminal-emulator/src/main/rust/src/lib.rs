@@ -544,12 +544,12 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getSelec
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
     let guard = engine_lock.read().unwrap();
     let text = guard.state.get_selected_text(x1, y1, x2, y2);
-    
-    let mut env = match JNIEnv::from_raw(_env_ptr) {
+
+    let env = match JNIEnv::from_raw(_env_ptr) {
         Ok(e) => e,
         Err(_) => return std::ptr::null_mut(),
     };
-    
+
     match env.new_string(text) {
         Ok(s) => s.into_raw(),
         Err(_) => std::ptr::null_mut(),
