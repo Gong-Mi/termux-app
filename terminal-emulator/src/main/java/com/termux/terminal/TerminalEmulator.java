@@ -57,12 +57,14 @@ public final class TerminalEmulator {
         mSession = session;
         mClient = client;
         
+        android.util.Log.d("Termux-JNI", "Calling createEngineRustWithCallback: cols=" + columns + ", rows=" + rows);
         // 创建 Rust 引擎
         mEnginePtr = createEngineRustWithCallback(
             columns, rows, cellWidthPixels, cellHeightPixels, 
             transcriptRows != null ? transcriptRows : 2000,
             client
         );
+        android.util.Log.d("Termux-JNI", "Engine creation complete, mEnginePtr=" + mEnginePtr);
     }
 
     public void updateTerminalSessionClient(TerminalSessionClient client) {

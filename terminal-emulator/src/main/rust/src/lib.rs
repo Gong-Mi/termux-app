@@ -119,6 +119,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_createEn
     transcript_rows: jint,
     callback_obj: jobject,
 ) -> jlong {
+    eprintln!("[Termux-Rust] createEngine JNI call received: cols={}, rows={}", cols, rows);
     let mut engine_inner = TerminalEngine::new(cols, rows, transcript_rows, cell_width, cell_height);
 
     // 创建全局引用
@@ -128,12 +129,16 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_createEn
         {
             // 设置 Java 回调
             engine_inner.state.set_java_callback(global_obj);
-            eprintln!("[Termux-JNI] Global callback reference established.");
+            eprintln!("[Termux-Rust] Global callback reference established.");
+        } else {
+            eprintln!("[Termux-Rust] FAILED to establish Global callback reference.");
         }
+    } else {
+        eprintln!("[Termux-Rust] FAILED to get JNIEnv.");
     }
 
     let engine_ptr = Box::into_raw(Box::new(std::sync::RwLock::new(engine_inner))) as jlong;
-    eprintln!("[Termux-Rust] Engine created at ptr: {:p}", engine_ptr as *const ());
+    eprintln!("[Termux-Rust] Engine created, returning ptr: {:p}", engine_ptr as *const ());
     engine_ptr
 }
 
