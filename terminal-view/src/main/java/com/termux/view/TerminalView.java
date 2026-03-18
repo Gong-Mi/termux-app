@@ -313,9 +313,10 @@ public final class TerminalView extends View {
         // Fix for Android 14/MIUI: Untrusted touch due to occlusion.
         // If alpha is exactly 1.0, system may drop events if it thinks the view is obscuring others.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            setAlpha(0.999f);
+            setAlpha(0.99f); // Slightly lower to be safer
+            setLayerType(View.LAYER_TYPE_HARDWARE, null);
             setFilterTouchesWhenObscured(false);
-            android.util.Log.d("Termux-View", "Android 14+ detected. Applied occlusion fix (alpha=0.999).");
+            android.util.Log.d("Termux-View", "Android 14+ detected. Applied stronger occlusion fix (alpha=0.99, hardware layer).");
         }
     }
 

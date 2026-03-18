@@ -201,6 +201,12 @@ public final class TerminalEmulator {
         }
     }
 
+    public void readRow(int row, char[] text, long[] styles) {
+        if (mEnginePtr != 0) {
+            readRowFromRust(mEnginePtr, row, text, styles);
+        }
+    }
+
     public boolean isAutoScrollDisabled() {
         if (mEnginePtr != 0) {
             return isAutoScrollDisabledFromRust(mEnginePtr);

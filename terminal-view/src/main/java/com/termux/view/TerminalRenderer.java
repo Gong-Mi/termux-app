@@ -70,6 +70,9 @@ public final class TerminalRenderer {
             canvas.drawColor(palette[TextStyle.COLOR_INDEX_FOREGROUND], PorterDuff.Mode.SRC);
 
         float heightOffset = mFontLineSpacingAndAscent;
+        char[] mRowTextBuffer = null;
+        long[] mRowStyleBuffer = null;
+
         for (int row = topRow; row < endRow; row++) {
             heightOffset += mFontLineSpacing;
 
@@ -80,9 +83,25 @@ public final class TerminalRenderer {
                 selx2 = (row == selectionY2) ? selectionX2 : mEmulator.getCols();
             }
 
-            TerminalRow lineObject = screen.allocateFullLineIfNecessary(screen.externalToInternalRow(row));
-            final char[] line = lineObject.mText;
-            final int charsUsedInLine = lineObject.getSpaceUsed();
+            char[] line;
+            long[] styles;
+            int charsUsedInLine;
+
+            if (screen != null) {
+                TerminalRow lineObject = screen.allocateFullLineIfNecessary(screen.externalToInternalRow(row));
+                line = lineObject.mText;
+                styles = lineObject.mStyle;
+                charsUsedInLine = lineObject.getSpaceUsed();
+            } else {
+                if (mRowTextBuffer == null) {
+                    mRowTextBuffer = new char[columns * 3]; // Allocate once per render
+                    mRowStyleBuffer = new long[columns * 3];
+                }
+                mEmulator.readRow(row, mRowTextBuffer, mRowStyleBuffer);
+                line = mRowTextBuffer;
+                styles = mRowStyleBuffer;
+                charsUsedInLine = columns; // Simplification for Rust takeover
+            }
 
             long lastRunStyle = 0;
             boolean lastRunInsideCursor = false;
@@ -101,7 +120,7 @@ public final class TerminalRenderer {
                 final int codePointWcWidth = WcWidth.width(codePoint);
                 final boolean insideCursor = (cursorX == column || (codePointWcWidth == 2 && cursorX == column + 1));
                 final boolean insideSelection = column >= selx1 && column <= selx2;
-                final long style = lineObject.getStyle(column);
+                final long style = (screen != null) ? ((TerminalRow)screen.allocateFullLineIfNecessary(screen.externalToInternalRow(row))).getStyle(column) : styles[column];
 
                 // Check if the measured text width for this code point is not the same as that expected by wcwidth().
                 // This could happen for some fonts which are not truly monospace, or for more exotic characters such as
