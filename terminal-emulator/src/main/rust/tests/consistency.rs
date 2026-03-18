@@ -671,7 +671,7 @@ fn test_resize() {
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
     engine.process_bytes(b"Hello");
-    engine.resize(40, 12);
+    engine.state.resize(40, 12);
 
     assert_eq!(engine.state.cols, 40, "Columns should be 40 after resize");
     assert_eq!(engine.state.rows, 12, "Rows should be 12 after resize");
@@ -2896,7 +2896,7 @@ fn test_resize_shrink_reflow() {
     assert_eq!(engine.state.buffer[1].text[0], 'B');
 
     // 2. 模拟缩小到 40 列
-    engine.resize(40, 24);
+    engine.state.resize(40, 24);
 
     // 验证重排结果：
     // 原本的 81 个字符现在应该占用 3 行 (40 + 40 + 1)
@@ -2931,7 +2931,7 @@ fn test_resize_expand_reflow() {
     assert_eq!(engine.state.buffer[1].text.len(), 40);
 
     // 2. 模拟放大到 80 列
-    engine.resize(80, 24);
+    engine.state.resize(80, 24);
 
     // 验证重排结果：
     // 两行 (40 字符 * 2) 现在应该缩回一行 (80 字符)
@@ -2954,7 +2954,7 @@ fn test_resize_style_reflow() {
     engine.process_bytes(&data);
 
     // 2. 缩小到 40 列
-    engine.resize(40, 24);
+    engine.state.resize(40, 24);
 
     // 3. 验证 Row 1 (溢出的行) 是否保留了红色背景样式
     // 红色背景索引为 1，存储在 style 的位 16-24
