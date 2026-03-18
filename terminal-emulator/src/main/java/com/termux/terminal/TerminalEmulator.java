@@ -86,10 +86,6 @@ public final class TerminalEmulator {
         }
     }
 
-    public void append(byte[] buffer, int length) {
-        processBatch(buffer, length);
-    }
-
     public String getTitle() {
         if (mEnginePtr != 0) {
             return getTitleFromRust(mEnginePtr);
