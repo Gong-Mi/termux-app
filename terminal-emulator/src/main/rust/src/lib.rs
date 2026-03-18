@@ -339,7 +339,7 @@ unsafe fn internal_read_screen_batch(
         return;
     }
 
-    let env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return,
     };
@@ -354,6 +354,10 @@ unsafe fn internal_read_screen_batch(
     let mut text_vec = vec![0u16; cols];
     let mut style_vec = vec![0i64; cols];
 
+    // 绑定到变量以延长生命周期
+    let j_dest_text = unsafe { jni::objects::JObjectArray::from_raw(dest_text) };
+    let j_dest_style = unsafe { jni::objects::JObjectArray::from_raw(dest_style) };
+
     for i in 0..num_rows as usize {
         let row = start_row as usize + i;
         guard.state.copy_row_text(row, &mut text_vec);
@@ -361,17 +365,21 @@ unsafe fn internal_read_screen_batch(
         let line_wrap = guard.state.get_line_wrap(row);
 
         // 使用安全包装器写回 Java
-        if let Ok(j_text_row) = env.get_object_array_element(unsafe { &jni::objects::JObjectArray::from_raw(dest_text) }, i as jsize) {
-            let _ = env.set_char_array_region(unsafe { &jni::objects::JCharArray::from_raw(j_text_row.as_raw() as jcharArray) }, 0, &text_vec);
+        if let Ok(j_text_row_obj) = env.get_object_array_element(&j_dest_text, i as jsize) {
+            let j_text_row = unsafe { jni::objects::JCharArray::from_raw(j_text_row_obj.as_raw() as jcharArray) };
+            let _ = env.set_char_array_region(&j_text_row, 0, &text_vec);
         }
-        if let Ok(j_style_row) = env.get_object_array_element(unsafe { &jni::objects::JObjectArray::from_raw(dest_style) }, i as jsize) {
-            let _ = env.set_long_array_region(unsafe { &jni::objects::JLongArray::from_raw(j_style_row.as_raw() as jlongArray) }, 0, &style_vec);
+        if let Ok(j_style_row_obj) = env.get_object_array_element(&j_dest_style, i as jsize) {
+            let j_style_row = unsafe { jni::objects::JLongArray::from_raw(j_style_row_obj.as_raw() as jlongArray) };
+            let _ = env.set_long_array_region(&j_style_row, 0, &style_vec);
         }
         if !dest_line_wraps.is_null() {
-            let _ = env.set_boolean_array_region(unsafe { &jni::objects::JBooleanArray::from_raw(dest_line_wraps) }, i as jsize, &[if line_wrap { jni::sys::JNI_TRUE } else { jni::sys::JNI_FALSE }]);
+            let j_wraps = unsafe { jni::objects::JBooleanArray::from_raw(dest_line_wraps) };
+            let _ = env.set_boolean_array_region(&j_wraps, i as jsize, &[if line_wrap { jni::sys::JNI_TRUE } else { jni::sys::JNI_FALSE }]);
         }
     }
 }
+#[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readScreenBatchFromRust(
     env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
