@@ -376,6 +376,8 @@ public final class TerminalEmulator {
 
     private static native int getScrollCounterFromRust(long enginePtr);
 
+    private static native void readRowFromRust(long enginePtr, int row, char[] text, long[] styles);
+
     private static native int getRowsFromRust(long enginePtr);
 
     private static native int getColsFromRust(long enginePtr);
