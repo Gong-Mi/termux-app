@@ -78,49 +78,29 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_processB
     input: jbyteArray,
     length: jint,
 ) {
-    catch_panic! {
-        eprintln!("[Termux-Rust] JNI processBatchRust called: ptr={:p}, len={}", engine_ptr as *const (), length);
-        if engine_ptr == 0 || length <= 0 || input.is_null() {
-            eprintln!("[Termux-Rust] processBatchRust: invalid arguments");
-            return;
-        }
+    if engine_ptr == 0 || length <= 0 || input.is_null() {
+        return;
+    }
 
-        let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
-            Ok(e) => e,
-            Err(_) => {
-                eprintln!("[Termux-Rust] processBatchRust: failed to get JNIEnv");
-                return;
-            },
-        };
+    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+        Ok(e) => e,
+        Err(_) => return,
+    };
 
-        let j_array = unsafe { jni::objects::JByteArray::from_raw(input) };
-        let mut data_vec = vec![0i8; length as usize];
-        
-        if env.get_byte_array_region(&j_array, 0, &mut data_vec).is_err() {
-            eprintln!("[Termux-Rust] processBatchRust: failed to get byte array region");
-            return;
-        }
+    // 获取数据
+    let j_array = unsafe { jni::objects::JByteArray::from_raw(input) };
+    let mut data_vec = vec![0i8; length as usize];
+    
+    if env.get_byte_array_region(&j_array, 0, &mut data_vec).is_err() {
+        return;
+    }
 
-        // 转换为 u8
-        let data_u8: Vec<u8> = data_vec.iter().map(|&b| b as u8).collect();
-        
-        let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-        {
-            eprintln!("[Termux-Rust] processBatchRust: acquiring write lock...");
-            let mut engine = match engine_lock.write() {
-                Ok(g) => g,
-                Err(e) => {
-                    eprintln!("[Termux-Rust] processBatchRust: Lock poisoned: {:?}", e);
-                    return;
-                }
-            };
-            eprintln!("[Termux-Rust] processBatchRust: processing bytes...");
-            engine.process_bytes(&data_u8);
-            
-            eprintln!("[Termux-Rust] processBatchRust: syncing to shared...");
-            engine.sync_state_to_flat();
-        }
-        eprintln!("[Termux-Rust] processBatchRust: done.");
+    let data_u8: Vec<u8> = data_vec.iter().map(|&b| b as u8).collect();
+    
+    let engine_lock = &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>);
+    if let Ok(mut engine) = engine_lock.write() {
+        engine.process_bytes(&data_u8);
+        engine.sync_state_to_flat();
     }
 }
 

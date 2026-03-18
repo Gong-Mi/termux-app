@@ -80,9 +80,13 @@ public final class TerminalEmulator {
 
     public void append(byte[] batch, int length) {
         if (mEnginePtr != 0) {
-            android.util.Log.d("Termux-JNI", "Entering processBatchRust: ptr=" + mEnginePtr + ", len=" + length);
-            processBatchRust(mEnginePtr, batch, length);
-            android.util.Log.d("Termux-JNI", "Exited processBatchRust normally");
+            try {
+                processBatchRust(mEnginePtr, batch, length);
+            } catch (Exception e) {
+                android.util.Log.e("Termux-JNI", "Error in processBatchRust", e);
+            }
+        } else {
+            android.util.Log.w("Termux-JNI", "append called but mEnginePtr is 0");
         }
     }
 
