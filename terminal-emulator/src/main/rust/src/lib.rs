@@ -107,7 +107,6 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_processB
         result as jint
     }
 }
-}
 
 // ============================================================================
 // 有状态引擎 JNI - Full Takeover 模式
