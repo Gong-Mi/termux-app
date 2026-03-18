@@ -61,7 +61,7 @@ macro_rules! catch_panic {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_WcWidth_widthRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     ucs: jint,
 ) -> jint {
@@ -187,7 +187,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_processE
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_writeASCIIBatchNative(
-    env_ptr: *mut *const JNINativeInterface_,
+    env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     src: jbyteArray,
     src_offset: jint,
@@ -327,7 +327,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readRowF
 
 /// 内部通用的批量读取实现，不依赖 JNI 导出签名，避免套娃调用失败
 unsafe fn internal_read_screen_batch(
-    env_ptr: *mut *const JNINativeInterface_,
+    env_ptr: *mut jni::sys::JNIEnv,
     engine_ptr: jlong,
     dest_text: jobjectArray,
     dest_style: jobjectArray,
@@ -335,107 +335,45 @@ unsafe fn internal_read_screen_batch(
     start_row: jint,
     num_rows: jint,
 ) {
-    if engine_ptr == 0 || num_rows <= 0 {
+    if engine_ptr == 0 || num_rows <= 0 || dest_text.is_null() {
         return;
     }
-    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let mut guard = engine_lock.write().unwrap();
-    let engine = &mut *guard;
-    
+
     let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return,
     };
 
-    let internal = env.get_native_interface();
-    let rust_cols = engine.state.cols as usize;
-    let count = num_rows as usize;
-
-    let mut line_wraps_vec = if !dest_line_wraps.is_null() {
-        vec![jni::sys::JNI_FALSE; count]
-    } else {
-        Vec::new()
+    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return,
     };
 
-    for i in 0..count {
-        let row = start_row + i as i32;
+    let cols = guard.state.cols as usize;
+    let mut text_vec = vec![0u16; cols];
+    let mut style_vec = vec![0i64; cols];
 
-        // 获取 Java 二维数组的第 i 行
-        let row_text_array = unsafe {
-            ((**internal).GetObjectArrayElement.unwrap())(internal, dest_text, i as jint)
-        };
-        let row_style_array = unsafe {
-            ((**internal).GetObjectArrayElement.unwrap())(internal, dest_style, i as jint)
-        };
+    for i in 0..num_rows as usize {
+        let row = start_row as usize + i;
+        guard.state.copy_row_text(row, &mut text_vec);
+        guard.state.copy_row_styles(row, &mut style_vec);
+        let line_wrap = guard.state.get_line_wrap(row);
 
-        if !row_text_array.is_null() && !row_style_array.is_null() {
-            let java_cols = unsafe {
-                ((**internal).GetArrayLength.unwrap())(internal, row_text_array) as usize
-            };
-            let style_cols = unsafe {
-                ((**internal).GetArrayLength.unwrap())(internal, row_style_array) as usize
-            };
-
-            let copy_cols = std::cmp::min(rust_cols, std::cmp::min(java_cols, style_cols));
-            let mut text_vec = vec![' ' as u16; copy_cols];
-            let mut style_vec = vec![0i64; copy_cols];
-
-            // 从 Rust 复制数据
-            engine.state.copy_row_text(row as usize, &mut text_vec);
-            engine.state.copy_row_styles(row as usize, &mut style_vec);
-
-            // 同步换行标志
-            if !dest_line_wraps.is_null() {
-                line_wraps_vec[i] = if engine.state.get_line_wrap(row as usize) {
-                    jni::sys::JNI_TRUE
-                } else {
-                    jni::sys::JNI_FALSE
-                };
-            }
-
-            // 批量写入 Java 数组
-            unsafe {
-                ((**internal).SetCharArrayRegion.unwrap())(
-                    internal,
-                    row_text_array as jni::sys::jcharArray,
-                    0,
-                    copy_cols as jint,
-                    text_vec.as_ptr(),
-                );
-                ((**internal).SetLongArrayRegion.unwrap())(
-                    internal,
-                    row_style_array as jni::sys::jlongArray,
-                    0,
-                    copy_cols as jint,
-                    style_vec.as_ptr() as *const jlong,
-                );
-            }
+        // 使用安全包装器写回 Java
+        if let Ok(j_text_row) = env.get_object_array_element(unsafe { &jni::objects::JObjectArray::from_raw(dest_text) }, i as jsize) {
+            let _ = env.set_char_array_region(unsafe { &jni::objects::JCharArray::from_raw(j_text_row.as_raw() as jcharArray) }, 0, &text_vec);
         }
-
-        // 删除局部引用
-        unsafe {
-            ((**internal).DeleteLocalRef.unwrap())(internal, row_text_array);
-            ((**internal).DeleteLocalRef.unwrap())(internal, row_style_array);
+        if let Ok(j_style_row) = env.get_object_array_element(unsafe { &jni::objects::JObjectArray::from_raw(dest_style) }, i as jsize) {
+            let _ = env.set_long_array_region(unsafe { &jni::objects::JLongArray::from_raw(j_style_row.as_raw() as jlongArray) }, 0, &style_vec);
         }
-    }
-
-    // 最后统一写入换行标志数组
-    if !dest_line_wraps.is_null() {
-        unsafe {
-            ((**internal).SetBooleanArrayRegion.unwrap())(
-                internal,
-                dest_line_wraps,
-                0,
-                count as jint,
-                line_wraps_vec.as_ptr(),
-            );
+        if !dest_line_wraps.is_null() {
+            let _ = env.set_boolean_array_region(unsafe { &jni::objects::JBooleanArray::from_raw(dest_line_wraps) }, i as jsize, &[if line_wrap { jni::sys::JNI_TRUE } else { jni::sys::JNI_FALSE }]);
         }
     }
 }
-
-#[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readScreenBatchFromRust(
-    env_ptr: *mut *const JNINativeInterface_,
+    env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
     dest_text: jobjectArray,
@@ -450,7 +388,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readScre
 /// 读取整个屏幕的优化版本（固定从第 0 行开始）
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readFullScreenFromRust(
-    env_ptr: *mut *const JNINativeInterface_,
+    env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
     dest_text: jobjectArray,
@@ -475,7 +413,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readFull
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_calculateChecksumFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) -> jlong {
@@ -490,7 +428,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_calculat
 /// 获取终端行数
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getRowsFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) -> jint {
@@ -505,7 +443,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getRowsF
 /// 获取终端列数
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColsFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) -> jint {
@@ -559,7 +497,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getSelec
 /// 创建共享内存缓冲区并返回 DirectByteBuffer
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_createSharedBufferRust(
-    env_ptr: *mut *const JNINativeInterface_,
+    env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) -> jobject {
@@ -638,7 +576,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_createSh
 /// 同步 Rust 数据到共享缓冲区
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_syncToSharedBufferRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) {
@@ -708,7 +646,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_syncToSh
 /// 从共享缓冲区读取版本号 (返回 int)
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getSharedBufferVersionRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) -> jni::sys::jint {
@@ -729,7 +667,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getShare
 /// 清除共享缓冲区版本标志
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_clearSharedBufferVersionRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) {
@@ -749,7 +687,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_clearSha
 /// 释放共享缓冲区
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_destroySharedBufferRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) {
@@ -773,7 +711,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_destroyS
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_resizeEngineRustFull(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
     new_cols: jint,
@@ -847,7 +785,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColor
 /// 重置颜色
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_resetColorsFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) {
@@ -1012,7 +950,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isRevers
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isAlternateBufferActiveFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) -> jni::sys::jboolean {
@@ -1063,7 +1001,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getTitle
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_reportFocusGainFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) {
@@ -1078,7 +1016,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_reportFo
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_reportFocusLossFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) {
@@ -1154,7 +1092,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_clearScr
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isAutoScrollDisabledFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) -> jni::sys::jboolean {
@@ -1173,7 +1111,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isAutoSc
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_toggleAutoScrollDisabledFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) {
@@ -1192,7 +1130,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_toggleAu
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
-    env_ptr: *mut *const JNINativeInterface_,
+    env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     cmd: jstring,
     cwd: jstring,
@@ -1222,7 +1160,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_JNI_setPtyWindowSize(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     fd: jint,
     rows: jint,
@@ -1235,7 +1173,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_setPtyWindowSize(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_JNI_waitFor(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     pid: jint,
 ) -> jint {
@@ -1244,7 +1182,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_waitFor(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_JNI_close(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     fd: jint,
 ) {
@@ -1257,7 +1195,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_close(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendMouseEventFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
     mouse_button: jint,
@@ -1281,7 +1219,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendMous
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendKeyCodeFromRust(
-    env_ptr: *mut *const JNINativeInterface_,
+    env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
     key_code: jint,
@@ -1342,7 +1280,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getActiv
 /// 获取当前 DECSET 标志位
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getDecsetFlagsFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) -> jint {
@@ -1357,7 +1295,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getDecse
 /// 检查插入模式是否激活
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isInsertModeActiveFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) -> jni::sys::jboolean {
@@ -1376,7 +1314,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isInsert
 /// 设置光标闪烁状态
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorBlinkStateInRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
     visible: jni::sys::jboolean,
@@ -1392,7 +1330,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCurso
 /// 设置光标闪烁启用状态
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorBlinkingEnabledInRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
     enabled: jni::sys::jboolean,
@@ -1408,7 +1346,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCurso
 /// 检查光标是否启用
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isCursorEnabledFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) -> jni::sys::jboolean {
@@ -1423,7 +1361,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isCursor
 /// 检查光标键是否处于应用模式
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isCursorKeysApplicationModeFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) -> jni::sys::jboolean {
@@ -1439,7 +1377,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isCursor
 /// 检查键盘是否处于应用模式
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isKeypadApplicationModeFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) -> jni::sys::jboolean {
@@ -1455,7 +1393,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isKeypad
 /// 检查鼠标跟踪是否激活
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isMouseTrackingActiveFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
 ) -> jni::sys::jboolean {
@@ -1474,7 +1412,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isMouseT
 /// 发送鼠标事件到 Rust
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendMouseEventToRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
     button: jint,
@@ -1499,7 +1437,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendMous
 /// 更新 TerminalSessionClient
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_updateTerminalSessionClientFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
     _client: jobject,
@@ -1514,7 +1452,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_updateTe
 /// 设置自动滚动禁用状态
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_setAutoScrollDisabledInRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    _env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
     disabled: jni::sys::jboolean,
