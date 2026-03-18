@@ -78,32 +78,37 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_processB
     input: jbyteArray,
     length: jint,
 ) {
-    if engine_ptr == 0 || length <= 0 || input.is_null() {
-        return;
-    }
+    catch_panic! {
+        if engine_ptr == 0 || length <= 0 || input.is_null() {
+            return;
+        }
 
-    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-
-    let j_array = unsafe { jni::objects::JByteArray::from_raw(input) };
-    let mut data_vec = vec![0i8; length as usize];
-    
-    if env.get_byte_array_region(&j_array, 0, &mut data_vec).is_err() {
-        return;
-    }
-
-    // 转换为 u8
-    let data_u8: Vec<u8> = data_vec.iter().map(|&b| b as u8).collect();
-    
-    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    {
-        let mut guard = match engine_lock.write() {
-            Ok(g) => g,
+        let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+            Ok(e) => e,
             Err(_) => return,
         };
-        guard.process_bytes(&data_u8);
+
+        let j_array = unsafe { jni::objects::JByteArray::from_raw(input) };
+        let mut data_vec = vec![0i8; length as usize];
+        
+        if env.get_byte_array_region(&j_array, 0, &mut data_vec).is_err() {
+            return;
+        }
+
+        // 转换为 u8
+        let data_u8: Vec<u8> = data_vec.iter().map(|&b| b as u8).collect();
+        
+        let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+        {
+            let mut engine = match engine_lock.write() {
+                Ok(g) => g,
+                Err(_) => return,
+            };
+            engine.process_bytes(&data_u8);
+            
+            // 重要：处理完批处理后，立即同步到扁平缓冲区和共享内存
+            engine.sync_state_to_flat();
+        }
     }
 }
 

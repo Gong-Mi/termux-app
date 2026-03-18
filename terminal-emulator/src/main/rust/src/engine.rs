@@ -188,13 +188,13 @@ impl FlatScreenBuffer {
 
     /// 设置单元格文本 (增加双宽字符清理与 UTF-16 处理)
     #[inline]
-    pub fn set_cell_text(&mut self, col: usize, row: usize, code_point: u32) {
+    pub fn set_cell_text(&mut self, col: usize, row: usize, code_point: u32, style: u64) {
         let idx = self.cell_index(col, row);
         if idx >= self.text_data.len() {
             return;
         }
 
-        // 1. 覆盖前的清理逻辑
+        // 1. 覆盖前的清理逻辑 (Java: deleteChar)
         if col > 0 && self.text_data[idx] == 0 {
             // 如果当前是占位符，清理前一个格
             self.text_data[idx - 1] = ' ' as u16;
@@ -203,27 +203,19 @@ impl FlatScreenBuffer {
         // 2. 写入字符 (处理 UTF-16)
         if code_point <= 0xFFFF {
             self.text_data[idx] = code_point as u16;
+            self.style_data[idx] = style;
         } else {
             // 对于 Emoji (U+1Fxxx)，将其拆分为代理对存入两个格子
-            // 这样 Java 侧直接读取时就能识别出 Emoji
             let u = code_point - 0x10000;
             let hi = ((u >> 10) & 0x3FF) as u16 | 0xD800;
             let lo = (u & 0x3FF) as u16 | 0xDC00;
             
             self.text_data[idx] = hi;
+            self.style_data[idx] = style;
             if col < self.cols - 1 {
                 self.text_data[idx + 1] = lo;
-                return; // 跳过后面的常规写入
+                self.style_data[idx + 1] = style;
             }
-        }
-    }
-
-    /// 设置单元格样式
-    #[inline]
-    pub fn set_cell_style(&mut self, col: usize, row: usize, style: u64) {
-        let idx = self.cell_index(col, row);
-        if idx < self.style_data.len() {
-            self.style_data[idx] = style;
         }
     }
 }
@@ -5315,7 +5307,70 @@ impl TerminalEngine {
         self.state.clamp_cursor();
     }
 
-    pub fn resize(&mut self, new_cols: i32, new_rows: i32) {
-        self.state.resize(new_cols, new_rows);
+    /// 将内部 buffer (逻辑行) 同步到扁平缓冲区
+    pub fn sync_state_to_flat(&mut self) {
+        let state = &mut self.state;
+        if state.flat_buffer.is_none() {
+            return;
+        }
+
+        let cols = state.cols as usize;
+        let screen_rows = state.rows as usize;
+        let buffer_len = state.buffer.len();
+        let screen_first_row = state.screen_first_row;
+        let shared_ptr = state.shared_buffer_ptr;
+
+        if let Some(ref mut flat_buffer) = state.flat_buffer {
+            for logic_row in 0..screen_rows {
+                let physical_row = (screen_first_row + logic_row) % buffer_len;
+                let row_start_idx = logic_row * cols;
+
+                if let Some(buffer_row) = state.buffer.get(physical_row) {
+                    let mut col = 0;
+                    let mut dest_col = 0;
+                    let row_text_len = buffer_row.text.len();
+
+                    while col < row_text_len && dest_col < cols {
+                        let cell_idx = row_start_idx + dest_col;
+                        let ucs = buffer_row.text[col] as u32;
+                        let style = buffer_row.styles[col];
+
+                        if ucs <= 0xFFFF {
+                            flat_buffer.text_data[cell_idx] = ucs as u16;
+                            flat_buffer.style_data[cell_idx] = style;
+                            dest_col += 1;
+                        } else {
+                            // 处理代理对 (Emoji)
+                            let u = ucs - 0x10000;
+                            let hi = ((u >> 10) & 0x3FF) as u16 | 0xD800;
+                            let lo = (u & 0x3FF) as u16 | 0xDC00;
+                            
+                            flat_buffer.text_data[cell_idx] = hi;
+                            flat_buffer.style_data[cell_idx] = style;
+                            
+                            if dest_col + 1 < cols {
+                                flat_buffer.text_data[cell_idx + 1] = lo;
+                                flat_buffer.style_data[cell_idx + 1] = style;
+                                dest_col += 2;
+                            } else {
+                                dest_col += 1;
+                            }
+                        }
+                        col += 1;
+                    }
+
+                    // 填充剩余列为默认空格
+                    while dest_col < cols {
+                        let cell_idx = row_start_idx + dest_col;
+                        flat_buffer.text_data[cell_idx] = ' ' as u16;
+                        flat_buffer.style_data[cell_idx] = STYLE_NORMAL;
+                        dest_col += 1;
+                    }
+                }
+            }
+            
+            // 如果存在共享指针，进一步同步到共享内存
+            flat_buffer.sync_to_shared(shared_ptr);
+        }
     }
 }
