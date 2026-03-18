@@ -8,9 +8,9 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
 use jni::sys::{
-    JNI_VERSION_1_6, jbyteArray, jcharArray, jclass, jint, jintArray, jlong,
-    jobject, jobjectArray, jstring, jsize,
-    };
+    jbooleanArray, jbyteArray, jcharArray, jclass, jint, jintArray, jlong, jlongArray, jobject,
+    jobjectArray, jsize, jstring, JNI_VERSION_1_6,
+};
 use jni::{JNIEnv, JavaVM};
 use std::panic;
 use std::sync::OnceLock;
@@ -1045,7 +1045,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_pasteTex
         Err(_) => return,
     };
     let engine = &mut *guard;
-    let env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return,
     };
@@ -1232,7 +1232,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendKeyC
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
     let mut guard = engine_lock.write().unwrap();
     let engine = &mut *guard;
-    let env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return,
     };
