@@ -8,9 +8,9 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
 use jni::sys::{
-    JNI_VERSION_1_6, JNINativeInterface_, jbyteArray, jcharArray, jclass, jint, jintArray, jlong,
-    jlongArray, jobject, jobjectArray, jstring,
-};
+    JNI_VERSION_1_6, jbyteArray, jcharArray, jclass, jint, jintArray, jlong,
+    jobject, jobjectArray, jstring, jsize,
+    };
 use jni::{JNIEnv, JavaVM};
 use std::panic;
 use std::sync::OnceLock;
@@ -126,7 +126,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_createEn
     let mut engine_inner = TerminalEngine::new(cols, rows, transcript_rows, cell_width, cell_height);
 
     // 创建全局引用
-    if let Ok(mut env) = unsafe { JNIEnv::from_raw(env_ptr) } {
+    if let Ok(env) = unsafe { JNIEnv::from_raw(env_ptr) } {
         if let Ok(global_obj) =
             env.new_global_ref(unsafe { jni::objects::JObject::from_raw(callback_obj) })
         {
@@ -154,7 +154,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_processE
         return;
     }
 
-    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+    let env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return,
     };
@@ -276,7 +276,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readRowF
         return;
     }
 
-    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+    let env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return,
     };
@@ -339,7 +339,7 @@ unsafe fn internal_read_screen_batch(
         return;
     }
 
-    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+    let env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return,
     };
@@ -1045,7 +1045,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_pasteTex
         Err(_) => return,
     };
     let engine = &mut *guard;
-    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+    let env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return,
     };
@@ -1232,7 +1232,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendKeyC
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
     let mut guard = engine_lock.write().unwrap();
     let engine = &mut *guard;
-    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+    let env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return,
     };
