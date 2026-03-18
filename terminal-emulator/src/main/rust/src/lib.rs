@@ -376,10 +376,14 @@ unsafe fn internal_read_screen_batch(
         if let Ok(j_text_row_obj) = env.get_object_array_element(&j_dest_text, i as jsize) {
             let j_text_row = unsafe { jni::objects::JCharArray::from_raw(j_text_row_obj.as_raw() as jcharArray) };
             let _ = env.set_char_array_region(&j_text_row, 0, &text_vec);
+            // 显式释放局部引用，防止循环中堆积
+            drop(j_text_row_obj); 
         }
         if let Ok(j_style_row_obj) = env.get_object_array_element(&j_dest_style, i as jsize) {
             let j_style_row = unsafe { jni::objects::JLongArray::from_raw(j_style_row_obj.as_raw() as jlongArray) };
             let _ = env.set_long_array_region(&j_style_row, 0, &style_vec);
+            // 显式释放局部引用
+            drop(j_style_row_obj);
         }
         if !dest_line_wraps.is_null() {
             let j_wraps = unsafe { jni::objects::JBooleanArray::from_raw(dest_line_wraps) };
