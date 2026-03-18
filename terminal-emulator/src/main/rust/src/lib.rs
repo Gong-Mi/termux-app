@@ -276,35 +276,41 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readRowF
         return;
     }
 
-    let env = match unsafe { JNIEnv::from_raw(env_ptr) } {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
 
-    // 步骤 1: 在读锁保护下拷贝数据到局部向量
+    // 步骤 1: 防御性数据获取
     let (text_vec, style_vec) = {
         let guard = match engine_lock.read() {
             Ok(g) => g,
             Err(_) => return,
         };
 
-        let mut t_vec = vec![0u16; 0];
-        let mut s_vec = vec![0i64; 0];
-
-        // 假设 copy_row 方法会自动调整 vector 大小或使用预定义大小
-        // 这里手动初始化以防万一
         let cols = guard.state.cols as usize;
-        t_vec.resize(cols, ' ' as u16);
-        s_vec.resize(cols, 0i64);
+        let mut t_vec = vec![0u16; cols];
+        let mut s_vec = vec![0i64; cols];
 
-        guard.state.copy_row_text(row as usize, &mut t_vec);
-        guard.state.copy_row_styles(row as usize, &mut s_vec);
+        // 核心检查：确保行号在 Rust 当前缓冲区范围内
+        let buffer = guard.state.get_current_buffer();
+        let internal_row = guard.state.external_to_internal_row(row);
+
+        if internal_row < buffer.len() {
+            // 安全拷贝：这可能会产生 Surrogate 对，导致长度超出 cols，
+            // 但我们的 Java 侧 buffer 分配了 columns * 3，所以是安全的。
+            guard.state.copy_row_text(row as usize, &mut t_vec);
+            guard.state.copy_row_styles(row as usize, &mut s_vec);
+        } else {
+            // 越界保护：填充空格
+            for i in 0..cols { t_vec[i] = ' ' as u16; }
+        }
         (t_vec, s_vec)
-    }; // 锁在这里被释放
+    }; 
 
-    // 步骤 2: 使用安全 JNI 接口写回 Java
+    // 步骤 2: 安全写回 Java
+    let env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
     let j_text = unsafe { jni::objects::JCharArray::from_raw(dest_text) };
     let j_style = unsafe { jni::objects::JLongArray::from_raw(dest_style) };
 
@@ -317,10 +323,12 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readRowF
         Err(_) => return,
     };
 
-    let _ = env.set_char_array_region(&j_text, 0, &text_vec[..std::cmp::min(text_len, text_vec.len())]);
-    let _ = env.set_long_array_region(&j_style, 0, &style_vec[..std::cmp::min(style_len, style_vec.len())]);
-}
+    let copy_text = std::cmp::min(text_len, text_vec.len());
+    let copy_styles = std::cmp::min(style_len, style_vec.len());
 
+    let _ = env.set_char_array_region(&j_text, 0, &text_vec[..copy_text]);
+    let _ = env.set_long_array_region(&j_style, 0, &style_vec[..copy_styles]);
+}
 // ============================================================================
 // 批量读取优化 - 减少 JNI 调用次数
 // ============================================================================

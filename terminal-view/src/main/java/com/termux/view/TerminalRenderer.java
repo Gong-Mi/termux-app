@@ -56,9 +56,14 @@ public final class TerminalRenderer {
     /** Render the terminal to a canvas with at a specified row scroll, and an optional rectangular selection. */
     public final void render(TerminalEmulator mEmulator, Canvas canvas, int topRow,
                              int selectionY1, int selectionY2, int selectionX1, int selectionX2) {
-        final boolean reverseVideo = mEmulator.isReverseVideo();
-        final int endRow = topRow + mEmulator.getRows();
+        if (mEmulator == null) return;
+        
         final int columns = mEmulator.getCols();
+        final int rows = mEmulator.getRows();
+        if (columns <= 0 || rows <= 0) return;
+
+        final boolean reverseVideo = mEmulator.isReverseVideo();
+        final int endRow = topRow + rows;
         final int cursorCol = mEmulator.getCursorCol();
         final int cursorRow = mEmulator.getCursorRow();
         final boolean cursorVisible = mEmulator.shouldCursorBeVisible();
