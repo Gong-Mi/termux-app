@@ -532,7 +532,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColsF
 /// 获取选定区域的文本
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getSelectedTextFromRust(
-    _env_ptr: *mut *const JNINativeInterface_,
+    env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
     x1: jint,
@@ -543,11 +543,17 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getSelec
     if engine_ptr == 0 {
         return std::ptr::null_mut();
     }
-    let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
-    let text = guard.state.get_selected_text(x1, y1, x2, y2);
+    
+    let text = {
+        let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
+        let guard = match engine_lock.read() {
+            Ok(g) => g,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        guard.state.get_selected_text(x1, y1, x2, y2)
+    };
 
-    let env = match JNIEnv::from_raw(_env_ptr) {
+    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return std::ptr::null_mut(),
     };
@@ -812,42 +818,42 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColor
     env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     engine_ptr: jlong,
-    colors: jintArray,
-) {
-    if engine_ptr == 0 || colors.is_null() {
-        return;
+) -> jintArray {
+    if engine_ptr == 0 {
+        return std::ptr::null_mut();
     }
 
     let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
-        Err(_) => return,
+        Err(_) => return std::ptr::null_mut(),
     };
 
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
     let guard = match engine_lock.read() {
         Ok(g) => g,
-        Err(_) => return,
+        Err(_) => return std::ptr::null_mut(),
     };
     let engine = &*guard;
 
-    // 将 raw 指针包装为安全的 JIntArray 对象
-    let j_array = unsafe { jni::objects::JIntArray::from_raw(colors) };
-
-    // 获取数组长度
-    let len = match env.get_array_length(&j_array) {
-        Ok(l) => l as usize,
-        Err(_) => return,
+    // 创建新的 Java 数组 (259 个颜色)
+    let color_count = 259;
+    let j_array = match env.new_int_array(color_count as jint) {
+        Ok(a) => a,
+        Err(_) => return std::ptr::null_mut(),
     };
 
-    // 复制颜色数据
-    let mut color_data = vec![0i32; len];
-    let to_copy = std::cmp::min(len, 259);
-    for i in 0..to_copy {
+    // 准备数据
+    let mut color_data = vec![0i32; color_count];
+    for i in 0..color_count {
         color_data[i] = engine.state.colors.current_colors[i] as i32;
     }
 
-    // 写入 Java 数组
-    let _ = env.set_int_array_region(&j_array, 0, &color_data[..to_copy]);
+    // 填充数据
+    if env.set_int_array_region(&j_array, 0, &color_data).is_err() {
+        return std::ptr::null_mut();
+    }
+
+    j_array.into_raw()
 }
 
 /// 重置颜色
