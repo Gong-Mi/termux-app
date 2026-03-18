@@ -1216,7 +1216,7 @@ impl ScreenState {
 
     /// 获取当前活动的缓冲区（主或备）
     #[inline]
-    fn get_current_buffer(&self) -> &Vec<TerminalRow> {
+    pub fn get_current_buffer(&self) -> &Vec<TerminalRow> {
         if self.use_alternate_buffer {
             &self.alt_buffer
         } else {
@@ -1451,7 +1451,7 @@ impl ScreenState {
 
     /// 将逻辑行号转换为物理数组索引
     #[inline]
-    fn external_to_internal_row(&self, row: i32) -> usize {
+    pub fn external_to_internal_row(&self, row: i32) -> usize {
         let buffer = self.get_current_buffer();
         let total = buffer.len();
 
