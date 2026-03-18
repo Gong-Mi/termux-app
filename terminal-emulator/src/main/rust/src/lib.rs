@@ -747,7 +747,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_resizeEn
     let engine_lock = &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>);
     let mut guard = engine_lock.write().unwrap();
     let engine = &mut *guard;
-    engine.resize(new_cols, new_rows);
+    engine.state.resize(new_cols, new_rows);
 }
 /// 销毁原生引擎
 #[unsafe(no_mangle)]
