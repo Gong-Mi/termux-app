@@ -72,7 +72,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_WcWidth_widthRust(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_processBatchRust(
-    env_ptr: *mut *const JNINativeInterface_,
+    env_ptr: *mut jni::sys::JNIEnv,
     _class: jclass,
     input: jbyteArray,
     offset: jint,
@@ -80,44 +80,33 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_processB
     use_line_drawing: jni::sys::jboolean,
 ) -> jint {
     catch_panic! {
-        unsafe {
-            let env = match JNIEnv::from_raw(env_ptr) {
-                Ok(e) => e,
-                Err(_) => return 0,
-            };
-
-            let internal = env.get_native_interface();
-            let mut is_copy = jni::sys::JNI_FALSE;
-            let input_ptr =
-                ((**internal).GetPrimitiveArrayCritical.unwrap())(internal, input, &mut is_copy)
-                    as *const u8;
-
-            if !input_ptr.is_null() {
-                let input_len = ((**internal).GetArrayLength.unwrap())(internal, input) as usize;
-                let start = offset as usize;
-                let len = length as usize;
-
-                let result = if start + len <= input_len {
-                    fastpath::scan_ascii_batch(
-                        std::slice::from_raw_parts(input_ptr.add(start), len),
-                        use_line_drawing != jni::sys::JNI_FALSE,
-                    )
-                } else {
-                    0
-                };
-
-                ((**internal).ReleasePrimitiveArrayCritical.unwrap())(
-                    internal,
-                    input,
-                    input_ptr as *mut _,
-                    jni::sys::JNI_ABORT,
-                );
-                result as jint
-            } else {
-                0
-            }
+        if length <= 0 || input.is_null() {
+            return 0;
         }
+
+        let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+            Ok(e) => e,
+            Err(_) => return 0,
+        };
+
+        let j_array = unsafe { jni::objects::JByteArray::from_raw(input) };
+        let mut data_vec = vec![0i8; length as usize];
+        
+        if env.get_byte_array_region(&j_array, offset, &mut data_vec).is_err() {
+            return 0;
+        }
+
+        // 转换为 u8
+        let data_u8: Vec<u8> = data_vec.iter().map(|&b| b as u8).collect();
+        
+        let result = fastpath::scan_ascii_batch(
+            &data_u8,
+            use_line_drawing != jni::sys::JNI_FALSE,
+        );
+        
+        result as jint
     }
+}
 }
 
 // ============================================================================

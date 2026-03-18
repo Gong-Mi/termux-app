@@ -88,19 +88,21 @@ public final class TerminalRenderer {
             int charsUsedInLine;
 
             if (screen != null) {
+                // Java 传统模式
                 TerminalRow lineObject = screen.allocateFullLineIfNecessary(screen.externalToInternalRow(row));
                 line = lineObject.mText;
                 styles = lineObject.mStyle;
                 charsUsedInLine = lineObject.getSpaceUsed();
             } else {
+                // Rust Takeover 模式
                 if (mRowTextBuffer == null) {
-                    mRowTextBuffer = new char[columns * 3]; // Allocate once per render
+                    mRowTextBuffer = new char[columns * 3];
                     mRowStyleBuffer = new long[columns * 3];
                 }
                 mEmulator.readRow(row, mRowTextBuffer, mRowStyleBuffer);
                 line = mRowTextBuffer;
                 styles = mRowStyleBuffer;
-                charsUsedInLine = columns; // Simplification for Rust takeover
+                charsUsedInLine = columns;
             }
 
             long lastRunStyle = 0;
@@ -120,6 +122,8 @@ public final class TerminalRenderer {
                 final int codePointWcWidth = WcWidth.width(codePoint);
                 final boolean insideCursor = (cursorX == column || (codePointWcWidth == 2 && cursorX == column + 1));
                 final boolean insideSelection = column >= selx1 && column <= selx2;
+                
+                // 彻底修复这里：在 Rust 模式下严禁访问 screen 对象
                 final long style = (screen != null) ? ((TerminalRow)screen.allocateFullLineIfNecessary(screen.externalToInternalRow(row))).getStyle(column) : styles[column];
 
                 // Check if the measured text width for this code point is not the same as that expected by wcwidth().
