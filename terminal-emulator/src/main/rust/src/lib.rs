@@ -8,7 +8,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
 use jni::sys::{
-    jbooleanArray, jbyteArray, jcharArray, jclass, jint, jintArray, jlong, jlongArray, jobject,
+    jbyteArray, jcharArray, jclass, jint, jintArray, jlong, jlongArray, jobject,
     jobjectArray, jsize, jstring, JNI_VERSION_1_6,
 };
 use jni::{JNIEnv, JavaVM};
@@ -82,7 +82,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_processB
         return;
     }
 
-    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+    let env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return,
     };
@@ -90,13 +90,13 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_processB
     // 获取数据
     let j_array = unsafe { jni::objects::JByteArray::from_raw(input) };
     let mut data_vec = vec![0i8; length as usize];
-    
+
     if env.get_byte_array_region(&j_array, 0, &mut data_vec).is_err() {
         return;
     }
 
     let data_u8: Vec<u8> = data_vec.iter().map(|&b| b as u8).collect();
-    
+
     let engine_lock = &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>);
     if let Ok(mut engine) = engine_lock.write() {
         engine.process_bytes(&data_u8);
@@ -421,7 +421,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_readFull
     }
     let rows = {
         let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-        let guard = engine_lock.read().unwrap();
+        let guard = match engine_lock.read() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
         guard.state.rows as jint
     };
 
@@ -442,7 +445,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_calculat
         return 0;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return 0,
+    };
     guard.state.calculate_checksum() as jlong
 }
 
@@ -457,7 +463,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getRowsF
         return 0;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return 0,
+    };
     guard.state.rows as jint
 }
 
@@ -472,7 +481,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColsF
         return 0;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return 0,
+    };
     guard.state.cols as jint
 }
 
@@ -500,7 +512,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getSelec
         guard.state.get_selected_text(x1, y1, x2, y2)
     };
 
-    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+    let env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return std::ptr::null_mut(),
     };
@@ -526,7 +538,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_createSh
         return std::ptr::null_mut();
     }
     let engine_lock = &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>);
-    let mut guard = engine_lock.write().unwrap();
+    let mut guard = match engine_lock.write() {
+        Ok(g) => g,
+        Err(_) => return std::ptr::null_mut(),
+    };
     let engine = &mut *guard;
     let mut env = match JNIEnv::from_raw(env_ptr) {
         Ok(e) => e,
@@ -605,7 +620,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_syncToSh
         return;
     }
     let engine_lock = &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>);
-    let mut guard = engine_lock.write().unwrap();
+    let mut guard = match engine_lock.write() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
     let engine = &mut *guard;
 
     // 将当前屏幕数据同步到共享缓冲区
@@ -675,7 +693,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getShare
         return 0;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return 0,
+    };
     let engine = &*guard;
 
     if !engine.state.shared_buffer_ptr.is_null() {
@@ -696,7 +717,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_clearSha
         return;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let mut guard = engine_lock.write().unwrap();
+    let mut guard = match engine_lock.write() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
     let engine = &mut *guard;
 
     if !engine.state.shared_buffer_ptr.is_null() {
@@ -716,7 +740,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_destroyS
         return;
     }
     let engine_lock = &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>);
-    let mut guard = engine_lock.write().unwrap();
+    let mut guard = match engine_lock.write() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
     let engine = &mut *guard;
 
     if !engine.state.shared_buffer_ptr.is_null() {
@@ -724,9 +751,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_destroyS
             engine.state.cols as usize,
             engine.state.rows as usize,
         );
-        let layout = std::alloc::Layout::from_size_align(buffer_size, 8).unwrap();
-        std::alloc::dealloc(engine.state.shared_buffer_ptr as *mut u8, layout);
-        engine.state.shared_buffer_ptr = std::ptr::null_mut();
+        if let Ok(layout) = std::alloc::Layout::from_size_align(buffer_size, 8) {
+            std::alloc::dealloc(engine.state.shared_buffer_ptr as *mut u8, layout);
+            engine.state.shared_buffer_ptr = std::ptr::null_mut();
+        }
     }
 }
 
@@ -742,7 +770,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_resizeEn
         return;
     }
     let engine_lock = &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>);
-    let mut guard = engine_lock.write().unwrap();
+    let mut guard = match engine_lock.write() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
     let engine = &mut *guard;
     engine.state.resize(new_cols, new_rows);
 }
@@ -770,7 +801,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColor
         return std::ptr::null_mut();
     }
 
-    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+    let env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return std::ptr::null_mut(),
     };
@@ -814,7 +845,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_resetCol
         return;
     }
     let engine_lock = &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>);
-    let mut guard = engine_lock.write().unwrap();
+    let mut guard = match engine_lock.write() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
     guard.state.colors.reset();
 }
 
@@ -979,7 +1013,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isAltern
         return jni::sys::JNI_FALSE;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return jni::sys::JNI_FALSE,
+    };
     let engine = &*guard;
     if engine.state.is_alternate_buffer_active() {
         jni::sys::JNI_TRUE
@@ -1030,7 +1067,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_reportFo
         return;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
     let engine = &*guard;
     engine.state.report_focus_gain();
 }
@@ -1045,7 +1085,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_reportFo
         return;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
     let engine = &*guard;
     engine.state.report_focus_loss();
 }
@@ -1121,7 +1164,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isAutoSc
         return jni::sys::JNI_FALSE;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return jni::sys::JNI_FALSE,
+    };
     let engine = &*guard;
     if engine.state.auto_scroll_disabled {
         jni::sys::JNI_TRUE
@@ -1140,7 +1186,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_toggleAu
         return;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let mut guard = engine_lock.write().unwrap();
+    let mut guard = match engine_lock.write() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
     let engine = &mut *guard;
     engine.state.toggle_auto_scroll_disabled();
 }
@@ -1228,7 +1277,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendMous
         return;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let mut guard = engine_lock.write().unwrap();
+    let mut guard = match engine_lock.write() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
     let engine = &mut *guard;
     engine.state.send_mouse_event(
         mouse_button as u32,
@@ -1251,7 +1303,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendKeyC
         return;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let mut guard = engine_lock.write().unwrap();
+    let mut guard = match engine_lock.write() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
     let engine = &mut *guard;
     let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
@@ -1309,7 +1364,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_getDecse
         return 0;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return 0,
+    };
     guard.state.decset_flags
 }
 
@@ -1324,7 +1382,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isInsert
         return jni::sys::JNI_FALSE;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return jni::sys::JNI_FALSE,
+    };
     if guard.state.insert_mode { jni::sys::JNI_TRUE } else { jni::sys::JNI_FALSE }
 }
 
@@ -1344,7 +1405,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCurso
         return;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let mut guard = engine_lock.write().unwrap();
+    let mut guard = match engine_lock.write() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
     guard.state.cursor_blink_state = visible != jni::sys::JNI_FALSE;
 }
 
@@ -1360,7 +1424,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCurso
         return;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let mut guard = engine_lock.write().unwrap();
+    let mut guard = match engine_lock.write() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
     guard.state.cursor_blinking_enabled = enabled != jni::sys::JNI_FALSE;
 }
 
@@ -1375,7 +1442,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isCursor
         return jni::sys::JNI_TRUE;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return jni::sys::JNI_TRUE,
+    };
     if guard.state.cursor_enabled { jni::sys::JNI_TRUE } else { jni::sys::JNI_FALSE }
 }
 
@@ -1390,7 +1460,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isCursor
         return jni::sys::JNI_FALSE;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return jni::sys::JNI_FALSE,
+    };
     // DECSET bit 1: 应用光标键模式
     if (guard.state.decset_flags & 0x01) != 0 { jni::sys::JNI_TRUE } else { jni::sys::JNI_FALSE }
 }
@@ -1406,7 +1479,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isKeypad
         return jni::sys::JNI_FALSE;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return jni::sys::JNI_FALSE,
+    };
     // DECNKM: 数字键盘应用模式
     if guard.state.application_keypad { jni::sys::JNI_TRUE } else { jni::sys::JNI_FALSE }
 }
@@ -1422,7 +1498,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_isMouseT
         return jni::sys::JNI_FALSE;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let guard = engine_lock.read().unwrap();
+    let guard = match engine_lock.read() {
+        Ok(g) => g,
+        Err(_) => return jni::sys::JNI_FALSE,
+    };
     if guard.state.mouse_tracking { jni::sys::JNI_TRUE } else { jni::sys::JNI_FALSE }
 }
 
@@ -1445,7 +1524,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendMous
         return;
     }
     let engine_lock = unsafe { &*(engine_ptr as *const std::sync::RwLock<TerminalEngine>) };
-    let mut guard = engine_lock.write().unwrap();
+    let mut guard = match engine_lock.write() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
     let engine = &mut *guard;
     engine.state.send_mouse_event(
         button as u32,

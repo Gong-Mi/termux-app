@@ -120,7 +120,10 @@ impl FlatScreenBuffer {
     }
 
     /// 从共享缓冲区同步数据到 Rust 侧
-    pub fn sync_from_shared(&mut self, shared_ptr: *const SharedScreenBuffer) {
+    /// 
+    /// # Safety
+    /// `shared_ptr` 必须是有效的 `SharedScreenBuffer` 指针
+    pub unsafe fn sync_from_shared(&mut self, shared_ptr: *const SharedScreenBuffer) {
         if shared_ptr.is_null() {
             return;
         }
@@ -143,7 +146,10 @@ impl FlatScreenBuffer {
     }
 
     /// 同步数据到共享缓冲区
-    pub fn sync_to_shared(&self, shared_ptr: *mut SharedScreenBuffer) {
+    /// 
+    /// # Safety
+    /// `shared_ptr` 必须是有效的 `SharedScreenBuffer` 指针
+    pub unsafe fn sync_to_shared(&self, shared_ptr: *mut SharedScreenBuffer) {
         if shared_ptr.is_null() {
             return;
         }
@@ -1442,10 +1448,18 @@ impl ScreenState {
     }
 
     /// 将逻辑行号转换为物理数组索引
+    /// 
+    /// # 安全性
+    /// 此函数保证返回有效的缓冲区索引，即使输入 row 超出范围
     #[inline]
     pub fn external_to_internal_row(&self, row: i32) -> usize {
         let buffer = self.get_current_buffer();
         let total = buffer.len();
+        
+        // 防御性检查：缓冲区不能为空
+        if total == 0 {
+            return 0;
+        }
 
         if self.use_alternate_buffer {
             // 备用缓冲区没有滚动历史，直接映射
@@ -1457,12 +1471,10 @@ impl ScreenState {
             let first = self.screen_first_row as i64;
             let r = row as i64;
             let t = total as i64;
-            let internal = (first + r) % t;
-            if internal < 0 {
-                (internal + t) as usize
-            } else {
-                internal as usize
-            }
+            
+            // 核心修复：确保取模结果始终在有效范围内
+            let internal = ((first + r) % t + t) % t;
+            internal as usize
         }
     }
 
@@ -5368,9 +5380,11 @@ impl TerminalEngine {
                     }
                 }
             }
-            
+
             // 如果存在共享指针，进一步同步到共享内存
-            flat_buffer.sync_to_shared(shared_ptr);
+            unsafe {
+                flat_buffer.sync_to_shared(shared_ptr);
+            }
         }
     }
 }
