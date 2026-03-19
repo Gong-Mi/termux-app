@@ -365,12 +365,12 @@ impl Parser {
             }
             ESC_SELECT_LEFT_PAREN => {
                 // G0 字符集选择
-                let _use_line_drawing = byte == b'0';
+                handler.esc_dispatch(&[b'('], false, byte);
                 self.escape_state = ESC_NONE;
             }
             ESC_SELECT_RIGHT_PAREN => {
                 // G1 字符集选择
-                let _use_line_drawing = byte == b'0';
+                handler.esc_dispatch(&[b')'], false, byte);
                 self.escape_state = ESC_NONE;
             }
             ESC_CSI => {
@@ -463,12 +463,18 @@ impl Parser {
                 self.escape_state = ESC_NONE;
             }
             b'(' => {
+                self.intermediates.clear();
+                self.intermediates.push(b'(');
                 self.escape_state = ESC_SELECT_LEFT_PAREN;
             }
             b')' => {
+                self.intermediates.clear();
+                self.intermediates.push(b')');
                 self.escape_state = ESC_SELECT_RIGHT_PAREN;
             }
             b'#' => {
+                self.intermediates.clear();
+                self.intermediates.push(b'#');
                 self.escape_state = ESC_POUND;
             }
             b'%' => {
@@ -477,10 +483,12 @@ impl Parser {
             }
             b'7' => {
                 // DECSC - 保存光标
+                handler.esc_dispatch(&[], false, byte);
                 self.escape_state = ESC_NONE;
             }
             b'8' => {
                 // DECRC - 恢复光标
+                handler.esc_dispatch(&[], false, byte);
                 self.escape_state = ESC_NONE;
             }
             b'D' => {
@@ -500,6 +508,7 @@ impl Parser {
             }
             b'M' => {
                 // RI - 反向换行
+                handler.esc_dispatch(&[], false, byte);
                 self.escape_state = ESC_NONE;
             }
             b'N' => {
@@ -512,39 +521,50 @@ impl Parser {
             }
             b'=' => {
                 // DECKPAM - 小键盘应用模式
+                handler.esc_dispatch(&[], false, byte);
                 self.escape_state = ESC_NONE;
             }
             b'>' => {
                 // DECKPNM - 小键盘数字模式
+                handler.esc_dispatch(&[], false, byte);
                 self.escape_state = ESC_NONE;
             }
             b'c' => {
                 // RIS - 完全复位
+                handler.esc_dispatch(&[], false, byte);
                 self.escape_state = ESC_NONE;
             }
             b'~' => {
                 // LS3 - Locking shift 3
                 self.escape_state = ESC_NONE;
             }
+            b'6' => {
+                // DECBI - Back Index
+                handler.esc_dispatch(&[], false, byte);
+                self.escape_state = ESC_NONE;
+            }
             _ => {
-                // 未知 ESC 序列
+                // 未知 ESC 序列，通过 esc_dispatch 通知上层
+                handler.esc_dispatch(&self.intermediates, false, byte);
                 self.escape_state = ESC_NONE;
             }
         }
     }
-    
+
     /// ESC # 序列处理
-    fn do_esc_pound<P: Perform>(&mut self, _handler: &mut P, byte: u8) {
+    fn do_esc_pound<P: Perform>(&mut self, handler: &mut P, byte: u8) {
         match byte {
             b'8' => {
                 // DECALN - 对齐测试，填充 E 字符
-                // 这里不实现
+                handler.esc_dispatch(&[b'#'], false, byte);
             }
-            _ => {}
+            _ => {
+                handler.esc_dispatch(&[b'#'], false, byte);
+            }
         }
         self.escape_state = ESC_NONE;
     }
-    
+
     /// CSI 序列处理
     fn do_csi<P: Perform>(&mut self, handler: &mut P, byte: u8) {
         match byte {
@@ -836,6 +856,8 @@ mod tests {
         fn execute(&mut self, byte: u8) {
             self.executed.push(byte);
         }
+        
+        fn esc_dispatch(&mut self, _intermediates: &[u8], _ignore: bool, _byte: u8) {}
         
         fn csi_dispatch(&mut self, params: &Params, _intermediates: &[u8], _ignore: bool, action: char) {
             self.csi_calls.push((action.to_string(), params.values[..params.len].to_vec()));
