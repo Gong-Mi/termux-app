@@ -156,10 +156,6 @@ impl Perform for TerminalEngine {
         }
     }
 
-    fn esc_dispatch(&mut self, _intermediates: &[u8], _ignore: bool, _byte: u8) {
-        // ESC 序列 - 简化处理
-    }
-
     fn hook(&mut self, _params: &Params, _intermediates: &[u8], _ignore: bool, _action: char) {
         // DCS 序列 - 简化处理
     }

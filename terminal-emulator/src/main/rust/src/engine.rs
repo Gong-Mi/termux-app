@@ -2,9 +2,9 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use jni::objects::JValue;
 use std::cmp::{max, min};
 use std::sync::Arc;
-use vte::{Params, Parser, Perform};
 
 use crate::utils::map_line_drawing;
+use crate::vte_parser::{Params, Parser, Perform};
 
 /// Base64 解码辅助函数
 fn base64_decode(input: &str) -> Result<Vec<u8>, base64::DecodeError> {
@@ -4072,7 +4072,7 @@ impl ScreenState {
     /// 完整的 SGR 处理（与 Java TextStyle 格式兼容）
     /// 同时更新 current_style 和独立颜色字段 (fore_color, back_color, effect, underline_color)
     fn handle_sgr(&mut self, params: &Params) {
-        let params_vec: Vec<u16> = params.iter().flat_map(|p| p.iter().copied()).collect();
+        let params_vec: Vec<i32> = params.iter().flat_map(|p| p.iter().copied()).collect();
         let mut i = 0;
 
         // 如果没有参数，默认为重置
@@ -5104,7 +5104,7 @@ impl<'a> Perform for PurePerformHandler<'a> {
                     .next()
                     .and_then(|p| p.first())
                     .copied()
-                    .unwrap_or(self.state.rows as u16) as i32;
+                    .unwrap_or(self.state.rows as i32) as i32;
                 self.state.set_margins(top, bottom);
             }
             's' => {
@@ -5115,7 +5115,7 @@ impl<'a> Perform for PurePerformHandler<'a> {
                         .next()
                         .and_then(|p| p.first())
                         .copied()
-                        .unwrap_or(self.state.cols as u16) as i32;
+                        .unwrap_or(self.state.cols as i32) as i32;
                     self.state.set_left_right_margins(left, right);
                 } else {
                     self.state.save_cursor();

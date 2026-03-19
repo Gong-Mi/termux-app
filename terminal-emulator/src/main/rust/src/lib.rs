@@ -10,6 +10,7 @@ pub mod engine;
 pub mod bootstrap;
 pub mod fastpath;
 pub mod pty;
+pub mod vte_parser;
 
 // 提供兼容性别名
 pub use engine as terminal_engine;

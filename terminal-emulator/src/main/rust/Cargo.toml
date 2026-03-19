@@ -10,7 +10,6 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 jni = "0.21.1"
 unicode-width = "0.2.2"
-vte = "0.15.0"
 nix = { version = "0.31.2", features = ["process", "signal", "term", "ioctl", "fs", "user"] }
 libc = "0.2"
 rayon = "1.11.0"
