@@ -71,16 +71,183 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeResize(
     context.engine.state.resize(cols, rows);
 }
 
-// --- 补全的 FromRust 系列方法 ---
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_resizeEngineRustFull(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+    cols: jint,
+    rows: jint,
+    _cw: jint,
+    _ch: jint,
+) {
+    let context = unsafe { &mut *(ptr as *mut TerminalContext) };
+    context.engine.state.resize(cols, rows);
+}
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getRowsFromRust(ptr: jlong) -> jint {
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_destroyEngineRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) {
+    if ptr != 0 {
+        unsafe {
+            let _ = Box::from_raw(ptr as *mut TerminalContext);
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getTitleFromRust(
+    mut env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) -> jstring {
+    let context = unsafe { &*(ptr as *const TerminalContext) };
+    let title = context.engine.state.title.clone().unwrap_or_default();
+    if let Ok(j_str) = env.new_string(title) {
+        j_str.into_raw()
+    } else {
+        std::ptr::null_mut()
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCursorRowFromRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) -> jint {
+    let context = unsafe { &*(ptr as *const TerminalContext) };
+    context.engine.state.cursor.y as jint
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCursorColFromRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) -> jint {
+    let context = unsafe { &*(ptr as *const TerminalContext) };
+    context.engine.state.cursor.x as jint
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCursorStyleFromRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) -> jint {
+    let context = unsafe { &*(ptr as *const TerminalContext) };
+    context.engine.state.cursor.style as jint
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_shouldCursorBeVisibleFromRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) -> jboolean {
+    let context = unsafe { &*(ptr as *const TerminalContext) };
+    if context.engine.state.cursor.should_be_visible(context.engine.state.cursor_enabled) { 1 } else { 0 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isCursorEnabledFromRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) -> jboolean {
+    let context = unsafe { &*(ptr as *const TerminalContext) };
+    if context.engine.state.cursor_enabled { 1 } else { 0 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isReverseVideoFromRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) -> jboolean {
+    let context = unsafe { &*(ptr as *const TerminalContext) };
+    if context.engine.state.modes.is_enabled(DECSET_BIT_REVERSE_VIDEO) { 1 } else { 0 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isAlternateBufferActiveFromRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) -> jboolean {
+    let context = unsafe { &*(ptr as *const TerminalContext) };
+    if context.engine.state.use_alternate_buffer { 1 } else { 0 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isCursorKeysApplicationModeFromRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) -> jboolean {
+    let context = unsafe { &*(ptr as *const TerminalContext) };
+    if context.engine.state.application_cursor_keys { 1 } else { 0 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isKeypadApplicationModeFromRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) -> jboolean {
+    let context = unsafe { &*(ptr as *const TerminalContext) };
+    if context.engine.state.modes.is_enabled(DECSET_BIT_APPLICATION_KEYPAD) { 1 } else { 0 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isMouseTrackingActiveFromRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) -> jboolean {
+    let context = unsafe { &*(ptr as *const TerminalContext) };
+    if context.engine.state.mouse_tracking { 1 } else { 0 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isInsertModeActiveFromRust(
+    _env: JNIEnv,
+    _class: JClass,
+    _ptr: jlong,
+) -> jboolean {
+    0
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getScrollCounterFromRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) -> jint {
+    let context = unsafe { &*(ptr as *const TerminalContext) };
+    context.engine.state.scroll_counter as jint
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getRowsFromRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) -> jint {
     let context = unsafe { &*(ptr as *const TerminalContext) };
     context.engine.state.rows as jint
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColsFromRust(ptr: jlong) -> jint {
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColsFromRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) -> jint {
     let context = unsafe { &*(ptr as *const TerminalContext) };
     context.engine.state.cols as jint
 }
@@ -95,47 +262,17 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_readRowFromRust
     styles: jni::sys::jlongArray,
 ) {
     let context = unsafe { &*(ptr as *const TerminalContext) };
-    let row_idx = row;
-    
-    // 我们需要把字符和样式数据拷贝到 Java 数组中
-    // 为了性能，我们通常使用本地临时缓冲区
     let cols = context.engine.state.cols as usize;
     let mut text_buf = vec![0u16; cols];
     let mut style_buf = vec![0i64; cols];
-    
-    context.engine.state.copy_row_text(row_idx, &mut text_buf);
-    context.engine.state.copy_row_styles_i64(row_idx, &mut style_buf);
-    
+    context.engine.state.copy_row_text(row, &mut text_buf);
+    context.engine.state.copy_row_styles_i64(row, &mut style_buf);
     unsafe {
         let j_text = jni::objects::JCharArray::from_raw(text);
         let j_styles = jni::objects::JLongArray::from_raw(styles);
         let _ = env.set_char_array_region(&j_text, 0, &text_buf);
         let _ = env.set_long_array_region(&j_styles, 0, &style_buf);
     }
-}
-
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getScrollCounterFromRust(ptr: jlong) -> jint {
-    let context = unsafe { &*(ptr as *const TerminalContext) };
-    context.engine.state.scroll_counter as jint
-}
-
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getActiveTranscriptRowsFromRust(ptr: jlong) -> jint {
-    let context = unsafe { &*(ptr as *const TerminalContext) };
-    context.engine.state.get_current_screen().active_transcript_rows as jint
-}
-
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeGetCursorCol(ptr: jlong) -> jint {
-    let context = unsafe { &*(ptr as *const TerminalContext) };
-    context.engine.state.cursor.x as jint
-}
-
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeGetCursorRow(ptr: jlong) -> jint {
-    let context = unsafe { &*(ptr as *const TerminalContext) };
-    context.engine.state.cursor.y as jint
 }
 
 #[unsafe(no_mangle)]
@@ -146,19 +283,165 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getSelectedText
     x1: jint, y1: jint, x2: jint, y2: jint,
 ) -> jstring {
     let context = unsafe { &*(ptr as *const TerminalContext) };
-    // 简化实现：仅提取单行
     let text = if y1 == y2 {
-        let row = context.engine.state.get_current_screen().get_row(y1);
-        row.get_selected_text(x1 as usize, x2 as usize)
+        context.engine.state.get_current_screen().get_row(y1).get_selected_text(x1 as usize, x2 as usize)
     } else {
-        String::from("Multiple lines selection not implemented in Rust yet")
+        String::from("Multi-line selection not yet supported")
     };
-    
     if let Ok(j_str) = env.new_string(text) {
         j_str.into_raw()
     } else {
         std::ptr::null_mut()
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_clearScrollCounterFromRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) {
+    let context = unsafe { &mut *(ptr as *mut TerminalContext) };
+    context.engine.state.scroll_counter = 0;
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isAutoScrollDisabledFromRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) -> jboolean {
+    let context = unsafe { &*(ptr as *const TerminalContext) };
+    if context.engine.state.auto_scroll_disabled { 1 } else { 0 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_toggleAutoScrollDisabledFromRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) {
+    let context = unsafe { &mut *(ptr as *mut TerminalContext) };
+    context.engine.state.auto_scroll_disabled = !context.engine.state.auto_scroll_disabled;
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendMouseEventFromRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+    button: jint,
+    col: jint,
+    row: jint,
+    pressed: jboolean,
+) {
+    let context = unsafe { &mut *(ptr as *mut TerminalContext) };
+    context.engine.state.send_mouse_event(button as u32, col, row, pressed != 0);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendKeyCodeFromRust(
+    mut env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+    key_code: jint,
+    char_str: jstring,
+    meta_state: jint,
+) {
+    let context = unsafe { &mut *(ptr as *mut TerminalContext) };
+    let rust_str = if !char_str.is_null() {
+        let j_str = unsafe { JString::from_raw(char_str) };
+        env.get_string(&j_str).ok().map(|s| String::from(s)).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    context.engine.state.send_key_event(key_code, Some(rust_str), meta_state);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_pasteTextFromRust(
+    mut env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+    text: jstring,
+) {
+    let context = unsafe { &mut *(ptr as *mut TerminalContext) };
+    if !text.is_null() {
+        let j_str = unsafe { JString::from_raw(text) };
+        if let Ok(rust_str) = env.get_string(&j_str) {
+            context.engine.state.paste(&String::from(rust_str));
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getActiveTranscriptRowsFromRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) -> jint {
+    let context = unsafe { &*(ptr as *const TerminalContext) };
+    context.engine.state.get_current_screen().active_transcript_rows as jint
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColorsFromRust(
+    mut env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) -> jintArray {
+    let context = unsafe { &*(ptr as *const TerminalContext) };
+    let colors = context.engine.state.colors.current_colors;
+    if let Ok(j_array) = env.new_int_array(colors.len() as jint) {
+        unsafe {
+            let _ = env.set_int_array_region(&j_array, 0, std::mem::transmute::<&[u32], &[i32]>(&colors));
+        }
+        j_array.into_raw()
+    } else {
+        std::ptr::null_mut()
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_resetColorsFromRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) {
+    let context = unsafe { &mut *(ptr as *mut TerminalContext) };
+    context.engine.state.colors.reset();
+    context.engine.state.report_colors_changed();
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_updateTerminalSessionClientFromRust(
+    _env: JNIEnv,
+    _class: JClass,
+    _ptr: jlong,
+    _client: JObject,
+) {
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorBlinkStateInRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+    state: jboolean,
+) {
+    let context = unsafe { &mut *(ptr as *mut TerminalContext) };
+    context.engine.state.cursor.blink_state = state != 0;
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorBlinkingEnabledInRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+    enabled: jboolean,
+) {
+    let context = unsafe { &mut *(ptr as *mut TerminalContext) };
+    context.engine.state.cursor.blinking_enabled = enabled != 0;
 }
 
 #[unsafe(no_mangle)]
@@ -172,4 +455,24 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeRelease(
             let _ = Box::from_raw(ptr as *mut TerminalContext);
         }
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeGetCursorCol(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) -> jint {
+    let context = unsafe { &*(ptr as *const TerminalContext) };
+    context.engine.state.cursor.x as jint
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeGetCursorRow(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) -> jint {
+    let context = unsafe { &*(ptr as *const TerminalContext) };
+    context.engine.state.cursor.y as jint
 }

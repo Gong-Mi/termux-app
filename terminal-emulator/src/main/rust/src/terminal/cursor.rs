@@ -91,4 +91,9 @@ impl Cursor {
         self.about_to_wrap = s.about_to_wrap;
         s
     }
+
+    pub fn should_be_visible(&self, cursor_enabled: bool) -> bool {
+        if !cursor_enabled { return false; }
+        if self.blinking_enabled { self.blink_state } else { true }
+    }
 }
