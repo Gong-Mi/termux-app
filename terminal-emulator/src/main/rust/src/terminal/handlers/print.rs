@@ -91,16 +91,13 @@ pub fn handle_print(state: &mut ScreenState, c: char) {
     }
 
     // 5. 更新光标位置
-    if state.cursor.x + char_width > state.right_margin {
-        // 如果超出了（对于宽字符可能是 x+2），由于我们已经在上面处理过强制换行了，这里理论上不应发生
-        state.cursor.x = state.right_margin; 
-        state.cursor.about_to_wrap = true;
-    } else if state.cursor.x + char_width == state.right_margin {
-        // 刚好落在边界处
-        state.cursor.x = state.right_margin;
+    if state.cursor.x + char_width >= state.right_margin {
+        // 到达或超过边界：停留在最后一列并标记 about_to_wrap
+        state.cursor.x = state.right_margin - char_width; 
         state.cursor.about_to_wrap = true;
     } else {
         state.cursor.x += char_width;
         state.cursor.about_to_wrap = false;
     }
-}
+    }
+
