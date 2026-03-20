@@ -74,13 +74,13 @@ public final class TerminalEmulator {
         }
     }
 
-    public void resize(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
+    public synchronized void resize(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
         if (mEnginePtr != 0) {
             resizeEngineRustFull(mEnginePtr, columns, rows, cellWidthPixels, cellHeightPixels);
         }
     }
 
-    public void append(byte[] batch, int length) {
+    public synchronized void append(byte[] batch, int length) {
         if (mEnginePtr != 0) {
             try {
                 processBatchRust(mEnginePtr, batch, length);
@@ -327,7 +327,7 @@ public final class TerminalEmulator {
         return null;
     }
 
-    public void destroy() {
+    public synchronized void destroy() {
         if (mEnginePtr != 0) {
             destroyEngineRust(mEnginePtr);
             mEnginePtr = 0;

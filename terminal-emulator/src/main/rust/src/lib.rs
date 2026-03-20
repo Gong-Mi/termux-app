@@ -34,9 +34,9 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_createEngineRus
     _class: JClass,
     cols: jint,
     rows: jint,
-    total_rows: jint,
     cw: jint,
     ch: jint,
+    total_rows: jint,
     callback: JObject,
 ) -> jlong {
     android_log(LogPriority::DEBUG, &format!("JNI: createEngineRustWithCallback ({}x{})", cols, rows));
@@ -56,10 +56,29 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeProcess(
     data: jbyteArray,
     _callback: JObject,
 ) {
+    if ptr == 0 || data.is_null() { return; }
     let context = unsafe { &mut *(ptr as *mut TerminalContext) };
     let j_array = unsafe { jni::objects::JByteArray::from_raw(data) };
     if let Ok(bytes) = env.convert_byte_array(&j_array) {
         context.engine.process_bytes(&bytes);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_processBatchRust(
+    mut env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+    batch: jbyteArray,
+    length: jint,
+) {
+    if ptr == 0 || batch.is_null() { return; }
+    let context = unsafe { &mut *(ptr as *mut TerminalContext) };
+    let j_array = unsafe { jni::objects::JByteArray::from_raw(batch) };
+    if let Ok(bytes) = env.convert_byte_array(&j_array) {
+        let len = length as usize;
+        let actual_len = std::cmp::min(len, bytes.len());
+        context.engine.process_bytes(&bytes[..actual_len]);
     }
 }
 

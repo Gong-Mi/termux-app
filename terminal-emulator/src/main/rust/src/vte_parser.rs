@@ -38,6 +38,8 @@ pub const ESC_OSC_ESC: u8 = 11;
 pub const ESC_CSI_BIGGERTHAN: u8 = 12;
 /// 转义处理："ESC P" 或 Device Control String (DCS)
 pub const ESC_P: u8 = 13;
+/// 转义处理：DCS 数据收集阶段
+pub const ESC_P_DATA: u8 = 24;
 /// 转义处理：CSI >
 pub const ESC_CSI_QUESTIONMARK_ARG_DOLLAR: u8 = 14;
 /// 转义处理：CSI $ARGS ' '
@@ -436,6 +438,9 @@ impl Parser {
             ESC_P => {
                 self.do_dcs(handler, byte);
             }
+            ESC_P_DATA => {
+                self.do_dcs_data(handler, byte);
+            }
             ESC_APC => {
                 self.do_apc(handler, byte);
             }
@@ -448,6 +453,11 @@ impl Parser {
     /// ESC 序列处理
     fn do_esc<P: Perform>(&mut self, handler: &mut P, byte: u8) {
         match byte {
+            b'\\' => {
+                // ST (String Terminator)
+                handler.unhook();
+                self.escape_state = ESC_NONE;
+            }
             b'[' => {
                 // CSI
                 self.params.reset();
@@ -776,30 +786,46 @@ impl Parser {
         self.escape_state = ESC_NONE;
     }
     
-    /// DCS 序列处理
+    /// DCS 序列处理 (参数收集阶段)
     fn do_dcs<P: Perform>(&mut self, handler: &mut P, byte: u8) {
         match byte {
-            0x00..=0x17 | 0x19 | 0x1C..=0x1F => {
-                // 控制字符
+            b'0'..=b'9' => {
+                self.params.add_digit(byte);
             }
-            0x20..=0x7E => {
-                self.dcs_buffer.push(byte);
+            b';' => {
+                self.params.finish_param();
             }
-            0x7F => {
-                // DEL 忽略
+            b':' => {
+                self.params.start_subparam();
             }
-            0x1B => {
-                // ESC - 可能是 ST
-                // 简化处理，直接结束
-                handler.unhook();
+            b' ' | b'#' | b'!' | b'"' | b'\'' | b'$' | b'&' | b'*' => {
+                self.intermediates.push(byte);
+            }
+            b'@'..=b'~' => {
+                // 最终字节，触发 hook 并进入数据阶段
+                self.params.finish_param();
+                handler.hook(&self.params, &self.intermediates, false, byte as char);
+                self.escape_state = ESC_P_DATA;
+            }
+            _ => {
+                // 异常字符，重置
                 self.escape_state = ESC_NONE;
             }
+        }
+    }
+
+    /// DCS 数据处理阶段
+    fn do_dcs_data<P: Perform>(&mut self, handler: &mut P, byte: u8) {
+        match byte {
             0x9C => {
-                // ST (String Terminator)
+                // ST (String Terminator - C1)
                 handler.unhook();
                 self.escape_state = ESC_NONE;
             }
-            _ => {}
+            _ => {
+                // 发送数据到底层 (如 Sixel 解码器)
+                handler.put(byte);
+            }
         }
     }
     

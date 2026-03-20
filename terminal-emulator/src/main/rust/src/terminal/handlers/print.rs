@@ -25,8 +25,15 @@ pub fn handle_print(state: &mut ScreenState, c: char) {
     // 2. 处理自动换行 (Auto-Wrap)
     // 如果光标已经在最后一列之后，且当前又要打印字符，则触发换行
     if state.auto_wrap() {
-        // Java 版逻辑：如果 about_to_wrap 为 true，则先执行换行
-        if state.cursor.about_to_wrap {
+        let columns = state.cols;
+        let mut wrap_needed = state.cursor.about_to_wrap;
+        
+        // 核心修复：宽字符在最后一列时必须提前换行
+        if char_width == 2 && state.cursor.x >= columns - 1 {
+            wrap_needed = true;
+        }
+
+        if wrap_needed {
             let y = state.cursor.y;
             {
                 let screen = state.get_current_screen_mut();
@@ -84,10 +91,13 @@ pub fn handle_print(state: &mut ScreenState, c: char) {
     }
 
     // 5. 更新光标位置
-    if state.cursor.x + char_width >= state.right_margin {
-        // 关键：到达边界但不立即换行，而是标记 about_to_wrap
-        // 这样下一个字符进来时才会换行，这与 VT100 标准一致
-        state.cursor.x = state.right_margin - char_width; 
+    if state.cursor.x + char_width > state.right_margin {
+        // 如果超出了（对于宽字符可能是 x+2），由于我们已经在上面处理过强制换行了，这里理论上不应发生
+        state.cursor.x = state.right_margin; 
+        state.cursor.about_to_wrap = true;
+    } else if state.cursor.x + char_width == state.right_margin {
+        // 刚好落在边界处
+        state.cursor.x = state.right_margin;
         state.cursor.about_to_wrap = true;
     } else {
         state.cursor.x += char_width;
