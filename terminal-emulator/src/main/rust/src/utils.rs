@@ -1,3 +1,25 @@
+use std::ffi::CString;
+
+pub enum LogPriority {
+    VERBOSE = 2,
+    DEBUG = 3,
+    INFO = 4,
+    WARN = 5,
+    ERROR = 6,
+}
+
+extern "C" {
+    fn __android_log_print(prio: i32, tag: *const libc::c_char, fmt: *const libc::c_char, ...);
+}
+
+pub fn android_log(prio: LogPriority, msg: &str) {
+    let tag = CString::new("Termux-Rust").unwrap();
+    let msg_c = CString::new(msg).unwrap();
+    unsafe {
+        __android_log_print(prio as i32, tag.as_ptr(), msg_c.as_ptr());
+    }
+}
+
 /// 将 ASCII 字符映射为 VT100 绘图字符 (Special Character and Line Drawing Set)
 pub fn map_line_drawing(c: u8) -> char {
     match c {
