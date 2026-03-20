@@ -249,8 +249,8 @@ fn test_batch_row_read_performance() {
     let start = Instant::now();
     for _ in 0..iterations {
         for row in 0..ROWS as usize {
-            engine.state.copy_row_text(row, &mut text_buffer);
-            engine.state.copy_row_styles(row, &mut style_buffer);
+            engine.state.copy_row_text(row.try_into().unwrap(), &mut text_buffer);
+            engine.state.copy_row_styles_i64(row.try_into().unwrap(), &mut style_buffer);
         }
     }
     let duration = start.elapsed();
@@ -285,8 +285,8 @@ fn test_full_screen_batch_read_performance() {
     let start = Instant::now();
     for _ in 0..iterations {
         for row in 0..ROWS as usize {
-            engine.state.copy_row_text(row, &mut text_buffers[row]);
-            engine.state.copy_row_styles(row, &mut style_buffers[row]);
+            engine.state.copy_row_text(row.try_into().unwrap(), &mut text_buffers[row]);
+            engine.state.copy_row_styles_i64(row.try_into().unwrap(), &mut style_buffers[row]);
         }
     }
     let duration = start.elapsed();
@@ -321,8 +321,8 @@ fn test_single_vs_batch_read_comparison() {
     let start_single = Instant::now();
     for _ in 0..iterations {
         for row in 0..ROWS as usize {
-            engine.state.copy_row_text(row, &mut text_buffer);
-            engine.state.copy_row_styles(row, &mut style_buffer);
+            engine.state.copy_row_text(row.try_into().unwrap(), &mut text_buffer);
+            engine.state.copy_row_styles_i64(row.try_into().unwrap(), &mut style_buffer);
         }
     }
     let duration_single = start_single.elapsed();
@@ -334,8 +334,8 @@ fn test_single_vs_batch_read_comparison() {
     let start_batch = Instant::now();
     for _ in 0..iterations {
         for row in 0..ROWS as usize {
-            engine.state.copy_row_text(row, &mut text_buffers[row]);
-            engine.state.copy_row_styles(row, &mut style_buffers[row]);
+            engine.state.copy_row_text(row.try_into().unwrap(), &mut text_buffers[row]);
+            engine.state.copy_row_styles_i64(row.try_into().unwrap(), &mut style_buffers[row]);
         }
     }
     let duration_batch = start_batch.elapsed();

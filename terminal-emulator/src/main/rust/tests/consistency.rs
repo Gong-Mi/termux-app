@@ -6,7 +6,7 @@
 // - ⚠️  PARTIAL: 部分功能支持
 // - ❌ TODO: 待实现
 
-use termux_rust::engine::TerminalEngine;
+use termux_rust::TerminalEngine;
 
 // =============================================================================
 // 基础文本测试
@@ -22,10 +22,10 @@ fn test_basic_text() {
 
     // 验证光标位置
     assert_eq!(
-        engine.state.cursor_x, 11,
+        engine.state.cursor.x, 11,
         "Cursor X should be 11 after 'Hello World'"
     );
-    assert_eq!(engine.state.cursor_y, 0, "Cursor Y should be 0");
+    assert_eq!(engine.state.cursor.y, 0, "Cursor Y should be 0");
 
     // 验证屏幕内容
     let mut text = [0u16; 80];
@@ -50,7 +50,7 @@ fn test_backspace() {
     engine.process_bytes(data);
 
     assert_eq!(
-        engine.state.cursor_x, 4,
+        engine.state.cursor.x, 4,
         "Cursor X should be 4 after 'ABC\\x08DE'"
     );
 
@@ -73,15 +73,15 @@ fn test_newline() {
 
     println!(
         "After newline: cursor=({}, {})",
-        engine.state.cursor_x, engine.state.cursor_y
+        engine.state.cursor.x, engine.state.cursor.y
     );
     // "Line 2" 是 6 个字符
     assert_eq!(
-        engine.state.cursor_x, 6,
+        engine.state.cursor.x, 6,
         "Cursor X should be 6 after 'Line 2'"
     );
     assert_eq!(
-        engine.state.cursor_y, 1,
+        engine.state.cursor.y, 1,
         "Cursor Y should be 1 after newline"
     );
 }
@@ -96,7 +96,7 @@ fn test_tab() {
 
     // A 在位置 0，制表符跳到位置 8，B 在位置 8
     assert_eq!(
-        engine.state.cursor_x, 9,
+        engine.state.cursor.x, 9,
         "Cursor X should be 9 after 'A\\tB'"
     );
 }
@@ -115,14 +115,14 @@ fn test_cursor_position() {
 
     println!(
         "After CUP 'At 5,5': cursor=({}, {})",
-        engine.state.cursor_x, engine.state.cursor_y
+        engine.state.cursor.x, engine.state.cursor.y
     );
     // "At 5,5" 是 6 个字符，从位置 (4,4) 开始，所以光标应该在 (10, 4)
     assert_eq!(
-        engine.state.cursor_x, 10,
+        engine.state.cursor.x, 10,
         "Cursor X should be 10 after 'At 5,5'"
     );
-    assert_eq!(engine.state.cursor_y, 4, "Cursor Y should be 4");
+    assert_eq!(engine.state.cursor.y, 4, "Cursor Y should be 4");
 }
 
 /// 验证光标移动 (CUU/CUD/CUF/CUB) - ✅ PASS
@@ -131,30 +131,30 @@ fn test_cursor_movement() {
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
     engine.process_bytes(b"\x1b[11;21H");
-    assert_eq!(engine.state.cursor_y, 10);
-    assert_eq!(engine.state.cursor_x, 20);
+    assert_eq!(engine.state.cursor.y, 10);
+    assert_eq!(engine.state.cursor.x, 20);
 
     engine.process_bytes(b"\x1b[3A");
     assert_eq!(
-        engine.state.cursor_y, 7,
+        engine.state.cursor.y, 7,
         "Cursor Y should be 7 after moving up 3"
     );
 
     engine.process_bytes(b"\x1b[5B");
     assert_eq!(
-        engine.state.cursor_y, 12,
+        engine.state.cursor.y, 12,
         "Cursor Y should be 12 after moving down 5"
     );
 
     engine.process_bytes(b"\x1b[10D");
     assert_eq!(
-        engine.state.cursor_x, 10,
+        engine.state.cursor.x, 10,
         "Cursor X should be 10 after moving left 10"
     );
 
     engine.process_bytes(b"\x1b[5C");
     assert_eq!(
-        engine.state.cursor_x, 15,
+        engine.state.cursor.x, 15,
         "Cursor X should be 15 after moving right 5"
     );
 }
@@ -166,7 +166,7 @@ fn test_cursor_horizontal_absolute() {
 
     engine.process_bytes(b"\x1b[10G");
     assert_eq!(
-        engine.state.cursor_x, 9,
+        engine.state.cursor.x, 9,
         "Cursor X should be 9 (1-based to 0-based)"
     );
 }
@@ -178,7 +178,7 @@ fn test_cursor_vertical_absolute() {
 
     engine.process_bytes(b"\x1b[10d");
     assert_eq!(
-        engine.state.cursor_y, 9,
+        engine.state.cursor.y, 9,
         "Cursor Y should be 9 (1-based to 0-based)"
     );
 }
@@ -189,9 +189,9 @@ fn test_cursor_next_line() {
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
     engine.process_bytes(b"\x1b[3E");
-    assert_eq!(engine.state.cursor_y, 3, "Cursor Y should be 3");
+    assert_eq!(engine.state.cursor.y, 3, "Cursor Y should be 3");
     assert_eq!(
-        engine.state.cursor_x, 0,
+        engine.state.cursor.x, 0,
         "Cursor X should be 0 (moved to beginning)"
     );
 }
@@ -202,9 +202,9 @@ fn test_cursor_previous_line() {
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
     engine.process_bytes(b"\x1b[11;21H\x1b[3F");
-    assert_eq!(engine.state.cursor_y, 7, "Cursor Y should be 7");
+    assert_eq!(engine.state.cursor.y, 7, "Cursor Y should be 7");
     assert_eq!(
-        engine.state.cursor_x, 0,
+        engine.state.cursor.x, 0,
         "Cursor X should be 0 (moved to beginning)"
     );
 }
@@ -223,14 +223,14 @@ fn test_erase_display() {
 
     println!(
         "After ED: cursor=({}, {})",
-        engine.state.cursor_x, engine.state.cursor_y
+        engine.state.cursor.x, engine.state.cursor.y
     );
     // "Should be erased" 16 字符，\x1b[2J 清屏光标不变，"Still here" 10 字符，总共 26
     assert_eq!(
-        engine.state.cursor_x, 26,
+        engine.state.cursor.x, 26,
         "Cursor X should be 26 after 'Still here'"
     );
-    assert_eq!(engine.state.cursor_y, 0, "Cursor Y should be 0");
+    assert_eq!(engine.state.cursor.y, 0, "Cursor Y should be 0");
 }
 
 /// 验证清行 (EL) - ✅ PASS
@@ -243,11 +243,11 @@ fn test_erase_line() {
 
     println!(
         "After EL: cursor=({}, {})",
-        engine.state.cursor_x, engine.state.cursor_y
+        engine.state.cursor.x, engine.state.cursor.y
     );
     // "Hello" 5 字符，\x1b[2K 清行光标不变，"World" 5 字符，总共 10
     assert_eq!(
-        engine.state.cursor_x, 10,
+        engine.state.cursor.x, 10,
         "Cursor X should be 10 after 'World'"
     );
 }
@@ -262,10 +262,10 @@ fn test_erase_characters() {
 
     println!(
         "After ECH: cursor=({}, {})",
-        engine.state.cursor_x, engine.state.cursor_y
+        engine.state.cursor.x, engine.state.cursor.y
     );
     // "Hello World" 11 字符，\x1b[5D 后退 5 格到位置 6，\x1b[3X 擦除 3 个字符光标不变，所以在位置 6
-    assert_eq!(engine.state.cursor_x, 6, "Cursor X should be 6");
+    assert_eq!(engine.state.cursor.x, 6, "Cursor X should be 6");
 }
 
 // =============================================================================
@@ -324,7 +324,7 @@ fn test_insert_lines() {
     engine.process_bytes(b"\x1b[1L");
 
     // 光标应该在第一行
-    assert_eq!(engine.state.cursor_y, 0, "Cursor Y should be 0");
+    assert_eq!(engine.state.cursor.y, 0, "Cursor Y should be 0");
 }
 
 /// 验证删除行 (DL) - ✅ PASS
@@ -342,7 +342,7 @@ fn test_delete_lines() {
     engine.process_bytes(b"\x1b[1M");
 
     // 光标应该在第一行
-    assert_eq!(engine.state.cursor_y, 0, "Cursor Y should be 0");
+    assert_eq!(engine.state.cursor.y, 0, "Cursor Y should be 0");
 }
 
 // =============================================================================
@@ -466,7 +466,7 @@ fn test_sgr_256_color_background() {
 /// 验证 SGR 真彩色前景 - ✅ PASS
 #[test]
 fn test_sgr_truecolor_foreground() {
-    use termux_rust::engine::STYLE_TRUECOLOR_FG;
+    use termux_rust::STYLE_TRUECOLOR_FG;
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -492,7 +492,7 @@ fn test_sgr_truecolor_foreground() {
 /// 验证 SGR 真彩色背景 - ✅ PASS
 #[test]
 fn test_sgr_truecolor_background() {
-    use termux_rust::engine::STYLE_TRUECOLOR_BG;
+    use termux_rust::STYLE_TRUECOLOR_BG;
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -518,7 +518,7 @@ fn test_sgr_truecolor_background() {
 /// 验证 SGR 下划线子参数 - ✅ PASS
 #[test]
 fn test_sgr_underline_subparam() {
-    use termux_rust::engine::EFFECT_UNDERLINE;
+    use termux_rust::EFFECT_UNDERLINE;
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -548,10 +548,10 @@ fn test_save_restore_cursor() {
     engine.process_bytes(data);
 
     assert_eq!(
-        engine.state.cursor_x, 10,
+        engine.state.cursor.x, 10,
         "Cursor X should be restored to 10"
     );
-    assert_eq!(engine.state.cursor_y, 5, "Cursor Y should be restored to 5");
+    assert_eq!(engine.state.cursor.y, 5, "Cursor Y should be restored to 5");
 }
 
 // =============================================================================
@@ -568,9 +568,9 @@ fn test_scrolling() {
         engine.process_bytes(line.as_bytes());
     }
 
-    assert_eq!(engine.state.cursor_y, 4, "Cursor Y should be at last row");
+    assert_eq!(engine.state.cursor.y, 4, "Cursor Y should be at last row");
     assert_eq!(
-        engine.state.cursor_x, 0,
+        engine.state.cursor.x, 0,
         "Cursor X should be 0 after newline"
     );
 }
@@ -589,8 +589,8 @@ fn test_scroll_up() {
     // 上滚 2 行
     engine.process_bytes(b"\x1b[2S");
 
-    // 光标应该在顶部
-    assert_eq!(engine.state.cursor_y, 0, "Cursor Y should be 0");
+    // 光标应该保持在当前行
+    assert_eq!(engine.state.cursor.y, 4, "Cursor Y should be 4");
 }
 
 /// 验证下滚 (SD) - ✅ PASS
@@ -607,8 +607,8 @@ fn test_scroll_down() {
     // 下滚 2 行
     engine.process_bytes(b"\x1b[2T");
 
-    // 光标应该在顶部
-    assert_eq!(engine.state.cursor_y, 0, "Cursor Y should be 0");
+    // 光标应该保持在当前行
+    assert_eq!(engine.state.cursor.y, 4, "Cursor Y should be 4");
 }
 
 // =============================================================================
@@ -644,7 +644,7 @@ fn test_wide_characters() {
     engine.process_bytes(data);
 
     assert_eq!(
-        engine.state.cursor_x, 4,
+        engine.state.cursor.x, 4,
         "Cursor X should be 4 after two Chinese characters"
     );
 }
@@ -658,7 +658,7 @@ fn test_emoji_width() {
     engine.process_bytes(data);
 
     // Emoji 通常是 2 列宽
-    assert_eq!(engine.state.cursor_x, 2, "Cursor X should be 2 after emoji");
+    assert_eq!(engine.state.cursor.x, 2, "Cursor X should be 2 after emoji");
 }
 
 // =============================================================================
@@ -675,8 +675,8 @@ fn test_resize() {
 
     assert_eq!(engine.state.cols, 40, "Columns should be 40 after resize");
     assert_eq!(engine.state.rows, 12, "Rows should be 12 after resize");
-    assert!(engine.state.cursor_x < engine.state.cols);
-    assert!(engine.state.cursor_y < engine.state.rows);
+    assert!(engine.state.cursor.x < engine.state.cols);
+    assert!(engine.state.cursor.y < engine.state.rows);
 }
 
 // =============================================================================
@@ -693,16 +693,16 @@ fn test_auto_wrap() {
 
     println!(
         "After auto wrap: cursor=({}, {})",
-        engine.state.cursor_x, engine.state.cursor_y
+        engine.state.cursor.x, engine.state.cursor.y
     );
     // 10 列屏幕：
     // "123456789" (9 字符) 光标在 9
     // "0" 打印在 (9, 0), about_to_wrap = true, cursor_y 还是 0
     // 第二个 "1" 触发换行，跳到 (0, 1) 打印 "1", 光标到 (1, 1)
     // 重复直到最后一个 "0" 打印在 (9, 1), about_to_wrap = true
-    assert_eq!(engine.state.cursor_y, 1, "Cursor Y should be 1 (pending wrap)");
-    assert_eq!(engine.state.cursor_x, 9, "Cursor X should be 9 (last column)");
-    assert_eq!(engine.state.about_to_wrap, true, "Should be about to wrap");
+    assert_eq!(engine.state.cursor.y, 1, "Cursor Y should be 1 (pending wrap)");
+    assert_eq!(engine.state.cursor.x, 9, "Cursor X should be 9 (last column)");
+    assert_eq!(engine.state.cursor.about_to_wrap, true, "Should be about to wrap");
     // 光标位置取决于具体实现，我们只验证 Y
 }
 
@@ -755,12 +755,12 @@ fn test_decset_auto_wrap() {
 
     engine.process_bytes(b"\x1b[?7l");
     assert_eq!(
-        engine.state.auto_wrap, false,
+        engine.state.auto_wrap(), false,
         "Auto wrap should be disabled"
     );
 
     engine.process_bytes(b"\x1b[?7h");
-    assert_eq!(engine.state.auto_wrap, true, "Auto wrap should be enabled");
+    assert_eq!(engine.state.auto_wrap(), true, "Auto wrap should be enabled");
 }
 
 /// 验证 DECSET 原点模式 - ✅ PASS
@@ -770,13 +770,13 @@ fn test_decset_origin_mode() {
 
     engine.process_bytes(b"\x1b[?6h");
     assert_eq!(
-        engine.state.origin_mode, true,
+        engine.state.origin_mode(), true,
         "Origin mode should be enabled"
     );
 
     engine.process_bytes(b"\x1b[?6l");
     assert_eq!(
-        engine.state.origin_mode, false,
+        engine.state.origin_mode(), false,
         "Origin mode should be disabled"
     );
 }
@@ -806,18 +806,18 @@ fn test_decset_bracketed_paste() {
 /// 验证 DECSET 69 (DECLRMM) 左右边距模式 - ✅ PASS
 #[test]
 fn test_decset_leftright_margin_mode() {
-    use termux_rust::engine::DECSET_BIT_LEFTRIGHT_MARGIN_MODE;
+    use termux_rust::DECSET_BIT_LEFTRIGHT_MARGIN_MODE;
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
     // 启用 DECLRMM
     engine.process_bytes(b"\x1b[?69h");
     assert_eq!(
-        engine.state.leftright_margin_mode, true,
+        engine.state.leftright_margin_mode(), true,
         "Left-right margin mode should be enabled"
     );
     assert_ne!(
-        engine.state.decset_flags & DECSET_BIT_LEFTRIGHT_MARGIN_MODE,
+        engine.state.decset_flags() & DECSET_BIT_LEFTRIGHT_MARGIN_MODE,
         0,
         "DECSET flag bit 69 should be set"
     );
@@ -833,7 +833,7 @@ fn test_decset_leftright_margin_mode() {
     // 禁用 DECLRMM
     engine.process_bytes(b"\x1b[?69l");
     assert_eq!(
-        engine.state.leftright_margin_mode, false,
+        engine.state.leftright_margin_mode(), false,
         "Left-right margin mode should be disabled"
     );
 }
@@ -913,7 +913,7 @@ fn test_decset_flags_save_restore() {
 
     // 保存光标
     engine.process_bytes(b"\x1b7");
-    let _saved_flags = engine.state.saved_decset_flags;
+    let _saved_flags = engine.state.saved_decset_flags();
 
     // 更改 DECSET 标志
     engine.process_bytes(b"\x1b[?7l"); // 禁用自动换行
@@ -922,9 +922,9 @@ fn test_decset_flags_save_restore() {
     // 恢复光标应该恢复 DECSET 标志
     engine.process_bytes(b"\x1b8");
 
-    assert_eq!(engine.state.auto_wrap, true, "Auto wrap should be restored");
+    assert_eq!(engine.state.auto_wrap(), true, "Auto wrap should be restored");
     assert_eq!(
-        engine.state.origin_mode, true,
+        engine.state.origin_mode(), true,
         "Origin mode should be restored"
     );
 }
@@ -1100,23 +1100,23 @@ fn test_decset_1048_save_restore_cursor() {
 
     // 移动光标到位置 (10, 15)
     engine.process_bytes(b"\x1b[16;11H");
-    assert_eq!(engine.state.cursor_x, 10);
-    assert_eq!(engine.state.cursor_y, 15);
+    assert_eq!(engine.state.cursor.x, 10);
+    assert_eq!(engine.state.cursor.y, 15);
 
     // 保存光标 (DECSET 1048h)
     engine.process_bytes(b"\x1b[?1048h");
 
     // 移动光标到其他位置
     engine.process_bytes(b"\x1b[5;20H");
-    assert_eq!(engine.state.cursor_x, 19);
-    assert_eq!(engine.state.cursor_y, 4);
+    assert_eq!(engine.state.cursor.x, 19);
+    assert_eq!(engine.state.cursor.y, 4);
 
     // 恢复光标 (DECSET 1048l)
     engine.process_bytes(b"\x1b[?1048l");
 
     // 验证光标恢复到保存的位置
-    assert_eq!(engine.state.cursor_x, 10, "Cursor X should be restored");
-    assert_eq!(engine.state.cursor_y, 15, "Cursor Y should be restored");
+    assert_eq!(engine.state.cursor.x, 10, "Cursor X should be restored");
+    assert_eq!(engine.state.cursor.y, 15, "Cursor Y should be restored");
 }
 
 /// 验证 DECSET 1049 备用屏幕 - ✅ PASS
@@ -1347,7 +1347,7 @@ fn test_repeat_character() {
     engine.process_bytes(data);
 
     assert_eq!(
-        engine.state.cursor_x, 4,
+        engine.state.cursor.x, 4,
         "Cursor X should be 4 after repeating A 3 times"
     );
 
@@ -1371,7 +1371,7 @@ fn test_tab_forward() {
 
     // 移动到位置 5，然后制表到下一个制表位 (8)
     engine.process_bytes(b"\x1b[6G\x09");
-    assert_eq!(engine.state.cursor_x, 8, "Cursor X should be 8 after tab");
+    assert_eq!(engine.state.cursor.x, 8, "Cursor X should be 8 after tab");
 }
 
 // =============================================================================
@@ -1385,18 +1385,18 @@ fn test_decbi_back_index() {
 
     // 写入一些文本
     engine.process_bytes(b"Hello");
-    assert_eq!(engine.state.cursor_x, 5);
+    assert_eq!(engine.state.cursor.x, 5);
 
     // ESC 6 - Back Index (向左移动光标)
     engine.process_bytes(b"\x1b6");
-    assert_eq!(engine.state.cursor_x, 4, "Cursor X should be 4 after DECBI");
+    assert_eq!(engine.state.cursor.x, 4, "Cursor X should be 4 after DECBI");
 
     // 在左边界时使用 DECBI 应该滚动
     engine.process_bytes(b"\x1b[H"); // 移动到左上角 (0,0)
-    assert_eq!(engine.state.cursor_x, 0);
+    assert_eq!(engine.state.cursor.x, 0);
     engine.process_bytes(b"\x1b6"); // 应该触发滚动，光标保持在左边界
     assert_eq!(
-        engine.state.cursor_x, 0,
+        engine.state.cursor.x, 0,
         "Cursor X should be 0 after DECBI at margin"
     );
 }
@@ -1408,13 +1408,13 @@ fn test_decfi_forward_index() {
 
     // 写入到右边界
     engine.process_bytes(b"123456789");
-    assert_eq!(engine.state.cursor_x, 9);
+    assert_eq!(engine.state.cursor.x, 9);
 
     // ESC 9 - Forward Index (向右移动光标)
     engine.process_bytes(b"\x1b9");
     // 在右边界，应该触发滚动
     assert_eq!(
-        engine.state.cursor_x, 9,
+        engine.state.cursor.x, 9,
         "Cursor X should be at right margin after DECFI"
     );
 }
@@ -1434,8 +1434,8 @@ fn test_ris_reset() {
     engine.process_bytes(b"\x1bc");
 
     // 验证重置
-    assert_eq!(engine.state.cursor_x, 0, "Cursor X should be 0 after RIS");
-    assert_eq!(engine.state.cursor_y, 0, "Cursor Y should be 0 after RIS");
+    assert_eq!(engine.state.cursor.x, 0, "Cursor X should be 0 after RIS");
+    assert_eq!(engine.state.cursor.y, 0, "Cursor Y should be 0 after RIS");
     assert_eq!(
         engine.state.top_margin, 0,
         "Top margin should be 0 after RIS"
@@ -1445,7 +1445,7 @@ fn test_ris_reset() {
         "Bottom margin should be 24 after RIS"
     );
     assert_eq!(
-        engine.state.auto_wrap, true,
+        engine.state.auto_wrap(), true,
         "Auto wrap should be enabled after RIS"
     );
 }
@@ -1476,11 +1476,11 @@ fn test_decaln_screen_align() {
 
     // 验证光标在左上角
     assert_eq!(
-        engine.state.cursor_x, 0,
+        engine.state.cursor.x, 0,
         "Cursor X should be 0 after DECALN"
     );
     assert_eq!(
-        engine.state.cursor_y, 0,
+        engine.state.cursor.y, 0,
         "Cursor Y should be 0 after DECALN"
     );
 }
@@ -1492,14 +1492,14 @@ fn test_ri_reverse_index() {
 
     // 移动到底部
     engine.process_bytes(b"\x1b[10;5H");
-    assert_eq!(engine.state.cursor_y, 9);
-    assert_eq!(engine.state.cursor_x, 4);
+    assert_eq!(engine.state.cursor.y, 9);
+    assert_eq!(engine.state.cursor.x, 4);
 
     // ESC M - RI (反向索引)
     engine.process_bytes(b"\x1bM");
-    assert_eq!(engine.state.cursor_y, 8, "Cursor Y should be 8 after RI");
+    assert_eq!(engine.state.cursor.y, 8, "Cursor Y should be 8 after RI");
     assert_eq!(
-        engine.state.cursor_x, 4,
+        engine.state.cursor.x, 4,
         "Cursor X should be unchanged after RI"
     );
 
@@ -1508,7 +1508,7 @@ fn test_ri_reverse_index() {
     engine.process_bytes(b"ABC"); // 写入一些文本
     engine.process_bytes(b"\x1bM"); // 应该触发向下滚动
     assert_eq!(
-        engine.state.cursor_y, 0,
+        engine.state.cursor.y, 0,
         "Cursor Y should be 0 after RI at top margin"
     );
 }
@@ -1522,7 +1522,7 @@ fn test_cursor_backward_tab() {
     engine.process_bytes(b"\x1b[21G\x1b[5D");
     // 从位置 20 后退 5 格到位置 15
     assert_eq!(
-        engine.state.cursor_x, 15,
+        engine.state.cursor.x, 15,
         "Cursor X should be 15 after moving back 5"
     );
 }
@@ -1551,7 +1551,7 @@ fn test_clear_tab_stop() {
 /// 修复方案：在 setChar 时，对于宽字符同时设置两列的样式
 #[test]
 fn test_chinese_character_background() {
-    use termux_rust::engine::{TerminalEngine, encode_style};
+    use termux_rust::{TerminalEngine, encode_style};
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -1565,13 +1565,13 @@ fn test_chinese_character_background() {
 
     // 验证光标位置（两个中文字符，每个占 2 列）
     assert_eq!(
-        engine.state.cursor_x, 4,
+        engine.state.cursor.x, 4,
         "Cursor X should be 4 after two Chinese characters"
     );
 
     // 验证第一列和第二列的样式是否都设置了红色背景
     let mut styles = [0i64; 80];
-    engine.state.copy_row_styles(0, &mut styles);
+    engine.state.copy_row_styles_i64(0, &mut styles);
 
     // "你" 在列 0-1，两列都应该有红色背景
     assert_eq!(
@@ -1601,7 +1601,7 @@ fn test_chinese_character_background() {
 /// 验证宽字符覆盖时的样式处理 - ✅ 修复验证
 #[test]
 fn test_wide_char_overwrite_style() {
-    use termux_rust::engine::{TerminalEngine, encode_style};
+    use termux_rust::{TerminalEngine, encode_style};
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -1616,14 +1616,14 @@ fn test_wide_char_overwrite_style() {
     engine.process_bytes(b"B");
 
     // 现在用宽字符覆盖 "AB"
-    engine.state.cursor_x = 0;
+    engine.state.cursor.x = 0;
     let red_bg = encode_style(256, 1, 0); // 背景红色索引 1
     engine.state.current_style = red_bg;
     engine.process_bytes("中".as_bytes());
 
     // 验证宽字符 "中" 覆盖后，两列都是红色背景
     let mut styles = [0i64; 80];
-    engine.state.copy_row_styles(0, &mut styles);
+    engine.state.copy_row_styles_i64(0, &mut styles);
 
     assert_eq!(
         ((styles[0] as u64) >> 16) & 0x1FF,
@@ -1640,7 +1640,7 @@ fn test_wide_char_overwrite_style() {
 /// 验证宽字符在行尾的样式处理 - ✅ 修复验证
 #[test]
 fn test_wide_char_at_line_end_style() {
-    use termux_rust::engine::{TerminalEngine, encode_style};
+    use termux_rust::{TerminalEngine, encode_style};
 
     let mut engine = TerminalEngine::new(10, 5, 100, 10, 20); // 窄屏幕
 
@@ -1650,14 +1650,14 @@ fn test_wide_char_at_line_end_style() {
 
     // 写入 8 个字符到倒数第二列
     engine.process_bytes(b"12345678");
-    assert_eq!(engine.state.cursor_x, 8);
+    assert_eq!(engine.state.cursor.x, 8);
 
     // 现在写入一个宽字符，应该触发换行
     engine.process_bytes("中".as_bytes());
 
     // 验证样式
     let mut styles = [0i64; 10];
-    engine.state.copy_row_styles(0, &mut styles);
+    engine.state.copy_row_styles_i64(0, &mut styles);
 
     // 第一行应该有 8 个黄色背景 + 2 个默认背景（宽字符第二列在下一行）
     // 具体行为取决于实现，这里验证基本样式设置
@@ -1682,7 +1682,7 @@ fn test_wide_char_at_line_end_style() {
 /// Emoji 通常是宽字符（2 列），需要验证背景色正确覆盖两列
 #[test]
 fn test_emoji_background() {
-    use termux_rust::engine::{TerminalEngine, encode_style};
+    use termux_rust::{TerminalEngine, encode_style};
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -1696,13 +1696,13 @@ fn test_emoji_background() {
 
     // 验证光标位置（3 个 Emoji，每个占 2 列）
     assert_eq!(
-        engine.state.cursor_x, 6,
+        engine.state.cursor.x, 6,
         "Cursor X should be 6 after three emoji"
     );
 
     // 验证每列的样式是否都设置了绿色背景
     let mut styles = [0i64; 80];
-    engine.state.copy_row_styles(0, &mut styles);
+    engine.state.copy_row_styles_i64(0, &mut styles);
 
     // 每个 Emoji 占 2 列，共 6 列都应该有绿色背景
     for i in 0..6 {
@@ -1718,7 +1718,7 @@ fn test_emoji_background() {
 /// 验证混合字符（ASCII + 中文 + Emoji）背景色 - ✅ 修复验证
 #[test]
 fn test_mixed_characters_background() {
-    use termux_rust::engine::{TerminalEngine, encode_style};
+    use termux_rust::{TerminalEngine, encode_style};
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -1732,11 +1732,11 @@ fn test_mixed_characters_background() {
 
     // 验证每列的样式
     let mut styles = [0i64; 80];
-    engine.state.copy_row_styles(0, &mut styles);
+    engine.state.copy_row_styles_i64(0, &mut styles);
 
     // 验证实际占用的列数都有青色背景
     // A(1) + 你 (2) + 好 (2) + 😀(2) = 7 或更多（取决于具体实现）
-    let cursor_x = engine.state.cursor_x as usize;
+    let cursor_x = engine.state.cursor.x as usize;
     for i in 0..cursor_x {
         assert_eq!(
             ((styles[i] as u64) >> 16) & 0x1FF,
@@ -1752,7 +1752,7 @@ fn test_mixed_characters_background() {
 /// 韩文字符通常是宽字符
 #[test]
 fn test_korean_hangul_background() {
-    use termux_rust::engine::{TerminalEngine, encode_style};
+    use termux_rust::{TerminalEngine, encode_style};
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -1766,7 +1766,7 @@ fn test_korean_hangul_background() {
 
     // 验证每列的样式
     let mut styles = [0i64; 80];
-    engine.state.copy_row_styles(0, &mut styles);
+    engine.state.copy_row_styles_i64(0, &mut styles);
 
     // 韩文通常是宽字符，5 个字符应该占 10 列
     // 验证前 10 列都有品红色背景
@@ -1783,7 +1783,7 @@ fn test_korean_hangul_background() {
 /// 验证日文假名背景色 - ✅ 修复验证
 #[test]
 fn test_japanese_kana_background() {
-    use termux_rust::engine::{TerminalEngine, encode_style};
+    use termux_rust::{TerminalEngine, encode_style};
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -1797,7 +1797,7 @@ fn test_japanese_kana_background() {
 
     // 验证每列的样式
     let mut styles = [0i64; 80];
-    engine.state.copy_row_styles(0, &mut styles);
+    engine.state.copy_row_styles_i64(0, &mut styles);
 
     // 日文假名通常是宽字符，10 个字符应该占 20 列
     // 验证前 20 列都有黄色背景
@@ -1816,7 +1816,7 @@ fn test_japanese_kana_background() {
 /// 全角 ASCII 字符（如 A）也是宽字符
 #[test]
 fn test_fullwidth_ascii_background() {
-    use termux_rust::engine::{TerminalEngine, encode_style};
+    use termux_rust::{TerminalEngine, encode_style};
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -1830,11 +1830,11 @@ fn test_fullwidth_ascii_background() {
 
     // 验证每列的样式
     let mut styles = [0i64; 80];
-    engine.state.copy_row_styles(0, &mut styles);
+    engine.state.copy_row_styles_i64(0, &mut styles);
 
     // 验证实际占用的列数都有红色背景
     // 具体列数取决于字符的实际宽度
-    let cursor_x = engine.state.cursor_x as usize;
+    let cursor_x = engine.state.cursor.x as usize;
     for i in 0..cursor_x {
         assert_eq!(
             ((styles[i] as u64) >> 16) & 0x1FF,
@@ -1850,7 +1850,7 @@ fn test_fullwidth_ascii_background() {
 /// 组合字符（如重音符号）宽度为 0，不应该占用额外的列
 #[test]
 fn test_combining_characters() {
-    use termux_rust::engine::{TerminalEngine, encode_style};
+    use termux_rust::{TerminalEngine, encode_style};
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -1866,7 +1866,7 @@ fn test_combining_characters() {
     // 验证光标位置：4 个基础字符，组合字符不占额外列
     // 注意：具体行为取决于实现
     assert!(
-        engine.state.cursor_x >= 4,
+        engine.state.cursor.x >= 4,
         "Cursor X should be at least 4 after 'café'"
     );
 }
@@ -1876,7 +1876,7 @@ fn test_combining_characters() {
 /// 变体选择器用于选择 Emoji 的显示样式（如文本 vs 表情）
 #[test]
 fn test_variation_selectors() {
-    use termux_rust::engine::{TerminalEngine, encode_style};
+    use termux_rust::{TerminalEngine, encode_style};
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -1891,7 +1891,7 @@ fn test_variation_selectors() {
 
     // 验证样式设置
     let mut styles = [0i64; 80];
-    engine.state.copy_row_styles(0, &mut styles);
+    engine.state.copy_row_styles_i64(0, &mut styles);
 
     // 至少第一列应该有绿色背景
     assert_eq!(
@@ -1906,7 +1906,7 @@ fn test_variation_selectors() {
 /// 零宽字符（如零宽空格、零宽连字）不应该占用列
 #[test]
 fn test_zero_width_characters() {
-    use termux_rust::engine::{TerminalEngine, encode_style};
+    use termux_rust::{TerminalEngine, encode_style};
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -1920,13 +1920,13 @@ fn test_zero_width_characters() {
 
     // 验证光标位置：零宽字符不占列，应该是 4
     assert_eq!(
-        engine.state.cursor_x, 4,
+        engine.state.cursor.x, 4,
         "Cursor X should be 4 (zero-width char doesn't add columns)"
     );
 
     // 验证样式
     let mut styles = [0i64; 80];
-    engine.state.copy_row_styles(0, &mut styles);
+    engine.state.copy_row_styles_i64(0, &mut styles);
 
     // 4 列都应该有青色背景
     for i in 0..4 {
@@ -1944,7 +1944,7 @@ fn test_zero_width_characters() {
 /// 复杂 Emoji 如家庭（👨‍👩‍👧‍👦）使用零宽连字（ZWNJ, U+200D）连接
 #[test]
 fn test_complex_emoji_sequence() {
-    use termux_rust::engine::{TerminalEngine, encode_style};
+    use termux_rust::{TerminalEngine, encode_style};
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -1958,7 +1958,7 @@ fn test_complex_emoji_sequence() {
 
     // 验证样式设置
     let mut styles = [0i64; 80];
-    engine.state.copy_row_styles(0, &mut styles);
+    engine.state.copy_row_styles_i64(0, &mut styles);
 
     // 至少前两列应该有红色背景（Emoji 是宽字符）
     assert_eq!(
@@ -1978,7 +1978,7 @@ fn test_complex_emoji_sequence() {
 /// 国旗 Emoji 由两个区域指示符号组成（如 🇺🇸 = U+1F1FA + U+1F1F8）
 #[test]
 fn test_regional_indicator_symbols() {
-    use termux_rust::engine::{TerminalEngine, encode_style};
+    use termux_rust::{TerminalEngine, encode_style};
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -1992,7 +1992,7 @@ fn test_regional_indicator_symbols() {
 
     // 验证样式设置
     let mut styles = [0i64; 80];
-    engine.state.copy_row_styles(0, &mut styles);
+    engine.state.copy_row_styles_i64(0, &mut styles);
 
     // 国旗 Emoji 应该占 2 列，两列都应该有蓝色背景
     assert_eq!(
@@ -2010,7 +2010,7 @@ fn test_regional_indicator_symbols() {
 /// 验证多个连续 Emoji 背景色 - ✅ 修复验证
 #[test]
 fn test_multiple_consecutive_emoji() {
-    use termux_rust::engine::{TerminalEngine, encode_style};
+    use termux_rust::{TerminalEngine, encode_style};
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -2024,13 +2024,13 @@ fn test_multiple_consecutive_emoji() {
 
     // 验证光标位置：5 个 Emoji，每个占 2 列 = 10 列
     assert_eq!(
-        engine.state.cursor_x, 10,
+        engine.state.cursor.x, 10,
         "Cursor X should be 10 after five emoji"
     );
 
     // 验证每列的样式
     let mut styles = [0i64; 80];
-    engine.state.copy_row_styles(0, &mut styles);
+    engine.state.copy_row_styles_i64(0, &mut styles);
 
     // 所有 10 列都应该有黄色背景
     for i in 0..10 {
@@ -2046,7 +2046,7 @@ fn test_multiple_consecutive_emoji() {
 /// 验证 Emoji 和文本混合背景色切换 - ✅ 修复验证
 #[test]
 fn test_emoji_text_style_switch() {
-    use termux_rust::engine::{TerminalEngine, encode_style};
+    use termux_rust::{TerminalEngine, encode_style};
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -2064,7 +2064,7 @@ fn test_emoji_text_style_switch() {
 
     // 验证样式
     let mut styles = [0i64; 80];
-    engine.state.copy_row_styles(0, &mut styles);
+    engine.state.copy_row_styles_i64(0, &mut styles);
 
     // "Hello" (5 列) 红色背景
     for i in 0..5 {
@@ -2108,7 +2108,7 @@ fn test_emoji_text_style_switch() {
 /// 块状光标在宽字符上时应该覆盖两列
 #[test]
 fn test_cursor_on_wide_character() {
-    use termux_rust::engine::TerminalEngine;
+    use termux_rust::TerminalEngine;
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -2118,25 +2118,25 @@ fn test_cursor_on_wide_character() {
 
     // 光标应该在位置 2（中文字符占 2 列）
     assert_eq!(
-        engine.state.cursor_x, 2,
+        engine.state.cursor.x, 2,
         "Cursor X should be 2 after Chinese character"
     );
 
     // 现在移动到第一列（宽字符的第一列）
     engine.process_bytes(b"\x1b[1G"); // 移动到列 1（0-based 是 0）
     assert_eq!(
-        engine.state.cursor_x, 0,
+        engine.state.cursor.x, 0,
         "Cursor X should be 0 after moving to first column"
     );
 
     // 验证光标位置
-    assert_eq!(engine.state.cursor_y, 0, "Cursor Y should be 0");
+    assert_eq!(engine.state.cursor.y, 0, "Cursor Y should be 0");
 }
 
 /// 验证光标在 Emoji 上 - ✅ 修复验证
 #[test]
 fn test_cursor_on_emoji() {
-    use termux_rust::engine::TerminalEngine;
+    use termux_rust::TerminalEngine;
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -2145,13 +2145,13 @@ fn test_cursor_on_emoji() {
     engine.process_bytes(data);
 
     // 光标应该在位置 2（Emoji 占 2 列）
-    assert_eq!(engine.state.cursor_x, 2, "Cursor X should be 2 after emoji");
+    assert_eq!(engine.state.cursor.x, 2, "Cursor X should be 2 after emoji");
 }
 
 /// 验证光标在混合字符上的位置 - ✅ 修复验证
 #[test]
 fn test_cursor_on_mixed_characters() {
-    use termux_rust::engine::TerminalEngine;
+    use termux_rust::TerminalEngine;
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -2161,7 +2161,7 @@ fn test_cursor_on_mixed_characters() {
 
     // 验证光标位置
     // 注意：具体列数取决于字符宽度计算
-    let cursor_x = engine.state.cursor_x;
+    let cursor_x = engine.state.cursor.x;
     assert!(
         cursor_x >= 5,
         "Cursor X should be at least 5 after 'A 你😀', got {}",
@@ -2178,7 +2178,7 @@ fn test_cursor_on_mixed_characters() {
 /// 综合测试：块状光标在宽字符上时，应该覆盖两列，且背景色正确
 #[test]
 fn test_cursor_and_background_on_wide_character() {
-    use termux_rust::engine::{TerminalEngine, encode_style};
+    use termux_rust::{TerminalEngine, encode_style};
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -2192,13 +2192,13 @@ fn test_cursor_and_background_on_wide_character() {
 
     // 验证光标位置
     assert_eq!(
-        engine.state.cursor_x, 2,
+        engine.state.cursor.x, 2,
         "Cursor X should be 2 after Chinese character"
     );
 
     // 验证样式：两列都应该有红色背景
     let mut styles = [0i64; 80];
-    engine.state.copy_row_styles(0, &mut styles);
+    engine.state.copy_row_styles_i64(0, &mut styles);
 
     assert_eq!(
         ((styles[0] as u64) >> 16) & 0x1FF,
@@ -2217,7 +2217,7 @@ fn test_cursor_and_background_on_wide_character() {
 /// 综合测试：块状光标在 Emoji 上时，应该覆盖两列，且背景色正确
 #[test]
 fn test_cursor_and_background_on_emoji() {
-    use termux_rust::engine::{TerminalEngine, encode_style};
+    use termux_rust::{TerminalEngine, encode_style};
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -2230,11 +2230,11 @@ fn test_cursor_and_background_on_emoji() {
     engine.process_bytes(data);
 
     // 验证光标位置
-    assert_eq!(engine.state.cursor_x, 2, "Cursor X should be 2 after emoji");
+    assert_eq!(engine.state.cursor.x, 2, "Cursor X should be 2 after emoji");
 
     // 验证样式：两列都应该有绿色背景
     let mut styles = [0i64; 80];
-    engine.state.copy_row_styles(0, &mut styles);
+    engine.state.copy_row_styles_i64(0, &mut styles);
 
     assert_eq!(
         ((styles[0] as u64) >> 16) & 0x1FF,
@@ -2253,7 +2253,7 @@ fn test_cursor_and_background_on_emoji() {
 /// 综合测试：文本 + 中文+Emoji 混合，带背景色，验证光标和背景色都正确
 #[test]
 fn test_complex_mixed_scenario() {
-    use termux_rust::engine::{TerminalEngine, encode_style};
+    use termux_rust::{TerminalEngine, encode_style};
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -2267,7 +2267,7 @@ fn test_complex_mixed_scenario() {
 
     // 验证光标位置
     // 注意：具体列数取决于字符宽度计算
-    let cursor_x = engine.state.cursor_x;
+    let cursor_x = engine.state.cursor.x;
     assert!(
         cursor_x >= 13,
         "Cursor X should be at least 13 after 'Hello 你好😀🎉', got {}",
@@ -2276,7 +2276,7 @@ fn test_complex_mixed_scenario() {
 
     // 验证样式：所有列都应该有青色背景
     let mut styles = [0i64; 80];
-    engine.state.copy_row_styles(0, &mut styles);
+    engine.state.copy_row_styles_i64(0, &mut styles);
 
     let cursor_x_usize = cursor_x as usize;
     for i in 0..cursor_x_usize {
@@ -2294,7 +2294,7 @@ fn test_complex_mixed_scenario() {
 /// 综合测试：在宽字符前后切换背景色，验证样式边界正确
 #[test]
 fn test_background_switch_with_wide_characters() {
-    use termux_rust::engine::{TerminalEngine, encode_style};
+    use termux_rust::{TerminalEngine, encode_style};
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -2312,7 +2312,7 @@ fn test_background_switch_with_wide_characters() {
 
     // 验证样式
     let mut styles = [0i64; 80];
-    engine.state.copy_row_styles(0, &mut styles);
+    engine.state.copy_row_styles_i64(0, &mut styles);
 
     // "AB" (2 列) 红色背景
     assert_eq!(
@@ -2356,7 +2356,7 @@ fn test_background_switch_with_wide_characters() {
 /// 综合测试：宽字符在行尾时，背景色和换行都正确
 #[test]
 fn test_wide_char_at_line_end_with_background() {
-    use termux_rust::engine::{TerminalEngine, encode_style};
+    use termux_rust::{TerminalEngine, encode_style};
 
     let mut engine = TerminalEngine::new(10, 5, 100, 10, 20); // 窄屏幕
 
@@ -2372,7 +2372,7 @@ fn test_wide_char_at_line_end_with_background() {
 
     // 验证第一行样式
     let mut styles = [0i64; 10];
-    engine.state.copy_row_styles(0, &mut styles);
+    engine.state.copy_row_styles_i64(0, &mut styles);
 
     // 第一行 8 列应该是黄色背景
     for i in 0..8 {
@@ -2389,8 +2389,8 @@ fn test_wide_char_at_line_end_with_background() {
     // "你" (width 2) -> 此时 8+2=10, 刚好填满行 (right_margin=10)
     // 根据逻辑：它会填满 8, 9 列，然后 cursor_x 变成 10
     // 因为 10 >= right_margin，它会触发 pending wrap 逻辑
-    assert_eq!(engine.state.cursor_y, 0, "Cursor should still be on row 0 (fits exactly)");
-    assert_eq!(engine.state.about_to_wrap, true, "Should be about to wrap");
+    assert_eq!(engine.state.cursor.y, 0, "Cursor should still be on row 0 (fits exactly)");
+    assert_eq!(engine.state.cursor.about_to_wrap, true, "Should be about to wrap");
 }
 
 // =============================================================================
@@ -2445,7 +2445,7 @@ fn test_osc11_set_background() {
 /// 验证 OSC 104 重置颜色 - ✅ PASS
 #[test]
 fn test_osc104_reset_colors() {
-    use termux_rust::engine::DEFAULT_COLORSCHEME;
+    use termux_rust::DEFAULT_COLORSCHEME;
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -2566,7 +2566,7 @@ fn test_ris_full_reset() {
     engine.process_bytes(b"\x1bc");
 
     // 验证所有状态已重置
-    assert_eq!(engine.state.auto_wrap, true, "Auto wrap should be reset");
+    assert_eq!(engine.state.auto_wrap(), true, "Auto wrap should be reset");
     assert_eq!(engine.state.top_margin, 0, "Top margin should be reset");
     assert_eq!(
         engine.state.bottom_margin, 24,
@@ -2701,7 +2701,7 @@ fn test_save_restore_cursor_colors() {
 
 #[test]
 fn test_erase_display_mode_3() {
-    use termux_rust::engine::TerminalEngine;
+    use termux_rust::TerminalEngine;
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
     // 填充一些滚动历史 (超过 24 行)
     for i in 0..50 {
@@ -2710,14 +2710,14 @@ fn test_erase_display_mode_3() {
     }
 
     // 确认有滚动历史 (screen_first_row 应该已经滚动)
-    assert!(engine.state.screen_first_row > 0, "Should have scrolled");
+    assert!(engine.state.screen_first_row() > 0, "Should have scrolled");
 
     // 执行 CSI 3 J (清历史)
     engine.process_bytes(b"\x1b[3J");
 
     // 验证 screen_first_row 已重置
     assert_eq!(
-        engine.state.screen_first_row, 0,
+        engine.state.screen_first_row(), 0,
         "Screen first row should be reset"
     );
     assert_eq!(
@@ -2726,8 +2726,8 @@ fn test_erase_display_mode_3() {
     );
 
     // 验证整个 buffer 都是空的
-    for y in 0..engine.state.buffer.len() {
-        let row = &engine.state.buffer[y];
+    for y in 0..engine.state.main_screen.buffer.len() {
+        let row = &engine.state.main_screen.buffer[y];
         for x in 0..80 {
             let c = row.text[x];
             assert_eq!(c, ' ', "Cell ({}, {}) should be empty space", x, y);
@@ -2742,12 +2742,12 @@ fn test_erase_display_mode_3() {
 /// 验证 Sixel 基础解码 - ⚠️ PARTIAL
 #[test]
 fn test_sixel_basic_decode() {
-    use termux_rust::engine::SixelDecoder;
+    use termux_rust::SixelDecoder;
 
     let mut decoder = SixelDecoder::new();
 
     // 验证初始状态
-    assert_eq!(decoder.state, termux_rust::engine::SixelState::Ground);
+    assert_eq!(decoder.state, termux_rust::SixelState::Ground);
     assert_eq!(decoder.width, 0, "Initial width should be 0");
     assert_eq!(decoder.height, 0, "Initial height should be 0");
     assert_eq!(decoder.current_color, 0, "Initial color should be 0");
@@ -2765,7 +2765,7 @@ fn test_sixel_basic_decode() {
 /// 验证 Sixel 数据解析 - ⚠️ PARTIAL
 #[test]
 fn test_sixel_data_parsing() {
-    use termux_rust::engine::SixelDecoder;
+    use termux_rust::SixelDecoder;
 
     let mut decoder = SixelDecoder::new();
 
@@ -2783,7 +2783,7 @@ fn test_sixel_data_parsing() {
 /// 验证 Sixel 换行 - ✅ PASS
 #[test]
 fn test_sixel_newline() {
-    use termux_rust::engine::SixelDecoder;
+    use termux_rust::SixelDecoder;
 
     let mut decoder = SixelDecoder::new();
 
@@ -2806,7 +2806,7 @@ fn test_sixel_newline() {
 /// 验证 Sixel 光标归位 - ✅ PASS
 #[test]
 fn test_sixel_carriage_return() {
-    use termux_rust::engine::SixelDecoder;
+    use termux_rust::SixelDecoder;
 
     let mut decoder = SixelDecoder::new();
 
@@ -2824,7 +2824,7 @@ fn test_sixel_carriage_return() {
 /// 验证 Sixel 删除图形 - ✅ PASS
 #[test]
 fn test_sixel_delete() {
-    use termux_rust::engine::SixelDecoder;
+    use termux_rust::SixelDecoder;
 
     let mut decoder = SixelDecoder::new();
 
@@ -2861,7 +2861,7 @@ fn test_sixel_full_sequence() {
 fn test_sixel_image_rendering() {
     // 这个测试需要 Java 环境，只能在集成测试中运行
     // 这里只做框架验证
-    use termux_rust::engine::TerminalEngine;
+    use termux_rust::TerminalEngine;
 
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
@@ -2890,10 +2890,10 @@ fn test_resize_shrink_reflow() {
     engine.process_bytes(&data);
     
     // 验证初始状态：Row 0 是满的，Wrap 为 true
-    assert_eq!(engine.state.buffer[0].line_wrap, true);
-    assert_eq!(engine.state.buffer[0].text[0], 'A');
-    assert_eq!(engine.state.buffer[0].text[79], 'A');
-    assert_eq!(engine.state.buffer[1].text[0], 'B');
+    assert_eq!(engine.state.main_screen.buffer[0].line_wrap, true);
+    assert_eq!(engine.state.main_screen.buffer[0].text[0], 'A');
+    assert_eq!(engine.state.main_screen.buffer[0].text[79], 'A');
+    assert_eq!(engine.state.main_screen.buffer[1].text[0], 'B');
 
     // 2. 模拟缩小到 40 列
     engine.state.resize(40, 24);
@@ -2903,15 +2903,15 @@ fn test_resize_shrink_reflow() {
     assert_eq!(engine.state.cols, 40);
     
     // Row 0: 40个A, Wrap: true
-    assert_eq!(engine.state.buffer[0].line_wrap, true);
-    for x in 0..40 { assert_eq!(engine.state.buffer[0].text[x], 'A'); }
+    assert_eq!(engine.state.main_screen.buffer[0].line_wrap, true);
+    for x in 0..40 { assert_eq!(engine.state.main_screen.buffer[0].text[x], 'A'); }
 
     // Row 1: 40个A, Wrap: true
-    assert_eq!(engine.state.buffer[1].line_wrap, true);
-    for x in 0..40 { assert_eq!(engine.state.buffer[1].text[x], 'A'); }
+    assert_eq!(engine.state.main_screen.buffer[1].line_wrap, true);
+    for x in 0..40 { assert_eq!(engine.state.main_screen.buffer[1].text[x], 'A'); }
 
     // Row 2: 1个B
-    assert_eq!(engine.state.buffer[2].text[0], 'B');
+    assert_eq!(engine.state.main_screen.buffer[2].text[0], 'B');
 }
 
 /// 验证放大屏幕时的内容重排 (40 -> 80) - ✅ 修复验证
@@ -2926,9 +2926,9 @@ fn test_resize_expand_reflow() {
     engine.process_bytes(&data);
 
     // 验证初始状态：Row 0 满，Row 1 满，Row 0 Wrap 为 true
-    assert_eq!(engine.state.buffer[0].line_wrap, true);
-    assert_eq!(engine.state.buffer[0].text.len(), 40);
-    assert_eq!(engine.state.buffer[1].text.len(), 40);
+    assert_eq!(engine.state.main_screen.buffer[0].line_wrap, true);
+    assert_eq!(engine.state.main_screen.buffer[0].text.len(), 40);
+    assert_eq!(engine.state.main_screen.buffer[1].text.len(), 40);
 
     // 2. 模拟放大到 80 列
     engine.state.resize(80, 24);
@@ -2936,11 +2936,11 @@ fn test_resize_expand_reflow() {
     // 验证重排结果：
     // 两行 (40 字符 * 2) 现在应该缩回一行 (80 字符)
     assert_eq!(engine.state.cols, 80);
-    assert_eq!(engine.state.buffer[0].text.len(), 80);
-    for x in 0..80 { assert_eq!(engine.state.buffer[0].text[x], 'B'); }
+    assert_eq!(engine.state.main_screen.buffer[0].text.len(), 80);
+    for x in 0..80 { assert_eq!(engine.state.main_screen.buffer[0].text[x], 'B'); }
     
     // Row 1 应该被清空
-    for x in 0..80 { assert_eq!(engine.state.buffer[1].text[x], ' '); }
+    for x in 0..80 { assert_eq!(engine.state.main_screen.buffer[1].text[x], ' '); }
 }
 
 /// 验证带样式的重排一致性 - ✅ 修复验证
@@ -2958,6 +2958,6 @@ fn test_resize_style_reflow() {
 
     // 3. 验证 Row 1 (溢出的行) 是否保留了红色背景样式
     // 红色背景索引为 1，存储在 style 的位 16-24
-    let style_row_1 = engine.state.buffer[1].styles[0];
+    let style_row_1 = engine.state.main_screen.buffer[1].styles[0];
     assert_eq!((style_row_1 >> 16) & 0x1FF, 1, "Style should be preserved during reflow");
 }

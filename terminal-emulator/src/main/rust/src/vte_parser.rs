@@ -273,6 +273,10 @@ pub struct Parser {
     dcs_buffer: Vec<u8>,
     /// 是否继续序列
     continue_sequence: bool,
+    /// UTF-8 解码状态 (剩余字节数)
+    utf8_expected: u8,
+    /// UTF-8 解码中的字符码点
+    utf8_codepoint: u32,
 }
 
 impl Parser {
@@ -284,19 +288,36 @@ impl Parser {
             osc_buffer: String::with_capacity(256),
             dcs_buffer: Vec::with_capacity(256),
             continue_sequence: false,
+            utf8_expected: 0,
+            utf8_codepoint: 0,
         }
     }
     
     /// 处理输入字节
     pub fn advance<P: Perform>(&mut self, handler: &mut P, data: &[u8]) {
-        for &byte in data {
-            self.process_byte(handler, byte);
+        let text = String::from_utf8_lossy(data);
+        for c in text.chars() {
+            self.process_char(handler, c);
         }
     }
     
-    /// 处理单个字节
-    fn process_byte<P: Perform>(&mut self, handler: &mut P, byte: u8) {
+    /// 处理单个字符
+    fn process_char<P: Perform>(&mut self, handler: &mut P, c: char) {
         self.continue_sequence = false;
+        
+        let ucs = c as u32;
+        if ucs > 127 {
+            if self.escape_state == ESC_NONE {
+                handler.print(c);
+            } else if self.escape_state == ESC_OSC || self.escape_state == ESC_APC {
+                if self.osc_buffer.len() < MAX_OSC_STRING_LENGTH {
+                    self.osc_buffer.push(c);
+                }
+            }
+            return;
+        }
+        
+        let byte = c as u8;
         
         // 处理特殊控制字符
         match byte {
@@ -581,9 +602,11 @@ impl Parser {
                 self.intermediates.push(byte);
             }
             b'?' => {
+                self.intermediates.push(byte);
                 self.escape_state = ESC_CSI_QUESTIONMARK;
             }
             b'>' => {
+                self.intermediates.push(byte);
                 self.escape_state = ESC_CSI_BIGGERTHAN;
             }
             b'<' | b'=' => {
@@ -727,8 +750,16 @@ impl Parser {
     /// OSC 序列处理
     fn do_osc<P: Perform>(&mut self, handler: &mut P, byte: u8) {
         match byte {
-            0x00..=0x1F if byte != 0x1B => {
-                // 控制字符（除了 ESC）
+            0x07 => {
+                // BEL 终止
+                self.osc_dispatch_and_reset(handler);
+            }
+            0x1B => {
+                // ESC - 可能是 ST (ESC \)
+                self.escape_state = ESC_OSC_ESC;
+            }
+            0x00..=0x06 | 0x08..=0x1A | 0x1C..=0x1F => {
+                // 其他控制字符
             }
             0x20..=0x7F => {
                 if self.osc_buffer.len() < MAX_OSC_STRING_LENGTH {
@@ -737,14 +768,6 @@ impl Parser {
             }
             0x80..=0x9F => {
                 // C1 控制字符，可能终止 OSC
-            }
-            0x07 => {
-                // BEL 终止
-                self.osc_dispatch_and_reset(handler);
-            }
-            0x1B => {
-                // ESC - 可能是 ST (ESC \)
-                self.escape_state = ESC_OSC_ESC;
             }
             _ => {}
         }
@@ -791,7 +814,7 @@ impl Parser {
     /// APC 序列处理
     fn do_apc<P: Perform>(&mut self, handler: &mut P, byte: u8) {
         match byte {
-            0x00..=0x1F => {
+            0x00..=0x06 | 0x08..=0x1A | 0x1C..=0x1F => {
                 // 控制字符
             }
             0x20..=0x7F => {

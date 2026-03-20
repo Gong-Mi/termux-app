@@ -109,9 +109,9 @@ fn test_sync_all_rows_to_shared_buffer() {
     // 手动同步数据（模拟 syncToSharedBufferRust 的行为）
     if let Some(ref mut flat_buffer) = engine.state.flat_buffer {
         if !engine.state.shared_buffer_ptr.is_null() {
-            let buffer_len = engine.state.buffer.len();
+            let buffer_len = engine.state.main_screen.buffer.len();
             for physical_row in 0..buffer_len {
-                if let Some(buffer_row) = engine.state.buffer.get(physical_row) {
+                if let Some(buffer_row) = engine.state.main_screen.buffer.get(physical_row) {
                     for col in 0..cols.min(buffer_row.text.len() as i32) as usize {
                         let cell_idx = flat_buffer.cell_index(col, physical_row);
                         if cell_idx < flat_buffer.text_data.len() {
@@ -165,7 +165,7 @@ fn test_scrollback_rows_access() {
 
     // 验证 buffer 包含所有行
     assert_eq!(
-        engine.state.buffer.len(),
+        engine.state.main_screen.buffer.len(),
         total_rows as usize,
         "buffer should have {} rows",
         total_rows
@@ -182,7 +182,7 @@ fn test_scrollback_rows_access() {
 
     println!(
         "✅ scrollback rows access test passed: buffer has {} rows, flat_buffer has {} rows",
-        engine.state.buffer.len(),
+        engine.state.main_screen.buffer.len(),
         flat_buffer.rows
     );
 }
