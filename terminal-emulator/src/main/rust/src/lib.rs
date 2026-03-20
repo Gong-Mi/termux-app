@@ -27,14 +27,23 @@ pub extern "system" fn JNI_OnLoad(vm: jni::JavaVM, _reserved: std::ffi::c_void) 
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeInit(
-    _env: JNIEnv,
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_createEngineRustWithCallback(
+    mut env: JNIEnv,
     _class: JClass,
     cols: jint,
     rows: jint,
     total_rows: jint,
+    cw: jint,
+    ch: jint,
+    callback: JObject,
 ) -> jlong {
-    let engine = TerminalEngine::new(cols, rows, total_rows, 10, 20);
+    let mut engine = TerminalEngine::new(cols, rows, total_rows, cw, ch);
+    
+    // 初始化时就设置回调对象，防止后续同步丢失
+    if let Ok(global_ref) = env.new_global_ref(callback) {
+        engine.state.java_callback_obj = Some(global_ref);
+    }
+    
     let context = Box::new(TerminalContext { engine });
     Box::into_raw(context) as jlong
 }
@@ -45,16 +54,11 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeProcess(
     _class: JClass,
     ptr: jlong,
     data: jbyteArray,
-    callback: JObject,
+    _callback: JObject,
 ) {
     let context = unsafe { &mut *(ptr as *mut TerminalContext) };
     let j_array = unsafe { jni::objects::JByteArray::from_raw(data) };
     if let Ok(bytes) = env.convert_byte_array(&j_array) {
-        if context.engine.state.java_callback_obj.is_none() {
-            if let Ok(global_ref) = env.new_global_ref(callback) {
-                context.engine.state.java_callback_obj = Some(global_ref);
-            }
-        }
         context.engine.process_bytes(&bytes);
     }
 }
