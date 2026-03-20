@@ -8,7 +8,7 @@ pub enum LogPriority {
     ERROR = 6,
 }
 
-extern "C" {
+unsafe extern "C" {
     fn __android_log_print(prio: i32, tag: *const libc::c_char, fmt: *const libc::c_char, ...);
 }
 

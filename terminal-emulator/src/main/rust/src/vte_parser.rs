@@ -321,14 +321,16 @@ impl Parser {
         
         // 处理特殊控制字符
         match byte {
+            0x0C => {
+                // FF - 换页，当作 LF 处理
+                if self.escape_state == ESC_NONE {
+                    handler.execute(0x0A);
+                }
+                return;
+            }
             0x00..=0x17 | 0x19 | 0x1C..=0x1F => {
                 if self.escape_state == ESC_NONE {
                     handler.execute(byte);
-                    return;
-                }
-                // CAN (0x18) 和 SUB (0x1A) 在转义序列中会取消当前序列
-                if byte == 0x18 || byte == 0x1A {
-                    self.escape_state = ESC_NONE;
                     return;
                 }
             }
@@ -339,9 +341,6 @@ impl Parser {
             }
             0x7F => {
                 // DEL - 在转义序列中忽略
-                if self.escape_state == ESC_NONE {
-                    // 正常模式下也忽略
-                }
                 return;
             }
             0x1B => {
@@ -355,13 +354,6 @@ impl Parser {
                 } else {
                     // OSC 序列中的 ESC
                     self.osc_dispatch_and_reset(handler);
-                }
-                return;
-            }
-            0x0C => {
-                // FF - 换页，当作 LF 处理
-                if self.escape_state == ESC_NONE {
-                    handler.execute(0x0A);
                 }
                 return;
             }
