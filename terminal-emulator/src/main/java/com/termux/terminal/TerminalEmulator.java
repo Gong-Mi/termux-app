@@ -8,6 +8,10 @@ import android.view.KeyEvent;
  */
 public final class TerminalEmulator {
 
+    static {
+        System.loadLibrary("termux_rust");
+    }
+
     // 原生引擎指针
     private long mEnginePtr;
 
@@ -288,7 +292,7 @@ public final class TerminalEmulator {
 
     // --- Native 接口 ---
     private static native long createEngineRustWithCallback(
-        int columns, int rows, int cw, int ch, int totalRows, TerminalSessionClient client
+        int cols, int rows, int cw, int ch, int totalRows, TerminalSessionClient client
     );
 
     private static native void processBatchRust(long enginePtr, byte[] batch, int length);
