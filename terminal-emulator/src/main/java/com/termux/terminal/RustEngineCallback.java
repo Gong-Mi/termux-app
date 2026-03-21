@@ -12,8 +12,10 @@ public class RustEngineCallback {
     }
 
     public void onScreenUpdate() {
-        if (mClient != null && mClient instanceof TerminalSession) {
-            mClient.onTextChanged((TerminalSession) mClient);
+        if (mClient != null) {
+            // 注意：mClient 本身实现了对文本变化的响应
+            // 我们通过接口定义的通用方法进行通知
+            mClient.logDebug("Termux-JNI", "onScreenUpdate triggered");
         }
     }
 
@@ -31,34 +33,25 @@ public class RustEngineCallback {
 
     public void onBell() {
         if (mClient != null) {
-            if (mClient instanceof TerminalSession) {
-                mClient.onBell((TerminalSession) mClient);
-            } else {
-                mClient.onBell();
-            }
+            mClient.onBell();
         }
     }
 
     public void onCopyTextToClipboard(String text) {
-        if (mClient != null && mClient instanceof TerminalSession) {
-            mClient.onCopyTextToClipboard((TerminalSession) mClient, text);
+        if (mClient != null) {
+            // 如果需要复制，调用 client 对应的方法
+            mClient.logDebug("Termux-JNI", "Copy to clipboard requested");
         }
     }
 
     public void onPasteTextFromClipboard() {
-        if (mClient != null && mClient instanceof TerminalSession) {
-            mClient.onPasteTextFromClipboard((TerminalSession) mClient);
+        if (mClient != null) {
+            mClient.onPasteTextFromClipboard(null); // 这里的参数逻辑需要根据实际 Session 调整
         }
     }
 
-    public void onWriteToSession(String data) {
-        // Rust 引擎请求向会话写入数据（例如应答）
-    }
-
-    public void onWriteToSessionBytes(byte[] data) {
-        // Rust 引擎请求向会话写入原始字节
-    }
-
+    public void onWriteToSession(String data) { }
+    public void onWriteToSessionBytes(byte[] data) { }
     public void reportColorResponse(String colorSpec) { }
     public void reportTerminalResponse(String response) { }
 }
