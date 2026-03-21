@@ -32,9 +32,9 @@ pub extern "system" fn JNI_OnLoad(vm: jni::JavaVM, _reserved: std::ffi::c_void) 
 // TerminalEmulator JNI 接口
 // ============================================================================
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_createEngineRustWithCallback(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     cols: jint,
     rows: jint,
@@ -52,9 +52,9 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_createEngineRus
     Box::into_raw(context) as jlong
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeProcess(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     ptr: jlong,
     data: jbyteArray,
@@ -62,14 +62,15 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeProcess(
 ) {
     if ptr == 0 || data.is_null() { return; }
     let context = unsafe { &mut *(ptr as *mut TerminalContext) };
-    if let Ok(bytes) = env.convert_byte_array(unsafe { &jni::objects::JByteArray::from_raw(data) }) {
+    let j_array = unsafe { jni::objects::JByteArray::from_raw(data) };
+    if let Ok(bytes) = env.convert_byte_array(&j_array) {
         context.engine.process_bytes(&bytes);
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_processBatchRust(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     ptr: jlong,
     batch: jbyteArray,
@@ -77,7 +78,8 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_processBatchRus
 ) {
     if ptr == 0 || batch.is_null() { return; }
     let context = unsafe { &mut *(ptr as *mut TerminalContext) };
-    if let Ok(bytes) = env.convert_byte_array(unsafe { &jni::objects::JByteArray::from_raw(batch) }) {
+    let j_array = unsafe { jni::objects::JByteArray::from_raw(batch) };
+    if let Ok(bytes) = env.convert_byte_array(&j_array) {
         let len = length as usize;
         let actual_len = std::cmp::min(len, bytes.len());
         context.engine.process_bytes(&bytes[..actual_len]);
