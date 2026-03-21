@@ -274,7 +274,6 @@ impl Screen {
         let old_cols = self.cols as usize;
         let n_cols = new_cols as usize;
         
-        // 收集所有行内容
         let mut content = Vec::new();
         for i in -(self.active_transcript_rows as i32)..self.rows {
             let row = self.get_row(i);
@@ -282,23 +281,9 @@ impl Screen {
             content.push((row.text[0..used].to_vec(), row.styles[0..used].to_vec(), row.line_wrap));
         }
 
-        // 找到第一个非空行，跳过前导空行（这些是无效的 scrollback）
-        let mut first_nonempty = 0;
-        for (i, (t, _, _)) in content.iter().enumerate() {
-            if !t.is_empty() {
-                first_nonempty = i;
-                break;
-            }
-        }
-        
-        // 如果全是空行，保持 first_nonempty 为 0
         let mut reflowed = Vec::new();
         let (mut cur_t, mut cur_s) = (Vec::new(), Vec::new());
-        
-        // 从第一个非空行开始处理
-        for (i, (t, s, wrapped)) in content.into_iter().enumerate() {
-            if i < first_nonempty { continue; } // 跳过前导空行
-            
+        for (t, s, wrapped) in content {
             cur_t.extend_from_slice(&t); cur_s.extend_from_slice(&s);
             while cur_t.len() > n_cols {
                 let mut nr = TerminalRow::new(n_cols);
