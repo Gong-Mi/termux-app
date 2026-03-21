@@ -71,7 +71,7 @@ impl TerminalRow {
 
     pub fn get_space_used(&self) -> usize {
         for i in (0..self.text.len()).rev() {
-            if self.text[i] != ' ' && self.text[i] != '\0' {
+            if self.text[i] != ' ' && self.text[i] != '\0' || self.styles[i] != STYLE_NORMAL {
                 return i + 1;
             }
         }
@@ -206,11 +206,9 @@ impl Screen {
             2 => { for y in 0..self.rows { self.get_row_mut(y).clear(0, cols, style); } }
             3 => {
                 // CSI 3 J - 清除滚动历史并清屏
-                // 清除所有行（包括滚动历史）
                 for y in 0..self.buffer.len() {
                     self.get_row_mut(y as i32 - self.active_transcript_rows as i32).clear(0, cols, style);
                 }
-                // 重置滚动历史和首行位置
                 self.first_row = 0;
                 self.active_transcript_rows = 0;
             }
@@ -268,113 +266,106 @@ impl Screen {
         }
     }
 
-    pub fn resize_with_reflow(&mut self, new_cols: i32, new_rows: i32) {
+    pub fn scroll_down(&mut self, top: i32, bottom: i32, style: u64) {
+        let cols = self.cols as usize;
+        for i in (top + 1..bottom).rev() {
+            let src = self.internal_row(i - 1);
+            let dest = self.internal_row(i);
+            self.buffer[dest] = self.buffer[src].clone();
+        }
+        self.get_row_mut(top).clear(0, cols, style);
+    }
+
+    pub fn resize_with_reflow(&mut self, new_cols: i32, new_rows: i32, current_style: u64) {
         if new_cols == self.cols && new_rows == self.rows { return; }
         let old_total = self.buffer.len();
-        let old_cols = self.cols as usize;
         let n_cols = new_cols as usize;
+        let n_rows = new_rows as usize;
 
-        let mut content = Vec::new();
-        for i in -(self.active_transcript_rows as i32)..self.rows {
-            let row = self.get_row(i);
-            let used = if row.line_wrap { old_cols } else { row.get_space_used() };
-            content.push((row.text[0..used].to_vec(), row.styles[0..used].to_vec(), row.line_wrap));
-        }
-
-        // 找到第一个非空行，跳过前导空行（这些是无效的 scrollback）
-        let mut first_nonempty = 0;
-        for (i, (t, _, _)) in content.iter().enumerate() {
-            if !t.is_empty() {
-                first_nonempty = i;
-                break;
+        // 1. 合并逻辑行
+        let mut logical_lines = Vec::new();
+        let total_logical_rows = self.active_transcript_rows + self.rows as usize;
+        
+        let mut cur_text = Vec::new();
+        let mut cur_styles = Vec::new();
+        
+        for i in 0..total_logical_rows {
+            let row = self.get_row(i as i32 - self.active_transcript_rows as i32);
+            let used = if row.line_wrap { self.cols as usize } else { row.get_space_used() };
+            
+            // 样式基准
+            let bg_style = if used > 0 { row.styles[used - 1] } else { current_style };
+            
+            cur_text.extend_from_slice(&row.text[0..used]);
+            cur_styles.extend_from_slice(&row.styles[0..used]);
+            
+            if !row.line_wrap {
+                logical_lines.push((cur_text, cur_styles, false, bg_style));
+                cur_text = Vec::new();
+                cur_styles = Vec::new();
             }
         }
+        if !cur_text.is_empty() {
+            let last_bg = if cur_styles.is_empty() { current_style } else { *cur_styles.last().unwrap() };
+            logical_lines.push((cur_text, cur_styles, true, last_bg));
+        }
 
-        // 逐字符 reflow，确保宽字符正确处理
+        // 2. 切分重排
         let mut reflowed = Vec::new();
-        let mut current_row = TerminalRow::new(n_cols);
-        let mut current_col = 0;
-        let mut skipped_blank_lines = 0;
-
-        for (i, (t, s, wrapped)) in content.into_iter().enumerate() {
-            if i < first_nonempty { continue; } // 跳过前导空行
-
-            // 检查是否是空行
-            let is_blank = t.is_empty();
-            
-            if is_blank {
-                skipped_blank_lines += 1;
+        for (text, styles, was_wrapped, bg_style) in logical_lines {
+            if text.is_empty() {
+                let mut row = TerminalRow::new(n_cols);
+                for s in &mut row.styles { *s = bg_style; }
+                reflowed.push(row);
                 continue;
             }
-            
-            // 遇到非空行，插入之前跳过的空行
-            if skipped_blank_lines > 0 {
-                for _ in 0..skipped_blank_lines {
-                    if current_col > 0 {
-                        reflowed.push(current_row);
-                        current_row = TerminalRow::new(n_cols);
-                        current_col = 0;
-                    } else {
-                        reflowed.push(TerminalRow::new(n_cols));
-                    }
-                }
-                skipped_blank_lines = 0;
-            }
 
-            let mut char_idx = 0;
-            while char_idx < t.len() {
-                let c = t[char_idx];
-                let style = s[char_idx];
+            let mut offset = 0;
+            while offset < text.len() {
+                let mut new_row = TerminalRow::new(n_cols);
+                for s in &mut new_row.styles { *s = bg_style; }
                 
-                // 计算字符显示宽度
-                let display_width = crate::utils::get_char_width(c as u32) as i32;
-                
-                // 如果当前列放不下这个字符，换行
-                if current_col as i32 + display_width > n_cols as i32 {
-                    current_row.line_wrap = true;
-                    reflowed.push(current_row);
-                    current_row = TerminalRow::new(n_cols);
-                    current_col = 0;
-                }
-                
-                // 写入字符
-                if current_col < n_cols {
-                    current_row.text[current_col] = c;
-                    current_row.styles[current_col] = style;
-                    current_col += 1;
+                let mut col = 0;
+                while offset < text.len() && col < n_cols {
+                    let c = text[offset];
+                    let s = styles[offset];
+                    let w = crate::utils::get_char_width(c as u32) as usize;
+                    if w == 0 && c != ' ' && c != '\0' { offset += 1; continue; }
+                    if col + w > n_cols { break; }
                     
-                    // 如果是宽字符，写入第二个单元格（空格占位）
-                    if display_width == 2 && current_col < n_cols {
-                        current_row.text[current_col] = ' ';
-                        current_row.styles[current_col] = style;
-                        current_col += 1;
+                    new_row.text[col] = c;
+                    new_row.styles[col] = s;
+                    col += 1;
+                    if w == 2 {
+                        if col < n_cols {
+                            new_row.text[col] = ' ';
+                            new_row.styles[col] = s;
+                            col += 1;
+                        }
+                        offset += 1;
                     }
+                    offset += 1;
                 }
-                
-                char_idx += 1;
-            }
-            
-            // 如果原行没有 line_wrap，需要换行
-            if !wrapped && char_idx > 0 {
-                reflowed.push(current_row);
-                current_row = TerminalRow::new(n_cols);
-                current_col = 0;
+
+                new_row.line_wrap = if offset < text.len() { true } else { was_wrapped };
+                reflowed.push(new_row);
             }
         }
-        
-        // 添加最后一行（如果有内容）
-        if current_col > 0 {
-            reflowed.push(current_row);
-        }
+// 3. 映射到缓冲区
+let to_copy = min(reflowed.len(), old_total);
+let start_idx = reflowed.len() - to_copy;
 
-        let mut new_buffer = vec![TerminalRow::new(n_cols); old_total];
-        let to_copy = min(reflowed.len(), old_total);
+let mut new_buffer = vec![TerminalRow::new(n_cols); old_total];
+for r in &mut new_buffer { for s in &mut r.styles { *s = current_style; } }
 
-        // 关键对齐：如果内容行数少于一屏，放在顶部。如果多于一屏，填满顶部并增加历史记录计数。
-        for i in 0..to_copy { new_buffer[i] = reflowed[i].clone(); }
+for i in 0..to_copy {
+    new_buffer[i] = reflowed[start_idx + i].clone();
+}
 
-        self.buffer = new_buffer; self.cols = new_cols; self.rows = new_rows;
-        self.first_row = 0;
-        self.active_transcript_rows = to_copy.saturating_sub(new_rows as usize);
-    }
+self.buffer = new_buffer;
+self.cols = new_cols;
+self.rows = new_rows;
+self.first_row = 0;
+self.active_transcript_rows = to_copy.saturating_sub(n_rows);
+}
 }

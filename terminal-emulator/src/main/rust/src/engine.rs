@@ -406,7 +406,8 @@ impl ScreenState {
     }
     
     pub fn resize(&mut self, cols: i32, rows: i32) {
-        self.main_screen.resize_with_reflow(cols, rows);
+        let style = self.current_style;
+        self.main_screen.resize_with_reflow(cols, rows, style);
         self.alt_screen = Screen::new(cols, rows, rows);
         self.cols = cols; self.rows = rows;
         self.flat_buffer = Some(FlatScreenBuffer::new(cols as usize, self.main_screen.buffer.len()));
