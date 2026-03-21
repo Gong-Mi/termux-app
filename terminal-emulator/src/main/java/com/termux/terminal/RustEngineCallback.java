@@ -51,15 +51,23 @@ public class RustEngineCallback {
     }
 
     public void onWriteToSession(String data) {
+        // Rust 终端响应数据写入
+        // 注意：实际写入操作由 Rust 通过 PTY 文件描述符处理
+        // 这里仅用于日志记录
         if (mClient != null) {
-            mClient.onWriteToSession(data);
+            mClient.logVerbose("RustEngineCallback", "Write to session: " + data);
         }
     }
     
-    public void onWriteToSessionBytes(byte[] data) { }
+    public void onWriteToSessionBytes(byte[] data) {
+        // 二进制数据写入 - 目前仅用于日志
+        if (mClient != null) {
+            mClient.logVerbose("RustEngineCallback", "Write " + data.length + " bytes to session");
+        }
+    }
     
     public void write(String data) {
-        // Rust 终端响应写入
+        // Rust 终端响应写入（如鼠标事件、颜色查询响应等）
         onWriteToSession(data);
     }
     
@@ -67,6 +75,13 @@ public class RustEngineCallback {
         onWriteToSessionBytes(data);
     }
     
-    public void reportColorResponse(String colorSpec) { }
-    public void reportTerminalResponse(String response) { }
+    public void reportColorResponse(String colorSpec) {
+        // 颜色响应
+        write(colorSpec);
+    }
+    
+    public void reportTerminalResponse(String response) {
+        // 终端响应（如 DEC 设备状态报告等）
+        write(response);
+    }
 }
