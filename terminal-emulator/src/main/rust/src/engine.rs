@@ -490,7 +490,18 @@ impl ScreenState {
                 2 => self.effect |= EFFECT_DIM,
                 3 => self.effect |= EFFECT_ITALIC,
                 4 => self.effect |= EFFECT_UNDERLINE,
+                5 => self.effect |= EFFECT_BLINK,
                 7 => self.effect |= EFFECT_REVERSE,
+                8 => self.effect |= EFFECT_INVISIBLE,
+                9 => self.effect |= EFFECT_STRIKETHROUGH,
+                21 => self.effect |= EFFECT_UNDERLINE, // Double underline (treat as single)
+                22 => { self.effect &= !EFFECT_BOLD; self.effect &= !EFFECT_DIM; }
+                23 => self.effect &= !EFFECT_ITALIC,
+                24 => self.effect &= !EFFECT_UNDERLINE,
+                25 => self.effect &= !EFFECT_BLINK,
+                27 => self.effect &= !EFFECT_REVERSE,
+                28 => self.effect &= !EFFECT_INVISIBLE,
+                29 => self.effect &= !EFFECT_STRIKETHROUGH,
                 30..=37 => self.fore_color = (p - 30) as u64,
                 38 => {
                     if i + 2 < params.len && params.values[i+1] == 5 { self.fore_color = params.values[i+2] as u64; i += 2; }
