@@ -17,11 +17,12 @@ public final class TerminalEmulator {
 
     /**
      * 回调接口：由 Rust 引擎调用
+     * 注意：方法名必须与 Rust 端 JNI 调用保持严格一致
      */
     public interface RustEngineCallback {
         void onScreenUpdate();
         void reportTitleChange(String title);
-        void reportColorsChanged();
+        void onColorsChanged(); // 修正：从 reportColorsChanged 改为 onColorsChanged
         void reportCursorVisibility(boolean visible);
         void onBell();
         void onCopyTextToClipboard(String text);
@@ -44,7 +45,7 @@ public final class TerminalEmulator {
         @Override public void reportTitleChange(String title) {
             if (mClient != null) mClient.reportTitleChange(title);
         }
-        @Override public void reportColorsChanged() {
+        @Override public void onColorsChanged() {
             if (mClient != null) mClient.onColorsChanged();
         }
         @Override public void reportCursorVisibility(boolean visible) {
