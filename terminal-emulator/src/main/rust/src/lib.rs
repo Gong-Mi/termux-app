@@ -256,9 +256,27 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getSelectedText
 ) -> jstring {
     if ptr == 0 { return std::ptr::null_mut(); }
     let context = unsafe { &*(ptr as *const TerminalContext) };
-    let text = if y1 == y2 {
-        context.engine.state.get_current_screen().get_row(y1).get_selected_text(x1 as usize, x2 as usize)
-    } else { String::from("Multi-line selection not yet supported") };
+    let text = context.engine.state.get_current_screen().get_selected_text(x1, y1, x2, y2);
+    if let Ok(j_str) = env.new_string(text) { j_str.into_raw() } else { std::ptr::null_mut() }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getWordAtLocationFromRust(
+    mut env: JNIEnv, _class: JClass, ptr: jlong, x: jint, y: jint,
+) -> jstring {
+    if ptr == 0 { return std::ptr::null_mut(); }
+    let context = unsafe { &*(ptr as *const TerminalContext) };
+    let text = context.engine.state.get_current_screen().get_row(y).get_word_at(x as usize);
+    if let Ok(j_str) = env.new_string(text) { j_str.into_raw() } else { std::ptr::null_mut() }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getTranscriptTextFromRust(
+    mut env: JNIEnv, _class: JClass, ptr: jlong,
+) -> jstring {
+    if ptr == 0 { return std::ptr::null_mut(); }
+    let context = unsafe { &*(ptr as *const TerminalContext) };
+    let text = context.engine.state.get_current_screen().get_transcript_text();
     if let Ok(j_str) = env.new_string(text) { j_str.into_raw() } else { std::ptr::null_mut() }
 }
 

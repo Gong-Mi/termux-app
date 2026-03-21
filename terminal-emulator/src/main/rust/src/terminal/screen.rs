@@ -82,36 +82,38 @@ impl TerminalRow {
         }
     }
 
-    pub fn find_char_index_at_column(&self, column: usize) -> usize {
-        let mut current_column = 0;
-        let mut current_char_index = 0;
-        while current_char_index < self.text.len() {
-            let c = self.text[current_char_index];
-            let width = crate::utils::get_char_width(c as u32) as usize;
-            if width > 0 {
-                if current_column == column {
-                    return current_char_index;
-                } else if current_column > column {
-                    return current_char_index;
-                }
-                current_column += width;
-            } else {
-                if current_column == column {
-                    return current_char_index;
-                } else if current_column > column {
-                    return current_char_index;
-                }
-            }
-            current_char_index += 1;
-        }
-        self.get_space_used()
-    }
-
     pub fn get_selected_text(&self, x1: usize, x2: usize) -> String {
         let cols = self.text.len();
         if x1 >= cols { return String::new(); }
         let end = min(x2, cols);
         self.text[x1..end].iter().collect()
+    }
+
+    // 识别单词边界的辅助函数
+    fn is_word_char(c: char) -> bool {
+        c.is_alphanumeric() || c == '_' || c == '-' || c == '.' || c == '/'
+    }
+
+    pub fn get_word_at(&self, column: usize) -> String {
+        let len = self.text.len();
+        if column >= len { return String::new(); }
+        
+        let mut start = column;
+        while start > 0 && Self::is_word_char(self.text[start - 1]) {
+            start -= 1;
+        }
+        
+        let mut end = column;
+        while end < len && Self::is_word_char(self.text[end]) {
+            end += 1;
+        }
+        
+        if start == end && !self.text[column].is_whitespace() {
+            // 如果不是单词字符也不是空格，至少选中自己
+            return self.text[column..column+1].iter().collect();
+        }
+        
+        self.text[start..end].iter().collect()
     }
 }
 
@@ -157,6 +159,42 @@ impl Screen {
     pub fn get_row_mut(&mut self, row: i32) -> &mut TerminalRow {
         let idx = self.internal_row(row);
         &mut self.buffer[idx]
+    }
+
+    pub fn get_selected_text(&self, x1: i32, y1: i32, x2: i32, y2: i32) -> String {
+        let mut result = String::new();
+        let (y_start, y_end) = (min(y1, y2), max(y1, y2));
+        
+        for y in y_start..=y_end {
+            let row = self.get_row(y);
+            let cur_x1 = if y == y1 { x1 as usize } else { 0 };
+            let cur_x2 = if y == y2 { x2 as usize + 1 } else { self.cols as usize };
+            
+            let line_text = row.get_selected_text(cur_x1, cur_x2);
+            result.push_str(&line_text);
+            
+            if y < y_end && !row.line_wrap {
+                result.push('\n');
+            }
+        }
+        result
+    }
+
+    pub fn get_transcript_text(&self) -> String {
+        let mut result = String::new();
+        let start_y = -(self.active_transcript_rows as i32);
+        for y in start_y..self.rows {
+            let row = self.get_row(y);
+            let used = row.get_space_used();
+            if used > 0 {
+                let line: String = row.text[0..used].iter().collect();
+                result.push_str(&line);
+            }
+            if !row.line_wrap && y < self.rows - 1 {
+                result.push('\n');
+            }
+        }
+        result
     }
 
     pub fn erase_in_display(&mut self, mode: i32, cursor_y: i32, style: u64) {
@@ -230,81 +268,95 @@ impl Screen {
         
         let old_total_rows = self.buffer.len();
         let old_cols = self.cols as usize;
-        let mut all_content: Vec<(Vec<char>, Vec<u64>, bool)> = Vec::new();
+        let n_cols = new_cols as usize;
         
-        // 1. Collect all content
-        for i in -(self.active_transcript_rows as i32)..self.rows {
+        let mut all_cells: Vec<(char, u64, bool)> = Vec::new();
+        let mut last_sig_row = self.rows - 1;
+        while last_sig_row > -(self.active_transcript_rows as i32) {
+            let row = self.get_row(last_sig_row);
+            if row.line_wrap || row.get_space_used() > 0 { break; }
+            last_sig_row -= 1;
+        }
+
+        for i in -(self.active_transcript_rows as i32)..=last_sig_row {
             let row = self.get_row(i);
             let used = if row.line_wrap { old_cols } else { row.get_space_used() };
-            if used > 0 || row.line_wrap {
-                all_content.push((row.text[0..used].to_vec(), row.styles[0..used].to_vec(), row.line_wrap));
+            let mut j = 0;
+            while j < used {
+                let c = row.text[j];
+                let s = row.styles[j];
+                let w = crate::utils::get_char_width(c as u32);
+                all_cells.push((c, s, !row.line_wrap && j == used - 1));
+                j += if w > 1 { w } else { 1 };
+            }
+            if used == 0 && !row.line_wrap {
+                all_cells.push(('\n', STYLE_NORMAL, true));
             }
         }
 
-        // 2. Reflow
-        let mut reflowed: Vec<TerminalRow> = Vec::new();
-        let mut cur_text = Vec::new();
-        let mut cur_styles = Vec::new();
+        let mut reflowed_rows: Vec<TerminalRow> = Vec::new();
+        let mut current_row = TerminalRow::new(n_cols);
+        let mut cur_x = 0;
 
-        for (text, styles, wrapped) in all_content {
-            cur_text.extend_from_slice(&text);
-            cur_styles.extend_from_slice(&styles);
+        for (c, s, is_hard_break) in all_cells {
+            if c == '\n' && is_hard_break {
+                reflowed_rows.push(current_row);
+                current_row = TerminalRow::new(n_cols);
+                cur_x = 0;
+                continue;
+            }
+
+            let w = crate::utils::get_char_width(c as u32);
+            let char_w = if w == 0 { 1 } else { w };
+
+            if cur_x + char_w > n_cols {
+                current_row.line_wrap = true;
+                reflowed_rows.push(current_row);
+                current_row = TerminalRow::new(n_cols);
+                cur_x = 0;
+            }
             
-            while cur_text.len() > new_cols as usize {
-                let mut nr = TerminalRow::new(new_cols as usize);
-                nr.text[..new_cols as usize].copy_from_slice(&cur_text[0..new_cols as usize]);
-                nr.styles[..new_cols as usize].copy_from_slice(&cur_styles[0..new_cols as usize]);
-                nr.line_wrap = true;
-                reflowed.push(nr);
-                cur_text = cur_text.split_off(new_cols as usize);
-                cur_styles = cur_styles.split_off(new_cols as usize);
-            }
-
-            if !wrapped {
-                let mut nr = TerminalRow::new(new_cols as usize);
-                let l = cur_text.len();
-                if l > 0 {
-                    nr.text[0..l].copy_from_slice(&cur_text);
-                    nr.styles[0..l].copy_from_slice(&cur_styles);
+            if cur_x < n_cols {
+                current_row.text[cur_x] = c;
+                current_row.styles[cur_x] = s;
+                if char_w == 2 && cur_x + 1 < n_cols {
+                    current_row.text[cur_x + 1] = ' ';
+                    current_row.styles[cur_x + 1] = s;
                 }
-                nr.line_wrap = false;
-                reflowed.push(nr);
-                cur_text.clear();
-                cur_styles.clear();
+                cur_x += char_w;
+            }
+
+            if is_hard_break {
+                reflowed_rows.push(current_row);
+                current_row = TerminalRow::new(n_cols);
+                cur_x = 0;
             }
         }
-        if !cur_text.is_empty() {
-            let mut nr = TerminalRow::new(new_cols as usize);
-            let l = cur_text.len();
-            nr.text[0..l].copy_from_slice(&cur_text);
-            nr.styles[0..l].copy_from_slice(&cur_styles);
-            reflowed.push(nr);
+        if cur_x > 0 {
+            reflowed_rows.push(current_row);
         }
 
-        // 3. Construct new buffer
-        let mut new_buffer = vec![TerminalRow::new(new_cols as usize); old_total_rows];
-        let copy_count = min(reflowed.len(), old_total_rows);
+        let mut new_buffer = vec![TerminalRow::new(n_cols); old_total_rows];
+        let content_len = reflowed_rows.len();
+        let screen_rows = new_rows as usize;
         
-        // Start copying from index 0 to ensure compatibility with direct buffer access tests
-        for i in 0..copy_count {
-            new_buffer[i] = reflowed[i].clone();
+        let to_copy = min(content_len, old_total_rows);
+        let start_in_reflow = content_len - to_copy;
+        
+        for i in 0..to_copy {
+            new_buffer[old_total_rows - to_copy + i] = reflowed_rows[start_in_reflow + i].clone();
         }
 
         self.buffer = new_buffer;
         self.cols = new_cols;
         self.rows = new_rows;
         
-        // 4. Update offsets
-        // If content length is L, and screen rows is R.
-        // If L <= R, all content is visible starting at index 0. first_row=0, active_transcript=0.
-        // If L > R, bottom R lines are visible. first_row = L-R, active_transcript = L-R.
-        if reflowed.len() <= new_rows as usize {
-            self.first_row = 0;
+        if content_len < screen_rows {
+            self.first_row = old_total_rows - to_copy;
             self.active_transcript_rows = 0;
         } else {
-            let diff = reflowed.len() - new_rows as usize;
-            self.first_row = diff;
-            self.active_transcript_rows = diff;
+            self.first_row = old_total_rows - screen_rows;
+            self.active_transcript_rows = to_copy - screen_rows;
         }
     }
 }
