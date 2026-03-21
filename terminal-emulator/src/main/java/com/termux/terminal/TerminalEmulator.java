@@ -327,6 +327,16 @@ public final class TerminalEmulator {
         return null;
     }
 
+    /**
+     * Get the text within the given selection range.
+     */
+    public String getSelectedText(int x1, int y1, int x2, int y2) {
+        if (mEnginePtr != 0) {
+            return getSelectedTextFromRust(mEnginePtr, x1, y1, x2, y2);
+        }
+        return null;
+    }
+
     public synchronized void destroy() {
         if (mEnginePtr != 0) {
             destroyEngineRust(mEnginePtr);
