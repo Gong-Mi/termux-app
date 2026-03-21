@@ -338,16 +338,6 @@ public final class TerminalEmulator {
         return null;
     }
 
-    /**
-     * 获取终端显示文本（兼容性方法）
-     */
-    public String getTranscriptText() {
-        if (mEnginePtr != 0) {
-            return getTranscriptTextFromRust(mEnginePtr);
-        }
-        return "";
-    }
-
     public synchronized void destroy() {
         if (mEnginePtr != 0) {
             destroyEngineRust(mEnginePtr);
