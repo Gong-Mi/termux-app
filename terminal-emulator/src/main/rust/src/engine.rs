@@ -328,11 +328,12 @@ impl ScreenState {
         let cols = self.cols as usize;
         let use_alt = self.use_alternate_buffer;
         let screen = if use_alt { &self.alt_screen } else { &self.main_screen };
-        let rows_in_buffer = screen.buffer.len();
+        let rows_in_buffer = screen.rows as usize;
         
         if let Some(flat) = &mut self.flat_buffer {
+            // 使用 get_row 而不是直接访问 buffer，以正确处理 first_row 偏移
             for r in 0..rows_in_buffer {
-                let row_data = &screen.buffer[r];
+                let row_data = screen.get_row(r as i32);
                 for c in 0..cols {
                     let idx = r * cols + c;
                     if c < row_data.text.len() {
