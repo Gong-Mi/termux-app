@@ -1,4 +1,3 @@
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use jni::objects::JValue;
 use std::cmp::{max, min};
 
@@ -14,9 +13,6 @@ use crate::terminal::{
 };
 
 /// Base64 解码辅助函数
-fn base64_decode(input: &str) -> Result<Vec<u8>, base64::DecodeError> {
-    BASE64.decode(input)
-}
 
 // -----------------------------------------------------------------------------
 // DirectByteBuffer 零拷贝支持

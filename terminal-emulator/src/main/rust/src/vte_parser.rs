@@ -154,7 +154,7 @@ impl Params {
     }
     
     /// 迭代器 - 返回参数组（主参数 + 子参数）
-    pub fn iter(&self) -> ParamsIter {
+    pub fn iter(&self) -> ParamsIter<'_> {
         ParamsIter { params: self, index: 0 }
     }
 }
@@ -239,22 +239,22 @@ pub trait Perform {
     fn esc_dispatch(&mut self, intermediates: &[u8], ignore: bool, byte: u8);
     
     /// CSI 序列调度
-    fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], ignore: bool, action: char);
+    fn csi_dispatch(&mut self, _params: &Params, _intermediates: &[u8], _ignore: bool, _action: char);
     
     /// OSC 序列调度
     fn osc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool);
     
     /// DCS 序列钩子
-    fn hook(&mut self, params: &Params, intermediates: &[u8], ignore: bool, action: char) {}
+    fn hook(&mut self, _params: &Params, _intermediates: &[u8], _ignore: bool, _action: char) {}
     
     /// DCS 数据
-    fn put(&mut self, byte: u8) {}
+    fn put(&mut self, _byte: u8) {}
     
     /// DCS 结束
     fn unhook(&mut self) {}
     
     /// APC 序列
-    fn apc_dispatch(&mut self, data: &[u8]) {}
+    fn apc_dispatch(&mut self, _data: &[u8]) {}
 }
 
 // =============================================================================
@@ -275,10 +275,6 @@ pub struct Parser {
     dcs_buffer: Vec<u8>,
     /// 是否继续序列
     continue_sequence: bool,
-    /// UTF-8 解码状态 (剩余字节数)
-    utf8_expected: u8,
-    /// UTF-8 解码中的字符码点
-    utf8_codepoint: u32,
 }
 
 impl Parser {
@@ -290,8 +286,6 @@ impl Parser {
             osc_buffer: String::with_capacity(256),
             dcs_buffer: Vec::with_capacity(256),
             continue_sequence: false,
-            utf8_expected: 0,
-            utf8_codepoint: 0,
         }
     }
     

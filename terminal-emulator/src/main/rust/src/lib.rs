@@ -34,7 +34,7 @@ pub extern "system" fn JNI_OnLoad(vm: jni::JavaVM, _reserved: std::ffi::c_void) 
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_createEngineRustWithCallback(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     cols: jint,
     rows: jint,
@@ -54,7 +54,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_createEngineRus
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeProcess(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     ptr: jlong,
     data: jbyteArray,
@@ -70,7 +70,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeProcess(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_TerminalEmulator_processBatchRust(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     ptr: jlong,
     batch: jbyteArray,
@@ -127,7 +127,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_destroyEngineRu
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getTitleFromRust(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     ptr: jlong,
 ) -> jstring {
@@ -233,7 +233,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColsFromRust
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_readRowFromRust(
-    mut env: JNIEnv, _class: JClass, ptr: jlong, row: jint, text: jni::sys::jcharArray, styles: jni::sys::jlongArray,
+    env: JNIEnv, _class: JClass, ptr: jlong, row: jint, text: jni::sys::jcharArray, styles: jni::sys::jlongArray,
 ) {
     if ptr == 0 { return; }
     let context = unsafe { &*(ptr as *const TerminalContext) };
@@ -252,7 +252,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_readRowFromRust
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getSelectedTextFromRust(
-    mut env: JNIEnv, _class: JClass, ptr: jlong, x1: jint, y1: jint, x2: jint, y2: jint,
+    env: JNIEnv, _class: JClass, ptr: jlong, x1: jint, y1: jint, x2: jint, y2: jint,
 ) -> jstring {
     if ptr == 0 { return std::ptr::null_mut(); }
     let context = unsafe { &*(ptr as *const TerminalContext) };
@@ -262,7 +262,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getSelectedText
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getWordAtLocationFromRust(
-    mut env: JNIEnv, _class: JClass, ptr: jlong, x: jint, y: jint,
+    env: JNIEnv, _class: JClass, ptr: jlong, x: jint, y: jint,
 ) -> jstring {
     if ptr == 0 { return std::ptr::null_mut(); }
     let context = unsafe { &*(ptr as *const TerminalContext) };
@@ -272,7 +272,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getWordAtLocati
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getTranscriptTextFromRust(
-    mut env: JNIEnv, _class: JClass, ptr: jlong,
+    env: JNIEnv, _class: JClass, ptr: jlong,
 ) -> jstring {
     if ptr == 0 { return std::ptr::null_mut(); }
     let context = unsafe { &*(ptr as *const TerminalContext) };
@@ -341,7 +341,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getActiveTransc
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColorsFromRust(mut env: JNIEnv, _class: JClass, ptr: jlong) -> jintArray {
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColorsFromRust(env: JNIEnv, _class: JClass, ptr: jlong) -> jintArray {
     if ptr == 0 { return std::ptr::null_mut(); }
     let context = unsafe { &*(ptr as *const TerminalContext) };
     let colors = context.engine.state.colors.current_colors;
@@ -427,12 +427,12 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_close(
     _class: JClass,
     fd: jint,
 ) {
-    libc::close(fd);
+    unsafe { libc::close(fd); }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     cmd: jstring,
     cwd: jstring,
@@ -444,16 +444,18 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
     cw: jint,
     ch: jint,
 ) -> jint {
-    crate::pty::create_subprocess(
-        env.get_native_interface(),
-        cmd,
-        cwd,
-        args,
-        env_vars,
-        process_id_array,
-        rows,
-        cols,
-        cw,
-        ch,
-    )
+    unsafe {
+        crate::pty::create_subprocess(
+            env.get_native_interface(),
+            cmd,
+            cwd,
+            args,
+            env_vars,
+            process_id_array,
+            rows,
+            cols,
+            cw,
+            ch,
+        )
+    }
 }
