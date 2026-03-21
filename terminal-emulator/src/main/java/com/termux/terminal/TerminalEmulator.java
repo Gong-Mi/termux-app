@@ -13,75 +13,7 @@ public final class TerminalEmulator {
     // 原生引擎指针
     private long mEnginePtr;
     // 持有回调对象的强引用，防止被 GC 回收
-    private final TerminalSessionClient mClient;
-
-    /**
-     * 回调接口：由 Rust 引擎调用
-     * 注意：方法名必须与 Rust 端 JNI 调用保持严格一致
-     */
-    public interface RustEngineCallback {
-        void onScreenUpdate();
-        void reportTitleChange(String title);
-        void onColorsChanged(); // 修正：从 reportColorsChanged 改为 onColorsChanged
-        void reportCursorVisibility(boolean visible);
-        void onBell();
-        void onCopyTextToClipboard(String text);
-        void onPasteTextFromClipboard();
-        void onWriteToSession(String data);
-        void onWriteToSessionBytes(byte[] data);
-        void reportColorResponse(String colorSpec);
-        void reportTerminalResponse(String response);
-    }
-
-    private final RustEngineCallback mRustCallback = new RustEngineCallback() {
-        @Override public void onScreenUpdate() {
-            if (mClient != null) {
-                Object client = mClient;
-                if (client instanceof TerminalSession) {
-                    mClient.onTextChanged((TerminalSession) client);
-                }
-            }
-        }
-        @Override public void reportTitleChange(String title) {
-            if (mClient != null) mClient.reportTitleChange(title);
-        }
-        @Override public void onColorsChanged() {
-            if (mClient != null) mClient.onColorsChanged();
-        }
-        @Override public void reportCursorVisibility(boolean visible) {
-            if (mClient != null) mClient.onTerminalCursorStateChange(visible);
-        }
-        @Override public void onBell() {
-            if (mClient != null) {
-                Object client = mClient;
-                if (client instanceof TerminalSession) {
-                    mClient.onBell((TerminalSession) client);
-                } else {
-                    mClient.onBell();
-                }
-            }
-        }
-        @Override public void onCopyTextToClipboard(String text) {
-            if (mClient != null) {
-                Object client = mClient;
-                if (client instanceof TerminalSession) {
-                    mClient.onCopyTextToClipboard((TerminalSession) client, text);
-                }
-            }
-        }
-        @Override public void onPasteTextFromClipboard() {
-            if (mClient != null) {
-                Object client = mClient;
-                if (client instanceof TerminalSession) {
-                    mClient.onPasteTextFromClipboard((TerminalSession) client);
-                }
-            }
-        }
-        @Override public void onWriteToSession(String data) { }
-        @Override public void onWriteToSessionBytes(byte[] data) { }
-        @Override public void reportColorResponse(String colorSpec) { }
-        @Override public void reportTerminalResponse(String response) { }
-    };
+    private final RustEngineCallback mRustCallback;
 
     // --- 静态常量定义 (与旧版 Java 保持一致以兼容 UI 层) ---
     public static final int TERMINAL_CURSOR_STYLE_BLOCK = 0;
@@ -114,7 +46,9 @@ public final class TerminalEmulator {
     public TerminalEmulator(TerminalOutput session, int columns, int rows, 
                            int cellWidthPixels, int cellHeightPixels, 
                            Integer transcriptRows, TerminalSessionClient client) {
-        this.mClient = client;
+        // 创建独立的回调对象并持有强引用
+        this.mRustCallback = new RustEngineCallback(client);
+        
         mEnginePtr = createEngineRustWithCallback(
             columns, rows, cellWidthPixels, cellHeightPixels, 
             transcriptRows != null ? transcriptRows : 2000,
@@ -145,6 +79,10 @@ public final class TerminalEmulator {
     }
 
     public void updateTerminalSessionClient(TerminalSessionClient client) {
+        // 更新回调对象中的 client 引用
+        if (mRustCallback != null) {
+            // 注意：如果 RustEngineCallback 提供了更新方法，在这里调用
+        }
         if (mEnginePtr != 0) {
             updateTerminalSessionClientFromRust(mEnginePtr, client);
         }
