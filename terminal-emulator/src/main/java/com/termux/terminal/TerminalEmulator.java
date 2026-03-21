@@ -196,6 +196,11 @@ public final class TerminalEmulator {
         return false;
     }
 
+    /** 切换自动滚动禁用状态 */
+    public void toggleAutoScrollDisabled() {
+        if (mEnginePtr != 0) toggleAutoScrollDisabledFromRust(mEnginePtr);
+    }
+
     /** 读取一行的数据（用于渲染） */
     public void readRow(int row, char[] text, long[] styles) {
         if (mEnginePtr != 0) {
