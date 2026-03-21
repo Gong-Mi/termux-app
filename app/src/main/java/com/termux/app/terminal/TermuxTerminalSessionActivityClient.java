@@ -125,7 +125,9 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     public void onTitleChanged(@NonNull TerminalSession updatedSession) {
         if (!mActivity.isVisible()) return;
 
-        if (updatedSession != mActivity.getCurrentSession()) {
+        if (updatedSession == mActivity.getCurrentSession()) {
+            mActivity.updateWindowTitle();
+        } else {
             // Only show toast for other sessions than the current one, since the user
             // probably consciously caused the title change to change in the current session
             // and don't want an annoying toast for that.
@@ -133,6 +135,11 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         }
 
         termuxSessionListNotifyUpdated();
+    }
+
+    @Override
+    public void reportTitleChange(String title) {
+        onTitleChanged(mActivity.getCurrentSession());
     }
 
     @Override
@@ -213,6 +220,11 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
                 // Ignore the bell character.
                 break;
         }
+    }
+
+    @Override
+    public void onBell() {
+        onBell(mActivity.getCurrentSession());
     }
 
     @Override

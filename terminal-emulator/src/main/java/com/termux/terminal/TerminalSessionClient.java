@@ -14,6 +14,9 @@ public interface TerminalSessionClient {
 
     void onTitleChanged(@NonNull TerminalSession changedSession);
 
+    /** Callback for when the terminal title is changed (used by Rust JNI). */
+    void reportTitleChange(String title);
+
     void onSessionFinished(@NonNull TerminalSession finishedSession);
 
     void onCopyTextToClipboard(@NonNull TerminalSession session, String text);
@@ -21,6 +24,9 @@ public interface TerminalSessionClient {
     void onPasteTextFromClipboard(@Nullable TerminalSession session);
 
     void onBell(@NonNull TerminalSession session);
+
+    /** Callback for when the terminal bell is rung (used by Rust JNI). */
+    void onBell();
 
     void onColorsChanged(@NonNull TerminalSession session);
 

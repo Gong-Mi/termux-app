@@ -9,15 +9,16 @@ import com.termux.terminal.TerminalSessionClient;
 
 public class TermuxTerminalSessionClientBase implements TerminalSessionClient {
 
-    public TermuxTerminalSessionClientBase() {
-    }
-
     @Override
     public void onTextChanged(@NonNull TerminalSession changedSession) {
     }
 
     @Override
-    public void onTitleChanged(@NonNull TerminalSession updatedSession) {
+    public void onTitleChanged(@NonNull TerminalSession changedSession) {
+    }
+
+    @Override
+    public void reportTitleChange(String title) {
     }
 
     @Override
@@ -37,6 +38,10 @@ public class TermuxTerminalSessionClientBase implements TerminalSessionClient {
     }
 
     @Override
+    public void onBell() {
+    }
+
+    @Override
     public void onColorsChanged(@NonNull TerminalSession changedSession) {
     }
 
@@ -52,13 +57,10 @@ public class TermuxTerminalSessionClientBase implements TerminalSessionClient {
     public void setTerminalShellPid(@NonNull TerminalSession session, int pid) {
     }
 
-
     @Override
     public Integer getTerminalCursorStyle() {
         return null;
     }
-
-
 
     @Override
     public void logError(String tag, String message) {
