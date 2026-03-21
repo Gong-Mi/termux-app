@@ -1,7 +1,5 @@
 package com.termux.terminal;
 
-import android.view.KeyEvent;
-
 /**
  * Terminal Emulator - Rust 实现的 Java 包装类
  * 所有实际逻辑都在 Rust 中实现，此类仅包含 JNI 调用
@@ -14,6 +12,59 @@ public final class TerminalEmulator {
 
     // 原生引擎指针
     private long mEnginePtr;
+    // 持有回调对象的强引用，防止被 GC 回收
+    private final TerminalSessionClient mClient;
+
+    /**
+     * 回调接口：由 Rust 引擎调用
+     */
+    public interface RustEngineCallback {
+        void onScreenUpdate();
+        void reportTitleChange(String title);
+        void reportColorsChanged();
+        void reportCursorVisibility(boolean visible);
+        void onBell();
+        void onCopyTextToClipboard(String text);
+        void onPasteTextFromClipboard();
+        void onWriteToSession(String data);
+        void onWriteToSessionBytes(byte[] data);
+        void reportColorResponse(String colorSpec);
+        void reportTerminalResponse(String response);
+    }
+
+    private final RustEngineCallback mRustCallback = new RustEngineCallback() {
+        @Override public void onScreenUpdate() {
+            if (mClient != null && mClient instanceof TerminalSession) {
+                mClient.onTextChanged((TerminalSession) mClient);
+            }
+        }
+        @Override public void reportTitleChange(String title) {
+            if (mClient != null) mClient.reportTitleChange(title);
+        }
+        @Override public void reportColorsChanged() {
+            if (mClient != null) mClient.onColorsChanged();
+        }
+        @Override public void reportCursorVisibility(boolean visible) {
+            if (mClient != null) mClient.onTerminalCursorStateChange(visible);
+        }
+        @Override public void onBell() {
+            if (mClient != null) mClient.onBell();
+        }
+        @Override public void onCopyTextToClipboard(String text) {
+            if (mClient != null && mClient instanceof TerminalSession) {
+                mClient.onCopyTextToClipboard((TerminalSession) mClient, text);
+            }
+        }
+        @Override public void onPasteTextFromClipboard() {
+            if (mClient != null && mClient instanceof TerminalSession) {
+                mClient.onPasteTextFromClipboard((TerminalSession) mClient);
+            }
+        }
+        @Override public void onWriteToSession(String data) { }
+        @Override public void onWriteToSessionBytes(byte[] data) { }
+        @Override public void reportColorResponse(String colorSpec) { }
+        @Override public void reportTerminalResponse(String response) { }
+    };
 
     // --- 静态常量定义 (与旧版 Java 保持一致以兼容 UI 层) ---
     public static final int TERMINAL_CURSOR_STYLE_BLOCK = 0;
@@ -46,11 +97,11 @@ public final class TerminalEmulator {
     public TerminalEmulator(TerminalOutput session, int columns, int rows, 
                            int cellWidthPixels, int cellHeightPixels, 
                            Integer transcriptRows, TerminalSessionClient client) {
-        
+        this.mClient = client;
         mEnginePtr = createEngineRustWithCallback(
             columns, rows, cellWidthPixels, cellHeightPixels, 
             transcriptRows != null ? transcriptRows : 2000,
-            client
+            mRustCallback
         );
     }
 
@@ -292,36 +343,35 @@ public final class TerminalEmulator {
 
     // --- Native 接口 ---
     private static native long createEngineRustWithCallback(
-        int cols, int rows, int cw, int ch, int totalRows, TerminalSessionClient client
-    );
-
-    private static native void processBatchRust(long enginePtr, byte[] batch, int length);
-
-    private static native void resizeEngineRustFull(
-        long enginePtr, int columns, int rows, int cw, int ch
+        int cols, int rows, int cw, int ch, int totalRows, RustEngineCallback callback
     );
 
     private static native void destroyEngineRust(long enginePtr);
 
-    private static native int getCursorRowFromRust(long enginePtr);
+    private static native void processBatchRust(long enginePtr, byte[] batch, int length);
+
+    private static native void resizeEngineRustFull(
+        long enginePtr, int cols, int rows, int cw, int ch
+    );
+
     private static native int getCursorColFromRust(long enginePtr);
+    private static native int getCursorRowFromRust(long enginePtr);
     private static native int getCursorStyleFromRust(long enginePtr);
+    private static native boolean isCursorEnabledFromRust(long enginePtr);
     private static native boolean shouldCursorBeVisibleFromRust(long enginePtr);
     private static native boolean isReverseVideoFromRust(long enginePtr);
     private static native boolean isAlternateBufferActiveFromRust(long enginePtr);
     private static native boolean isCursorKeysApplicationModeFromRust(long enginePtr);
     private static native boolean isKeypadApplicationModeFromRust(long enginePtr);
     private static native boolean isMouseTrackingActiveFromRust(long enginePtr);
-    private static native boolean isAutoScrollDisabledFromRust(long enginePtr);
-    private static native void toggleAutoScrollDisabledFromRust(long enginePtr);
-    private static native boolean isCursorEnabledFromRust(long enginePtr);
     private static native int getScrollCounterFromRust(long enginePtr);
     private static native void clearScrollCounterFromRust(long enginePtr);
     private static native int getRowsFromRust(long enginePtr);
     private static native int getColsFromRust(long enginePtr);
-    private static native void readRowFromRust(long enginePtr, int row, char[] text, long[] styles);
-    
     private static native int getActiveTranscriptRowsFromRust(long enginePtr);
+    private static native boolean isAutoScrollDisabledFromRust(long enginePtr);
+    private static native void toggleAutoScrollDisabledFromRust(long enginePtr);
+    private static native void readRowFromRust(long enginePtr, int row, char[] text, long[] styles);
     private static native String getSelectedTextFromRust(long enginePtr, int x1, int y1, int x2, int y2);
     private static native String getWordAtLocationFromRust(long enginePtr, int x, int y);
     private static native String getTranscriptTextFromRust(long enginePtr);
