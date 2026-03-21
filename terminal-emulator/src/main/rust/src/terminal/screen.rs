@@ -210,8 +210,11 @@ impl Screen {
 
     /// 清除指定矩形区域内的所有字符
     pub fn block_clear(&mut self, top: usize, left: usize, bottom: usize, right: usize, style: u64) {
-        for row in top..min(bottom, self.rows as usize) {
-            self.get_row_mut(row as i32).block_clear_row(left, min(right, self.cols as usize), style);
+        let cols = self.cols as usize;
+        let rows = self.rows as usize;
+        for row in top..min(bottom, rows) {
+            let row_ref = self.get_row_mut(row as i32);
+            row_ref.block_clear_row(left, min(right, cols), style);
         }
     }
 

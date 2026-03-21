@@ -237,13 +237,16 @@ impl ScreenState {
             }
             3 => { // 132 column mode (DECCOLM)
                 // 清除滚动边距并重置光标位置
+                let rows = self.rows as usize;
+                let cols = self.cols as usize;
+                let style = self.current_style;
                 self.top_margin = 0;
                 self.bottom_margin = self.rows;
                 self.left_margin = 0;
                 self.right_margin = self.cols;
                 self.modes.reset(DECSET_BIT_LEFTRIGHT_MARGIN_MODE);
                 // 清屏并重置光标
-                self.get_current_screen_mut().block_clear(0, 0, self.rows as usize, self.cols as usize, self.current_style);
+                self.get_current_screen_mut().block_clear(0, 0, rows, cols, style);
                 self.cursor.x = 0;
                 self.cursor.y = 0;
             }
