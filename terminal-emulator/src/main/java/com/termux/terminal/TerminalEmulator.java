@@ -11,6 +11,22 @@ public final class TerminalEmulator {
     // 原生引擎指针
     private long mEnginePtr;
 
+    // --- 静态常量定义 (与旧版 Java 保持一致以兼容 UI 层) ---
+    public static final int TERMINAL_CURSOR_STYLE_BLOCK = 0;
+    public static final int TERMINAL_CURSOR_STYLE_BAR = 1;
+    public static final int TERMINAL_CURSOR_STYLE_UNDERLINE = 2;
+
+    /** 鼠标按键定义 */
+    public static final int MOUSE_LEFT_BUTTON = 0;
+    public static final int MOUSE_MIDDLE_BUTTON = 1;
+    public static final int MOUSE_RIGHT_BUTTON = 2;
+    public static final int MOUSE_LEFT_BUTTON_MOVED = 32;
+    public static final int MOUSE_WHEELUP_BUTTON = 64;
+    public static final int MOUSE_WHEELDOWN_BUTTON = 65;
+
+    /** Unicode 替换字符 */
+    public static final int UNICODE_REPLACEMENT_CHAR = 0xFFFD;
+
     /**
      * 初始化终端引擎
      */
@@ -82,6 +98,19 @@ public final class TerminalEmulator {
         return TERMINAL_CURSOR_STYLE_BLOCK;
     }
 
+    public void setCursorBlinkState(boolean state) {
+        if (mEnginePtr != 0) setCursorBlinkStateInRust(mEnginePtr, state);
+    }
+
+    public void setCursorBlinkingEnabled(boolean enabled) {
+        if (mEnginePtr != 0) setCursorBlinkingEnabledInRust(mEnginePtr, enabled);
+    }
+
+    public boolean isCursorEnabled() {
+        if (mEnginePtr != 0) return isCursorEnabledFromRust(mEnginePtr);
+        return true;
+    }
+
     /** 光标是否应可见 */
     public boolean shouldCursorBeVisible() {
         if (mEnginePtr != 0) return shouldCursorBeVisibleFromRust(mEnginePtr);
@@ -129,7 +158,7 @@ public final class TerminalEmulator {
         if (mEnginePtr != 0) clearScrollCounterFromRust(mEnginePtr);
     }
 
-    /** 总行数 */
+    /** 总行数 (含显示) */
     public int getRows() {
         if (mEnginePtr != 0) return getRowsFromRust(mEnginePtr);
         return 0;
@@ -139,6 +168,23 @@ public final class TerminalEmulator {
     public int getCols() {
         if (mEnginePtr != 0) return getColsFromRust(mEnginePtr);
         return 0;
+    }
+
+    /** 活动历史行数 (不含显示区域) */
+    public int getActiveTranscriptRows() {
+        if (mEnginePtr != 0) return getActiveTranscriptRowsFromRust(mEnginePtr);
+        return 0;
+    }
+
+    /** 活动行数 (历史 + 显示) */
+    public int getActiveRows() {
+        return getActiveTranscriptRows() + getRows();
+    }
+
+    /** 是否禁用自动滚动 */
+    public boolean isAutoScrollDisabled() {
+        if (mEnginePtr != 0) return isAutoScrollDisabledFromRust(mEnginePtr);
+        return false;
     }
 
     /** 读取一行的数据（用于渲染） */
@@ -226,11 +272,6 @@ public final class TerminalEmulator {
         }
     }
 
-    // --- 静态常量定义 ---
-    public static final int TERMINAL_CURSOR_STYLE_BLOCK = 0;
-    public static final int TERMINAL_CURSOR_STYLE_BAR = 1;
-    public static final int TERMINAL_CURSOR_STYLE_UNDERLINE = 2;
-
     // --- Native 接口 ---
     private static native long createEngineRustWithCallback(
         int columns, int rows, int cw, int ch, int totalRows, TerminalSessionClient client
@@ -253,12 +294,15 @@ public final class TerminalEmulator {
     private static native boolean isCursorKeysApplicationModeFromRust(long enginePtr);
     private static native boolean isKeypadApplicationModeFromRust(long enginePtr);
     private static native boolean isMouseTrackingActiveFromRust(long enginePtr);
+    private static native boolean isAutoScrollDisabledFromRust(long enginePtr);
+    private static native boolean isCursorEnabledFromRust(long enginePtr);
     private static native int getScrollCounterFromRust(long enginePtr);
     private static native void clearScrollCounterFromRust(long enginePtr);
     private static native int getRowsFromRust(long enginePtr);
     private static native int getColsFromRust(long enginePtr);
     private static native void readRowFromRust(long enginePtr, int row, char[] text, long[] styles);
     
+    private static native int getActiveTranscriptRowsFromRust(long enginePtr);
     private static native String getSelectedTextFromRust(long enginePtr, int x1, int y1, int x2, int y2);
     private static native String getWordAtLocationFromRust(long enginePtr, int x, int y);
     private static native String getTranscriptTextFromRust(long enginePtr);
@@ -276,4 +320,6 @@ public final class TerminalEmulator {
     private static native int[] getColorsFromRust(long enginePtr);
     private static native void resetColorsFromRust(long enginePtr);
     private static native void updateTerminalSessionClientFromRust(long enginePtr, TerminalSessionClient client);
+    private static native void setCursorBlinkStateInRust(long enginePtr, boolean state);
+    private static native void setCursorBlinkingEnabledInRust(long enginePtr, boolean enabled);
 }
