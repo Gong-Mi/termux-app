@@ -391,13 +391,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_setPtyWindowSize(
     cw: jint,
     ch: jint,
 ) {
-    let size = libc::winsize {
-        ws_row: rows as u16,
-        ws_col: cols as u16,
-        ws_xpixel: cw as u16,
-        ws_ypixel: ch as u16,
-    };
-    libc::ioctl(fd, libc::TIOCSWINSZ, &size);
+    crate::pty::set_pty_window_size(fd, rows, cols, cw, ch);
 }
 
 #[unsafe(no_mangle)]
@@ -406,9 +400,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_waitFor(
     _class: JClass,
     pid: jint,
 ) -> jint {
-    let mut status: jint = 0;
-    libc::waitpid(pid, &mut status, 0);
-    status
+    crate::pty::wait_for(pid)
 }
 
 #[unsafe(no_mangle)]
@@ -424,16 +416,26 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_close(
 pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
     mut env: JNIEnv,
     _class: JClass,
-    _cmd: jstring,
-    _cwd: jstring,
-    _args: jni::sys::jobjectArray,
-    _env_vars: jni::sys::jobjectArray,
-    _process_id_array: jintArray,
-    _rows: jint,
-    _cols: jint,
-    _cw: jint,
-    _ch: jint,
+    cmd: jstring,
+    cwd: jstring,
+    args: jni::sys::jobjectArray,
+    env_vars: jni::sys::jobjectArray,
+    process_id_array: jintArray,
+    rows: jint,
+    cols: jint,
+    cw: jint,
+    ch: jint,
 ) -> jint {
-    // 占位符，真正复杂的 forkpty 实现应在 pty 模块中
-    -1
+    crate::pty::create_subprocess(
+        env.get_native_interface(),
+        cmd,
+        cwd,
+        args,
+        env_vars,
+        process_id_array,
+        rows,
+        cols,
+        cw,
+        ch,
+    )
 }
