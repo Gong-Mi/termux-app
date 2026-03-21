@@ -24,6 +24,9 @@ public interface TerminalSessionClient {
 
     void onColorsChanged(@NonNull TerminalSession session);
 
+    /** Callback for when terminal colors are changed, without providing a session object (used by Rust JNI). */
+    void onColorsChanged();
+
     void onTerminalCursorStateChange(boolean state);
 
     void setTerminalShellPid(@NonNull TerminalSession session, int pid);

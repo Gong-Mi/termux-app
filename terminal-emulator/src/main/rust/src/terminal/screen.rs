@@ -65,38 +65,39 @@ impl TerminalRow {
     }
 
     pub fn get_space_used(&self) -> usize {
-        let mut count = self.text.len();
         for i in (0..self.text.len()).rev() {
-            if self.text[i] == ' ' && self.styles[i] == STYLE_NORMAL {
-                count = i;
-            } else {
-                break;
+            if self.text[i] != ' ' && self.text[i] != '\0' {
+                return i + 1;
             }
         }
-        count
+        0
     }
 
-    pub fn find_start_of_column(&self, column: usize) -> usize {
-        if column >= self.text.len() {
-            return self.get_space_used();
+    pub fn copy_text(&self, start: usize, end: usize, dest: &mut [u16]) {
+        let text_len = self.text.len();
+        let end = min(end, text_len);
+        let count = end.saturating_sub(start);
+        for i in 0..min(count, dest.len()) {
+            dest[i] = self.text[start + i] as u16;
         }
+    }
+
+    pub fn find_char_index_at_column(&self, column: usize) -> usize {
         let mut current_column = 0;
         let mut current_char_index = 0;
         while current_char_index < self.text.len() {
             let c = self.text[current_char_index];
-            let char_width = crate::utils::get_char_width(c as u32);
-            if char_width > 0 {
-                current_column += char_width;
+            let width = crate::utils::get_char_width(c as u32) as usize;
+            if width > 0 {
                 if current_column == column {
-                    let mut next_index = current_char_index + 1;
-                    while next_index < self.text.len() {
-                        if crate::utils::get_char_width(self.text[next_index] as u32) <= 0 {
-                            next_index += 1;
-                        } else {
-                            break;
-                        }
-                    }
-                    return next_index;
+                    return current_char_index;
+                } else if current_column > column {
+                    return current_char_index;
+                }
+                current_column += width;
+            } else {
+                if current_column == column {
+                    return current_char_index;
                 } else if current_column > column {
                     return current_char_index;
                 }
@@ -224,73 +225,86 @@ impl Screen {
         }
     }
 
-    /// 核心：实现 Resize 时的内容重排 (Reflow)
     pub fn resize_with_reflow(&mut self, new_cols: i32, new_rows: i32) {
         if new_cols == self.cols && new_rows == self.rows { return; }
         
         let old_total_rows = self.buffer.len();
-        let mut all_content: Vec<(Vec<char>, Vec<u64>, bool)> = Vec::with_capacity(old_total_rows);
+        let old_cols = self.cols as usize;
+        let n_cols = new_cols as usize;
         
+        // 1. 收集所有有效单元格，过滤掉宽字符占位符
+        let mut all_cells: Vec<(char, u64, bool)> = Vec::new();
         for i in -(self.active_transcript_rows as i32)..self.rows {
             let row = self.get_row(i);
-            let mut used = row.get_space_used();
-            if row.line_wrap { used = self.cols as usize; }
-            all_content.push((row.text[0..used].to_vec(), row.styles[0..used].to_vec(), row.line_wrap));
+            let used = if row.line_wrap { old_cols } else { row.get_space_used() };
+            let mut j = 0;
+            while j < used {
+                let c = row.text[j];
+                let s = row.styles[j];
+                let w = crate::utils::get_char_width(c as u32);
+                // 只有有效字符才进入，且记录是否是硬换行
+                all_cells.push((c, s, !row.line_wrap && j == used - 1));
+                j += if w > 1 { w } else { 1 };
+            }
+            if used == 0 && !row.line_wrap {
+                all_cells.push(('\n', STYLE_NORMAL, true)); // 保留空行
+            }
         }
 
-        let mut new_buffer: Vec<TerminalRow> = Vec::with_capacity(old_total_rows);
-        let mut current_row_text = Vec::new();
-        let mut current_row_styles = Vec::new();
+        // 2. 重新分行
+        let mut reflowed_rows: Vec<TerminalRow> = Vec::new();
+        let mut current_row = TerminalRow::new(n_cols);
+        let mut cur_x = 0;
 
-        for (text, styles, line_wrap) in all_content {
-            current_row_text.extend_from_slice(&text);
-            current_row_styles.extend_from_slice(&styles);
+        for (c, s, is_hard_break) in all_cells {
+            if c == '\n' && is_hard_break {
+                reflowed_rows.push(current_row);
+                current_row = TerminalRow::new(n_cols);
+                cur_x = 0;
+                continue;
+            }
+
+            let w = crate::utils::get_char_width(c as u32);
+            let char_w = if w == 0 { 1 } else { w };
+
+            if cur_x + char_w > n_cols {
+                current_row.line_wrap = true;
+                reflowed_rows.push(current_row);
+                current_row = TerminalRow::new(n_cols);
+                cur_x = 0;
+            }
             
-            while current_row_text.len() > new_cols as usize {
-                let mut new_row = TerminalRow::new(new_cols as usize);
-                new_row.text[..].copy_from_slice(&current_row_text[0..new_cols as usize]);
-                new_row.styles[..].copy_from_slice(&current_row_styles[0..new_cols as usize]);
-                new_row.line_wrap = true;
-                new_buffer.push(new_row);
-                current_row_text = current_row_text.split_off(new_cols as usize);
-                current_row_styles = current_row_styles.split_off(new_cols as usize);
-            }
-
-            if !line_wrap {
-                let mut new_row = TerminalRow::new(new_cols as usize);
-                let len = current_row_text.len();
-                if len > 0 {
-                    new_row.text[0..len].copy_from_slice(&current_row_text);
-                    new_row.styles[0..len].copy_from_slice(&current_row_styles);
+            if cur_x < n_cols {
+                current_row.text[cur_x] = c;
+                current_row.styles[cur_x] = s;
+                if char_w == 2 && cur_x + 1 < n_cols {
+                    current_row.text[cur_x + 1] = ' ';
+                    current_row.styles[cur_x + 1] = s;
                 }
-                new_row.line_wrap = false;
-                new_buffer.push(new_row);
-                current_row_text.clear();
-                current_row_styles.clear();
+                cur_x += char_w;
+            }
+
+            if is_hard_break {
+                reflowed_rows.push(current_row);
+                current_row = TerminalRow::new(n_cols);
+                cur_x = 0;
             }
         }
-        
-        if !current_row_text.is_empty() {
-             let mut new_row = TerminalRow::new(new_cols as usize);
-             let len = current_row_text.len();
-             new_row.text[0..len].copy_from_slice(&current_row_text);
-             new_row.styles[0..len].copy_from_slice(&current_row_styles);
-             new_row.line_wrap = false;
-             new_buffer.push(new_row);
+        if cur_x > 0 || reflowed_rows.is_empty() {
+            reflowed_rows.push(current_row);
         }
 
-        while new_buffer.len() < old_total_rows {
-            new_buffer.push(TerminalRow::new(new_cols as usize));
-        }
-        if new_buffer.len() > old_total_rows {
-            let skip = new_buffer.len() - old_total_rows;
-            new_buffer = new_buffer.into_iter().skip(skip).collect();
+        // 3. 线性化填充缓冲区 (顶部对齐)
+        let mut new_buffer = vec![TerminalRow::new(n_cols); old_total_rows];
+        let to_copy = min(reflowed_rows.len(), old_total_rows);
+        for i in 0..to_copy {
+            new_buffer[i] = reflowed_rows[i].clone();
         }
 
+        self.buffer = new_buffer;
         self.cols = new_cols;
         self.rows = new_rows;
-        self.buffer = new_buffer;
         self.first_row = 0;
-        self.active_transcript_rows = self.buffer.len().saturating_sub(new_rows as usize);
+        self.active_transcript_rows = to_copy.saturating_sub(new_rows as usize);
     }
 }

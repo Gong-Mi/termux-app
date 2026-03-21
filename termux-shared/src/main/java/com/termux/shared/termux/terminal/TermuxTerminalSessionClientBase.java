@@ -41,6 +41,10 @@ public class TermuxTerminalSessionClientBase implements TerminalSessionClient {
     }
 
     @Override
+    public void onColorsChanged() {
+    }
+
+    @Override
     public void onTerminalCursorStateChange(boolean state) {
     }
 

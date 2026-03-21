@@ -222,6 +222,11 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     }
 
     @Override
+    public void onColorsChanged() {
+        onColorsChanged(mActivity.getCurrentSession());
+    }
+
+    @Override
     public void onTerminalCursorStateChange(boolean enabled) {
         // Do not start cursor blinking thread if activity is not visible
         if (enabled && !mActivity.isVisible()) {
