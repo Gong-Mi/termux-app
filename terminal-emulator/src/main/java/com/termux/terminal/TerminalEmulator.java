@@ -309,6 +309,7 @@ public final class TerminalEmulator {
     private static native boolean isKeypadApplicationModeFromRust(long enginePtr);
     private static native boolean isMouseTrackingActiveFromRust(long enginePtr);
     private static native boolean isAutoScrollDisabledFromRust(long enginePtr);
+    private static native void toggleAutoScrollDisabledFromRust(long enginePtr);
     private static native boolean isCursorEnabledFromRust(long enginePtr);
     private static native int getScrollCounterFromRust(long enginePtr);
     private static native void clearScrollCounterFromRust(long enginePtr);
