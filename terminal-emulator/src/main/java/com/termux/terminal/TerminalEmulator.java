@@ -27,6 +27,15 @@ public final class TerminalEmulator {
     /** Unicode 替换字符 */
     public static final int UNICODE_REPLACEMENT_CHAR = 0xFFFD;
 
+    /** 默认滚动历史行数 */
+    public static final int DEFAULT_TERMINAL_TRANSCRIPT_ROWS = 2000;
+    /** 最小滚动历史行数 */
+    public static final int TERMINAL_TRANSCRIPT_ROWS_MIN = 0;
+    /** 最大滚动历史行数 */
+    public static final int TERMINAL_TRANSCRIPT_ROWS_MAX = 50000;
+    /** 默认光标样式 */
+    public static final int DEFAULT_TERMINAL_CURSOR_STYLE = TERMINAL_CURSOR_STYLE_BLOCK;
+
     /**
      * 初始化终端引擎
      */
