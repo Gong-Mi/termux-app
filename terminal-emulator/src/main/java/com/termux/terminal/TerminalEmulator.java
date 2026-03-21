@@ -34,8 +34,11 @@ public final class TerminalEmulator {
 
     private final RustEngineCallback mRustCallback = new RustEngineCallback() {
         @Override public void onScreenUpdate() {
-            if (mClient != null && mClient instanceof TerminalSession) {
-                mClient.onTextChanged((TerminalSession) mClient);
+            if (mClient != null) {
+                Object client = mClient;
+                if (client instanceof TerminalSession) {
+                    mClient.onTextChanged((TerminalSession) client);
+                }
             }
         }
         @Override public void reportTitleChange(String title) {
@@ -49,21 +52,28 @@ public final class TerminalEmulator {
         }
         @Override public void onBell() {
             if (mClient != null) {
-                if (mClient instanceof TerminalSession) {
-                    mClient.onBell((TerminalSession) mClient);
+                Object client = mClient;
+                if (client instanceof TerminalSession) {
+                    mClient.onBell((TerminalSession) client);
                 } else {
                     mClient.onBell();
                 }
             }
         }
         @Override public void onCopyTextToClipboard(String text) {
-            if (mClient != null && mClient instanceof TerminalSession) {
-                mClient.onCopyTextToClipboard((TerminalSession) mClient, text);
+            if (mClient != null) {
+                Object client = mClient;
+                if (client instanceof TerminalSession) {
+                    mClient.onCopyTextToClipboard((TerminalSession) client, text);
+                }
             }
         }
         @Override public void onPasteTextFromClipboard() {
-            if (mClient != null && mClient instanceof TerminalSession) {
-                mClient.onPasteTextFromClipboard((TerminalSession) mClient);
+            if (mClient != null) {
+                Object client = mClient;
+                if (client instanceof TerminalSession) {
+                    mClient.onPasteTextFromClipboard((TerminalSession) client);
+                }
             }
         }
         @Override public void onWriteToSession(String data) { }
