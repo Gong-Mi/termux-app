@@ -276,26 +276,31 @@ impl Screen {
         self.get_row_mut(top).clear(0, cols, style);
     }
 
-    pub fn resize_with_reflow(&mut self, new_cols: i32, new_rows: i32, current_style: u64) {
-        if new_cols == self.cols && new_rows == self.rows { return; }
+    pub fn resize_with_reflow(&mut self, new_cols: i32, new_rows: i32, current_style: u64, cursor_x: i32, cursor_y: i32) -> (i32, i32) {
+        if new_cols == self.cols && new_rows == self.rows { return (cursor_x, cursor_y); }
         let old_total = self.buffer.len();
         let n_cols = new_cols as usize;
         let n_rows = new_rows as usize;
 
-        // 1. 合并逻辑行
+        // 1. 合并逻辑行并跟踪光标逻辑位置
         let mut logical_lines = Vec::new();
         let total_logical_rows = self.active_transcript_rows + self.rows as usize;
         
         let mut cur_text = Vec::new();
         let mut cur_styles = Vec::new();
+        let mut cursor_logic_pos = None;
         
         for i in 0..total_logical_rows {
-            let row = self.get_row(i as i32 - self.active_transcript_rows as i32);
+            let logic_row = i as i32 - self.active_transcript_rows as i32;
+            let row = self.get_row(logic_row);
             let used = if row.line_wrap { self.cols as usize } else { row.get_space_used() };
             
-            // 样式基准
             let bg_style = if used > 0 { row.styles[used - 1] } else { current_style };
             
+            if logic_row == cursor_y {
+                cursor_logic_pos = Some((logical_lines.len(), cur_text.len() + min(cursor_x as usize, self.cols as usize)));
+            }
+
             cur_text.extend_from_slice(&row.text[0..used]);
             cur_styles.extend_from_slice(&row.styles[0..used]);
             
@@ -310,10 +315,19 @@ impl Screen {
             logical_lines.push((cur_text, cur_styles, true, last_bg));
         }
 
-        // 2. 切分重排
+        // 2. 切分重排并同步计算新坐标
         let mut reflowed = Vec::new();
-        for (text, styles, was_wrapped, bg_style) in logical_lines {
+        let mut new_cursor_x = 0;
+        let mut new_cursor_y = 0;
+
+        for (seq_idx, (text, styles, was_wrapped, bg_style)) in logical_lines.into_iter().enumerate() {
             if text.is_empty() {
+                if let Some((c_seq, _)) = cursor_logic_pos {
+                    if c_seq == seq_idx {
+                        new_cursor_x = 0;
+                        new_cursor_y = reflowed.len() as i32;
+                    }
+                }
                 let mut row = TerminalRow::new(n_cols);
                 for s in &mut row.styles { *s = bg_style; }
                 reflowed.push(row);
@@ -327,6 +341,13 @@ impl Screen {
                 
                 let mut col = 0;
                 while offset < text.len() && col < n_cols {
+                    if let Some((c_seq, c_off)) = cursor_logic_pos {
+                        if c_seq == seq_idx && c_off == offset {
+                            new_cursor_x = col as i32;
+                            new_cursor_y = reflowed.len() as i32;
+                        }
+                    }
+
                     let c = text[offset];
                     let s = styles[offset];
                     let w = crate::utils::get_char_width(c as u32) as usize;
@@ -347,25 +368,49 @@ impl Screen {
                     offset += 1;
                 }
 
+                if let Some((c_seq, c_off)) = cursor_logic_pos {
+                    if c_seq == seq_idx && c_off == offset && offset == text.len() {
+                        new_cursor_x = col as i32;
+                        new_cursor_y = reflowed.len() as i32;
+                    }
+                }
+
                 new_row.line_wrap = if offset < text.len() { true } else { was_wrapped };
                 reflowed.push(new_row);
             }
         }
-// 3. 映射到缓冲区
-let to_copy = min(reflowed.len(), old_total);
-let start_idx = reflowed.len() - to_copy;
 
-let mut new_buffer = vec![TerminalRow::new(n_cols); old_total];
-for r in &mut new_buffer { for s in &mut r.styles { *s = current_style; } }
+        // 3. 映射到缓冲区并调整窗口
+        let to_copy = min(reflowed.len(), old_total);
+        let start_idx = reflowed.len() - to_copy;
+        
+        let mut new_buffer = vec![TerminalRow::new(n_cols); old_total];
+        for r in &mut new_buffer { for s in &mut r.styles { *s = current_style; } }
 
-for i in 0..to_copy {
-    new_buffer[i] = reflowed[start_idx + i].clone();
-}
+        for i in 0..to_copy {
+            new_buffer[i] = reflowed[start_idx + i].clone();
+        }
 
-self.buffer = new_buffer;
-self.cols = new_cols;
-self.rows = new_rows;
-self.first_row = 0;
-self.active_transcript_rows = to_copy.saturating_sub(n_rows);
-}
+        self.buffer = new_buffer;
+        self.cols = new_cols;
+        self.rows = new_rows;
+        self.first_row = 0;
+        
+        // 动态调整窗口以匹配光标
+        let ref_cy = new_cursor_y;
+        let mut ideal_active = 0;
+        if ref_cy >= n_rows as i32 {
+            ideal_active = (ref_cy - n_rows as i32 + 1) as usize;
+        }
+        self.active_transcript_rows = min(ideal_active, to_copy.saturating_sub(n_rows));
+        
+        println!("old_total: {}", old_total);
+        println!("reflowed.len(): {}", reflowed.len());
+        println!("new_cursor_y: {}", new_cursor_y);
+        println!("n_rows: {}", n_rows);
+        println!("self.active_transcript_rows: {}", self.active_transcript_rows);
+        println!("new_buffer[internal_row(-1)]: {:?}", self.buffer[self.internal_row(-1)].text.iter().collect::<String>());
+
+        (new_cursor_x, ref_cy - self.active_transcript_rows as i32)
+    }
 }

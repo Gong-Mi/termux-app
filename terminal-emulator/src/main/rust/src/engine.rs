@@ -407,9 +407,19 @@ impl ScreenState {
     
     pub fn resize(&mut self, cols: i32, rows: i32) {
         let style = self.current_style;
-        self.main_screen.resize_with_reflow(cols, rows, style);
+        let cx = self.cursor.x;
+        let cy = self.cursor.y;
+        
+        let (new_cx, new_cy) = self.main_screen.resize_with_reflow(cols, rows, style, cx, cy);
+        
+        // 副屏幕目前简单重置
         self.alt_screen = Screen::new(cols, rows, rows);
-        self.cols = cols; self.rows = rows;
+        
+        self.cols = cols; 
+        self.rows = rows;
+        self.cursor.x = new_cx;
+        self.cursor.y = new_cy;
+        
         self.flat_buffer = Some(FlatScreenBuffer::new(cols as usize, self.main_screen.buffer.len()));
         self.cursor.clamp(cols, rows);
         self.sync_screen_to_flat_buffer();
