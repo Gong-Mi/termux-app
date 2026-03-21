@@ -203,7 +203,17 @@ impl Screen {
         match mode {
             0 => { for y in (cursor_y + 1)..self.rows { self.get_row_mut(y).clear(0, cols, style); } }
             1 => { for y in 0..cursor_y { self.get_row_mut(y).clear(0, cols, style); } }
-            2 | 3 => { for y in 0..self.rows { self.get_row_mut(y).clear(0, cols, style); } }
+            2 => { for y in 0..self.rows { self.get_row_mut(y).clear(0, cols, style); } }
+            3 => {
+                // CSI 3 J - 清除滚动历史并清屏
+                // 清除所有行（包括滚动历史）
+                for y in 0..self.buffer.len() {
+                    self.get_row_mut(y as i32 - self.active_transcript_rows as i32).clear(0, cols, style);
+                }
+                // 重置滚动历史和首行位置
+                self.first_row = 0;
+                self.active_transcript_rows = 0;
+            }
             _ => {}
         }
     }
