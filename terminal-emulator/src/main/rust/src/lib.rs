@@ -28,6 +28,10 @@ pub extern "system" fn JNI_OnLoad(vm: jni::JavaVM, _reserved: std::ffi::c_void) 
     jni::sys::JNI_VERSION_1_6
 }
 
+// ============================================================================
+// TerminalEmulator JNI 接口
+// ============================================================================
+
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_createEngineRustWithCallback(
     mut env: JNIEnv,
@@ -90,7 +94,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeResize(
     cols: jint,
     rows: jint,
 ) {
-    android_log(LogPriority::INFO, &format!("JNI: nativeResize to {}x{}", cols, rows));
+    if ptr == 0 { return; }
     let context = unsafe { &mut *(ptr as *mut TerminalContext) };
     context.engine.state.resize(cols, rows);
 }
@@ -105,7 +109,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_resizeEngineRus
     _cw: jint,
     _ch: jint,
 ) {
-    android_log(LogPriority::INFO, &format!("JNI: resizeEngineRustFull to {}x{}", cols, rows));
+    if ptr == 0 { return; }
     let context = unsafe { &mut *(ptr as *mut TerminalContext) };
     context.engine.state.resize(cols, rows);
 }
@@ -116,7 +120,6 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_destroyEngineRu
     _class: JClass,
     ptr: jlong,
 ) {
-    android_log(LogPriority::INFO, "JNI: destroyEngineRust called");
     if ptr != 0 {
         unsafe { let _ = Box::from_raw(ptr as *mut TerminalContext); }
     }
@@ -128,6 +131,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getTitleFromRus
     _class: JClass,
     ptr: jlong,
 ) -> jstring {
+    if ptr == 0 { return std::ptr::null_mut(); }
     let context = unsafe { &*(ptr as *const TerminalContext) };
     let title = context.engine.state.title.clone().unwrap_or_default();
     if let Ok(j_str) = env.new_string(title) { j_str.into_raw() } else { std::ptr::null_mut() }
@@ -135,60 +139,70 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getTitleFromRus
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCursorRowFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
+    if ptr == 0 { return 0; }
     let context = unsafe { &*(ptr as *const TerminalContext) };
     context.engine.state.cursor.y as jint
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCursorColFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
+    if ptr == 0 { return 0; }
     let context = unsafe { &*(ptr as *const TerminalContext) };
     context.engine.state.cursor.x as jint
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCursorStyleFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
+    if ptr == 0 { return 0; }
     let context = unsafe { &*(ptr as *const TerminalContext) };
     context.engine.state.cursor.style as jint
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_shouldCursorBeVisibleFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jboolean {
+    if ptr == 0 { return 0; }
     let context = unsafe { &*(ptr as *const TerminalContext) };
     if context.engine.state.cursor.should_be_visible(context.engine.state.cursor_enabled) { 1 } else { 0 }
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isCursorEnabledFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jboolean {
+    if ptr == 0 { return 0; }
     let context = unsafe { &*(ptr as *const TerminalContext) };
     if context.engine.state.cursor_enabled { 1 } else { 0 }
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isReverseVideoFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jboolean {
+    if ptr == 0 { return 0; }
     let context = unsafe { &*(ptr as *const TerminalContext) };
     if context.engine.state.modes.is_enabled(DECSET_BIT_REVERSE_VIDEO) { 1 } else { 0 }
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isAlternateBufferActiveFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jboolean {
+    if ptr == 0 { return 0; }
     let context = unsafe { &*(ptr as *const TerminalContext) };
     if context.engine.state.use_alternate_buffer { 1 } else { 0 }
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isCursorKeysApplicationModeFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jboolean {
+    if ptr == 0 { return 0; }
     let context = unsafe { &*(ptr as *const TerminalContext) };
     if context.engine.state.application_cursor_keys { 1 } else { 0 }
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isKeypadApplicationModeFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jboolean {
+    if ptr == 0 { return 0; }
     let context = unsafe { &*(ptr as *const TerminalContext) };
     if context.engine.state.modes.is_enabled(DECSET_BIT_APPLICATION_KEYPAD) { 1 } else { 0 }
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isMouseTrackingActiveFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jboolean {
+    if ptr == 0 { return 0; }
     let context = unsafe { &*(ptr as *const TerminalContext) };
     if context.engine.state.mouse_tracking { 1 } else { 0 }
 }
@@ -198,18 +212,21 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isInsertModeAct
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getScrollCounterFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
+    if ptr == 0 { return 0; }
     let context = unsafe { &*(ptr as *const TerminalContext) };
     context.engine.state.scroll_counter as jint
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getRowsFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
+    if ptr == 0 { return 0; }
     let context = unsafe { &*(ptr as *const TerminalContext) };
     context.engine.state.rows as jint
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColsFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
+    if ptr == 0 { return 0; }
     let context = unsafe { &*(ptr as *const TerminalContext) };
     context.engine.state.cols as jint
 }
@@ -218,6 +235,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColsFromRust
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_readRowFromRust(
     mut env: JNIEnv, _class: JClass, ptr: jlong, row: jint, text: jni::sys::jcharArray, styles: jni::sys::jlongArray,
 ) {
+    if ptr == 0 { return; }
     let context = unsafe { &*(ptr as *const TerminalContext) };
     let cols = context.engine.state.cols as usize;
     let mut text_buf = vec![0u16; cols];
@@ -236,6 +254,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_readRowFromRust
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getSelectedTextFromRust(
     mut env: JNIEnv, _class: JClass, ptr: jlong, x1: jint, y1: jint, x2: jint, y2: jint,
 ) -> jstring {
+    if ptr == 0 { return std::ptr::null_mut(); }
     let context = unsafe { &*(ptr as *const TerminalContext) };
     let text = if y1 == y2 {
         context.engine.state.get_current_screen().get_row(y1).get_selected_text(x1 as usize, x2 as usize)
@@ -245,24 +264,28 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getSelectedText
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_clearScrollCounterFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) {
+    if ptr == 0 { return; }
     let context = unsafe { &mut *(ptr as *mut TerminalContext) };
     context.engine.state.scroll_counter = 0;
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isAutoScrollDisabledFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jboolean {
+    if ptr == 0 { return 0; }
     let context = unsafe { &*(ptr as *const TerminalContext) };
     if context.engine.state.auto_scroll_disabled { 1 } else { 0 }
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_toggleAutoScrollDisabledFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) {
+    if ptr == 0 { return; }
     let context = unsafe { &mut *(ptr as *mut TerminalContext) };
     context.engine.state.auto_scroll_disabled = !context.engine.state.auto_scroll_disabled;
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendMouseEventFromRust(_env: JNIEnv, _class: JClass, ptr: jlong, button: jint, col: jint, row: jint, pressed: jboolean) {
+    if ptr == 0 { return; }
     let context = unsafe { &mut *(ptr as *mut TerminalContext) };
     context.engine.state.send_mouse_event(button as u32, col, row, pressed != 0);
 }
@@ -271,6 +294,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendMouseEventF
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendKeyCodeFromRust(
     mut env: JNIEnv, _class: JClass, ptr: jlong, key_code: jint, char_str: jstring, meta_state: jint,
 ) {
+    if ptr == 0 { return; }
     let context = unsafe { &mut *(ptr as *mut TerminalContext) };
     let rust_str = if !char_str.is_null() {
         let j_str = unsafe { JString::from_raw(char_str) };
@@ -283,6 +307,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendKeyCodeFrom
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_pasteTextFromRust(
     mut env: JNIEnv, _class: JClass, ptr: jlong, text: jstring,
 ) {
+    if ptr == 0 { return; }
     let context = unsafe { &mut *(ptr as *mut TerminalContext) };
     if !text.is_null() {
         let j_str = unsafe { JString::from_raw(text) };
@@ -292,12 +317,14 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_pasteTextFromRu
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getActiveTranscriptRowsFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
+    if ptr == 0 { return 0; }
     let context = unsafe { &*(ptr as *const TerminalContext) };
     context.engine.state.get_current_screen().active_transcript_rows as jint
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColorsFromRust(mut env: JNIEnv, _class: JClass, ptr: jlong) -> jintArray {
+    if ptr == 0 { return std::ptr::null_mut(); }
     let context = unsafe { &*(ptr as *const TerminalContext) };
     let colors = context.engine.state.colors.current_colors;
     if let Ok(j_array) = env.new_int_array(colors.len() as jint) {
@@ -308,6 +335,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColorsFromRu
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_resetColorsFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) {
+    if ptr == 0 { return; }
     let context = unsafe { &mut *(ptr as *mut TerminalContext) };
     context.engine.state.colors.reset();
     context.engine.state.report_colors_changed();
@@ -318,12 +346,14 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_updateTerminalS
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorBlinkStateInRust(_env: JNIEnv, _class: JClass, ptr: jlong, state: jboolean) {
+    if ptr == 0 { return; }
     let context = unsafe { &mut *(ptr as *mut TerminalContext) };
     context.engine.state.cursor.blink_state = state != 0;
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorBlinkingEnabledInRust(_env: JNIEnv, _class: JClass, ptr: jlong, enabled: jboolean) {
+    if ptr == 0 { return; }
     let context = unsafe { &mut *(ptr as *mut TerminalContext) };
     context.engine.state.cursor.blinking_enabled = enabled != 0;
 }
@@ -335,12 +365,75 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeRelease(_
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeGetCursorCol(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
+    if ptr == 0 { return 0; }
     let context = unsafe { &*(ptr as *const TerminalContext) };
     context.engine.state.cursor.x as jint
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeGetCursorRow(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
+    if ptr == 0 { return 0; }
     let context = unsafe { &*(ptr as *const TerminalContext) };
     context.engine.state.cursor.y as jint
+}
+
+// ============================================================================
+// JNI.java - PTY 处理
+// ============================================================================
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_JNI_setPtyWindowSize(
+    _env: JNIEnv,
+    _class: JClass,
+    fd: jint,
+    rows: jint,
+    cols: jint,
+    cw: jint,
+    ch: jint,
+) {
+    let size = libc::winsize {
+        ws_row: rows as u16,
+        ws_col: cols as u16,
+        ws_xpixel: cw as u16,
+        ws_ypixel: ch as u16,
+    };
+    libc::ioctl(fd, libc::TIOCSWINSZ, &size);
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_JNI_waitFor(
+    _env: JNIEnv,
+    _class: JClass,
+    pid: jint,
+) -> jint {
+    let mut status: jint = 0;
+    libc::waitpid(pid, &mut status, 0);
+    status
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_JNI_close(
+    _env: JNIEnv,
+    _class: JClass,
+    fd: jint,
+) {
+    libc::close(fd);
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
+    mut env: JNIEnv,
+    _class: JClass,
+    _cmd: jstring,
+    _cwd: jstring,
+    _args: jni::sys::jobjectArray,
+    _env_vars: jni::sys::jobjectArray,
+    _process_id_array: jintArray,
+    _rows: jint,
+    _cols: jint,
+    _cw: jint,
+    _ch: jint,
+) -> jint {
+    // 占位符，真正复杂的 forkpty 实现应在 pty 模块中
+    -1
 }
