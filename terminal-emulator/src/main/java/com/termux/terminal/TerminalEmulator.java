@@ -47,6 +47,23 @@ public final class TerminalEmulator {
         }
     }
 
+    public void updateTerminalSessionClient(TerminalSessionClient client) {
+        if (mEnginePtr != 0) {
+            updateTerminalSessionClientFromRust(mEnginePtr, client);
+        }
+    }
+
+    public String getTitle() {
+        if (mEnginePtr != 0) {
+            return getTitleFromRust(mEnginePtr);
+        }
+        return null;
+    }
+
+    public void reset() {
+        resetColors();
+    }
+
     /** 获取光标列 */
     public int getCursorCol() {
         if (mEnginePtr != 0) return getCursorColFromRust(mEnginePtr);
@@ -245,6 +262,7 @@ public final class TerminalEmulator {
     private static native String getSelectedTextFromRust(long enginePtr, int x1, int y1, int x2, int y2);
     private static native String getWordAtLocationFromRust(long enginePtr, int x, int y);
     private static native String getTranscriptTextFromRust(long enginePtr);
+    private static native String getTitleFromRust(long enginePtr);
 
     private static native void sendMouseEventFromRust(
         long enginePtr, int button, int col, int row, boolean pressed
@@ -257,4 +275,5 @@ public final class TerminalEmulator {
     private static native void pasteTextFromRust(long enginePtr, String text);
     private static native int[] getColorsFromRust(long enginePtr);
     private static native void resetColorsFromRust(long enginePtr);
+    private static native void updateTerminalSessionClientFromRust(long enginePtr, TerminalSessionClient client);
 }
