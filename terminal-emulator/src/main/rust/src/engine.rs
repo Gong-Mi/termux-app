@@ -243,7 +243,7 @@ impl ScreenState {
                 self.right_margin = self.cols;
                 self.modes.reset(DECSET_BIT_LEFTRIGHT_MARGIN_MODE);
                 // 清屏并重置光标
-                self.block_clear(0, 0, self.cols as usize, self.rows as usize);
+                self.get_current_screen_mut().block_clear(0, 0, self.rows as usize, self.cols as usize, self.current_style);
                 self.cursor.x = 0;
                 self.cursor.y = 0;
             }

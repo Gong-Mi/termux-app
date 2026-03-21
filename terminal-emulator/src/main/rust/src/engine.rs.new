@@ -1,0 +1,108 @@
+use jni::objects::{JObject, JValue, JString};
+use jni::JNIEnv;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+// 假设这些常量在其他地方定义，这里为了编译通过占位
+const COLOR_INDEX_FOREGROUND: usize = 256;
+const COLOR_INDEX_BACKGROUND: usize = 257;
+const COLOR_INDEX_CURSOR: usize = 258;
+
+pub struct TerminalEngine {
+    pub state: ScreenState,
+}
+
+pub struct ScreenState {
+    pub java_callback_obj: Option<jni::objects::GlobalRef>,
+    pub colors: TerminalColors,
+    pub title: Option<String>,
+    pub cursor: Cursor,
+    pub mouse_tracking: bool,
+    pub rows: i32,
+    pub cols: i32,
+    pub scroll_counter: usize,
+    pub auto_scroll_disabled: bool,
+}
+
+pub struct TerminalColors {
+    pub current_colors: [u32; 259],
+}
+
+pub struct Cursor {
+    pub x: i32,
+    pub y: i32,
+    pub visible: bool,
+    pub blink_state: bool,
+    pub blinking_enabled: bool,
+}
+
+impl ScreenState {
+    pub fn set_java_callback(&mut self, obj: jni::objects::GlobalRef) {
+        self.java_callback_obj = Some(obj);
+    }
+
+    /// 调用 Java 方法报告标题变更
+    pub fn report_title_change(&self, title: &str) {
+        if let Some(obj) = self.java_callback_obj.as_ref() {
+            if let Some(vm) = crate::JAVA_VM.get() {
+                if let Ok(mut env) = vm.get_env() {
+                    if let Ok(java_title) = env.new_string(title) {
+                        let _ = env.call_method(
+                            obj.as_obj(),
+                            "reportTitleChange",
+                            "(Ljava/lang/String;)V",
+                            &[JValue::Object(&java_title)],
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// 调用 Java 方法报告颜色变更
+    pub fn report_colors_changed(&self) {
+        if let Some(obj) = self.java_callback_obj.as_ref() {
+            if let Some(vm) = crate::JAVA_VM.get() {
+                if let Ok(mut env) = vm.get_env() {
+                    let _ = env.call_method(obj.as_obj(), "onColorsChanged", "()V", &[]);
+                }
+            }
+        }
+    }
+
+    /// 调用 Java 方法报告响铃事件
+    pub fn report_bell(&self) {
+        if let Some(obj) = self.java_callback_obj.as_ref() {
+            if let Some(vm) = crate::JAVA_VM.get() {
+                if let Ok(mut env) = vm.get_env() {
+                    let _ = env.call_method(obj.as_obj(), "onBell", "()V", &[]);
+                }
+            }
+        }
+    }
+
+    /// 调用 Java 方法报告光标可见性变更
+    pub fn report_cursor_visibility(&self, visible: bool) {
+        if let Some(obj) = self.java_callback_obj.as_ref() {
+            if let Some(vm) = crate::JAVA_VM.get() {
+                if let Ok(mut env) = vm.get_env() {
+                    let _ = env.call_method(
+                        obj.as_obj(),
+                        "reportCursorVisibility",
+                        "(Z)V",
+                        &[JValue::Bool(if visible { 1 } else { 0 })],
+                    );
+                }
+            }
+        }
+    }
+
+    pub fn report_screen_update(&self) {
+        if let Some(obj) = self.java_callback_obj.as_ref() {
+            if let Some(vm) = crate::JAVA_VM.get() {
+                if let Ok(mut env) = vm.get_env() {
+                    let _ = env.call_method(obj.as_obj(), "onScreenUpdate", "()V", &[]);
+                }
+            }
+        }
+    }
+}

@@ -195,7 +195,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCursorStyleF
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorStyleFromRust(_env: JNIEnv, _class: JClass, ptr: jlong, cursor_style: jint) {
     if ptr == 0 { return; }
     let context = unsafe { &mut *(ptr as *mut TerminalContext) };
-    context.engine.state.cursor.style = cursor_style as u8;
+    context.engine.state.cursor.style = cursor_style as i32;
 }
 
 #[unsafe(no_mangle)]

@@ -27,6 +27,11 @@ impl TerminalRow {
         }
     }
 
+    /// 清除指定矩形区域内的所有字符为空格
+    pub fn block_clear_row(&mut self, start: usize, end: usize, style: u64) {
+        self.clear(start, end, style);
+    }
+
     pub fn set_char(&mut self, column: usize, code_point: u32, style: u64) {
         if column < self.text.len() {
             self.text[column] = std::char::from_u32(code_point).unwrap_or(' ');
@@ -198,9 +203,15 @@ impl Screen {
         match mode {
             0 => { for y in (cursor_y + 1)..self.rows { self.get_row_mut(y).clear(0, cols, style); } }
             1 => { for y in 0..cursor_y { self.get_row_mut(y).clear(0, cols, style); } }
-            2 => { for y in 0..self.rows { self.get_row_mut(y).clear(0, cols, style); } }
-            3 => { for row in &mut self.buffer { row.clear(0, cols, style); } self.first_row = 0; self.active_transcript_rows = 0; }
+            2 | 3 => { for y in 0..self.rows { self.get_row_mut(y).clear(0, cols, style); } }
             _ => {}
+        }
+    }
+
+    /// 清除指定矩形区域内的所有字符
+    pub fn block_clear(&mut self, top: usize, left: usize, bottom: usize, right: usize, style: u64) {
+        for row in top..min(bottom, self.rows as usize) {
+            self.get_row_mut(row as i32).block_clear_row(left, min(right, self.cols as usize), style);
         }
     }
 
