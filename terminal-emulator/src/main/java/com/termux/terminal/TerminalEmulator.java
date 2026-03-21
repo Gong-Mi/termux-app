@@ -70,6 +70,20 @@ public final class TerminalEmulator {
     }
 
     /**
+     * 处理单个 Unicode 码点
+     * @param codePoint Unicode 码点
+     */
+    public synchronized void processCodePoint(int codePoint) {
+        if (mEnginePtr != 0) {
+            try {
+                processCodePointRust(mEnginePtr, codePoint);
+            } catch (Exception e) {
+                android.util.Log.e("Termux-JNI", "Error in processCodePointRust", e);
+            }
+        }
+    }
+
+    /**
      * 检查终端引擎是否仍然有效（未被销毁）
      */
     public synchronized boolean isAlive() {
@@ -104,6 +118,27 @@ public final class TerminalEmulator {
 
     public void reset() {
         resetColors();
+    }
+
+    /**
+     * 设置终端光标样式
+     * @param cursorStyle 光标样式 (0=块，1=下划线，2=竖条)
+     */
+    public void setCursorStyle(int cursorStyle) {
+        if (mEnginePtr != 0) {
+            setCursorStyleFromRust(mEnginePtr, cursorStyle);
+        }
+    }
+
+    /**
+     * 执行 DECSET/DECRST 命令（设置/重置 DEC 私有模式）
+     * @param setting true=DECSET, false=DECRST
+     * @param mode DEC 模式编号
+     */
+    public void doDecSetOrReset(boolean setting, int mode) {
+        if (mEnginePtr != 0) {
+            doDecSetOrResetFromRust(mEnginePtr, setting, mode);
+        }
     }
 
     /** 获取光标列 */
@@ -291,9 +326,26 @@ public final class TerminalEmulator {
         }
     }
 
+    /**
+     * 获取终端缓冲区（兼容性方法）
+     * Rust 版本使用共享内存访问屏幕数据，此方法返回 null
+     * @deprecated 直接使用 readRow() 方法访问屏幕数据
+     */
+    @Deprecated
     public TerminalBuffer getScreen() {
-        // 返回 null，实际屏幕数据通过 Rust 共享内存访问
+        // Rust 版本使用共享内存，不创建 TerminalBuffer 对象
+        // 如果需要访问屏幕数据，请使用 readRow() 方法
         return null;
+    }
+
+    /**
+     * 获取终端显示文本（兼容性方法）
+     */
+    public String getTranscriptText() {
+        if (mEnginePtr != 0) {
+            return getTranscriptTextFromRust(mEnginePtr);
+        }
+        return "";
     }
 
     public synchronized void destroy() {
@@ -301,6 +353,21 @@ public final class TerminalEmulator {
             destroyEngineRust(mEnginePtr);
             mEnginePtr = 0;
         }
+    }
+
+    /**
+     * 返回终端模拟器的字符串表示（用于调试）
+     */
+    @Override
+    public String toString() {
+        if (mEnginePtr == 0) {
+            return "TerminalEmulator[destroyed]";
+        }
+        return String.format(java.util.Locale.US,
+            "TerminalEmulator[cursor=(%d,%d),style=%d,size=%dx%d,rows=%d,cols=%d,alt=%b]",
+            getCursorRow(), getCursorCol(), getCursorStyle(),
+            getRows(), getCols(), getActiveRows(), getActiveTranscriptRows(),
+            isAlternateBufferActive());
     }
 
     // --- Native 接口 ---
@@ -312,6 +379,8 @@ public final class TerminalEmulator {
 
     private static native void processBatchRust(long enginePtr, byte[] batch, int length);
 
+    private static native void processCodePointRust(long enginePtr, int codePoint);
+
     private static native void resizeEngineRustFull(
         long enginePtr, int cols, int rows, int cw, int ch
     );
@@ -319,6 +388,8 @@ public final class TerminalEmulator {
     private static native int getCursorColFromRust(long enginePtr);
     private static native int getCursorRowFromRust(long enginePtr);
     private static native int getCursorStyleFromRust(long enginePtr);
+    private static native void setCursorStyleFromRust(long enginePtr, int cursorStyle);
+    private static native void doDecSetOrResetFromRust(long enginePtr, boolean setting, int mode);
     private static native boolean isCursorEnabledFromRust(long enginePtr);
     private static native boolean shouldCursorBeVisibleFromRust(long enginePtr);
     private static native boolean isReverseVideoFromRust(long enginePtr);

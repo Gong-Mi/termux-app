@@ -223,10 +223,95 @@ impl ScreenState {
     pub fn auto_wrap(&self) -> bool { self.modes.is_enabled(DECSET_BIT_AUTOWRAP) }
     pub fn origin_mode(&self) -> bool { self.modes.is_enabled(DECSET_BIT_ORIGIN_MODE) }
     pub fn leftright_margin_mode(&self) -> bool { self.modes.is_enabled(DECSET_BIT_LEFTRIGHT_MARGIN_MODE) }
-    
+
     pub fn screen_first_row(&self) -> usize { self.get_current_screen().first_row }
     pub fn saved_decset_flags(&self) -> i32 { self.cursor.saved_state.decset_flags }
     pub fn decset_flags(&self) -> i32 { self.modes.flags }
+
+    /// 执行 DECSET/DECRST 命令（设置/重置 DEC 私有模式）
+    pub fn do_decset_or_reset(&mut self, setting: bool, mode: u32) {
+        match mode {
+            1 => { // Application Cursor Keys (DECCKM)
+                if setting { self.modes.set(DECSET_BIT_APPLICATION_CURSOR_KEYS); }
+                else { self.modes.reset(DECSET_BIT_APPLICATION_CURSOR_KEYS); }
+            }
+            3 => { // 132 column mode (DECCOLM)
+                // 清除滚动边距并重置光标位置
+                self.top_margin = 0;
+                self.bottom_margin = self.rows;
+                self.left_margin = 0;
+                self.right_margin = self.cols;
+                self.modes.reset(DECSET_BIT_LEFTRIGHT_MARGIN_MODE);
+                // 清屏并重置光标
+                self.block_clear(0, 0, self.cols as usize, self.rows as usize);
+                self.cursor.x = 0;
+                self.cursor.y = 0;
+            }
+            4 => { // DECSCLM-Scrolling Mode - 忽略
+            }
+            5 => { // Reverse video
+                if setting { self.modes.set(DECSET_BIT_REVERSE_VIDEO); }
+                else { self.modes.reset(DECSET_BIT_REVERSE_VIDEO); }
+            }
+            6 => { // Origin Mode (DECOM)
+                if setting { self.modes.set(DECSET_BIT_ORIGIN_MODE); self.cursor.x = 0; self.cursor.y = 0; }
+                else { self.modes.reset(DECSET_BIT_ORIGIN_MODE); }
+            }
+            7 => { // Auto-wrap (DECAWM)
+                if setting { self.modes.set(DECSET_BIT_AUTOWRAP); }
+                else { self.modes.reset(DECSET_BIT_AUTOWRAP); }
+            }
+            8 => { // Auto-repeat Keys (DECARM) - 不实现
+            }
+            9 => { // X10 mouse - 不实现
+            }
+            12 => { // Control cursor blinking - 忽略
+            }
+            25 => { // Show/hide cursor
+                if setting { self.cursor_enabled = true; }
+                else { self.cursor_enabled = false; }
+            }
+            40 => { // Allow 80 => 132 Mode - 忽略
+            }
+            45 => { // Reverse wrap-around - 忽略
+            }
+            66 => { // Application keypad (DECNKM)
+                if setting { self.modes.set(DECSET_BIT_APPLICATION_KEYPAD); }
+                else { self.modes.reset(DECSET_BIT_APPLICATION_KEYPAD); }
+            }
+            69 => { // Left and right margin mode (DECLRMM)
+                if !setting { self.left_margin = 0; self.right_margin = self.cols; }
+            }
+            1000 | 1001 | 1002 | 1003 | 1004 | 1005 => { // Mouse tracking - 忽略
+            }
+            1006 => { // SGR Mouse Mode
+                if setting { self.sgr_mouse = true; }
+                else { self.sgr_mouse = false; }
+            }
+            1015 => { // URXVT mouse - 忽略
+            }
+            1034 => { // Interpret "meta" key - 忽略
+            }
+            1048 => { // Save/restore cursor
+                if setting { self.save_cursor(); }
+                else { self.restore_cursor(); }
+            }
+            47 | 1047 | 1049 => { // Alternate screen buffer
+                if setting {
+                    self.use_alternate_buffer = true;
+                    self.save_cursor();
+                } else {
+                    self.use_alternate_buffer = false;
+                    self.restore_cursor();
+                }
+            }
+            2004 => { // Bracketed paste mode
+                if setting { self.bracketed_paste = true; }
+                else { self.bracketed_paste = false; }
+            }
+            _ => { /* 未知模式 - 忽略 */ }
+        }
+    }
 
     pub fn scroll_up(&mut self) {
         let style = self.current_style;
@@ -649,6 +734,14 @@ impl TerminalEngine {
         if !self.state.shared_buffer_ptr.is_null() {
             unsafe { if let Some(flat) = &self.state.flat_buffer { flat.sync_to_shared(self.state.shared_buffer_ptr); } }
         }
+    }
+    pub fn process_code_point(&mut self, code_point: u32) {
+        // 将 Unicode 码点转换为 UTF-8 字节序列并处理
+        let mut utf8_buf = [0u8; 4];
+        let utf8_str = char::from_u32(code_point)
+            .unwrap_or('\u{FFFD}') // 使用替换字符处理无效码点
+            .encode_utf8(&mut utf8_buf);
+        self.process_bytes(utf8_str.as_bytes());
     }
 }
 struct PerformHandler<'a> { state: &'a mut ScreenState }

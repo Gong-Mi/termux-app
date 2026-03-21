@@ -116,6 +116,23 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeResize(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_processCodePointRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+    code_point: jint,
+) {
+    if ptr == 0 { return; }
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let context = unsafe { &mut *(ptr as *mut TerminalContext) };
+        context.engine.process_code_point(code_point as u32);
+    }));
+    if result.is_err() {
+        android_log(LogPriority::ERROR, "processCodePointRust: panic caught, possible use-after-free");
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_resizeEngineRustFull(
     _env: JNIEnv,
     _class: JClass,
@@ -172,6 +189,25 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCursorStyleF
     if ptr == 0 { return 0; }
     let context = unsafe { &*(ptr as *const TerminalContext) };
     context.engine.state.cursor.style as jint
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorStyleFromRust(_env: JNIEnv, _class: JClass, ptr: jlong, cursor_style: jint) {
+    if ptr == 0 { return; }
+    let context = unsafe { &mut *(ptr as *mut TerminalContext) };
+    context.engine.state.cursor.style = cursor_style as u8;
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_doDecSetOrResetFromRust(_env: JNIEnv, _class: JClass, ptr: jlong, setting: jboolean, mode: jint) {
+    if ptr == 0 { return; }
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let context = unsafe { &mut *(ptr as *mut TerminalContext) };
+        context.engine.state.do_decset_or_reset(setting != 0, mode as u32);
+    }));
+    if result.is_err() {
+        android_log(LogPriority::ERROR, "doDecSetOrResetFromRust: panic caught");
+    }
 }
 
 #[unsafe(no_mangle)]
