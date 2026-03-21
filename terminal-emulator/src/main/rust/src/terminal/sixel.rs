@@ -86,9 +86,7 @@ impl SixelDecoder {
         self.state = SixelState::Param;
 
         for param in params.iter() {
-            for value in param.iter() {
-                self.params.push(*value as i32);
-            }
+            self.params.push(param.first().copied().unwrap_or(-1));
         }
 
         if self.params.len() >= 1 && self.params[0] > 0 {

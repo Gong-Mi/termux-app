@@ -1,5 +1,5 @@
 use jni::JNIEnv;
-use jni::objects::{JObjectArray, JString, JByteArray};
+use jni::objects::{JObjectArray, JString, JIntArray};
 use jni::sys::{JNINativeInterface_, jint, jintArray, jobjectArray, jstring};
 use nix::fcntl::{OFlag, open};
 use nix::sys::stat::Mode;
@@ -29,20 +29,22 @@ pub unsafe fn create_subprocess(
     cell_width: jint,
     cell_height: jint,
 ) -> jint {
-    let mut env = match JNIEnv::from_raw(env_ptr) {
+    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
         Ok(e) => e,
         Err(_) => return -1,
     };
 
     // 安全获取字符串
     let cmd_str: String = if !cmd.is_null() {
-        env.get_string(&JString::from_raw(cmd)).map(|s| s.into()).unwrap_or_default()
+        let js = unsafe { JString::from_raw(cmd) };
+        env.get_string(&js).map(|s| s.into()).unwrap_or_default()
     } else {
         String::new()
     };
 
     let cwd_str: String = if !cwd.is_null() {
-        env.get_string(&JString::from_raw(cwd)).map(|s| s.into()).unwrap_or_default()
+        let js = unsafe { JString::from_raw(cwd) };
+        env.get_string(&js).map(|s| s.into()).unwrap_or_default()
     } else {
         String::new()
     };
@@ -115,14 +117,15 @@ pub unsafe fn create_subprocess(
                 // 将 PID 写回 Java 数组
                 let pid = child.as_raw();
                 let pid_buf = [pid];
-                let j_pid_array = jni::objects::JIntArray::from_raw(process_id_array);
+                let j_pid_array = JIntArray::from_raw(process_id_array);
                 let _ = env.set_int_array_region(&j_pid_array, 0, &pid_buf);
                 ptm as jint
             }
             Ok(ForkResult::Child) => {
-                setsid().expect("Failed to setsid");
+                let _ = setsid();
 
-                let pts = libc::open(CString::new(devname).unwrap().as_ptr(), libc::O_RDWR);
+                let c_devname = CString::new(devname).unwrap();
+                let pts = libc::open(c_devname.as_ptr(), libc::O_RDWR);
                 if pts < 0 { libc::_exit(1); }
 
                 libc::ioctl(pts, libc::TIOCSCTTY as _, 0);
@@ -141,17 +144,15 @@ pub unsafe fn create_subprocess(
                 }
 
                 if !cwd_str.is_empty() {
-                    let _ = chdir(cwd_str.as_str());
+                    let c_cwd = CString::new(cwd_str).unwrap();
+                    let _ = chdir(c_cwd.as_c_str());
                 }
 
                 let mut c_args = Vec::new();
                 for arg in argv {
                     if let Ok(ca) = CString::new(arg) { c_args.push(ca); }
                 }
-                if c_args.is_empty() && !cmd_str.is_empty() {
-                    if let Ok(ca) = CString::new(cmd_str.clone()) { c_args.push(ca); }
-                }
-
+                
                 let ptr_args: Vec<_> = c_args.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
                 if !cmd_str.is_empty() {
                     let c_cmd = CString::new(cmd_str).unwrap();

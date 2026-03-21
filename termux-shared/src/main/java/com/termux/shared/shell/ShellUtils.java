@@ -51,14 +51,13 @@ public class ShellUtils {
     /** Get transcript for {@link TerminalSession}. */
     public static String getTerminalSessionTranscriptText(TerminalSession terminalSession, boolean linesJoined, boolean trim) {
         if (terminalSession == null) return null;
-TerminalEmulator terminalEmulator = terminalSession.getEmulator();
-if (terminalEmulator == null) return null;
 
-return terminalEmulator.getTranscriptText();
-}
+        TerminalEmulator terminalEmulator = terminalSession.getEmulator();
+        if (terminalEmulator == null) return null;
 
+        String transcriptText = terminalEmulator.getTranscriptText();
 
-        if (trim)
+        if (trim && transcriptText != null)
             transcriptText = transcriptText.trim();
 
         return transcriptText;
