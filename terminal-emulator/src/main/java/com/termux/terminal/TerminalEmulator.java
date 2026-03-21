@@ -70,6 +70,13 @@ public final class TerminalEmulator {
     }
 
     /**
+     * 检查终端引擎是否仍然有效（未被销毁）
+     */
+    public synchronized boolean isAlive() {
+        return mEnginePtr != 0;
+    }
+
+    /**
      * 调整终端大小
      */
     public synchronized void resize(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {

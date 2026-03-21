@@ -95,7 +95,7 @@ public final class TerminalSession extends TerminalOutput {
     public void updateTerminalSessionClient(TerminalSessionClient client) {
         mClient = client;
 
-        if (mEmulator != null)
+        if (mEmulator != null && mEmulator.isAlive())
             mEmulator.updateTerminalSessionClient(client);
     }
 
@@ -110,13 +110,18 @@ public final class TerminalSession extends TerminalOutput {
                 } catch (UnsatisfiedLinkError | Exception ignored) {
                 }
             }
-            mEmulator.resize(columns, rows, cellWidthPixels, cellHeightPixels);
+            if (mEmulator.isAlive()) {
+                mEmulator.resize(columns, rows, cellWidthPixels, cellHeightPixels);
+            }
         }
     }
 
     /** The terminal title as set through escape sequences or null if none set. */
     public String getTitle() {
-        return (mEmulator == null) ? null : mEmulator.getTitle();
+        if (mEmulator == null || !mEmulator.isAlive()) {
+            return null;
+        }
+        return mEmulator.getTitle();
     }
 
     /**
@@ -262,8 +267,10 @@ public final class TerminalSession extends TerminalOutput {
 
     /** Reset state for terminal emulator state. */
     public void reset() {
-        mEmulator.reset();
-        notifyScreenUpdate();
+        if (mEmulator != null && mEmulator.isAlive()) {
+            mEmulator.reset();
+            notifyScreenUpdate();
+        }
     }
 
     /** Finish this terminal session by sending SIGKILL to the shell. */
@@ -390,9 +397,18 @@ public final class TerminalSession extends TerminalOutput {
 
         @Override
         public void handleMessage(Message msg) {
+            // 检查终端是否已被销毁，防止在销毁后继续处理数据导致崩溃
+            if (msg.what != MSG_PROCESS_EXITED && (mEmulator == null || !mEmulator.isAlive())) {
+                return;
+            }
+
             int totalBytesRead = 0;
             int bytesRead;
             while ((bytesRead = mProcessToTerminalIOQueue.read(mReceiveBuffer, false)) > 0) {
+                // 在每次 append 前检查终端是否仍然有效
+                if (mEmulator == null || !mEmulator.isAlive()) {
+                    break;
+                }
                 mEmulator.append(mReceiveBuffer, bytesRead);
                 totalBytesRead += bytesRead;
                 // If we've processed a reasonable amount of data, stop to let the UI thread breathe
@@ -422,8 +438,11 @@ public final class TerminalSession extends TerminalOutput {
                 exitDescription += " - press Enter]";
 
                 byte[] bytesToWrite = exitDescription.getBytes(StandardCharsets.UTF_8);
-                mEmulator.append(bytesToWrite, bytesToWrite.length);
-                notifyScreenUpdate();
+                // 在进程退出后追加消息前，检查终端是否仍然有效
+                if (mEmulator != null && mEmulator.isAlive()) {
+                    mEmulator.append(bytesToWrite, bytesToWrite.length);
+                    notifyScreenUpdate();
+                }
 
                 mClient.onSessionFinished(TerminalSession.this);
             }

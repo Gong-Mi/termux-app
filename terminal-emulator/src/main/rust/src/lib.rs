@@ -61,10 +61,18 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeProcess(
     _callback: JObject,
 ) {
     if ptr == 0 || data.is_null() { return; }
-    let context = unsafe { &mut *(ptr as *mut TerminalContext) };
-    let j_array = unsafe { jni::objects::JByteArray::from_raw(data) };
-    if let Ok(bytes) = env.convert_byte_array(&j_array) {
-        context.engine.process_bytes(&bytes);
+    // 使用 catch_unwind 防止 Rust panic 导致 JVM 崩溃
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        // SAFETY: 指针必须由 Java 层正确传递，且在使用期间保持有效
+        // Java 层已通过 isAlive() 检查，但仍有竞争条件可能，因此需要额外保护
+        let context = unsafe { &mut *(ptr as *mut TerminalContext) };
+        let j_array = unsafe { jni::objects::JByteArray::from_raw(data) };
+        if let Ok(bytes) = env.convert_byte_array(&j_array) {
+            context.engine.process_bytes(&bytes);
+        }
+    }));
+    if result.is_err() {
+        android_log(LogPriority::ERROR, "nativeProcess: panic caught, possible use-after-free");
     }
 }
 
@@ -77,12 +85,20 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_processBatchRus
     length: jint,
 ) {
     if ptr == 0 || batch.is_null() { return; }
-    let context = unsafe { &mut *(ptr as *mut TerminalContext) };
-    let j_array = unsafe { jni::objects::JByteArray::from_raw(batch) };
-    if let Ok(bytes) = env.convert_byte_array(&j_array) {
-        let len = length as usize;
-        let actual_len = std::cmp::min(len, bytes.len());
-        context.engine.process_bytes(&bytes[..actual_len]);
+    // 使用 catch_unwind 防止 Rust panic 导致 JVM 崩溃
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        // SAFETY: 指针必须由 Java 层正确传递，且在使用期间保持有效
+        // Java 层已通过 isAlive() 检查，但仍有竞争条件可能，因此需要额外保护
+        let context = unsafe { &mut *(ptr as *mut TerminalContext) };
+        let j_array = unsafe { jni::objects::JByteArray::from_raw(batch) };
+        if let Ok(bytes) = env.convert_byte_array(&j_array) {
+            let len = length as usize;
+            let actual_len = std::cmp::min(len, bytes.len());
+            context.engine.process_bytes(&bytes[..actual_len]);
+        }
+    }));
+    if result.is_err() {
+        android_log(LogPriority::ERROR, "processBatchRust: panic caught, possible use-after-free");
     }
 }
 
