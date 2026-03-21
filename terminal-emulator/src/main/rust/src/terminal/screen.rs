@@ -290,34 +290,81 @@ impl Screen {
             }
         }
 
+        // 逐字符 reflow，确保宽字符正确处理
         let mut reflowed = Vec::new();
-        let (mut cur_t, mut cur_s) = (Vec::new(), Vec::new());
+        let mut current_row = TerminalRow::new(n_cols);
+        let mut current_col = 0;
+        let mut skipped_blank_lines = 0;
+
         for (i, (t, s, wrapped)) in content.into_iter().enumerate() {
             if i < first_nonempty { continue; } // 跳过前导空行
+
+            // 检查是否是空行
+            let is_blank = t.is_empty();
             
-            cur_t.extend_from_slice(&t); cur_s.extend_from_slice(&s);
-            while cur_t.len() > n_cols {
-                let mut nr = TerminalRow::new(n_cols);
-                nr.text[..n_cols].copy_from_slice(&cur_t[0..n_cols]);
-                nr.styles[..n_cols].copy_from_slice(&cur_s[0..n_cols]);
-                nr.line_wrap = true;
-                reflowed.push(nr);
-                cur_t = cur_t.split_off(n_cols); cur_s = cur_s.split_off(n_cols);
+            if is_blank {
+                skipped_blank_lines += 1;
+                continue;
             }
-            if !wrapped {
-                let mut nr = TerminalRow::new(n_cols);
-                let l = cur_t.len();
-                if l > 0 { nr.text[0..l].copy_from_slice(&cur_t); nr.styles[0..l].copy_from_slice(&cur_s); }
-                nr.line_wrap = false;
-                reflowed.push(nr);
-                cur_t.clear(); cur_s.clear();
+            
+            // 遇到非空行，插入之前跳过的空行
+            if skipped_blank_lines > 0 {
+                for _ in 0..skipped_blank_lines {
+                    if current_col > 0 {
+                        reflowed.push(current_row);
+                        current_row = TerminalRow::new(n_cols);
+                        current_col = 0;
+                    } else {
+                        reflowed.push(TerminalRow::new(n_cols));
+                    }
+                }
+                skipped_blank_lines = 0;
+            }
+
+            let mut char_idx = 0;
+            while char_idx < t.len() {
+                let c = t[char_idx];
+                let style = s[char_idx];
+                
+                // 计算字符显示宽度
+                let display_width = crate::utils::get_char_width(c as u32) as i32;
+                
+                // 如果当前列放不下这个字符，换行
+                if current_col as i32 + display_width > n_cols as i32 {
+                    current_row.line_wrap = true;
+                    reflowed.push(current_row);
+                    current_row = TerminalRow::new(n_cols);
+                    current_col = 0;
+                }
+                
+                // 写入字符
+                if current_col < n_cols {
+                    current_row.text[current_col] = c;
+                    current_row.styles[current_col] = style;
+                    current_col += 1;
+                    
+                    // 如果是宽字符，写入第二个单元格（空格占位）
+                    if display_width == 2 && current_col < n_cols {
+                        current_row.text[current_col] = ' ';
+                        current_row.styles[current_col] = style;
+                        current_col += 1;
+                    }
+                }
+                
+                char_idx += 1;
+            }
+            
+            // 如果原行没有 line_wrap，需要换行
+            if !wrapped && char_idx > 0 {
+                reflowed.push(current_row);
+                current_row = TerminalRow::new(n_cols);
+                current_col = 0;
             }
         }
-        if !cur_t.is_empty() {
-            let mut nr = TerminalRow::new(n_cols);
-            let l = cur_t.len();
-            nr.text[0..l].copy_from_slice(&cur_t); nr.styles[0..l].copy_from_slice(&cur_s);
-            reflowed.push(nr);
+        
+        // 添加最后一行（如果有内容）
+        if current_col > 0 {
+            reflowed.push(current_row);
         }
 
         let mut new_buffer = vec![TerminalRow::new(n_cols); old_total];
