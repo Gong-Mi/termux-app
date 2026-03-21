@@ -48,7 +48,13 @@ public final class TerminalEmulator {
             if (mClient != null) mClient.onTerminalCursorStateChange(visible);
         }
         @Override public void onBell() {
-            if (mClient != null) mClient.onBell();
+            if (mClient != null) {
+                if (mClient instanceof TerminalSession) {
+                    mClient.onBell((TerminalSession) mClient);
+                } else {
+                    mClient.onBell();
+                }
+            }
         }
         @Override public void onCopyTextToClipboard(String text) {
             if (mClient != null && mClient instanceof TerminalSession) {
