@@ -538,14 +538,15 @@ impl ScreenState {
     }
 
     pub fn handle_decset(&mut self, params: &Params, set: bool) {
-println!("handle_decset called with set={}, len={}", set, params.len);
-for (i, v) in params.values[..params.len].iter().enumerate() { println!("param {}: {}", i, v); }
         for param in params.iter() {
             for &p in param.iter() {
                 match p {
                     1 => {
                         if set { self.modes.set(DECSET_BIT_APPLICATION_CURSOR_KEYS) } else { self.modes.reset(DECSET_BIT_APPLICATION_CURSOR_KEYS) }
                         self.application_cursor_keys = set;
+                    },
+                    5 => { // DECSET 5 - 反色模式
+                        if set { self.modes.set(DECSET_BIT_REVERSE_VIDEO) } else { self.modes.reset(DECSET_BIT_REVERSE_VIDEO) }
                     },
                     6 => if set { self.modes.set(DECSET_BIT_ORIGIN_MODE) } else { self.modes.reset(DECSET_BIT_ORIGIN_MODE) },
                     7 => if set { self.modes.set(DECSET_BIT_AUTOWRAP) } else { self.modes.reset(DECSET_BIT_AUTOWRAP) },
