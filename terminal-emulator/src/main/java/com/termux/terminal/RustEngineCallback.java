@@ -50,8 +50,23 @@ public class RustEngineCallback {
         }
     }
 
-    public void onWriteToSession(String data) { }
+    public void onWriteToSession(String data) {
+        if (mClient != null) {
+            mClient.onWriteToSession(data);
+        }
+    }
+    
     public void onWriteToSessionBytes(byte[] data) { }
+    
+    public void write(String data) {
+        // Rust 终端响应写入
+        onWriteToSession(data);
+    }
+    
+    public void writeBytes(byte[] data) {
+        onWriteToSessionBytes(data);
+    }
+    
     public void reportColorResponse(String colorSpec) { }
     public void reportTerminalResponse(String response) { }
 }
