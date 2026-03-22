@@ -251,98 +251,70 @@ impl Screen {
         let old_total = self.buffer.len();
         let n_cols = new_cols as usize;
 
-        // 1. 流式提取 (带延迟空行处理)
-        let mut stream = Vec::new();
-        let mut cursor_stream_idx = None;
-        let mut skipped_blank_lines = 0;
+        // 1. 提取所有逻辑行
+        let mut logical_lines = Vec::new();
+        let mut cur_text = Vec::new();
+        let mut cur_styles = Vec::new();
+        let mut cursor_logic_pos = None;
 
         let start_row = -(self.active_transcript_rows as i32);
         let end_row = self.rows as i32;
 
-        for r in start_row..end_row {
-            let row = self.get_row(r);
-            let is_cursor_row = r == cursor_y;
-            let content_used = row.get_space_used();
-            let is_blank = content_used == 0;
+        for r_idx in start_row..end_row {
+            let row = self.get_row(r_idx);
+            let used = if row.line_wrap { self.cols as usize } else { row.get_space_used() };
 
-            if is_blank && !is_cursor_row {
-                skipped_blank_lines += 1;
-                continue;
+            if r_idx == cursor_y {
+                cursor_logic_pos = Some((logical_lines.len(), cur_text.len() + min(cursor_x as usize, self.cols as usize)));
             }
 
-            // 遇到非空行或光标行，补回之前跳过的空行
-            for _ in 0..skipped_blank_lines {
-                stream.push(('\n', current_style));
-            }
-            skipped_blank_lines = 0;
-
-            let limit = if row.line_wrap { 
-                self.cols as usize 
-            } else { 
-                max(content_used, if is_cursor_row { min(cursor_x as usize, self.cols as usize) } else { 0 })
-            };
-
-            for c_idx in 0..limit {
-                if is_cursor_row && c_idx == cursor_x as usize {
-                    cursor_stream_idx = Some(stream.len());
-                }
-                stream.push((row.text[c_idx], row.styles[c_idx]));
-            }
-            
-            if is_cursor_row && cursor_x as usize >= limit {
-                cursor_stream_idx = Some(stream.len());
+            for col in 0..used {
+                cur_text.push(row.text[col]);
+                cur_styles.push(row.styles[col]);
             }
 
             if !row.line_wrap {
-                stream.push(('\n', current_style)); 
+                let bg = if !cur_styles.is_empty() { *cur_styles.last().unwrap() } else { current_style };
+                logical_lines.push((cur_text, cur_styles, false, bg));
+                cur_text = Vec::new(); cur_styles = Vec::new();
             }
         }
+        if !cur_text.is_empty() || (cursor_logic_pos.is_some() && cursor_logic_pos.unwrap().0 == logical_lines.len()) {
+            let last_bg = if cur_styles.is_empty() { current_style } else { *cur_styles.last().unwrap_or(&current_style) };
+            logical_lines.push((cur_text, cur_styles, true, last_bg));
+        }
 
-        // 2. 重新填充
+        // 2. 切分重排
         let mut reflowed = Vec::new();
-        let mut curr_row = TerminalRow::new(n_cols);
-        let mut curr_col = 0;
         let (mut new_cx, mut new_cy) = (0, 0);
 
-        for (idx, (c, s)) in stream.into_iter().enumerate() {
-            let is_cursor = Some(idx) == cursor_stream_idx;
-            
-            if c == '\n' {
-                if is_cursor { new_cx = curr_col as i32; new_cy = reflowed.len() as i32; }
-                curr_row.line_wrap = false;
-                reflowed.push(curr_row);
-                curr_row = TerminalRow::new(n_cols);
-                curr_col = 0;
-                continue;
+        for (seq_idx, (text, styles, was_wrapped, bg_style)) in logical_lines.into_iter().enumerate() {
+            if text.is_empty() {
+                if let Some((cs, _)) = cursor_logic_pos { if cs == seq_idx { new_cx = 0; new_cy = reflowed.len() as i32; } }
+                let mut row = TerminalRow::new(n_cols); for s in &mut row.styles { *s = bg_style; }
+                reflowed.push(row); continue;
             }
 
-            let w = local_get_width(c as u32);
-            if curr_col + w > n_cols {
-                curr_row.line_wrap = true;
-                reflowed.push(curr_row);
-                curr_row = TerminalRow::new(n_cols);
-                curr_col = 0;
-            }
-
-            if is_cursor { new_cx = curr_col as i32; new_cy = reflowed.len() as i32; }
-
-            if curr_col < n_cols {
-                curr_row.text[curr_col] = c;
-                curr_row.styles[curr_col] = s;
-                curr_col += 1;
-                if w == 2 && curr_col < n_cols {
-                    curr_row.text[curr_col] = '\0';
-                    curr_row.styles[curr_col] = s;
-                    curr_col += 1;
+            let mut offset = 0;
+            while offset < text.len() {
+                let mut new_row = TerminalRow::new(n_cols);
+                for s in &mut new_row.styles { *s = bg_style; }
+                let mut col = 0;
+                while offset < text.len() && col < n_cols {
+                    if let Some((cs, co)) = cursor_logic_pos { if cs == seq_idx && co == offset { new_cx = col as i32; new_cy = reflowed.len() as i32; } }
+                    let c = text[offset]; let s = styles[offset]; let w = local_get_width(c as u32);
+                    if col + w > n_cols { break; }
+                    new_row.text[col] = c; new_row.styles[col] = s; col += 1;
+                    if w == 2 { if col < n_cols { new_row.text[col] = '\0'; new_row.styles[col] = s; col += 1; } }
+                    offset += 1;
                 }
+                if let Some((cs, co)) = cursor_logic_pos { if cs == seq_idx && co == offset && offset == text.len() { new_cx = col as i32; new_cy = reflowed.len() as i32; } }
+                new_row.line_wrap = if offset < text.len() { true } else { was_wrapped };
+                reflowed.push(new_row);
             }
         }
-        if cursor_stream_idx.is_some() && (new_cy == 0 && new_cx == 0 && reflowed.is_empty() || new_cy == reflowed.len() as i32) {
-             new_cx = curr_col as i32; new_cy = reflowed.len() as i32;
-        }
-        reflowed.push(curr_row);
 
-        // 3. 映射回物理缓冲区
+        // 3. 映射回物理缓冲区 (顶对齐)
         let total_reflowed = reflowed.len();
         let to_copy = min(total_reflowed, old_total);
         let start_in_reflowed = total_reflowed.saturating_sub(to_copy);
@@ -357,15 +329,15 @@ impl Screen {
         self.cols = n_cols as i32;
         self.rows = new_rows;
         
-        // 4. 对齐窗口
-        if total_reflowed > new_rows as usize {
-            self.active_transcript_rows = min(total_reflowed - new_rows as usize, old_total - new_rows as usize);
+        // 4. 重置状态：first_row 指向屏幕起始行
+        self.active_transcript_rows = if total_reflowed > new_rows as usize {
+            min(total_reflowed - new_rows as usize, old_total - new_rows as usize)
         } else {
-            self.active_transcript_rows = 0;
-        }
+            0
+        };
         self.first_row = self.active_transcript_rows;
-        let final_cy = new_cy - (self.active_transcript_rows as i32);
 
+        let final_cy = new_cy - (total_reflowed.saturating_sub(new_rows as usize) as i32);
         (new_cx, final_cy)
     }
 }
