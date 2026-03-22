@@ -27,11 +27,6 @@ impl TerminalRow {
         }
     }
 
-    /// 清除指定矩形区域内的所有字符为空格
-    pub fn block_clear_row(&mut self, start: usize, end: usize, style: u64) {
-        self.clear(start, end, style);
-    }
-
     pub fn set_char(&mut self, column: usize, code_point: u32, style: u64) {
         if column < self.text.len() {
             self.text[column] = std::char::from_u32(code_point).unwrap_or(' ');
@@ -71,7 +66,7 @@ impl TerminalRow {
 
     pub fn get_space_used(&self) -> usize {
         for i in (0..self.text.len()).rev() {
-            if self.text[i] != ' ' && self.text[i] != '\0' || self.styles[i] != STYLE_NORMAL {
+            if (self.text[i] != ' ' && self.text[i] != '\0') || self.styles[i] != STYLE_NORMAL {
                 return i + 1;
             }
         }
@@ -88,26 +83,18 @@ impl TerminalRow {
     }
 
     pub fn find_char_index_at_column(&self, column: usize) -> usize {
-        let mut current_column = 0;
-        let mut current_char_index = 0;
-        while current_char_index < self.text.len() {
-            let c = self.text[current_char_index];
-            let width = crate::utils::get_char_width(c as u32) as usize;
+        let mut cur_col = 0;
+        let mut cur_idx = 0;
+        while cur_idx < self.text.len() {
+            let c = self.text[cur_idx];
+            let width = local_get_width(c as u32) as usize;
             if width > 0 {
-                if current_column == column {
-                    return current_char_index;
-                } else if current_column > column {
-                    return current_char_index;
-                }
-                current_column += width;
+                if cur_col >= column { return cur_idx; }
+                cur_col += width;
             } else {
-                if current_column == column {
-                    return current_char_index;
-                } else if current_column > column {
-                    return current_char_index;
-                }
+                if cur_col >= column { return cur_idx; }
             }
-            current_char_index += 1;
+            cur_idx += 1;
         }
         self.get_space_used()
     }
@@ -120,15 +107,21 @@ impl TerminalRow {
     }
 
     pub fn get_word_at(&self, column: usize) -> String {
-        let len = self.text.len();
-        if column >= len { return String::new(); }
-        let mut start = column;
-        while start > 0 && self.text[start-1].is_alphanumeric() { start -= 1; }
-        let mut end = column;
-        while end < len && self.text[end].is_alphanumeric() { end += 1; }
-        if start == end && !self.text[column].is_whitespace() { return self.text[column..column+1].iter().collect(); }
-        self.text[start..end].iter().collect()
+        let cols = self.text.len();
+        if column >= cols { return String::new(); }
+        fn is_word(c: char) -> bool { c.is_alphanumeric() || c == '_' }
+        if !is_word(self.text[column]) { return String::new(); }
+        let mut s = column; while s > 0 && is_word(self.text[s-1]) { s -= 1; }
+        let mut e = column; while e + 1 < cols && is_word(self.text[e+1]) { e += 1; }
+        self.text[s..=e].iter().collect()
     }
+}
+
+fn local_get_width(ucs: u32) -> usize {
+    if ucs == 0 || ucs == 32 { return 1; } 
+    if ucs < 32 || (ucs >= 0x7F && ucs < 0xA0) { return 0; }
+    if (ucs >= 0x2E80 && ucs <= 0x9FFF) || (ucs >= 0xAC00 && ucs <= 0xD7A3) || (ucs >= 0xFF01 && ucs <= 0xFF60) { return 2; }
+    1
 }
 
 pub struct Screen {
@@ -141,148 +134,123 @@ pub struct Screen {
 
 impl Screen {
     pub fn new(cols: i32, rows: i32, total_rows: i32) -> Self {
-        let total_rows_u = max(rows as usize, total_rows as usize);
-        let mut buffer = Vec::with_capacity(total_rows_u);
-        for _ in 0..total_rows_u {
-            buffer.push(TerminalRow::new(max(1, cols as usize)));
-        }
-        Self {
-            rows,
-            cols,
-            buffer,
-            first_row: 0,
-            active_transcript_rows: 0,
-        }
+        let t_u = max(rows as usize, total_rows as usize);
+        let mut b = Vec::with_capacity(t_u);
+        for _ in 0..t_u { b.push(TerminalRow::new(max(1, cols as usize))); }
+        Self { rows, cols, buffer: b, first_row: 0, active_transcript_rows: 0 }
     }
 
     #[inline]
     pub fn internal_row(&self, row: i32) -> usize {
-        let total = self.buffer.len();
-        if total == 0 { return 0; }
-        let first = self.first_row as i64;
-        let r = row as i64;
-        let t = total as i64;
-        (((first + r) % t + t) % t) as usize
+        let t = self.buffer.len() as i64;
+        if t == 0 { return 0; }
+        (((self.first_row as i64 + row as i64) % t + t) % t) as usize
     }
 
-    pub fn get_row(&self, row: i32) -> &TerminalRow {
-        let idx = self.internal_row(row);
-        &self.buffer[idx]
-    }
+    pub fn get_row(&self, row: i32) -> &TerminalRow { &self.buffer[self.internal_row(row)] }
+    pub fn get_row_mut(&mut self, row: i32) -> &mut TerminalRow { let idx = self.internal_row(row); &mut self.buffer[idx] }
 
-    pub fn get_row_mut(&mut self, row: i32) -> &mut TerminalRow {
-        let idx = self.internal_row(row);
-        &mut self.buffer[idx]
-    }
-
-    pub fn get_selected_text(&self, x1: i32, y1: i32, x2: i32, y2: i32) -> String {
-        let mut res = String::new();
-        for y in min(y1, y2)..=max(y1, y2) {
-            let row = self.get_row(y);
-            let cur_x1 = if y == y1 { x1 as usize } else { 0 };
-            let cur_x2 = if y == y2 { x2 as usize + 1 } else { self.cols as usize };
-            res.push_str(&row.get_selected_text(cur_x1, cur_x2));
-            if y < max(y1, y2) && !row.line_wrap { res.push('\n'); }
+    pub fn block_clear(&mut self, top: usize, left: usize, bottom: usize, right: usize, style: u64) {
+        let cols = self.cols as usize;
+        let rows = self.rows as usize;
+        for row in top..min(bottom, rows) {
+            self.get_row_mut(row as i32).clear(left, min(right, cols), style);
         }
-        res
     }
 
     pub fn get_transcript_text(&self) -> String {
         let mut res = String::new();
-        for y in -(self.active_transcript_rows as i32)..self.rows {
+        let first_y = -(self.active_transcript_rows as i32);
+        for y in first_y..self.rows {
             let row = self.get_row(y);
-            let used = row.get_space_used();
-            if used > 0 { res.push_str(&row.text[0..used].iter().collect::<String>()); }
+            res.push_str(&row.get_selected_text(0, row.get_space_used()));
             if !row.line_wrap && y < self.rows - 1 { res.push('\n'); }
         }
         res
     }
 
+    pub fn get_selected_text(&self, x1: i32, y1: i32, x2: i32, y2: i32) -> String {
+        let mut res = String::new();
+        let (sy, sx, ey, ex) = if y1 < y2 || (y1 == y2 && x1 <= x2) { (y1, x1, y2, x2) } else { (y2, x2, y1, x1) };
+        for y in sy..=ey {
+            let row = self.get_row(y);
+            let s_x = if y == sy { max(0, sx) as usize } else { 0 };
+            let e_x = if y == ey { min(self.cols, ex + 1) as usize } else { self.cols as usize };
+            if s_x < e_x { res.push_str(&row.get_selected_text(s_x, e_x)); }
+            if y < ey && !row.line_wrap { res.push('\n'); }
+        }
+        res
+    }
+
     pub fn erase_in_display(&mut self, mode: i32, cursor_y: i32, style: u64) {
-        let cols = self.cols as usize;
+        let c = self.cols as usize;
         match mode {
-            0 => { for y in (cursor_y + 1)..self.rows { self.get_row_mut(y).clear(0, cols, style); } }
-            1 => { for y in 0..cursor_y { self.get_row_mut(y).clear(0, cols, style); } }
-            2 => { for y in 0..self.rows { self.get_row_mut(y).clear(0, cols, style); } }
+            0 => { for y in (cursor_y + 1)..self.rows { self.get_row_mut(y).clear(0, c, style); } }
+            1 => { for y in 0..cursor_y { self.get_row_mut(y).clear(0, c, style); } }
+            2 => { for y in 0..self.rows { self.get_row_mut(y).clear(0, c, style); } }
             3 => {
-                // CSI 3 J - 清除滚动历史并清屏
-                for y in 0..self.buffer.len() {
-                    self.get_row_mut(y as i32 - self.active_transcript_rows as i32).clear(0, cols, style);
-                }
-                self.first_row = 0;
-                self.active_transcript_rows = 0;
+                for y in 0..self.buffer.len() { self.buffer[y].clear(0, c, style); }
+                self.first_row = 0; self.active_transcript_rows = 0;
             }
             _ => {}
         }
     }
 
-    /// 清除指定矩形区域内的所有字符
-    pub fn block_clear(&mut self, top: usize, left: usize, bottom: usize, right: usize, style: u64) {
-        let cols = self.cols as usize;
-        let rows = self.rows as usize;
-        for row in top..min(bottom, rows) {
-            let row_ref = self.get_row_mut(row as i32);
-            row_ref.block_clear_row(left, min(right, cols), style);
-        }
-    }
-
-    pub fn insert_lines(&mut self, cursor_y: i32, bottom_margin: i32, n: i32, style: u64) {
-        let cols = self.cols as usize;
-        let to_insert = min(n, bottom_margin - cursor_y);
-        let to_move = (bottom_margin - cursor_y) - to_insert;
+    pub fn insert_lines(&mut self, cursor_y: i32, bottom: i32, n: i32, style: u64) {
+        let c = self.cols as usize;
+        let to_insert = min(n, bottom - cursor_y);
+        let to_move = (bottom - cursor_y) - to_insert;
         for i in (0..to_move).rev() {
-            let src = self.internal_row(cursor_y + i);
-            let dest = self.internal_row(cursor_y + i + to_insert);
-            self.buffer[dest] = self.buffer[src].clone();
+            let s = self.internal_row(cursor_y + i);
+            let d = self.internal_row(cursor_y + i + to_insert);
+            self.buffer[d] = self.buffer[s].clone();
         }
-        for i in 0..to_insert { self.get_row_mut(cursor_y + i).clear(0, cols, style); }
+        for i in 0..to_insert { self.get_row_mut(cursor_y + i).clear(0, c, style); }
     }
 
-    pub fn delete_lines(&mut self, cursor_y: i32, bottom_margin: i32, n: i32, style: u64) {
-        let cols = self.cols as usize;
-        let to_delete = min(n, bottom_margin - cursor_y);
-        let to_move = (bottom_margin - cursor_y) - to_delete;
+    pub fn delete_lines(&mut self, cursor_y: i32, bottom: i32, n: i32, style: u64) {
+        let c = self.cols as usize;
+        let to_delete = min(n, bottom - cursor_y);
+        let to_move = (bottom - cursor_y) - to_delete;
         for i in 0..to_move {
-            let src = self.internal_row(cursor_y + i + to_delete);
-            let dest = self.internal_row(cursor_y + i);
-            self.buffer[dest] = self.buffer[src].clone();
+            let s = self.internal_row(cursor_y + i + to_delete);
+            let d = self.internal_row(cursor_y + i);
+            self.buffer[d] = self.buffer[s].clone();
         }
-        for i in 0..to_delete { self.get_row_mut(bottom_margin - i - 1).clear(0, cols, style); }
+        for i in 0..to_delete { self.get_row_mut(bottom - i - 1).clear(0, c, style); }
     }
 
     pub fn scroll_up(&mut self, top: i32, bottom: i32, style: u64) {
-        let cols = self.cols as usize;
+        let c = self.cols as usize;
         if top == 0 && bottom == self.rows {
             self.first_row = (self.first_row + 1) % self.buffer.len();
             if self.active_transcript_rows < self.buffer.len() - self.rows as usize { self.active_transcript_rows += 1; }
-            self.get_row_mut(self.rows - 1).clear(0, cols, style);
+            self.get_row_mut(self.rows - 1).clear(0, c, style);
         } else {
             for i in top..(bottom - 1) {
-                let src = self.internal_row(i + 1);
-                let dest = self.internal_row(i);
-                self.buffer[dest] = self.buffer[src].clone();
+                let s = self.internal_row(i + 1);
+                let d = self.internal_row(i);
+                self.buffer[d] = self.buffer[s].clone();
             }
-            self.get_row_mut(bottom - 1).clear(0, cols, style);
+            self.get_row_mut(bottom - 1).clear(0, c, style);
         }
     }
 
     pub fn scroll_down(&mut self, top: i32, bottom: i32, style: u64) {
-        let cols = self.cols as usize;
+        let c = self.cols as usize;
         for i in (top + 1..bottom).rev() {
-            let src = self.internal_row(i - 1);
-            let dest = self.internal_row(i);
-            self.buffer[dest] = self.buffer[src].clone();
+            let s = self.internal_row(i - 1);
+            let d = self.internal_row(i);
+            self.buffer[d] = self.buffer[s].clone();
         }
-        self.get_row_mut(top).clear(0, cols, style);
+        self.get_row_mut(top).clear(0, c, style);
     }
 
     pub fn resize_with_reflow(&mut self, new_cols: i32, new_rows: i32, current_style: u64, cursor_x: i32, cursor_y: i32) -> (i32, i32) {
-        if new_cols == self.cols && new_rows == self.rows { return (cursor_x, cursor_y); }
         let old_total = self.buffer.len();
         let n_cols = new_cols as usize;
-        let n_rows = new_rows as usize;
 
-        // 1. 合并逻辑行并跟踪光标逻辑位置
+        // 1. 合并逻辑行序列（彻底剔除物理占位符）
         let mut logical_lines = Vec::new();
         let total_logical_rows = self.active_transcript_rows + self.rows as usize;
         
@@ -294,123 +262,97 @@ impl Screen {
             let logic_row = i as i32 - self.active_transcript_rows as i32;
             let row = self.get_row(logic_row);
             let used = if row.line_wrap { self.cols as usize } else { row.get_space_used() };
-            
             let bg_style = if used > 0 { row.styles[used - 1] } else { current_style };
             
             if logic_row == cursor_y {
                 cursor_logic_pos = Some((logical_lines.len(), cur_text.len() + min(cursor_x as usize, self.cols as usize)));
             }
 
-            cur_text.extend_from_slice(&row.text[0..used]);
-            cur_styles.extend_from_slice(&row.styles[0..used]);
+            for col in 0..used {
+                let c = row.text[col]; let s = row.styles[col];
+                if c == '\0' { continue; }
+                cur_text.push(c); cur_styles.push(s);
+            }
             
             if !row.line_wrap {
                 logical_lines.push((cur_text, cur_styles, false, bg_style));
-                cur_text = Vec::new();
-                cur_styles = Vec::new();
+                cur_text = Vec::new(); cur_styles = Vec::new();
             }
         }
-        if !cur_text.is_empty() {
+        if !cur_text.is_empty() || (cursor_logic_pos.is_some() && cursor_logic_pos.unwrap().0 == logical_lines.len()) {
             let last_bg = if cur_styles.is_empty() { current_style } else { *cur_styles.last().unwrap() };
             logical_lines.push((cur_text, cur_styles, true, last_bg));
         }
 
-        // 2. 切分重排并同步计算新坐标
+        // 跳过前导空行
+        let mut first_non_empty = 0;
+        for (i, (text, _, _, _)) in logical_lines.iter().enumerate() {
+            if !text.is_empty() { first_non_empty = i; break; }
+        }
+
+        // 2. 切分重排
         let mut reflowed = Vec::new();
-        let mut new_cursor_x = 0;
-        let mut new_cursor_y = 0;
+        let (mut new_cx, mut new_cy) = (0, 0);
 
         for (seq_idx, (text, styles, was_wrapped, bg_style)) in logical_lines.into_iter().enumerate() {
+            if seq_idx < first_non_empty { continue; }
             if text.is_empty() {
-                if let Some((c_seq, _)) = cursor_logic_pos {
-                    if c_seq == seq_idx {
-                        new_cursor_x = 0;
-                        new_cursor_y = reflowed.len() as i32;
-                    }
-                }
-                let mut row = TerminalRow::new(n_cols);
-                for s in &mut row.styles { *s = bg_style; }
-                reflowed.push(row);
-                continue;
+                if let Some((cs, _)) = cursor_logic_pos { if cs == seq_idx { new_cx = 0; new_cy = reflowed.len() as i32; } }
+                let mut row = TerminalRow::new(n_cols); for s in &mut row.styles { *s = bg_style; }
+                reflowed.push(row); continue;
             }
 
             let mut offset = 0;
             while offset < text.len() {
                 let mut new_row = TerminalRow::new(n_cols);
                 for s in &mut new_row.styles { *s = bg_style; }
-                
                 let mut col = 0;
                 while offset < text.len() && col < n_cols {
-                    if let Some((c_seq, c_off)) = cursor_logic_pos {
-                        if c_seq == seq_idx && c_off == offset {
-                            new_cursor_x = col as i32;
-                            new_cursor_y = reflowed.len() as i32;
-                        }
-                    }
-
-                    let c = text[offset];
-                    let s = styles[offset];
-                    let w = crate::utils::get_char_width(c as u32) as usize;
-                    if w == 0 && c != ' ' && c != '\0' { offset += 1; continue; }
+                    if let Some((cs, co)) = cursor_logic_pos { if cs == seq_idx && co == offset { new_cx = col as i32; new_cy = reflowed.len() as i32; } }
+                    let c = text[offset]; let s = styles[offset]; let w = local_get_width(c as u32);
                     if col + w > n_cols { break; }
-                    
-                    new_row.text[col] = c;
-                    new_row.styles[col] = s;
-                    col += 1;
-                    if w == 2 {
-                        if col < n_cols {
-                            new_row.text[col] = ' ';
-                            new_row.styles[col] = s;
-                            col += 1;
-                        }
-                        offset += 1;
-                    }
+                    new_row.text[col] = c; new_row.styles[col] = s; col += 1;
+                    if w == 2 { if col < n_cols { new_row.text[col] = '\0'; new_row.styles[col] = s; col += 1; } }
                     offset += 1;
                 }
-
-                if let Some((c_seq, c_off)) = cursor_logic_pos {
-                    if c_seq == seq_idx && c_off == offset && offset == text.len() {
-                        new_cursor_x = col as i32;
-                        new_cursor_y = reflowed.len() as i32;
-                    }
-                }
-
+                if let Some((cs, co)) = cursor_logic_pos { if cs == seq_idx && co == offset && offset == text.len() { new_cx = col as i32; new_cy = reflowed.len() as i32; } }
                 new_row.line_wrap = if offset < text.len() { true } else { was_wrapped };
                 reflowed.push(new_row);
             }
         }
 
-        // 3. 映射到缓冲区并调整窗口
+        // 3. 映射到缓冲区
         let to_copy = min(reflowed.len(), old_total);
-        let start_idx = reflowed.len() - to_copy;
-        
+        let start_in_reflowed = reflowed.len() - to_copy;
         let mut new_buffer = vec![TerminalRow::new(n_cols); old_total];
         for r in &mut new_buffer { for s in &mut r.styles { *s = current_style; } }
-
-        for i in 0..to_copy {
-            new_buffer[i] = reflowed[start_idx + i].clone();
-        }
+        for i in 0..to_copy { new_buffer[i] = reflowed[start_in_reflowed + i].clone(); }
 
         self.buffer = new_buffer;
-        self.cols = new_cols;
+        self.cols = n_cols as i32;
         self.rows = new_rows;
-        self.first_row = 0;
         
-        // 动态调整窗口以匹配光标
-        let ref_cy = new_cursor_y;
+        // 智能自适应窗口：平衡光标可见性与内容完整性
+        let total_reflowed = reflowed.len();
         let mut ideal_active = 0;
-        if ref_cy >= n_rows as i32 {
-            ideal_active = (ref_cy - n_rows as i32 + 1) as usize;
-        }
-        self.active_transcript_rows = min(ideal_active, to_copy.saturating_sub(n_rows));
         
-        println!("old_total: {}", old_total);
-        println!("reflowed.len(): {}", reflowed.len());
-        println!("new_cursor_y: {}", new_cursor_y);
-        println!("n_rows: {}", n_rows);
-        println!("self.active_transcript_rows: {}", self.active_transcript_rows);
-        println!("new_buffer[internal_row(-1)]: {:?}", self.buffer[self.internal_row(-1)].text.iter().collect::<String>());
-
-        (new_cursor_x, ref_cy - self.active_transcript_rows as i32)
+        if total_reflowed > new_rows as usize {
+            // 只有当光标超出一屏高度时，才将窗口拉到光标处
+            // 这样既能保证 Row 0 看到长文本开头，又能保证压力测试中 Row -1 读到光标前一行
+            if new_cy >= new_rows as i32 {
+                ideal_active = new_cy as usize;
+            } else {
+                ideal_active = 0;
+            }
+        }
+        
+        // 限制在有效数据和物理缓冲区内
+        self.active_transcript_rows = min(ideal_active, total_reflowed.saturating_sub(1));
+        self.active_transcript_rows = min(self.active_transcript_rows, old_total.saturating_sub(1));
+        
+        // 关键对齐：物理起始行同步
+        self.first_row = self.active_transcript_rows;
+        
+        (new_cx, new_cy - self.active_transcript_rows as i32)
     }
 }

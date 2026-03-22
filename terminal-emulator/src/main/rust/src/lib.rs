@@ -518,11 +518,5 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_WcWidth_widthRust(_env: JNIEnv, _class: JClass, ucs: jint) -> jint {
-    // 简单实现：返回 1 作为默认值
-    // 详细实现在 Java 层缓存处理
-    let c = ucs as u32;
-    if c < 2048 {
-        return 1;
-    }
-    1
+    crate::utils::get_char_width(ucs as u32) as jint
 }

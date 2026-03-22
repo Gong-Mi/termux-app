@@ -84,7 +84,7 @@ pub fn handle_print(state: &mut ScreenState, c: char) {
             row.text[x] = c;
             row.styles[x] = style;
             if char_width == 2 && x + 1 < row.text.len() {
-                row.text[x + 1] = ' '; // 宽字符占位符
+                row.text[x + 1] = '\0'; // 宽字符占位符
                 row.styles[x + 1] = style;
             }
         }
