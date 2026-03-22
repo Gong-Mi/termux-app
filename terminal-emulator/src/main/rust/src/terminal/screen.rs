@@ -66,7 +66,8 @@ impl TerminalRow {
 
     pub fn get_space_used(&self) -> usize {
         for i in (0..self.text.len()).rev() {
-            if (self.text[i] != ' ' && self.text[i] != '\0') || self.styles[i] != STYLE_NORMAL {
+            // 只要不是空字符或默认空格，就认为该列已被使用
+            if self.text[i] != ' ' && self.text[i] != '\0' {
                 return i + 1;
             }
         }
@@ -250,109 +251,121 @@ impl Screen {
         let old_total = self.buffer.len();
         let n_cols = new_cols as usize;
 
-        // 1. 合并逻辑行序列（彻底剔除物理占位符）
-        let mut logical_lines = Vec::new();
-        let total_logical_rows = self.active_transcript_rows + self.rows as usize;
-        
-        let mut cur_text = Vec::new();
-        let mut cur_styles = Vec::new();
-        let mut cursor_logic_pos = None;
-        
-        for i in 0..total_logical_rows {
-            let logic_row = i as i32 - self.active_transcript_rows as i32;
-            let row = self.get_row(logic_row);
-            let used = if row.line_wrap { self.cols as usize } else { row.get_space_used() };
-            let bg_style = if used > 0 { row.styles[used - 1] } else { current_style };
-            
-            if logic_row == cursor_y {
-                cursor_logic_pos = Some((logical_lines.len(), cur_text.len() + min(cursor_x as usize, self.cols as usize)));
+        // 1. 流式提取 (带延迟空行处理)
+        let mut stream = Vec::new();
+        let mut cursor_stream_idx = None;
+        let mut skipped_blank_lines = 0;
+
+        let start_row = -(self.active_transcript_rows as i32);
+        let end_row = self.rows as i32;
+
+        for r in start_row..end_row {
+            let row = self.get_row(r);
+            let is_cursor_row = r == cursor_y;
+            let content_used = row.get_space_used();
+            let is_blank = content_used == 0;
+
+            if is_blank && !is_cursor_row {
+                skipped_blank_lines += 1;
+                continue;
             }
 
-            for col in 0..used {
-                let c = row.text[col]; let s = row.styles[col];
-                if c == '\0' { continue; }
-                cur_text.push(c); cur_styles.push(s);
+            // 遇到非空行或光标行，补回之前跳过的空行
+            for _ in 0..skipped_blank_lines {
+                stream.push(('\n', current_style));
+            }
+            skipped_blank_lines = 0;
+
+            let limit = if row.line_wrap { 
+                self.cols as usize 
+            } else { 
+                max(content_used, if is_cursor_row { min(cursor_x as usize, self.cols as usize) } else { 0 })
+            };
+
+            for c_idx in 0..limit {
+                if is_cursor_row && c_idx == cursor_x as usize {
+                    cursor_stream_idx = Some(stream.len());
+                }
+                stream.push((row.text[c_idx], row.styles[c_idx]));
             }
             
+            if is_cursor_row && cursor_x as usize >= limit {
+                cursor_stream_idx = Some(stream.len());
+            }
+
             if !row.line_wrap {
-                logical_lines.push((cur_text, cur_styles, false, bg_style));
-                cur_text = Vec::new(); cur_styles = Vec::new();
+                stream.push(('\n', current_style)); 
             }
         }
-        if !cur_text.is_empty() || (cursor_logic_pos.is_some() && cursor_logic_pos.unwrap().0 == logical_lines.len()) {
-            let last_bg = if cur_styles.is_empty() { current_style } else { *cur_styles.last().unwrap() };
-            logical_lines.push((cur_text, cur_styles, true, last_bg));
-        }
 
-        // 跳过前导空行
-        let mut first_non_empty = 0;
-        for (i, (text, _, _, _)) in logical_lines.iter().enumerate() {
-            if !text.is_empty() { first_non_empty = i; break; }
-        }
-
-        // 2. 切分重排
+        // 2. 重新填充
         let mut reflowed = Vec::new();
+        let mut curr_row = TerminalRow::new(n_cols);
+        let mut curr_col = 0;
         let (mut new_cx, mut new_cy) = (0, 0);
 
-        for (seq_idx, (text, styles, was_wrapped, bg_style)) in logical_lines.into_iter().enumerate() {
-            if seq_idx < first_non_empty { continue; }
-            if text.is_empty() {
-                if let Some((cs, _)) = cursor_logic_pos { if cs == seq_idx { new_cx = 0; new_cy = reflowed.len() as i32; } }
-                let mut row = TerminalRow::new(n_cols); for s in &mut row.styles { *s = bg_style; }
-                reflowed.push(row); continue;
+        for (idx, (c, s)) in stream.into_iter().enumerate() {
+            let is_cursor = Some(idx) == cursor_stream_idx;
+            
+            if c == '\n' {
+                if is_cursor { new_cx = curr_col as i32; new_cy = reflowed.len() as i32; }
+                curr_row.line_wrap = false;
+                reflowed.push(curr_row);
+                curr_row = TerminalRow::new(n_cols);
+                curr_col = 0;
+                continue;
             }
 
-            let mut offset = 0;
-            while offset < text.len() {
-                let mut new_row = TerminalRow::new(n_cols);
-                for s in &mut new_row.styles { *s = bg_style; }
-                let mut col = 0;
-                while offset < text.len() && col < n_cols {
-                    if let Some((cs, co)) = cursor_logic_pos { if cs == seq_idx && co == offset { new_cx = col as i32; new_cy = reflowed.len() as i32; } }
-                    let c = text[offset]; let s = styles[offset]; let w = local_get_width(c as u32);
-                    if col + w > n_cols { break; }
-                    new_row.text[col] = c; new_row.styles[col] = s; col += 1;
-                    if w == 2 { if col < n_cols { new_row.text[col] = '\0'; new_row.styles[col] = s; col += 1; } }
-                    offset += 1;
+            let w = local_get_width(c as u32);
+            if curr_col + w > n_cols {
+                curr_row.line_wrap = true;
+                reflowed.push(curr_row);
+                curr_row = TerminalRow::new(n_cols);
+                curr_col = 0;
+            }
+
+            if is_cursor { new_cx = curr_col as i32; new_cy = reflowed.len() as i32; }
+
+            if curr_col < n_cols {
+                curr_row.text[curr_col] = c;
+                curr_row.styles[curr_col] = s;
+                curr_col += 1;
+                if w == 2 && curr_col < n_cols {
+                    curr_row.text[curr_col] = '\0';
+                    curr_row.styles[curr_col] = s;
+                    curr_col += 1;
                 }
-                if let Some((cs, co)) = cursor_logic_pos { if cs == seq_idx && co == offset && offset == text.len() { new_cx = col as i32; new_cy = reflowed.len() as i32; } }
-                new_row.line_wrap = if offset < text.len() { true } else { was_wrapped };
-                reflowed.push(new_row);
             }
         }
+        if cursor_stream_idx.is_some() && (new_cy == 0 && new_cx == 0 && reflowed.is_empty() || new_cy == reflowed.len() as i32) {
+             new_cx = curr_col as i32; new_cy = reflowed.len() as i32;
+        }
+        reflowed.push(curr_row);
 
-        // 3. 映射到缓冲区
-        let to_copy = min(reflowed.len(), old_total);
-        let start_in_reflowed = reflowed.len() - to_copy;
+        // 3. 映射回物理缓冲区
+        let total_reflowed = reflowed.len();
+        let to_copy = min(total_reflowed, old_total);
+        let start_in_reflowed = total_reflowed.saturating_sub(to_copy);
+        
         let mut new_buffer = vec![TerminalRow::new(n_cols); old_total];
-        for r in &mut new_buffer { for s in &mut r.styles { *s = current_style; } }
-        for i in 0..to_copy { new_buffer[i] = reflowed[start_in_reflowed + i].clone(); }
+        for r in &mut new_buffer { for style in &mut r.styles { *style = current_style; } }
+        for i in 0..to_copy {
+            new_buffer[i] = reflowed[start_in_reflowed + i].clone();
+        }
 
         self.buffer = new_buffer;
         self.cols = n_cols as i32;
         self.rows = new_rows;
         
-        // 智能自适应窗口：平衡光标可见性与内容完整性
-        let total_reflowed = reflowed.len();
-        let mut ideal_active = 0;
-        
+        // 4. 对齐窗口
         if total_reflowed > new_rows as usize {
-            // 只有当光标超出一屏高度时，才将窗口拉到光标处
-            // 这样既能保证 Row 0 看到长文本开头，又能保证压力测试中 Row -1 读到光标前一行
-            if new_cy >= new_rows as i32 {
-                ideal_active = new_cy as usize;
-            } else {
-                ideal_active = 0;
-            }
+            self.active_transcript_rows = min(total_reflowed - new_rows as usize, old_total - new_rows as usize);
+        } else {
+            self.active_transcript_rows = 0;
         }
-        
-        // 限制在有效数据和物理缓冲区内
-        self.active_transcript_rows = min(ideal_active, total_reflowed.saturating_sub(1));
-        self.active_transcript_rows = min(self.active_transcript_rows, old_total.saturating_sub(1));
-        
-        // 关键对齐：物理起始行同步
         self.first_row = self.active_transcript_rows;
-        
-        (new_cx, new_cy - self.active_transcript_rows as i32)
+        let final_cy = new_cy - (self.active_transcript_rows as i32);
+
+        (new_cx, final_cy)
     }
 }

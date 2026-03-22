@@ -37,3 +37,7 @@ path = "tests/extended_features.rs"
 [[test]]
 name = "performance"
 path = "tests/performance.rs"
+
+[[test]]
+name = "check_width"
+path = "tests/check_width.rs"
