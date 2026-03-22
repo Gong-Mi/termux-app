@@ -13,7 +13,6 @@ import android.view.View;
 
 import androidx.annotation.Nullable;
 
-import com.termux.terminal.TerminalBuffer;
 import com.termux.terminal.TerminalEmulator;
 import com.termux.terminal.WcWidth;
 import com.termux.view.R;
@@ -222,8 +221,8 @@ public class TextSelectionCursorController implements CursorController {
 
     @Override
     public void updatePosition(TextSelectionHandleView handle, int x, int y) {
-        TerminalBuffer screen = terminalView.mEmulator.getScreen();
-        final int scrollRows = screen.getActiveRows() - terminalView.mEmulator.getRows();
+        TerminalEmulator emulator = terminalView.mEmulator;
+        final int scrollRows = emulator.getActiveTranscriptRows();
         if (handle == mStartHandle) {
             mSelX1 = terminalView.getCursorX(x);
             mSelY1 = terminalView.getCursorY(y);
@@ -234,8 +233,8 @@ public class TextSelectionCursorController implements CursorController {
             if (mSelY1 < -scrollRows) {
                 mSelY1 = -scrollRows;
 
-            } else if (mSelY1 > terminalView.mEmulator.getRows() - 1) {
-                mSelY1 = terminalView.mEmulator.getRows() - 1;
+            } else if (mSelY1 > emulator.getRows() - 1) {
+                mSelY1 = emulator.getRows() - 1;
 
             }
 
@@ -246,7 +245,7 @@ public class TextSelectionCursorController implements CursorController {
                 mSelX1 = mSelX2;
             }
 
-            if (!terminalView.mEmulator.isAlternateBufferActive()) {
+            if (!emulator.isAlternateBufferActive()) {
                 int topRow = terminalView.getTopRow();
 
                 if (mSelY1 <= topRow) {
@@ -254,7 +253,7 @@ public class TextSelectionCursorController implements CursorController {
                     if (topRow < -scrollRows) {
                         topRow = -scrollRows;
                     }
-                } else if (mSelY1 >= topRow + terminalView.mEmulator.getRows()) {
+                } else if (mSelY1 >= topRow + emulator.getRows()) {
                     topRow++;
                     if (topRow > 0) {
                         topRow = 0;
@@ -264,7 +263,7 @@ public class TextSelectionCursorController implements CursorController {
                 terminalView.setTopRow(topRow);
             }
 
-            mSelX1 = getValidCurX(screen, mSelY1, mSelX1);
+            mSelX1 = getValidCurX(emulator, mSelY1, mSelX1);
 
         } else {
             mSelX2 = terminalView.getCursorX(x);
@@ -275,8 +274,8 @@ public class TextSelectionCursorController implements CursorController {
 
             if (mSelY2 < -scrollRows) {
                 mSelY2 = -scrollRows;
-            } else if (mSelY2 > terminalView.mEmulator.getRows() - 1) {
-                mSelY2 = terminalView.mEmulator.getRows() - 1;
+            } else if (mSelY2 > emulator.getRows() - 1) {
+                mSelY2 = emulator.getRows() - 1;
             }
 
             if (mSelY1 > mSelY2) {
@@ -286,7 +285,7 @@ public class TextSelectionCursorController implements CursorController {
                 mSelX2 = mSelX1;
             }
 
-            if (!terminalView.mEmulator.isAlternateBufferActive()) {
+            if (!emulator.isAlternateBufferActive()) {
                 int topRow = terminalView.getTopRow();
 
                 if (mSelY2 <= topRow) {
@@ -294,7 +293,7 @@ public class TextSelectionCursorController implements CursorController {
                     if (topRow < -scrollRows) {
                         topRow = -scrollRows;
                     }
-                } else if (mSelY2 >= topRow + terminalView.mEmulator.getRows()) {
+                } else if (mSelY2 >= topRow + emulator.getRows()) {
                     topRow++;
                     if (topRow > 0) {
                         topRow = 0;
@@ -304,14 +303,14 @@ public class TextSelectionCursorController implements CursorController {
                 terminalView.setTopRow(topRow);
             }
 
-            mSelX2 = getValidCurX(screen, mSelY2, mSelX2);
+            mSelX2 = getValidCurX(emulator, mSelY2, mSelX2);
         }
 
         terminalView.invalidate();
     }
 
-    private int getValidCurX(TerminalBuffer screen, int cy, int cx) {
-        String line = screen.getSelectedText(0, cy, cx, cy);
+    private int getValidCurX(TerminalEmulator emulator, int cy, int cx) {
+        String line = emulator.getSelectedText(0, cy, cx, cy);
         if (!TextUtils.isEmpty(line)) {
             int col = 0;
             for (int i = 0, len = line.length(); i < len; i++) {
