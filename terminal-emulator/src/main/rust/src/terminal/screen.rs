@@ -28,6 +28,17 @@ impl TerminalRow {
         }
     }
 
+    /// 清空整行，对齐官方 Java TerminalRow.clear() 方法
+    pub fn clear_all(&mut self, style: u64) {
+        for i in 0..self.text.len() {
+            self.text[i] = ' ';
+            self.styles[i] = style;
+        }
+        // 注意：Java 版本 clear() 不重置 line_wrap
+        // 只重置 mSpaceUsed 和 mHasNonOneWidthOrSurrogateChars
+        // Rust 版本没有这些字段，所以不需要额外操作
+    }
+
     pub fn set_char(&mut self, column: usize, code_point: u32, style: u64) {
         if column < self.text.len() {
             self.text[column] = std::char::from_u32(code_point).unwrap_or(' ');
@@ -67,8 +78,9 @@ impl TerminalRow {
 
     pub fn get_space_used(&self) -> usize {
         for i in (0..self.text.len()).rev() {
-            // 修正：\0 也是内容占位符，不能忽略
-            if self.text[i] != ' ' {
+            // 修复：\0 是 CJK 宽字符的占位符，不应算作有效内容
+            // 对齐官方 Java TerminalRow.isBlank() 的行为
+            if self.text[i] != ' ' && self.text[i] != '\0' {
                 return i + 1;
             }
         }
@@ -239,119 +251,190 @@ impl Screen {
     }
 
     pub fn scroll_down(&mut self, top: i32, bottom: i32, style: u64) {
-        let c = self.cols as usize;
+        let _c = self.cols as usize;
         for i in (top + 1..bottom).rev() {
             let s = self.internal_row(i - 1);
             let d = self.internal_row(i);
             self.buffer[d] = self.buffer[s].clone();
         }
-        self.get_row_mut(top).clear(0, c, style);
+        self.get_row_mut(top).clear_all(style);
     }
 
+    /// Resize with reflow, aligning with official Java TerminalBuffer.resize() logic.
+    /// 
+    /// Key differences from previous implementation:
+    /// - Uses `skipped_blank_lines` delay insertion mechanism like Java
+    /// - Processes character by character with dynamic line wrapping
+    /// - Properly handles cursor position tracking during reflow
     pub fn resize_with_reflow(&mut self, new_cols: i32, new_rows: i32, current_style: u64, cursor_x: i32, cursor_y: i32) -> (i32, i32) {
         let old_total = self.buffer.len();
         let n_cols = new_cols as usize;
+        let old_cols = self.cols as usize;
+        let old_rows = self.rows as usize;
+        let old_active_transcript = self.active_transcript_rows;
 
-        // 1. 提取所有逻辑行
-        let mut logical_lines = Vec::new();
-        let mut cur_text = Vec::new();
-        let mut cur_styles = Vec::new();
-        let mut cursor_logic_pos = None;
-
-        let start_row = -(self.active_transcript_rows as i32);
-        let end_row = self.rows as i32;
-
-        for r_idx in start_row..end_row {
-            let row = self.get_row(r_idx);
-            let used = if row.line_wrap { self.cols as usize } else { row.get_space_used() };
-
-            if r_idx == cursor_y {
-                cursor_logic_pos = Some((logical_lines.len(), cur_text.len() + min(cursor_x as usize, self.cols as usize)));
-            }
-
-            for col in 0..used {
-                cur_text.push(row.text[col]);
-                cur_styles.push(row.styles[col]);
-            }
-
-            if !row.line_wrap {
-                let bg = if !cur_styles.is_empty() { *cur_styles.last().unwrap() } else { current_style };
-                logical_lines.push((cur_text, cur_styles, false, bg));
-                cur_text = Vec::new(); cur_styles = Vec::new();
-            }
-        }
-        if !cur_text.is_empty() || (cursor_logic_pos.is_some() && cursor_logic_pos.unwrap().0 == logical_lines.len()) {
-            let last_bg = if cur_styles.is_empty() { current_style } else { *cur_styles.last().unwrap_or(&current_style) };
-            logical_lines.push((cur_text, cur_styles, true, last_bg));
+        // Create new buffer with new column size
+        let mut new_buffer: Vec<TerminalRow> = Vec::with_capacity(old_total);
+        for _ in 0..old_total {
+            let mut row = TerminalRow::new(n_cols);
+            row.clear_all(current_style);
+            new_buffer.push(row);
         }
 
-        // 2. 切分重排
-        let mut reflowed = Vec::new();
-        let (mut new_cx, mut new_cy) = (0, 0);
+        let mut new_cursor_x: i32 = 0;
+        let mut new_cursor_y: i32 = 0;
+        let mut cursor_placed = false;
 
-        for (seq_idx, (text, styles, was_wrapped, bg_style)) in logical_lines.into_iter().enumerate() {
-            if text.is_empty() {
-                if let Some((cs, _)) = cursor_logic_pos { if cs == seq_idx { new_cx = 0; new_cy = reflowed.len() as i32; } }
-                let mut row = TerminalRow::new(n_cols); for s in &mut row.styles { *s = bg_style; }
-                reflowed.push(row); continue;
+        // Output position tracking
+        let mut output_row: usize = 0;
+        let mut output_col: usize = 0;
+
+        // Track skipped blank lines (Java logic)
+        let mut skipped_blank_lines = 0;
+
+        // Loop over every character in the initial state
+        let start_row = -(old_active_transcript as i32);
+        let end_row = old_rows as i32;
+
+        for external_old_row in start_row..end_row {
+            let internal_old_row = self.internal_row(external_old_row);
+            let old_line = &self.buffer[internal_old_row];
+            let cursor_at_this_row = external_old_row == cursor_y;
+
+            // Check if line is blank (skip logic like Java)
+            let is_blank = {
+                let used = old_line.get_space_used();
+                used == 0 || (0..used).all(|i| old_line.text[i] == ' ')
+            };
+
+            // Skip blank lines unless cursor is on this row
+            if is_blank && !cursor_at_this_row {
+                skipped_blank_lines += 1;
+                continue;
             }
 
-            let mut offset = 0;
-            while offset < text.len() {
-                let mut new_row = TerminalRow::new(n_cols);
-                for s in &mut new_row.styles { *s = bg_style; }
-                let mut col = 0;
-                while offset < text.len() && col < n_cols {
-                    if let Some((cs, co)) = cursor_logic_pos { if cs == seq_idx && co == offset { new_cx = col as i32; new_cy = reflowed.len() as i32; } }
-                    let c = text[offset]; let s = styles[offset]; let w = local_get_width(c as u32);
-                    if col + w > n_cols { break; }
-                    new_row.text[col] = c; new_row.styles[col] = s; col += 1;
-                    if w == 2 { if col < n_cols { new_row.text[col] = '\0'; new_row.styles[col] = s; col += 1; } }
-                    offset += 1;
+            // Insert skipped blank lines when encountering non-blank line
+            if skipped_blank_lines > 0 {
+                for _ in 0..skipped_blank_lines {
+                    if output_row >= new_rows as usize - 1 {
+                        // Scroll down
+                        if cursor_placed && new_cursor_y > 0 {
+                            new_cursor_y -= 1;
+                        }
+                        // Scroll the new_buffer down
+                        for i in (1..new_rows as usize).rev() {
+                            new_buffer[i] = new_buffer[i - 1].clone();
+                        }
+                        new_buffer[0].clear_all(current_style);
+                    } else {
+                        output_row += 1;
+                    }
+                    output_col = 0;
                 }
-                if let Some((cs, co)) = cursor_logic_pos { if cs == seq_idx && co == offset && offset == text.len() { new_cx = col as i32; new_cy = reflowed.len() as i32; } }
-                new_row.line_wrap = if offset < text.len() { true } else { was_wrapped };
-                reflowed.push(new_row);
+                skipped_blank_lines = 0;
+            }
+
+            // Determine how much of the line to process
+            let last_non_space_index = if cursor_at_this_row || old_line.line_wrap {
+                old_line.text.len()
+            } else {
+                old_line.get_space_used()
+            };
+
+            let just_to_cursor = cursor_at_this_row;
+
+            // Process each character in the old line
+            let mut current_old_col: usize = 0;
+            let mut style_at_col = current_style;
+
+            for i in 0..last_non_space_index {
+                let c = old_line.text[i];
+                let code_point = c as u32;
+                let display_width = local_get_width(code_point);
+
+                // Update style for this column
+                if display_width > 0 && current_old_col < old_cols {
+                    style_at_col = old_line.styles[current_old_col];
+                }
+
+                // Line wrap as necessary
+                if output_col + display_width as usize > n_cols {
+                    if output_row < new_buffer.len() {
+                        new_buffer[output_row].line_wrap = true;
+                    }
+                    if output_row >= new_rows as usize - 1 {
+                        // Scroll down
+                        if cursor_placed && new_cursor_y > 0 {
+                            new_cursor_y -= 1;
+                        }
+                        for i in (1..new_rows as usize).rev() {
+                            new_buffer[i] = new_buffer[i - 1].clone();
+                        }
+                        new_buffer[0].clear_all(current_style);
+                    } else {
+                        output_row += 1;
+                    }
+                    output_col = 0;
+                }
+
+                // Handle combining characters
+                let offset = if display_width <= 0 && output_col > 0 { 1 } else { 0 };
+                let output_column = output_col.saturating_sub(offset);
+
+                // Set character in new buffer
+                if output_column < n_cols && output_row < new_buffer.len() {
+                    new_buffer[output_row].text[output_column] = c;
+                    new_buffer[output_row].styles[output_column] = style_at_col;
+                }
+
+                // Track cursor position
+                if cursor_at_this_row && current_old_col == cursor_x as usize && !cursor_placed {
+                    new_cursor_x = output_col as i32;
+                    new_cursor_y = output_row as i32;
+                    cursor_placed = true;
+                }
+
+                if display_width > 0 {
+                    current_old_col += display_width;
+                    output_col += display_width as usize;
+
+                    // Break if we've placed cursor and just copying to cursor
+                    if just_to_cursor && cursor_placed {
+                        break;
+                    }
+                }
+            }
+
+            // Check if we need to insert newline (line was not wrapping)
+            if external_old_row != (end_row - 1) && !old_line.line_wrap {
+                if output_row >= new_rows as usize - 1 {
+                    if cursor_placed && new_cursor_y > 0 {
+                        new_cursor_y -= 1;
+                    }
+                    for i in (1..new_rows as usize).rev() {
+                        new_buffer[i] = new_buffer[i - 1].clone();
+                    }
+                    new_buffer[0].clear_all(current_style);
+                } else {
+                    output_row += 1;
+                }
+                output_col = 0;
             }
         }
 
-        // 3. 映射回物理缓冲区 (强制物理平铺模式)
-        let total_reflowed = reflowed.len();
-        let to_copy = min(total_reflowed, old_total);
-        let start_in_reflowed = total_reflowed.saturating_sub(to_copy);
-        
-        let mut new_buffer = vec![TerminalRow::new(n_cols); old_total];
-        for r in &mut new_buffer { for style in &mut r.styles { *style = current_style; } }
-        
-        // 物理对齐：内容从 0 开始顺序存放
-        for i in 0..to_copy {
-            new_buffer[i] = reflowed[start_in_reflowed + i].clone();
+        // Handle cursor scrolling off screen
+        if !cursor_placed || new_cursor_x < 0 || new_cursor_y < 0 {
+            new_cursor_x = 0;
+            new_cursor_y = 0;
         }
 
+        // Copy new_buffer to self.buffer
         self.buffer = new_buffer;
         self.cols = n_cols as i32;
         self.rows = new_rows;
-        
-        // 4. 重置循环缓冲区起点 (归零化)
-        // 关键：在 resize 之后，我们将物理 0 作为卷轴的最顶端历史记录。
         self.first_row = 0;
+        self.active_transcript_rows = 0;
 
-        // 5. 计算逻辑偏移
-        // 屏幕第一行相对于物理 0 的偏移量
-        let screen_top_physical = to_copy.saturating_sub(new_rows as usize);
-        self.active_transcript_rows = screen_top_physical;
-        
-        // 更新 first_row 让 get_row(0) 指向屏幕起始物理位置
-        self.first_row = self.active_transcript_rows;
-
-        // 6. 对齐游标 (逻辑坐标转换)
-        // new_cy 是相对于整个逻辑流 reflowed 列表的。
-        // 我们需要修正它，使其相对于物理缓冲区中保留的 start_in_reflowed 部分。
-        let final_cy_in_buffer = new_cy - (start_in_reflowed as i32);
-        
-        // 最终返回给 Java 的是相对于当前可见屏幕第一行的偏移量
-        let final_cy = final_cy_in_buffer - (self.active_transcript_rows as i32);
-
-        (new_cx, final_cy)
+        (new_cursor_x, new_cursor_y)
     }
 }
