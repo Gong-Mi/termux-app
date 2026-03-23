@@ -45,3 +45,7 @@ path = "tests/check_width.rs"
 [[test]]
 name = "fix_verification"
 path = "tests/fix_verification.rs"
+
+[[test]]
+name = "key_event_handling"
+path = "tests/key_event_handling.rs"
