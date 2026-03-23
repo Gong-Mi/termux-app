@@ -254,7 +254,7 @@ public final class TerminalEmulator {
     }
 
     /** 读取一行的数据（用于渲染） */
-    public void readRow(int row, char[] text, long[] styles) {
+    public void readRow(int row, int[] text, long[] styles) {
         if (mEnginePtr != 0) {
             readRowFromRust(mEnginePtr, row, text, styles);
         }
@@ -394,7 +394,7 @@ public final class TerminalEmulator {
     private static native int getActiveTranscriptRowsFromRust(long enginePtr);
     private static native boolean isAutoScrollDisabledFromRust(long enginePtr);
     private static native void toggleAutoScrollDisabledFromRust(long enginePtr);
-    private static native void readRowFromRust(long enginePtr, int row, char[] text, long[] styles);
+    private static native void readRowFromRust(long enginePtr, int row, int[] text, long[] styles);
     private static native String getSelectedTextFromRust(long enginePtr, int x1, int y1, int x2, int y2);
     private static native String getWordAtLocationFromRust(long enginePtr, int x, int y);
     private static native String getTranscriptTextFromRust(long enginePtr);

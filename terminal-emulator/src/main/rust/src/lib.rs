@@ -285,19 +285,19 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColsFromRust
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_readRowFromRust(
-    env: JNIEnv, _class: JClass, ptr: jlong, row: jint, text: jni::sys::jcharArray, styles: jni::sys::jlongArray,
+    env: JNIEnv, _class: JClass, ptr: jlong, row: jint, text: jni::sys::jintArray, styles: jni::sys::jlongArray,
 ) {
     if ptr == 0 { return; }
     let context = unsafe { &*(ptr as *const TerminalContext) };
     let cols = context.engine.state.cols as usize;
-    let mut text_buf = vec![0u16; cols];
+    let mut text_buf = vec![0i32; cols];
     let mut style_buf = vec![0i64; cols];
-    context.engine.state.copy_row_text(row, &mut text_buf);
+    context.engine.state.copy_row_codepoints(row, &mut text_buf);
     context.engine.state.copy_row_styles_i64(row, &mut style_buf);
     unsafe {
-        let j_text = jni::objects::JCharArray::from_raw(text);
+        let j_text = jni::objects::JIntArray::from_raw(text);
         let j_styles = jni::objects::JLongArray::from_raw(styles);
-        let _ = env.set_char_array_region(&j_text, 0, &text_buf);
+        let _ = env.set_int_array_region(&j_text, 0, &text_buf);
         let _ = env.set_long_array_region(&j_styles, 0, &style_buf);
     }
 }

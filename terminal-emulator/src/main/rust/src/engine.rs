@@ -677,6 +677,10 @@ impl ScreenState {
         let r = self.get_current_screen().get_row(row);
         for i in 0..min(dest.len(), r.text.len()) { dest[i] = r.text[i] as u16; }
     }
+    pub fn copy_row_codepoints(&self, row: i32, dest: &mut [i32]) {
+        let r = self.get_current_screen().get_row(row);
+        for i in 0..min(dest.len(), r.text.len()) { dest[i] = r.text[i] as i32; }
+    }
     pub fn copy_row_styles_i64(&self, row: i32, dest: &mut [i64]) {
         let r = self.get_current_screen().get_row(row);
         for i in 0..min(dest.len(), r.styles.len()) { dest[i] = r.styles[i] as i64; }
