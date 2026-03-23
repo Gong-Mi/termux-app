@@ -676,8 +676,21 @@ impl ScreenState {
     pub fn handle_osc18(&self) { self.report_terminal_response(&format!("\x1b]18;t={};{}t", self.cols, self.rows)); }
     pub fn clamp_cursor(&mut self) { self.cursor.clamp(self.cols, self.rows); }
     pub fn is_alternate_buffer_active(&self) -> bool { self.use_alternate_buffer }
-    pub fn report_focus_gain(&self) {}
-    pub fn report_focus_loss(&self) {}
+    
+    /// 报告焦点获得 - 发送 DECSET 1004 焦点事件
+    pub fn report_focus_gain(&self) {
+        if self.send_focus_events {
+            self.report_terminal_response("\x1b[I");
+        }
+    }
+    
+    /// 报告焦点丢失 - 发送 DECSET 1004 焦点事件
+    pub fn report_focus_loss(&self) {
+        if self.send_focus_events {
+            self.report_terminal_response("\x1b[O");
+        }
+    }
+    
     pub fn paste(&mut self, text: &str) { self.report_terminal_response(text); }
 
     pub fn copy_row_text(&self, row: i32, dest: &mut [u16]) {

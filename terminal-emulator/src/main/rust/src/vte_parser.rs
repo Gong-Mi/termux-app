@@ -216,43 +216,43 @@ pub trait Perform {
     
     /// BEL - 响铃
     fn bell(&mut self) {}
-    
+
     /// BS - 退格
     fn backspace(&mut self) {}
-    
+
     /// HT - 制表符
     fn tab(&mut self) {}
-    
+
     /// LF/NL/VT - 换行
     fn linefeed(&mut self) {}
-    
+
     /// CR - 回车
     fn carriage_return(&mut self) {}
-    
+
     /// SO - Shift Out
     fn shift_out(&mut self) {}
-    
+
     /// SI - Shift In
     fn shift_in(&mut self) {}
-    
+
     /// ESC 序列调度
     fn esc_dispatch(&mut self, intermediates: &[u8], ignore: bool, byte: u8);
-    
+
     /// CSI 序列调度
     fn csi_dispatch(&mut self, _params: &Params, _intermediates: &[u8], _ignore: bool, _action: char);
-    
+
     /// OSC 序列调度
     fn osc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool);
-    
+
     /// DCS 序列钩子
     fn hook(&mut self, _params: &Params, _intermediates: &[u8], _ignore: bool, _action: char) {}
-    
+
     /// DCS 数据
     fn put(&mut self, _byte: u8) {}
-    
+
     /// DCS 结束
     fn unhook(&mut self) {}
-    
+
     /// APC 序列
     fn apc_dispatch(&mut self, _data: &[u8]) {}
 }
