@@ -676,7 +676,6 @@ impl ScreenState {
     pub fn handle_osc18(&self) { self.report_terminal_response(&format!("\x1b]18;t={};{}t", self.cols, self.rows)); }
     pub fn clamp_cursor(&mut self) { self.cursor.clamp(self.cols, self.rows); }
     pub fn is_alternate_buffer_active(&self) -> bool { self.use_alternate_buffer }
-    pub fn send_key_event(&mut self, _k: i32, _s: Option<String>, _m: i32) {}
     pub fn report_focus_gain(&self) {}
     pub fn report_focus_loss(&self) {}
     pub fn paste(&mut self, text: &str) { self.report_terminal_response(text); }
@@ -774,6 +773,159 @@ impl TerminalEngine {
             unsafe { if let Some(flat) = &self.state.flat_buffer { flat.sync_to_shared(self.state.shared_buffer_ptr); } }
         }
     }
+    
+    /// 处理按键事件 - 实现 KeyHandler.getCode() 的逻辑
+    pub fn send_key_event(&mut self, key_code: i32, _char_str: Option<String>, meta_state: i32) {
+        // KeyEvent 常量定义
+        const KEYCODE_DPAD_UP: i32 = 19;
+        const KEYCODE_DPAD_DOWN: i32 = 20;
+        const KEYCODE_DPAD_LEFT: i32 = 21;
+        const KEYCODE_DPAD_RIGHT: i32 = 22;
+        const KEYCODE_MOVE_HOME: i32 = 122;
+        const KEYCODE_MOVE_END: i32 = 123;
+        const KEYCODE_PAGE_UP: i32 = 92;
+        const KEYCODE_PAGE_DOWN: i32 = 93;
+        const KEYCODE_F1: i32 = 131;
+        const KEYCODE_F2: i32 = 132;
+        const KEYCODE_F3: i32 = 133;
+        const KEYCODE_F4: i32 = 134;
+        const KEYCODE_F5: i32 = 135;
+        const KEYCODE_F6: i32 = 136;
+        const KEYCODE_F7: i32 = 137;
+        const KEYCODE_F8: i32 = 138;
+        const KEYCODE_F9: i32 = 139;
+        const KEYCODE_F10: i32 = 140;
+        const KEYCODE_F11: i32 = 141;
+        const KEYCODE_F12: i32 = 142;
+        const KEYCODE_ENTER: i32 = 66;
+        const KEYCODE_TAB: i32 = 61;
+        const KEYCODE_ESCAPE: i32 = 111;
+        const KEYCODE_DEL: i32 = 67;
+        const KEYCODE_FORWARD_DEL: i32 = 112;
+        const KEYCODE_INSERT: i32 = 124;
+        
+        const KEYMOD_SHIFT: i32 = 1;
+        const KEYMOD_ALT: i32 = 2;
+        const KEYMOD_CTRL: i32 = 4;
+        
+        let shift_down = (meta_state & KEYMOD_SHIFT) != 0;
+        let alt_down = (meta_state & KEYMOD_ALT) != 0;
+        let ctrl_down = (meta_state & KEYMOD_CTRL) != 0;
+        
+        // 确定 keyMode
+        let key_mode = if shift_down { 1 } 
+            else if alt_down { 2 } 
+            else if ctrl_down { 4 } 
+            else { 0 };
+        
+        let cursor_app = self.state.application_cursor_keys;
+        
+        // 生成转义序列
+        let escape_seq: Option<String> = match key_code {
+            KEYCODE_DPAD_UP => {
+                if key_mode == 0 {
+                    Some(if cursor_app { "\x1bOA".to_string() } else { "\x1b[A".to_string() })
+                } else {
+                    Some(self.transform_for_modifiers("\x1b[1", key_mode, 'A'))
+                }
+            },
+            KEYCODE_DPAD_DOWN => {
+                if key_mode == 0 {
+                    Some(if cursor_app { "\x1bOB".to_string() } else { "\x1b[B".to_string() })
+                } else {
+                    Some(self.transform_for_modifiers("\x1b[1", key_mode, 'B'))
+                }
+            },
+            KEYCODE_DPAD_LEFT => {
+                if key_mode == 0 {
+                    Some(if cursor_app { "\x1bOC".to_string() } else { "\x1b[C".to_string() })
+                } else {
+                    Some(self.transform_for_modifiers("\x1b[1", key_mode, 'D'))
+                }
+            },
+            KEYCODE_DPAD_RIGHT => {
+                if key_mode == 0 {
+                    Some(if cursor_app { "\x1bOD".to_string() } else { "\x1b[D".to_string() })
+                } else {
+                    Some(self.transform_for_modifiers("\x1b[1", key_mode, 'C'))
+                }
+            },
+            KEYCODE_MOVE_HOME => {
+                if key_mode == 0 {
+                    Some(if cursor_app { "\x1bOH".to_string() } else { "\x1b[H".to_string() })
+                } else {
+                    Some(self.transform_for_modifiers("\x1b[1", key_mode, 'H'))
+                }
+            },
+            KEYCODE_MOVE_END => {
+                if key_mode == 0 {
+                    Some(if cursor_app { "\x1bOF".to_string() } else { "\x1b[F".to_string() })
+                } else {
+                    Some(self.transform_for_modifiers("\x1b[1", key_mode, 'F'))
+                }
+            },
+            KEYCODE_PAGE_UP => Some(self.transform_for_modifiers("\x1b[5", key_mode, '~')),
+            KEYCODE_PAGE_DOWN => Some(self.transform_for_modifiers("\x1b[6", key_mode, '~')),
+            KEYCODE_ENTER => Some("\x1b\r".to_string()),
+            KEYCODE_TAB => Some("\x1b\t".to_string()),
+            KEYCODE_ESCAPE => Some("\x1b".to_string()),
+            KEYCODE_DEL => Some("\x7f".to_string()),
+            KEYCODE_FORWARD_DEL => Some(self.transform_for_modifiers("\x1b[3", key_mode, '~')),
+            KEYCODE_INSERT => Some(self.transform_for_modifiers("\x1b[2", key_mode, '~')),
+            KEYCODE_F1 => {
+                if key_mode == 0 {
+                    Some("\x1bOP".to_string())
+                } else {
+                    Some(self.transform_for_modifiers("\x1b[1", key_mode, 'P'))
+                }
+            },
+            KEYCODE_F2 => {
+                if key_mode == 0 {
+                    Some("\x1bOQ".to_string())
+                } else {
+                    Some(self.transform_for_modifiers("\x1b[1", key_mode, 'Q'))
+                }
+            },
+            KEYCODE_F3 => {
+                if key_mode == 0 {
+                    Some("\x1bOR".to_string())
+                } else {
+                    Some(self.transform_for_modifiers("\x1b[1", key_mode, 'R'))
+                }
+            },
+            KEYCODE_F4 => {
+                if key_mode == 0 {
+                    Some("\x1bOS".to_string())
+                } else {
+                    Some(self.transform_for_modifiers("\x1b[1", key_mode, 'S'))
+                }
+            },
+            KEYCODE_F5 => Some(self.transform_for_modifiers("\x1b[15", key_mode, '~')),
+            KEYCODE_F6 => Some(self.transform_for_modifiers("\x1b[17", key_mode, '~')),
+            KEYCODE_F7 => Some(self.transform_for_modifiers("\x1b[18", key_mode, '~')),
+            KEYCODE_F8 => Some(self.transform_for_modifiers("\x1b[19", key_mode, '~')),
+            KEYCODE_F9 => Some(self.transform_for_modifiers("\x1b[20", key_mode, '~')),
+            KEYCODE_F10 => Some(self.transform_for_modifiers("\x1b[21", key_mode, '~')),
+            KEYCODE_F11 => Some(self.transform_for_modifiers("\x1b[23", key_mode, '~')),
+            KEYCODE_F12 => Some(self.transform_for_modifiers("\x1b[24", key_mode, '~')),
+            _ => None,
+        };
+        
+        if let Some(seq) = escape_seq {
+            self.process_bytes(seq.as_bytes());
+        }
+    }
+    
+    /// 为功能键转换修饰符
+    fn transform_for_modifiers(&self, base: &str, key_mode: i32, suffix: char) -> String {
+        let mut result = base.to_string();
+        // 添加修饰符参数：1=shift, 2=alt, 4=ctrl
+        let modifier = key_mode + 1;
+        result.push_str(&format!(";{}", modifier));
+        result.push(suffix);
+        result
+    }
+    
     pub fn process_code_point(&mut self, code_point: u32) {
         // 将 Unicode 码点转换为 UTF-8 字节序列并处理
         let mut utf8_buf = [0u8; 4];

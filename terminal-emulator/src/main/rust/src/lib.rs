@@ -396,7 +396,8 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendKeyCodeFrom
     } else { String::new() };
     let context = unsafe { &*(ptr as *const TerminalContext) };
     let mut engine = context.lock.write().unwrap();
-    engine.state.send_key_event(key_code, Some(rust_str), meta_state);
+    // send_key_event 现在在 TerminalEngine 上实现
+    engine.send_key_event(key_code, Some(rust_str), meta_state);
 }
 
 #[unsafe(no_mangle)]
