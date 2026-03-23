@@ -18,12 +18,17 @@ impl TerminalRow {
     }
 
     pub fn clear(&mut self, start: usize, end: usize, style: u64) {
-        let end = min(end, self.text.len());
+        let len = self.text.len();
+        let end = min(end, len);
         if start < end {
             for i in start..end {
                 self.text[i] = ' ';
                 self.styles[i] = style;
             }
+        }
+        // 如果整行被清空，重置 line_wrap 标记
+        if start == 0 && end == len {
+            self.line_wrap = false;
         }
     }
 
