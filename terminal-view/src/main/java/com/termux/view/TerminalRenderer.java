@@ -280,3 +280,4 @@ public final class TerminalRenderer {
 
         if (savedMatrix) canvas.restore();
     }
+}
