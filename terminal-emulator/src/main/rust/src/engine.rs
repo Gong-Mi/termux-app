@@ -879,8 +879,14 @@ impl TerminalEngine {
             },
             KEYCODE_PAGE_UP => Some(self.transform_for_modifiers("\x1b[5", key_mode, '~')),
             KEYCODE_PAGE_DOWN => Some(self.transform_for_modifiers("\x1b[6", key_mode, '~')),
-            KEYCODE_ENTER => Some("\x1b\r".to_string()),
-            KEYCODE_TAB => Some("\x1b\t".to_string()),
+            KEYCODE_ENTER => {
+                // 修复：ENTER 键应该只发送 \r，只有 Alt 修饰时才加 ESC 前缀
+                if alt_down { Some("\x1b\r".to_string()) } else { Some("\r".to_string()) }
+            },
+            KEYCODE_TAB => {
+                // Shift+Tab 发送 \x1b[Z，普通 Tab 发送 \t
+                if shift_down { Some("\x1b[Z".to_string()) } else { Some("\t".to_string()) }
+            },
             KEYCODE_ESCAPE => Some("\x1b".to_string()),
             KEYCODE_DEL => Some("\x7f".to_string()),
             KEYCODE_FORWARD_DEL => Some(self.transform_for_modifiers("\x1b[3", key_mode, '~')),
