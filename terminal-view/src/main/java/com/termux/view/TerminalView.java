@@ -604,7 +604,7 @@ public final class TerminalView extends View {
      */
     public int[] getColumnAndRow(MotionEvent event, boolean relativeToScroll) {
         int column = (int) (event.getX() / mRenderer.getFontWidth());
-        int row = (int) ((event.getY() - mRenderer.mFontLineSpacingAndAscent) / mRenderer.getFontLineSpacing());
+        int row = (int) ((event.getY() - mRenderer.getFontLineSpacingAndAscent()) / mRenderer.getFontLineSpacing());
         if (relativeToScroll) {
             row += mTopRow;
         }
@@ -1063,7 +1063,7 @@ public final class TerminalView extends View {
 
         // Set to 80 and 24 if you want to enable vttest.
         int newColumns = Math.max(4, (int) (viewWidth / mRenderer.getFontWidth()));
-        int newRows = Math.max(4, (viewHeight - mRenderer.mFontLineSpacingAndAscent) / mRenderer.getFontLineSpacing());
+        int newRows = Math.max(4, (viewHeight - mRenderer.getFontLineSpacingAndAscent()) / mRenderer.getFontLineSpacing());
 
         if (mEmulator == null || (newColumns != mEmulator.getCols() || newRows != mEmulator.getRows())) {
             mTermSession.updateSize(newColumns, newRows, (int) mRenderer.getFontWidth(), mRenderer.getFontLineSpacing());
@@ -1111,7 +1111,7 @@ public final class TerminalView extends View {
     }
 
     public int getCursorY(float y) {
-        return (int) (((y - mRenderer.mFontLineSpacingAndAscent) / mRenderer.getFontLineSpacing()) + mTopRow);
+        return (int) (((y - mRenderer.getFontLineSpacingAndAscent()) / mRenderer.getFontLineSpacing()) + mTopRow);
     }
 
     public int getPointX(int cx) {
@@ -1122,7 +1122,7 @@ public final class TerminalView extends View {
     }
 
     public int getPointY(int cy) {
-        return Math.round((cy - mTopRow) * mRenderer.getFontLineSpacing() + mRenderer.mFontLineSpacingAndAscent);
+        return Math.round((cy - mTopRow) * mRenderer.getFontLineSpacing() + mRenderer.getFontLineSpacingAndAscent());
     }
 
     public int getTopRow() {

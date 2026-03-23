@@ -31,6 +31,10 @@ public final class TerminalRenderer {
     public final int mTextSize;
     public final Typeface mTypeface;
 
+    public int getFontLineSpacingAndAscent() {
+        return mFontLineSpacingAndAscent;
+    }
+
     public TerminalRenderer(int textSize, Typeface typeface) {
         mTextSize = textSize;
         mTypeface = typeface;
@@ -156,7 +160,7 @@ public final class TerminalRenderer {
                 // 恢复 combining chars 处理：跳过结合符，将它们视为前一个字符的一部分
                 while (currentCharIndex < columns && WcWidth.width(line[currentCharIndex]) <= 0) {
                     int combiningChars = 1;
-                    if (Character.isHighSurrogate(line[currentCharIndex])) {
+                    if (Character.isHighSurrogate((char) line[currentCharIndex])) {
                         combiningChars = 2;
                     }
                     currentCharIndex += combiningChars;
