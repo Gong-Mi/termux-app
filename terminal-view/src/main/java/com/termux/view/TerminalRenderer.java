@@ -157,11 +157,27 @@ public final class TerminalRenderer {
         return inside ? palette[TextStyle.COLOR_INDEX_CURSOR] : 0;
     }
 
+    private final StringBuilder mRunBuilder = new StringBuilder();
+
     private void renderRun(Canvas canvas, int[] line, int offset, int count, float y, float measuredWidth, 
                            long style, boolean insideCursor, boolean insideSelection, boolean globalReverse, 
                            int[] palette, int cursorColor, int cursorShape) {
         
-        String text = new String(line, offset, count);
+        mRunBuilder.setLength(0);
+        for (int i = offset; i < offset + count; i++) {
+            int cp = line[i];
+            if (cp != 0) {
+                // 仅添加有效码点，彻底过滤掉会导致位移的 \0 占位符
+                if (Character.isSupplementaryCodePoint(cp)) {
+                    mRunBuilder.append(Character.highSurrogate(cp));
+                    mRunBuilder.append(Character.lowSurrogate(cp));
+                } else {
+                    mRunBuilder.append((char) cp);
+                }
+            }
+        }
+        
+        String text = mRunBuilder.toString();
         drawTextRun(canvas, text, palette, y, offset, count, measuredWidth, cursorColor, cursorShape, style, 
                     globalReverse || insideSelection);
     }

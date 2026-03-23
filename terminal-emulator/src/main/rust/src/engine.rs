@@ -108,8 +108,16 @@ impl FlatScreenBuffer {
     }
 }
 
+use std::sync::RwLock;
+
 pub struct TerminalContext {
-    pub engine: TerminalEngine,
+    pub lock: RwLock<TerminalEngine>,
+}
+
+impl TerminalContext {
+    pub fn new(engine: TerminalEngine) -> Self {
+        Self { lock: RwLock::new(engine) }
+    }
 }
 
 // -----------------------------------------------------------------------------
