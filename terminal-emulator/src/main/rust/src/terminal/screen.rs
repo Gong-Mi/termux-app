@@ -26,10 +26,6 @@ impl TerminalRow {
                 self.styles[i] = style;
             }
         }
-        // 如果整行被清空，重置 line_wrap 标记
-        if start == 0 && end == len {
-            self.line_wrap = false;
-        }
     }
 
     pub fn set_char(&mut self, column: usize, code_point: u32, style: u64) {
@@ -319,13 +315,15 @@ impl Screen {
             }
         }
 
-        // 3. 映射回物理缓冲区 (顶对齐)
+        // 3. 映射回物理缓冲区 (强制物理平铺模式)
         let total_reflowed = reflowed.len();
         let to_copy = min(total_reflowed, old_total);
         let start_in_reflowed = total_reflowed.saturating_sub(to_copy);
         
         let mut new_buffer = vec![TerminalRow::new(n_cols); old_total];
         for r in &mut new_buffer { for style in &mut r.styles { *style = current_style; } }
+        
+        // 物理对齐：内容从 0 开始顺序存放
         for i in 0..to_copy {
             new_buffer[i] = reflowed[start_in_reflowed + i].clone();
         }
@@ -334,15 +332,26 @@ impl Screen {
         self.cols = n_cols as i32;
         self.rows = new_rows;
         
-        // 4. 重置状态：first_row 指向屏幕起始行
-        self.active_transcript_rows = if total_reflowed > new_rows as usize {
-            min(total_reflowed - new_rows as usize, old_total - new_rows as usize)
-        } else {
-            0
-        };
+        // 4. 重置循环缓冲区起点 (归零化)
+        // 关键：在 resize 之后，我们将物理 0 作为卷轴的最顶端历史记录。
+        self.first_row = 0;
+
+        // 5. 计算逻辑偏移
+        // 屏幕第一行相对于物理 0 的偏移量
+        let screen_top_physical = to_copy.saturating_sub(new_rows as usize);
+        self.active_transcript_rows = screen_top_physical;
+        
+        // 更新 first_row 让 get_row(0) 指向屏幕起始物理位置
         self.first_row = self.active_transcript_rows;
 
-        let final_cy = new_cy - (total_reflowed.saturating_sub(new_rows as usize) as i32);
+        // 6. 对齐游标 (逻辑坐标转换)
+        // new_cy 是相对于整个逻辑流 reflowed 列表的。
+        // 我们需要修正它，使其相对于物理缓冲区中保留的 start_in_reflowed 部分。
+        let final_cy_in_buffer = new_cy - (start_in_reflowed as i32);
+        
+        // 最终返回给 Java 的是相对于当前可见屏幕第一行的偏移量
+        let final_cy = final_cy_in_buffer - (self.active_transcript_rows as i32);
+
         (new_cx, final_cy)
     }
 }

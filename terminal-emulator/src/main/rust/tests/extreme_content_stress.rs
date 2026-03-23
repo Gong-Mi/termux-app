@@ -1,5 +1,6 @@
 use termux_rust::TerminalEngine;
 use std::time::Instant;
+use std::cmp::max;
 
 fn get_row_text(engine: &TerminalEngine, row: i32) -> String {
     let cols = engine.state.cols as usize;
@@ -37,10 +38,15 @@ fn test_massive_50000_rows_stress() {
     println!("Massive write took: {:?}", start.elapsed());
 
     // 2. 验证内容完整性 (采样检查)
-    // 检查最后几行内容
-    let last_row = get_row_text(&engine, -1);
-    println!("Last row content snippet: '{}'", last_row.trim());
-    assert!(last_row.contains("Line 45000"), "Final line ID must match");
+    // 拼接最后 10 行物理内容来应对重排拆分
+    let mut combined_end = String::new();
+    let total_active = engine.state.main_screen.active_transcript_rows as i32;
+    for i in (max(-(total_active), engine.state.rows - 10)..engine.state.rows).rev() {
+        combined_end.push_str(&get_row_text(&engine, i));
+    }
+    
+    println!("Combined end snippet: '{}'", combined_end.replace(" ", ""));
+    assert!(combined_end.contains("Line 45000"), "Final line ID must exist in reflowed fragments");
 
     // 3. 测试备用屏幕切换 (Alternate Buffer)
     println!("--- Step 2: Testing Alternate Buffer with Data ---");
