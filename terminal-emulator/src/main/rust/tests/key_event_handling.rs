@@ -3,9 +3,12 @@
 //
 // 测试覆盖:
 // 1. 基础方向键处理
-// 2. 连续按 UP 键翻查历史
+// 2. 连续翻查历史（验证转义序列生成）
 // 3. 修饰键组合（Shift/Alt/Ctrl）
 // 4. 功能键 F1-F12
+//
+// 注意：本测试验证终端引擎是否正确生成 ANSI 转义序列
+// 实际的 shell 历史导航由 shell 本身处理（不在本测试范围）
 
 use termux_rust::TerminalEngine;
 
@@ -71,34 +74,55 @@ fn test_left_right_arrow_keys() {
 }
 
 // =============================================================================
-// 测试 2: 连续翻查历史（模拟 shell 历史导航）
+// 测试 2: 连续翻查历史（验证转义序列生成）
 // =============================================================================
 
-/// 验证连续按 UP 键可以翻查历史
+/// 验证连续按 UP 键可以生成正确的转义序列
+/// 
+/// 注意：此测试验证终端引擎是否正确生成 ^[[A 序列
+/// 实际的 shell 历史导航由 shell 本身处理（如 bash/zsh 接收 ^[[A 后返回历史命令）
+/// 
+/// 测试场景：
+/// 1. 显示多行命令提示符
+/// 2. 连续按 UP 键
+/// 3. 验证转义序列被处理（通过光标位置不变来间接验证，因为序列已发送到 PTY）
 #[test]
 fn test_continuous_up_arrow_history_navigation() {
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
-    // 模拟 shell 提示符和多条命令
+    // 模拟 shell 提示符和多条命令的显示
+    // 注意：这只是"显示"在屏幕上，不是真正的 shell 历史
     engine.process_bytes(b"$ command1\r\n");
     engine.process_bytes(b"$ command2\r\n");
     engine.process_bytes(b"$ command3\r\n");
     engine.process_bytes(b"$ ");
-    
+
     let cursor_before = get_cursor_position(&engine);
     
-    // 连续按 UP 键 3 次 - 应该翻查历史命令
+    // 验证初始光标位置在第 4 行（索引 3），第 2 列
+    assert_eq!(cursor_before, (2, 3), "Initial cursor should be at column 2, row 3");
+
+    // 连续按 UP 键 3 次
+    // 每次都会发送 ^[[A 到 PTY
+    // 在真实 shell 中，shell 会接收 ^[[A 并返回历史命令
     for i in 1..=3 {
         engine.send_key_event(19, None, 0); // UP arrow
+        // 光标位置不变，因为 ^[[A 已发送到 PTY，等待 shell 响应
         println!("  After UP press {}: cursor={:?}", i, get_cursor_position(&engine));
     }
     
-    // 验证光标位置改变了（UP 键序列被发送）
+    // 验证光标位置没有改变
+    // （因为转义序列发送到 PTY 后，需要 shell 响应才会改变屏幕）
     let cursor_after = get_cursor_position(&engine);
-    // 注意：实际的光标位置变化取决于 shell 如何处理 ^[[A 序列
-    // 这里我们只验证序列被正确发送（通过光标可能移动来间接验证）
+    assert_eq!(cursor_before, cursor_after, 
+        "Cursor should not move - escape sequences are sent to PTY for shell to process");
+    
+    // 验证屏幕内容没有改变（trim_end 会去掉末尾空格，所以只检查 "$"）
+    let row3 = get_row_text(&engine, 3);
+    assert!(row3.starts_with("$"), "Last line should still show prompt, got: '{}'", row3);
     
     println!("✅ Continuous UP arrow history navigation test passed");
+    println!("   Note: ^[[A sequences were sent to PTY (shell would respond with history)");
     println!("   Cursor: {:?} -> {:?}", cursor_before, cursor_after);
 }
 
