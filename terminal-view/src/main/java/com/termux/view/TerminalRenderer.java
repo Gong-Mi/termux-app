@@ -202,8 +202,9 @@ public final class TerminalRenderer {
         }
 
         String text = mRunBuilder.toString();
+        // 修复：使用 0 和 text.length() 作为索引，因为 text 是新构建的字符串
         drawTextRun(canvas, text, palette, y, offset, count, measuredWidth, cursorColor, cursorShape, style,
-                    globalReverse || insideSelection, startCharIndex, runWidthChars);
+                    globalReverse || insideSelection, 0, text.length());
     }
 
     private void drawTextRun(Canvas canvas, String text, int[] palette, float y, int startColumn, int runWidthColumns,
