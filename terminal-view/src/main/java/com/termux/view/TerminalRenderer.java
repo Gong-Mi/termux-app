@@ -14,21 +14,26 @@ import com.termux.terminal.WcWidth;
 /** Renderer of a {@link TerminalEmulator} into a {@link Canvas}. */
 public final class TerminalRenderer {
 
-    private final Paint mTextPaint = new Paint();
+    public final Paint mTextPaint = new Paint();
 
     /** The width of a single mono spaced character. */
-    private float mFontWidth;
+    public float mFontWidth;
     /** The 128 first characters (ASCII) width. */
     private final float[] asciiMeasures = new float[128];
 
     /** The font line spacing. */
-    private int mFontLineSpacing;
+    public int mFontLineSpacing;
     /** The font line spacing and ascent. */
-    private int mFontLineSpacingAndAscent;
+    public int mFontLineSpacingAndAscent;
     /** The font ascent. */
-    private int mFontAscent;
+    public int mFontAscent;
+
+    public final int mTextSize;
+    public final Typeface mTypeface;
 
     public TerminalRenderer(int textSize, Typeface typeface) {
+        mTextSize = textSize;
+        mTypeface = typeface;
         mTextPaint.setTypeface(typeface);
         mTextPaint.setTextSize(textSize);
         mTextPaint.setAntiAlias(true);
@@ -43,6 +48,14 @@ public final class TerminalRenderer {
             sb.setCharAt(0, (char) i);
             asciiMeasures[i] = mTextPaint.measureText(sb, 0, 1);
         }
+    }
+
+    public float getFontWidth() {
+        return mFontWidth;
+    }
+
+    public int getFontLineSpacing() {
+        return mFontLineSpacing;
     }
 
     private int[] mRowCodePointBuffer;
