@@ -67,8 +67,8 @@ impl TerminalRow {
 
     pub fn get_space_used(&self) -> usize {
         for i in (0..self.text.len()).rev() {
-            // 只要不是空字符或默认空格，就认为该列已被使用
-            if self.text[i] != ' ' && self.text[i] != '\0' {
+            // 修正：\0 也是内容占位符，不能忽略
+            if self.text[i] != ' ' {
                 return i + 1;
             }
         }
