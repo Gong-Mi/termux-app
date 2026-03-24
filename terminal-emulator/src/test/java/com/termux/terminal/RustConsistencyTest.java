@@ -27,15 +27,19 @@ public class RustConsistencyTest extends TestCase {
     static class MockTerminalSessionClient implements TerminalSessionClient {
         @Override public void onTextChanged(TerminalSession session) {}
         @Override public void onTitleChanged(TerminalSession session) {}
+        @Override public void reportTitleChange(String title) {}
         @Override public void onSessionFinished(TerminalSession session) {}
         @Override public void onCopyTextToClipboard(TerminalSession session, String text) {}
         @Override public void onPasteTextFromClipboard(TerminalSession session) {}
         @Override public void onBell(TerminalSession session) {}
+        @Override public void onBell() {}
         @Override public void onColorsChanged(TerminalSession session) {}
+        @Override public void onColorsChanged() {}
+        @Override public void write(String data) {}
         @Override public void onTerminalCursorStateChange(boolean state) {}
         @Override public void setTerminalShellPid(TerminalSession session, int pid) {}
-        @Override public Integer getTerminalCursorStyle() { 
-            return TerminalEmulator.TERMINAL_CURSOR_STYLE_BLOCK; 
+        @Override public Integer getTerminalCursorStyle() {
+            return TerminalEmulator.TERMINAL_CURSOR_STYLE_BLOCK;
         }
         @Override public void logError(String tag, String message) {}
         @Override public void logWarn(String tag, String message) {}

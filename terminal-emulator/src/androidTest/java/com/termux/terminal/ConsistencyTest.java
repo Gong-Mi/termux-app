@@ -25,11 +25,15 @@ public class ConsistencyTest {
     static class MockTerminalSessionClient implements TerminalSessionClient {
         @Override public void onTextChanged(@NonNull TerminalSession session) {}
         @Override public void onTitleChanged(@NonNull TerminalSession session) {}
+        @Override public void reportTitleChange(String title) {}
         @Override public void onSessionFinished(@NonNull TerminalSession session) {}
         @Override public void onCopyTextToClipboard(@NonNull TerminalSession session, String text) {}
         @Override public void onPasteTextFromClipboard(@Nullable TerminalSession session) {}
         @Override public void onBell(@NonNull TerminalSession session) {}
+        @Override public void onBell() {}
         @Override public void onColorsChanged(@NonNull TerminalSession session) {}
+        @Override public void onColorsChanged() {}
+        @Override public void write(String data) {}
         @Override public void onTerminalCursorStateChange(boolean state) {}
         @Override public void setTerminalShellPid(@NonNull TerminalSession session, int pid) {}
         @Override public Integer getTerminalCursorStyle() { return TerminalEmulator.TERMINAL_CURSOR_STYLE_BLOCK; }
