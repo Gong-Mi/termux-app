@@ -261,7 +261,7 @@ impl Screen {
     }
 
     /// Resize with reflow, aligning with official Java TerminalBuffer.resize() logic.
-    /// 
+    ///
     /// Key differences from previous implementation:
     /// - Uses `skipped_blank_lines` delay insertion mechanism like Java
     /// - Processes character by character with dynamic line wrapping
@@ -285,7 +285,7 @@ impl Screen {
         let mut new_cursor_y: i32 = 0;
         let mut cursor_placed = false;
 
-        // Output position tracking
+        // Output position tracking - use total buffer, not just screen rows
         let mut output_row: usize = 0;
         let mut output_col: usize = 0;
 
@@ -316,16 +316,17 @@ impl Screen {
             // Insert skipped blank lines when encountering non-blank line
             if skipped_blank_lines > 0 {
                 for _ in 0..skipped_blank_lines {
-                    if output_row >= new_rows as usize - 1 {
-                        // Scroll down
-                        if cursor_placed && new_cursor_y > 0 {
-                            new_cursor_y -= 1;
-                        }
-                        // Scroll the new_buffer down
-                        for i in (1..new_rows as usize).rev() {
+                    // Only scroll when we've filled up to total buffer
+                    if output_row >= old_total - 1 {
+                        // Scroll entire buffer
+                        for i in (1..old_total).rev() {
                             new_buffer[i] = new_buffer[i - 1].clone();
                         }
                         new_buffer[0].clear_all(current_style);
+                        // Adjust cursor if needed
+                        if cursor_placed && new_cursor_y > 0 {
+                            new_cursor_y -= 1;
+                        }
                     } else {
                         output_row += 1;
                     }
@@ -362,29 +363,26 @@ impl Screen {
                     if output_row < new_buffer.len() {
                         new_buffer[output_row].line_wrap = true;
                     }
-                    if output_row >= new_rows as usize - 1 {
-                        // Scroll down
-                        if cursor_placed && new_cursor_y > 0 {
-                            new_cursor_y -= 1;
-                        }
-                        for i in (1..new_rows as usize).rev() {
+                    // Wrap to next row
+                    if output_row >= old_total - 1 {
+                        // Scroll entire buffer
+                        for i in (1..old_total).rev() {
                             new_buffer[i] = new_buffer[i - 1].clone();
                         }
                         new_buffer[0].clear_all(current_style);
+                        if cursor_placed && new_cursor_y > 0 {
+                            new_cursor_y -= 1;
+                        }
                     } else {
                         output_row += 1;
                     }
                     output_col = 0;
                 }
 
-                // Handle combining characters
-                let offset = if display_width <= 0 && output_col > 0 { 1 } else { 0 };
-                let output_column = output_col.saturating_sub(offset);
-
                 // Set character in new buffer
-                if output_column < n_cols && output_row < new_buffer.len() {
-                    new_buffer[output_row].text[output_column] = c;
-                    new_buffer[output_row].styles[output_column] = style_at_col;
+                if output_row < new_buffer.len() && output_col < n_cols {
+                    new_buffer[output_row].text[output_col] = c;
+                    new_buffer[output_row].styles[output_col] = style_at_col;
                 }
 
                 // Track cursor position
@@ -407,14 +405,15 @@ impl Screen {
 
             // Check if we need to insert newline (line was not wrapping)
             if external_old_row != (end_row - 1) && !old_line.line_wrap {
-                if output_row >= new_rows as usize - 1 {
-                    if cursor_placed && new_cursor_y > 0 {
-                        new_cursor_y -= 1;
-                    }
-                    for i in (1..new_rows as usize).rev() {
+                if output_row >= old_total - 1 {
+                    // Scroll entire buffer
+                    for i in (1..old_total).rev() {
                         new_buffer[i] = new_buffer[i - 1].clone();
                     }
                     new_buffer[0].clear_all(current_style);
+                    if cursor_placed && new_cursor_y > 0 {
+                        new_cursor_y -= 1;
+                    }
                 } else {
                     output_row += 1;
                 }
@@ -432,6 +431,8 @@ impl Screen {
         self.buffer = new_buffer;
         self.cols = n_cols as i32;
         self.rows = new_rows;
+        
+        // Reset scroll state - content is now at bottom of buffer
         self.first_row = 0;
         self.active_transcript_rows = 0;
 
