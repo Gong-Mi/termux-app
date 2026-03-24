@@ -17,11 +17,7 @@ public class RustEngineCallback implements TerminalSessionClient {
     }
 
     public void onScreenUpdate() {
-        if (mClient != null) {
-            // 注意：mClient 本身实现了对文本变化的响应
-            // 我们通过接口定义的通用方法进行通知
-            mClient.logDebug("Termux-JNI", "onScreenUpdate triggered");
-        }
+        // 屏幕更新通知 - 目前不需要特殊处理
     }
 
     public void reportTitleChange(String title) {
@@ -44,49 +40,43 @@ public class RustEngineCallback implements TerminalSessionClient {
 
     public void onCopyTextToClipboard(String text) {
         if (mClient != null) {
-            // 如果需要复制，调用 client 对应的方法
-            mClient.logDebug("Termux-JNI", "Copy to clipboard requested");
+            mClient.onCopyTextToClipboard(null, text);
         }
     }
 
     public void onPasteTextFromClipboard() {
         if (mClient != null) {
-            mClient.onPasteTextFromClipboard(null); // 这里的参数逻辑需要根据实际 Session 调整
+            mClient.onPasteTextFromClipboard(null);
         }
     }
 
     public void onWriteToSession(String data) {
-        // Rust 终端响应数据写入
-        // 注意：实际写入操作由 Rust 通过 PTY 文件描述符处理
-        // 这里仅用于日志记录
+        // Rust 终端响应数据写入 - 通过 PTY 文件描述符处理
         if (mClient != null) {
             mClient.logVerbose("RustEngineCallback", "Write to session: " + data);
         }
     }
-    
+
     public void onWriteToSessionBytes(byte[] data) {
-        // 二进制数据写入 - 目前仅用于日志
+        // 二进制数据写入
         if (mClient != null) {
             mClient.logVerbose("RustEngineCallback", "Write " + data.length + " bytes to session");
         }
     }
-    
+
     public void write(String data) {
-        // Rust 终端响应写入（如鼠标事件、颜色查询响应等）
         onWriteToSession(data);
     }
-    
+
     public void writeBytes(byte[] data) {
         onWriteToSessionBytes(data);
     }
-    
+
     public void reportColorResponse(String colorSpec) {
-        // 颜色响应
         write(colorSpec);
     }
-    
+
     public void reportTerminalResponse(String response) {
-        // 终端响应（如 DEC 设备状态报告等）
         write(response);
     }
 
