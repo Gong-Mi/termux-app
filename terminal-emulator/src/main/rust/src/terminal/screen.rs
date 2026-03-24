@@ -276,16 +276,14 @@ impl Screen {
         // Create new buffer with new column size
         let mut new_buffer: Vec<TerminalRow> = Vec::with_capacity(old_total);
         for _ in 0..old_total {
-            let mut row = TerminalRow::new(n_cols);
-            row.clear_all(current_style);
-            new_buffer.push(row);
+            new_buffer.push(TerminalRow::new(n_cols));
         }
 
         let mut new_cursor_x: i32 = 0;
         let mut new_cursor_y: i32 = 0;
         let mut cursor_placed = false;
 
-        // Output position tracking - use total buffer, not just screen rows
+        // Output position tracking
         let mut output_row: usize = 0;
         let mut output_col: usize = 0;
 
@@ -316,13 +314,12 @@ impl Screen {
             // Insert skipped blank lines when encountering non-blank line
             if skipped_blank_lines > 0 {
                 for _ in 0..skipped_blank_lines {
-                    // Only scroll when we've filled up to total buffer
-                    if output_row >= old_total - 1 {
-                        // Scroll entire buffer
-                        for i in (1..old_total).rev() {
-                            new_buffer[i] = new_buffer[i - 1].clone();
+                    if output_row >= new_rows as usize - 1 {
+                        // Scroll up
+                        for i in 0..(old_total - 1) {
+                            new_buffer[i] = new_buffer[i + 1].clone();
                         }
-                        new_buffer[0].clear_all(current_style);
+                        new_buffer[old_total - 1].clear_all(current_style);
                         // Adjust cursor if needed
                         if cursor_placed && new_cursor_y > 0 {
                             new_cursor_y -= 1;
@@ -346,30 +343,23 @@ impl Screen {
 
             // Process each character in the old line
             let mut current_old_col: usize = 0;
-            let mut style_at_col = current_style;
 
             for i in 0..last_non_space_index {
                 let c = old_line.text[i];
                 let code_point = c as u32;
                 let display_width = local_get_width(code_point);
 
-                // Update style for this column
-                if display_width > 0 && current_old_col < old_cols {
-                    style_at_col = old_line.styles[current_old_col];
-                }
-
                 // Line wrap as necessary
-                if output_col + display_width as usize > n_cols {
+                if display_width > 0 && output_col + display_width as usize > n_cols {
                     if output_row < new_buffer.len() {
                         new_buffer[output_row].line_wrap = true;
                     }
-                    // Wrap to next row
-                    if output_row >= old_total - 1 {
-                        // Scroll entire buffer
-                        for i in (1..old_total).rev() {
-                            new_buffer[i] = new_buffer[i - 1].clone();
+                    if output_row >= new_rows as usize - 1 {
+                        // Scroll up
+                        for i in 0..(old_total - 1) {
+                            new_buffer[i] = new_buffer[i + 1].clone();
                         }
-                        new_buffer[0].clear_all(current_style);
+                        new_buffer[old_total - 1].clear_all(current_style);
                         if cursor_placed && new_cursor_y > 0 {
                             new_cursor_y -= 1;
                         }
@@ -379,10 +369,16 @@ impl Screen {
                     output_col = 0;
                 }
 
+                // Handle combining characters
+                let offset = if display_width <= 0 && output_col > 0 { 1 } else { 0 };
+                let output_column = output_col.saturating_sub(offset);
+
                 // Set character in new buffer
-                if output_row < new_buffer.len() && output_col < n_cols {
-                    new_buffer[output_row].text[output_col] = c;
-                    new_buffer[output_row].styles[output_col] = style_at_col;
+                if output_column < n_cols && output_row < new_buffer.len() {
+                    new_buffer[output_row].text[output_column] = c;
+                    if current_old_col < old_cols {
+                        new_buffer[output_row].styles[output_column] = old_line.styles[current_old_col];
+                    }
                 }
 
                 // Track cursor position
@@ -405,12 +401,12 @@ impl Screen {
 
             // Check if we need to insert newline (line was not wrapping)
             if external_old_row != (end_row - 1) && !old_line.line_wrap {
-                if output_row >= old_total - 1 {
-                    // Scroll entire buffer
-                    for i in (1..old_total).rev() {
-                        new_buffer[i] = new_buffer[i - 1].clone();
+                if output_row >= new_rows as usize - 1 {
+                    // Scroll up
+                    for i in 0..(old_total - 1) {
+                        new_buffer[i] = new_buffer[i + 1].clone();
                     }
-                    new_buffer[0].clear_all(current_style);
+                    new_buffer[old_total - 1].clear_all(current_style);
                     if cursor_placed && new_cursor_y > 0 {
                         new_cursor_y -= 1;
                     }
@@ -432,9 +428,9 @@ impl Screen {
         self.cols = n_cols as i32;
         self.rows = new_rows;
         
-        // Reset scroll state - content is now at bottom of buffer
+        // Reset scroll state
         self.first_row = 0;
-        self.active_transcript_rows = 0;
+        self.active_transcript_rows = (output_row as i32).saturating_sub(new_rows - 1).max(0) as usize;
 
         (new_cursor_x, new_cursor_y)
     }
