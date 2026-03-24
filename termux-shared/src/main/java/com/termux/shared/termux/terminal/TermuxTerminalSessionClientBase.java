@@ -50,6 +50,12 @@ public class TermuxTerminalSessionClientBase implements TerminalSessionClient {
     }
 
     @Override
+    public void write(String data) {
+        // Rust JNI terminal response - write data to session
+        // Default implementation does nothing, subclasses can override
+    }
+
+    @Override
     public void onTerminalCursorStateChange(boolean state) {
     }
 
