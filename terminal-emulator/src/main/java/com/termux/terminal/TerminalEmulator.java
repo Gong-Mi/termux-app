@@ -102,10 +102,12 @@ public final class TerminalEmulator {
     public void updateTerminalSessionClient(TerminalSessionClient client) {
         // 更新回调对象中的 client 引用
         if (mRustCallback != null) {
-            // 注意：如果 RustEngineCallback 提供了更新方法，在这里调用
+            // RustEngineCallback 内部持有 client 引用，不需要额外操作
         }
         if (mEnginePtr != 0) {
-            updateTerminalSessionClientFromRust(mEnginePtr, client);
+            // 传入 mRustCallback 而不是 client，因为 Rust 需要回调方法
+            // RustEngineCallback 实现了 TerminalSessionClient 接口，类型兼容
+            updateTerminalSessionClientFromRust(mEnginePtr, mRustCallback);
         }
     }
 

@@ -33,6 +33,9 @@ public interface TerminalSessionClient {
     /** Callback for when terminal colors are changed, without providing a session object (used by Rust JNI). */
     void onColorsChanged();
 
+    /** Callback for writing data to session (used by Rust JNI for terminal responses). */
+    void write(String data);
+
     void onTerminalCursorStateChange(boolean state);
 
     void setTerminalShellPid(@NonNull TerminalSession session, int pid);
