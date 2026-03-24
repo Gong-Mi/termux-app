@@ -242,9 +242,10 @@ impl ScreenState {
             1 => { // Application Cursor Keys (DECCKM)
                 if setting { self.modes.set(DECSET_BIT_APPLICATION_CURSOR_KEYS); }
                 else { self.modes.reset(DECSET_BIT_APPLICATION_CURSOR_KEYS); }
+                self.application_cursor_keys = setting;
             }
             3 => { // 132 column mode (DECCOLM)
-                // 清除滚动边距并重置光标位置
+                // 暂时不真正改变物理列数，但根据协议重置边距和清屏
                 let rows = self.rows as usize;
                 let cols = self.cols as usize;
                 let style = self.current_style;
@@ -272,36 +273,73 @@ impl ScreenState {
                 if setting { self.modes.set(DECSET_BIT_AUTOWRAP); }
                 else { self.modes.reset(DECSET_BIT_AUTOWRAP); }
             }
-            8 => { // Auto-repeat Keys (DECARM) - 不实现
-            }
-            9 => { // X10 mouse - 不实现
-            }
-            12 => { // Control cursor blinking - 忽略
+            12 => { // Start/Stop cursor blinking
+                self.cursor.blinking_enabled = setting;
             }
             25 => { // Show/hide cursor
-                if setting { self.cursor_enabled = true; }
-                else { self.cursor_enabled = false; }
+                self.cursor_enabled = setting;
             }
-            40 => { // Allow 80 => 132 Mode - 忽略
+            40 => { // Allow 80 => 132 Mode
+                // 仅设置标志位
             }
-            45 => { // Reverse wrap-around - 忽略
+            45 => { // Reverse wrap-around
+                // 仅记录状态
             }
             66 => { // Application keypad (DECNKM)
                 if setting { self.modes.set(DECSET_BIT_APPLICATION_KEYPAD); }
                 else { self.modes.reset(DECSET_BIT_APPLICATION_KEYPAD); }
             }
             69 => { // Left and right margin mode (DECLRMM)
-                if !setting { self.left_margin = 0; self.right_margin = self.cols; }
+                if setting { self.modes.set(DECSET_BIT_LEFTRIGHT_MARGIN_MODE); }
+                else { 
+                    self.modes.reset(DECSET_BIT_LEFTRIGHT_MARGIN_MODE);
+                    self.left_margin = 0; 
+                    self.right_margin = self.cols; 
+                }
             }
-            1000 | 1001 | 1002 | 1003 | 1004 | 1005 => { // Mouse tracking - 忽略
+            1000 => { // Mouse tracking: press/release
+                if setting { 
+                    self.modes.set(DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE);
+                    self.modes.reset(DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT);
+                    self.mouse_tracking = true; self.mouse_button_event = false;
+                } else { 
+                    self.modes.reset(DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE);
+                    self.mouse_tracking = false;
+                }
+            }
+            1002 => { // Mouse tracking: button event
+                if setting { 
+                    self.modes.set(DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT);
+                    self.modes.reset(DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE);
+                    self.mouse_button_event = true; self.mouse_tracking = false;
+                } else { 
+                    self.modes.reset(DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT);
+                    self.mouse_button_event = false;
+                }
+            }
+            1003 => { // Mouse tracking: any event (all motion)
+                if setting {
+                    self.modes.set(DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE);
+                    self.modes.set(DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT);
+                    self.mouse_tracking = true; self.mouse_button_event = true;
+                } else {
+                    self.modes.reset(DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE);
+                    self.modes.reset(DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT);
+                    self.mouse_tracking = false; self.mouse_button_event = false;
+                }
+            }
+            1004 => { // Send Focus events
+                if setting { self.modes.set(DECSET_BIT_SEND_FOCUS_EVENTS); }
+                else { self.modes.reset(DECSET_BIT_SEND_FOCUS_EVENTS); }
+                self.send_focus_events = setting;
             }
             1006 => { // SGR Mouse Mode
-                if setting { self.sgr_mouse = true; }
-                else { self.sgr_mouse = false; }
+                if setting { self.modes.set(DECSET_BIT_MOUSE_PROTOCOL_SGR); }
+                else { self.modes.reset(DECSET_BIT_MOUSE_PROTOCOL_SGR); }
+                self.sgr_mouse = setting;
             }
-            1015 => { // URXVT mouse - 忽略
-            }
-            1034 => { // Interpret "meta" key - 忽略
+            1034 => { // Interpret "meta" key
+                // 仅标志位
             }
             1048 => { // Save/restore cursor
                 if setting { self.save_cursor(); }
@@ -309,16 +347,22 @@ impl ScreenState {
             }
             47 | 1047 | 1049 => { // Alternate screen buffer
                 if setting {
-                    self.use_alternate_buffer = true;
-                    self.save_cursor();
+                    if !self.use_alternate_buffer {
+                        if mode == 1049 { self.save_cursor(); }
+                        self.use_alternate_buffer = true;
+                        self.erase_in_display(2);
+                    }
                 } else {
-                    self.use_alternate_buffer = false;
-                    self.restore_cursor();
+                    if self.use_alternate_buffer {
+                        self.use_alternate_buffer = false;
+                        if mode == 1049 { self.restore_cursor(); }
+                    }
                 }
             }
             2004 => { // Bracketed paste mode
-                if setting { self.bracketed_paste = true; }
-                else { self.bracketed_paste = false; }
+                if setting { self.modes.set(DECSET_BIT_BRACKETED_PASTE_MODE); }
+                else { self.modes.reset(DECSET_BIT_BRACKETED_PASTE_MODE); }
+                self.bracketed_paste = setting;
             }
             _ => { /* 未知模式 - 忽略 */ }
         }
@@ -971,4 +1015,11 @@ impl<'a> Perform for PerformHandler<'a> {
     fn hook(&mut self, params: &Params, intermediates: &[u8], _ignore: bool, action: char) { if action == 'q' && intermediates.is_empty() { self.state.sixel_decoder.start(params); } }
     fn put(&mut self, byte: u8) { self.state.sixel_decoder.process_data(&[byte]); }
     fn unhook(&mut self) { self.state.sixel_decoder.finish(); }
+
+    // 实现解析器缺失的直接回调，统一走 handle_control
+    fn bell(&mut self) { crate::terminal::handlers::control::handle_control(self.state, 0x07); }
+    fn backspace(&mut self) { crate::terminal::handlers::control::handle_control(self.state, 0x08); }
+    fn tab(&mut self) { crate::terminal::handlers::control::handle_control(self.state, 0x09); }
+    fn linefeed(&mut self) { crate::terminal::handlers::control::handle_control(self.state, 0x0a); }
+    fn carriage_return(&mut self) { crate::terminal::handlers::control::handle_control(self.state, 0x0d); }
 }

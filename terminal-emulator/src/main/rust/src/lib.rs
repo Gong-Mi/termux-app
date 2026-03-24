@@ -449,7 +449,23 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_resetColorsFrom
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_updateTerminalSessionClientFromRust(_env: JNIEnv, _class: JClass, _ptr: jlong, _client: JObject) {}
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_updateTerminalSessionClientFromRust(
+    env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+    client: JObject,
+) {
+    if ptr == 0 { return; }
+    let context = unsafe { &*(ptr as *const TerminalContext) };
+    let mut engine = context.lock.write().unwrap();
+    if client.is_null() {
+        engine.state.java_callback_obj = None;
+    } else {
+        if let Ok(global_ref) = env.new_global_ref(client) {
+            engine.state.java_callback_obj = Some(global_ref);
+        }
+    }
+}
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorBlinkStateInRust(_env: JNIEnv, _class: JClass, ptr: jlong, state: jboolean) {
