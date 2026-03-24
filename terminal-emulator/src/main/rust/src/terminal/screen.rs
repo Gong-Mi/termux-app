@@ -433,7 +433,9 @@ impl Screen {
         self.cols = n_cols as i32;
         self.rows = new_rows;
         self.first_row = 0;
-        self.active_transcript_rows = 0;
+        // Preserve active_transcript_rows - content has been reflowed but history should remain
+        // The actual number of history rows may have changed due to reflow, so we keep the same value
+        // which represents how many rows of history are logically available
 
         (new_cursor_x, new_cursor_y)
     }
