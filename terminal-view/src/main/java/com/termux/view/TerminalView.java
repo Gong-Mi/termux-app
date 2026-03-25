@@ -16,6 +16,7 @@ import android.text.Editable;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.view.ActionMode;
 import android.view.HapticFeedbackConstants;
 import android.view.InputDevice;
@@ -56,6 +57,9 @@ public final class TerminalView extends View {
     public TerminalRenderer mRenderer;
 
     public TerminalViewClient mClient;
+
+    /** Sixel 图像视图 */
+    private SixelImageView mSixelImageView;
 
     private TextSelectionCursorController mTextSelectionCursorController;
 
@@ -328,6 +332,11 @@ public final class TerminalView extends View {
      */
     public void setTerminalViewClient(TerminalViewClient client) {
         this.mClient = client;
+        // 初始化 Sixel 图像视图
+        if (mSixelImageView == null && client instanceof android.view.ViewGroup) {
+            mSixelImageView = new SixelImageView(getContext());
+            mSixelImageView.setVisibility(View.GONE);
+        }
     }
 
     /**
@@ -1076,7 +1085,31 @@ public final class TerminalView extends View {
 
             mTopRow = 0;
             scrollTo(0, 0);
+            
+            // Update Sixel image scaling when terminal resizes
+            updateSixelImageFontMetrics();
+            
             invalidate();
+        }
+    }
+
+    @Override
+    protected void onScrollChanged(int l, int t, int oldl, int oldt) {
+        super.onScrollChanged(l, t, oldl, oldt);
+        
+        // 更新 Sixel 图像位置以同步滚动
+        if (mSixelImageView != null && mSixelImageView.hasImage() && mRenderer != null) {
+            int[] span = mSixelImageView.getCharacterSpan();
+            float fontLineSpacing = mRenderer.getFontLineSpacing();
+            float fontAscent = mRenderer.getFontLineSpacingAndAscent();
+            
+            // 根据滚动偏移更新 Y 位置
+            // mTopRow 是可见区域顶部的行号（负值表示在历史缓冲区中）
+            int pixelY = (int) ((span[1] - mTopRow) * fontLineSpacing + fontAscent);
+            mSixelImageView.setY(pixelY);
+            
+            Log.d("SixelImage", String.format("Scroll updated: topRow=%d, span=[%d,%d,%d,%d], pixelY=%d",
+                    mTopRow, span[0], span[1], span[2], span[3], pixelY));
         }
     }
 
@@ -1578,4 +1611,109 @@ public final class TerminalView extends View {
         }
     }
 
+    /**
+     * 处理 Sixel 图像渲染回调
+     * @param rgbaData RGBA 格式的图像数据
+     * @param width 图像宽度
+     * @param height 图像高度
+     * @param startX 起始 X 坐标（字符位置）
+     * @param startY 起始 Y 坐标（字符位置）
+     */
+    public void onSixelImage(byte[] rgbaData, int width, int height, int startX, int startY) {
+        if (mSixelImageView != null && mRenderer != null) {
+            // 将 SixelImageView 添加到视图中
+            if (mSixelImageView.getParent() == null && mClient instanceof android.view.ViewGroup) {
+                android.view.ViewGroup parent = (android.view.ViewGroup) mClient;
+                parent.addView(mSixelImageView);
+            }
+            
+            // 获取字体度量用于缩放
+            float fontWidth = mRenderer.getFontWidth();
+            float fontLineSpacing = mRenderer.getFontLineSpacing();
+            float fontAscent = mRenderer.getFontLineSpacingAndAscent();
+            
+            // 设置图像数据（带字体度量）
+            mSixelImageView.setImageData(rgbaData, width, height, startX, startY,
+                                        fontWidth, fontLineSpacing, fontAscent);
+            mSixelImageView.setVisibility(View.VISIBLE);
+            
+            // 计算像素位置（考虑滚动偏移）
+            int pixelX = (int) (startX * fontWidth);
+            int pixelY = (int) ((startY - mTopRow) * fontLineSpacing + fontAscent);
+            
+            // 定位图像
+            mSixelImageView.updatePosition(pixelX, pixelY);
+            
+            mClient.logDebug("SixelImage", String.format("Displaying Sixel image at (%d,%d) pixels, size %dx%d, scale=%.2fx%.2f, topRow=%d",
+                pixelX, pixelY, width, height,
+                mSixelImageView.getScaleFactors()[0],
+                mSixelImageView.getScaleFactors()[1],
+                mTopRow));
+        }
+    }
+
+    /**
+     * 清除 Sixel 图像
+     */
+    public void clearSixelImage() {
+        if (mSixelImageView != null) {
+            mSixelImageView.clear();
+            mSixelImageView.setVisibility(View.GONE);
+            Log.d("SixelImage", "Sixel image cleared");
+        }
+    }
+
+    /**
+     * 获取 Sixel 图像视图
+     */
+    public SixelImageView getSixelImageView() {
+        return mSixelImageView;
+    }
+    
+    /**
+     * 处理清屏事件，清除 Sixel 图像
+     * 当终端执行清屏命令（如 ESC[2J）时调用
+     */
+    public void onClearScreen() {
+        clearSixelImage();
+    }
+    
+    /**
+     * 处理区域清屏事件，如果 Sixel 图像在清除区域内则清除
+     * @param top 区域顶部行
+     * @param bottom 区域底部行
+     */
+    public void onClearScreenRegion(int top, int bottom) {
+        if (mSixelImageView != null && mSixelImageView.hasImage()) {
+            int[] span = mSixelImageView.getCharacterSpan();
+            // 检查图像是否在清除区域内
+            if (span[1] >= top && span[1] <= bottom) {
+                clearSixelImage();
+                Log.d("SixelImage", String.format("Sixel image cleared (region %d-%d contains row %d)",
+                        top, bottom, span[1]));
+            }
+        }
+    }
+    
+    /**
+     * Update font metrics for Sixel image scaling
+     * Called when font size changes
+     */
+    private void updateSixelImageFontMetrics() {
+        if (mSixelImageView != null && mRenderer != null && mSixelImageView.hasImage()) {
+            float fontWidth = mRenderer.getFontWidth();
+            float fontLineSpacing = mRenderer.getFontLineSpacing();
+            float fontAscent = mRenderer.getFontLineSpacingAndAscent();
+            
+            if (mSixelImageView.updateFontMetrics(fontWidth, fontLineSpacing, fontAscent)) {
+                // Image was rescaled, update position
+                int[] span = mSixelImageView.getCharacterSpan();
+                int pixelX = (int) (span[0] * fontWidth);
+                int pixelY = (int) ((span[1] - mTopRow) * fontLineSpacing + fontAscent);
+                mSixelImageView.updatePosition(pixelX, pixelY);
+                
+                Log.d("SixelImage", String.format("Font metrics updated, position updated to (%d,%d)", pixelX, pixelY));
+            }
+        }
+    }
 }

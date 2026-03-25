@@ -431,6 +431,59 @@ impl ScreenState {
         }
     }
 
+    /// 报告 Sixel 图像到 Java 侧进行渲染
+    pub fn report_sixel_image(&self, callback_obj: &Option<jni::objects::GlobalRef>) {
+        if let Some(obj) = callback_obj {
+            if let Some(vm) = crate::JAVA_VM.get() {
+                if let Ok(mut env) = vm.get_env() {
+                    let decoder = &self.sixel_decoder;
+                    let rgba_data = decoder.get_image_data();
+                    let width = decoder.width.max(1) as i32;
+                    let height = decoder.height.max(1) as i32;
+                    let start_x = decoder.start_x;
+                    let start_y = decoder.start_y;
+
+                    // 创建 byte 数组
+                    if let Ok(byte_array) = env.new_byte_array(rgba_data.len() as i32) {
+                        let bytes: Vec<i8> = rgba_data.iter().map(|&b| b as i8).collect();
+                        let _ = env.set_byte_array_region(&byte_array, 0, &bytes);
+
+                        // 调用 Java 回调方法 onSixelImage
+                        let _ = env.call_method(
+                            obj.as_obj(),
+                            "onSixelImage",
+                            "([BIIII)V",
+                            &[
+                                JValue::Object(&byte_array.into()),
+                                JValue::Int(width),
+                                JValue::Int(height),
+                                JValue::Int(start_x),
+                                JValue::Int(start_y),
+                            ]
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// 报告清屏事件到 Java 侧
+    pub fn report_clear_screen(&self) {
+        if let Some(obj) = &self.java_callback_obj {
+            if let Some(vm) = crate::JAVA_VM.get() {
+                if let Ok(mut env) = vm.get_env() {
+                    // 调用 Java 回调方法 onClearScreen
+                    let _ = env.call_method(
+                        obj.as_obj(),
+                        "onClearScreen",
+                        "()V",
+                        &[]
+                    );
+                }
+            }
+        }
+    }
+
     pub fn report_terminal_response(&self, response: &str) {
         if let Some(obj) = &self.java_callback_obj {
             if let Some(vm) = crate::JAVA_VM.get() {
@@ -489,6 +542,12 @@ impl ScreenState {
         let style = self.current_style;
         self.get_current_screen_mut().erase_in_display(mode, y, style);
         if mode == 3 { self.scroll_counter = 0; }
+        
+        // 清屏时通知 Java 侧清除 Sixel 图像
+        // mode 0=从光标到末尾，1=从开头到光标，2=整个屏幕，3=整个屏幕并清除滚动缓冲区
+        if mode == 2 || mode == 3 {
+            self.report_clear_screen();
+        }
     }
 
     pub fn erase_in_line(&mut self, mode: i32) {
@@ -1014,7 +1073,11 @@ impl<'a> Perform for PerformHandler<'a> {
     fn esc_dispatch(&mut self, intermediates: &[u8], _ignore: bool, byte: u8) { crate::terminal::handlers::esc::handle_esc(self.state, intermediates, byte); }
     fn hook(&mut self, params: &Params, intermediates: &[u8], _ignore: bool, action: char) { if action == 'q' && intermediates.is_empty() { self.state.sixel_decoder.start(params); } }
     fn put(&mut self, byte: u8) { self.state.sixel_decoder.process_data(&[byte]); }
-    fn unhook(&mut self) { self.state.sixel_decoder.finish(); }
+    fn unhook(&mut self) {
+        self.state.sixel_decoder.finish();
+        // Sixel 图像完成，回调到 Java 渲染
+        self.state.report_sixel_image(&self.state.java_callback_obj);
+    }
 
     // 实现解析器缺失的直接回调，统一走 handle_control
     fn bell(&mut self) { crate::terminal::handlers::control::handle_control(self.state, 0x07); }

@@ -261,13 +261,33 @@ impl Screen {
     }
 
     /// Resize with reflow, aligning with official Java TerminalBuffer.resize() logic.
-    /// 
+    ///
     /// Key differences from previous implementation:
     /// - Uses `skipped_blank_lines` delay insertion mechanism like Java
     /// - Processes character by character with dynamic line wrapping
     /// - Properly handles cursor position tracking during reflow
+    /// 
+    /// ## Fast Path Optimization
+    /// 
+    /// When only rows change (columns unchanged) and new rows <= total rows,
+    /// we use O(1) pointer adjustment instead of O(n) buffer rebuild.
+    /// This matches Java's fast path behavior.
     pub fn resize_with_reflow(&mut self, new_cols: i32, new_rows: i32, current_style: u64, cursor_x: i32, cursor_y: i32) -> (i32, i32) {
+        let old_cols = self.cols as usize;
         let old_total = self.buffer.len();
+
+        // =====================================================================
+        // Fast Path: Only rows changed (columns unchanged)
+        // =====================================================================
+        // This matches Java's fast path in TerminalBuffer.resize():
+        // "if (newColumns == mColumns && newRows <= mTotalRows)"
+        if new_cols as usize == old_cols && new_rows as usize <= old_total {
+            return self.resize_rows_only(new_rows, cursor_x, cursor_y, current_style);
+        }
+
+        // =====================================================================
+        // Slow Path: Columns changed or rows expanded - need full reflow
+        // =====================================================================
         let n_cols = new_cols as usize;
         let old_cols = self.cols as usize;
         let old_rows = self.rows as usize;
@@ -451,5 +471,91 @@ impl Screen {
         self.first_row = self.active_transcript_rows % self.buffer.len();
 
         (new_cursor_x, new_cursor_y)
+    }
+
+    /// Fast path resize: only rows change (columns unchanged)
+    /// 
+    /// This is O(1) pointer adjustment, matching Java's fast path behavior.
+    /// 
+    /// ## Parameters
+    /// - `new_rows`: New number of visible rows
+    /// - `cursor_x`, `cursor_y`: Current cursor position
+    /// - `current_style`: Current text style for clearing blank lines
+    /// 
+    /// ## Returns
+    /// - New cursor position (cursor_x, cursor_y)
+    /// 
+    /// ## Algorithm (matches Java TerminalBuffer.resize fast path)
+    /// 1. Calculate `shift_down_of_top_row = old_rows - new_rows`
+    /// 2. If shrinking (shift > 0), check if we can skip blank rows at bottom
+    /// 3. If expanding (shift < 0), only move screen up if there's transcript
+    /// 4. Adjust `first_row` pointer by shift amount
+    /// 5. Update `active_transcript_rows` and cursor position
+    fn resize_rows_only(&mut self, new_rows: i32, cursor_x: i32, cursor_y: i32, current_style: u64) -> (i32, i32) {
+        let old_rows = self.rows as usize;
+        
+        // Calculate shift: positive = shrinking, negative = expanding
+        let mut shift_down_of_top_row = old_rows as i32 - new_rows as i32;
+        
+        if shift_down_of_top_row > 0 && shift_down_of_top_row < old_rows as i32 {
+            // Shrinking: check if we can skip blank rows at bottom below cursor
+            for i in (1..old_rows).rev() {
+                if cursor_y >= i as i32 {
+                    break;
+                }
+                let internal_row = self.internal_row(i as i32);
+                let row_is_blank = {
+                    let line = &self.buffer[internal_row];
+                    let used = line.get_space_used();
+                    used == 0 || (0..used).all(|j| line.text[j] == ' ')
+                };
+                if row_is_blank {
+                    shift_down_of_top_row -= 1;
+                    if shift_down_of_top_row == 0 {
+                        break;
+                    }
+                }
+            }
+        } else if shift_down_of_top_row < 0 {
+            // Expanding: only move screen up if there's transcript to show
+            let actual_shift = std::cmp::max(shift_down_of_top_row, -(self.active_transcript_rows as i32));
+            
+            if shift_down_of_top_row != actual_shift {
+                // The new lines revealed by resizing are not all from transcript
+                // Blank the below ones (Java allocates new lines, we just clear)
+                let blank_count = actual_shift - shift_down_of_top_row;
+                for i in 0..blank_count {
+                    let row_to_clear = (self.first_row + old_rows + i as usize) % self.buffer.len();
+                    self.buffer[row_to_clear].clear_all(current_style);
+                }
+                shift_down_of_top_row = actual_shift;
+            }
+        }
+        
+        // Adjust first_row pointer (O(1) operation)
+        let new_first_row = self.first_row as i32 + shift_down_of_top_row;
+        self.first_row = if new_first_row < 0 {
+            (new_first_row + self.buffer.len() as i32) as usize
+        } else {
+            (new_first_row as usize) % self.buffer.len()
+        };
+        
+        // Update active_transcript_rows
+        let shift_i32 = shift_down_of_top_row;
+        self.active_transcript_rows = if shift_i32 > 0 {
+            // Shrinking: increase transcript rows
+            self.active_transcript_rows + shift_i32 as usize
+        } else {
+            // Expanding: decrease transcript rows
+            self.active_transcript_rows.saturating_sub((-shift_i32) as usize)
+        };
+        
+        // Adjust cursor position
+        let new_cursor_y = cursor_y - shift_i32;
+        
+        // Update rows
+        self.rows = new_rows;
+        
+        (cursor_x, new_cursor_y)
     }
 }

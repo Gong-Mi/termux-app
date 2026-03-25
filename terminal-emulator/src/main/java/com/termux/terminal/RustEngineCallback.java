@@ -80,6 +80,33 @@ public class RustEngineCallback implements TerminalSessionClient {
         write(response);
     }
 
+    /**
+     * Sixel 图像回调 - 由 Rust 引擎通过 JNI 调用
+     * @param rgbaData RGBA 格式的图像数据
+     * @param width 图像宽度
+     * @param height 图像高度
+     * @param startX 起始 X 坐标（字符位置）
+     * @param startY 起始 Y 坐标（字符位置）
+     */
+    public void onSixelImage(byte[] rgbaData, int width, int height, int startX, int startY) {
+        if (mClient != null) {
+            mClient.logDebug("SixelImage", String.format("Received Sixel image: %dx%d at (%d,%d), data size: %d",
+                width, height, startX, startY, rgbaData != null ? rgbaData.length : 0));
+            // 将图像数据传递给 TerminalView 进行渲染
+            mClient.onSixelImage(rgbaData, width, height, startX, startY);
+        }
+    }
+
+    /**
+     * 清屏回调 - 由 Rust 引擎通过 JNI 调用
+     */
+    public void onClearScreen() {
+        if (mClient != null) {
+            mClient.logDebug("SixelImage", "Clear screen event received");
+            mClient.onClearScreen();
+        }
+    }
+
     // TerminalSessionClient 接口实现 - 委托给 mClient
 
     @Override

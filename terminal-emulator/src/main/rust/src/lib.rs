@@ -1,6 +1,6 @@
 use jni::JNIEnv;
-use jni::objects::{JClass, JString, JObject};
-use jni::sys::{jint, jlong, jbyteArray, jboolean, jintArray, jstring};
+use jni::objects::{JClass, JString, JObject, JByteArray};
+use jni::sys::{jint, jlong, jbyteArray, jboolean, jintArray, jstring, jbyte};
 use once_cell::sync::OnceCell;
 
 // 声明子模块
@@ -16,7 +16,7 @@ pub use crate::engine::{TerminalEngine, TerminalContext};
 pub use crate::terminal::style::*;
 pub use crate::terminal::modes::*;
 pub use crate::terminal::colors::*;
-pub use crate::terminal::sixel::{SixelDecoder, SixelState};
+pub use crate::terminal::sixel::{SixelDecoder, SixelState, SixelColor};
 use crate::utils::{android_log, LogPriority};
 
 pub static JAVA_VM: OnceCell<jni::JavaVM> = OnceCell::new();

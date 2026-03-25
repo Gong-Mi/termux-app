@@ -60,4 +60,33 @@ public interface TerminalSessionClient {
 
     void logStackTrace(String tag, Exception e);
 
+    /**
+     * Callback for Sixel image rendering (used by Rust JNI).
+     * @param rgbaData RGBA format image data
+     * @param width Image width
+     * @param height Image height
+     * @param startX Start X position (character cell)
+     * @param startY Start Y position (character cell)
+     */
+    default void onSixelImage(byte[] rgbaData, int width, int height, int startX, int startY) {
+        // Default implementation does nothing
+    }
+
+    /**
+     * Callback for clear screen event.
+     * Called when the terminal executes a clear screen command (e.g., ESC[2J).
+     */
+    default void onClearScreen() {
+        // Default implementation does nothing
+    }
+
+    /**
+     * Callback for clear screen region event.
+     * @param top Top row of the region
+     * @param bottom Bottom row of the region
+     */
+    default void onClearScreenRegion(int top, int bottom) {
+        // Default implementation does nothing
+    }
+
 }
