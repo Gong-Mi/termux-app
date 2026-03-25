@@ -436,12 +436,16 @@ impl Screen {
         self.buffer = new_buffer;
         self.cols = n_cols as i32;
         self.rows = new_rows;
-        self.first_row = 0;
         // Calculate active_transcript_rows:
         // output_row is 0-indexed, so output_row + 1 = total rows written
         // active_transcript_rows = rows written - visible rows (if positive)
         let total_written = output_row + 1;
         self.active_transcript_rows = total_written.saturating_sub(new_rows as usize);
+        // Set first_row so that internal_row(-active_transcript_rows) = 0
+        // internal_row(row) = (first_row + row) % total
+        // We want: (first_row - active_transcript_rows) % total = 0
+        // So: first_row = active_transcript_rows % total
+        self.first_row = self.active_transcript_rows % self.buffer.len();
 
         (new_cursor_x, new_cursor_y)
     }
