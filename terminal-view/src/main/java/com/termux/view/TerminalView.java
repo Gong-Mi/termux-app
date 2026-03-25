@@ -6,7 +6,9 @@ import android.app.Activity;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Handler;
@@ -58,8 +60,14 @@ public final class TerminalView extends View {
 
     public TerminalViewClient mClient;
 
-    /** Sixel 图像视图 */
-    private SixelImageView mSixelImageView;
+    /** Sixel 图像数据 */
+    private byte[] mSixelImageData;
+    private int mSixelWidth;
+    private int mSixelHeight;
+    private int mSixelStartX;
+    private int mSixelStartY;
+    private Bitmap mSixelBitmap;
+    private final Paint mSixelPaint;
 
     private TextSelectionCursorController mTextSelectionCursorController;
 
@@ -314,6 +322,11 @@ public final class TerminalView extends View {
         AccessibilityManager am = (AccessibilityManager) context.getSystemService(Context.ACCESSIBILITY_SERVICE);
         mAccessibilityEnabled = am.isEnabled();
 
+        // Initialize Sixel image paint
+        mSixelPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+        mSixelPaint.setAntiAlias(true);
+        mSixelPaint.setDither(true);
+
         // Fix for Android 14/MIUI: Untrusted touch due to occlusion.
         // If alpha is exactly 1.0, system may drop events if it thinks the view is obscuring others.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -332,11 +345,6 @@ public final class TerminalView extends View {
      */
     public void setTerminalViewClient(TerminalViewClient client) {
         this.mClient = client;
-        // 初始化 Sixel 图像视图
-        if (mSixelImageView == null && client instanceof android.view.ViewGroup) {
-            mSixelImageView = new SixelImageView(getContext());
-            mSixelImageView.setVisibility(View.GONE);
-        }
     }
 
     /**
@@ -1085,10 +1093,6 @@ public final class TerminalView extends View {
 
             mTopRow = 0;
             scrollTo(0, 0);
-            
-            // Update Sixel image scaling when terminal resizes
-            updateSixelImageFontMetrics();
-            
             invalidate();
         }
     }
@@ -1097,19 +1101,10 @@ public final class TerminalView extends View {
     protected void onScrollChanged(int l, int t, int oldl, int oldt) {
         super.onScrollChanged(l, t, oldl, oldt);
         
-        // 更新 Sixel 图像位置以同步滚动
-        if (mSixelImageView != null && mSixelImageView.hasImage() && mRenderer != null) {
-            int[] span = mSixelImageView.getCharacterSpan();
-            float fontLineSpacing = mRenderer.getFontLineSpacing();
-            float fontAscent = mRenderer.getFontLineSpacingAndAscent();
-            
-            // 根据滚动偏移更新 Y 位置
-            // mTopRow 是可见区域顶部的行号（负值表示在历史缓冲区中）
-            int pixelY = (int) ((span[1] - mTopRow) * fontLineSpacing + fontAscent);
-            mSixelImageView.setY(pixelY);
-            
-            Log.d("SixelImage", String.format("Scroll updated: topRow=%d, span=[%d,%d,%d,%d], pixelY=%d",
-                    mTopRow, span[0], span[1], span[2], span[3], pixelY));
+        // Sixel 图像已经在 onDraw 中根据 mTopRow 计算位置，不需要额外更新
+        // 只需要触发重绘即可
+        if (mSixelBitmap != null && !mSixelBitmap.isRecycled()) {
+            invalidate();
         }
     }
 
@@ -1125,6 +1120,18 @@ public final class TerminalView extends View {
             }
 
             mRenderer.render(mEmulator, canvas, mTopRow, sel[0], sel[1], sel[2], sel[3]);
+
+            // Draw Sixel image if available
+            if (mSixelBitmap != null && !mSixelBitmap.isRecycled()) {
+                float fontWidth = mRenderer.getFontWidth();
+                float fontLineSpacing = mRenderer.getFontLineSpacing();
+                float fontAscent = mRenderer.getFontLineSpacingAndAscent();
+                
+                int pixelX = (int) (mSixelStartX * fontWidth);
+                int pixelY = (int) ((mSixelStartY - mTopRow) * fontLineSpacing + fontAscent);
+                
+                canvas.drawBitmap(mSixelBitmap, pixelX, pixelY, mSixelPaint);
+            }
 
             // render the text selection handles
             renderTextSelection();
@@ -1620,54 +1627,72 @@ public final class TerminalView extends View {
      * @param startY 起始 Y 坐标（字符位置）
      */
     public void onSixelImage(byte[] rgbaData, int width, int height, int startX, int startY) {
-        if (mSixelImageView != null && mRenderer != null) {
-            // 将 SixelImageView 添加到视图中
-            if (mSixelImageView.getParent() == null && mClient instanceof android.view.ViewGroup) {
-                android.view.ViewGroup parent = (android.view.ViewGroup) mClient;
-                parent.addView(mSixelImageView);
-            }
+        if (mRenderer != null) {
+            // 存储图像数据
+            mSixelImageData = rgbaData;
+            mSixelWidth = width;
+            mSixelHeight = height;
+            mSixelStartX = startX;
+            mSixelStartY = startY;
             
-            // 获取字体度量用于缩放
-            float fontWidth = mRenderer.getFontWidth();
-            float fontLineSpacing = mRenderer.getFontLineSpacing();
-            float fontAscent = mRenderer.getFontLineSpacingAndAscent();
+            // 创建位图
+            createSixelBitmap();
             
-            // 设置图像数据（带字体度量）
-            mSixelImageView.setImageData(rgbaData, width, height, startX, startY,
-                                        fontWidth, fontLineSpacing, fontAscent);
-            mSixelImageView.setVisibility(View.VISIBLE);
+            // 触发重绘
+            invalidate();
             
-            // 计算像素位置（考虑滚动偏移）
-            int pixelX = (int) (startX * fontWidth);
-            int pixelY = (int) ((startY - mTopRow) * fontLineSpacing + fontAscent);
-            
-            // 定位图像
-            mSixelImageView.updatePosition(pixelX, pixelY);
-            
-            mClient.logDebug("SixelImage", String.format("Displaying Sixel image at (%d,%d) pixels, size %dx%d, scale=%.2fx%.2f, topRow=%d",
-                pixelX, pixelY, width, height,
-                mSixelImageView.getScaleFactors()[0],
-                mSixelImageView.getScaleFactors()[1],
-                mTopRow));
+            mClient.logDebug("SixelImage", String.format("Sixel image received: %dx%d at (%d,%d), data size: %d",
+                width, height, startX, startY, rgbaData != null ? rgbaData.length : 0));
         }
+    }
+    
+    /**
+     * 创建 Sixel 位图
+     */
+    private void createSixelBitmap() {
+        if (mSixelImageData == null || mSixelImageData.length == 0) {
+            mSixelBitmap = null;
+            return;
+        }
+        
+        // 转换 RGBA 数据为 Bitmap
+        int pixelCount = mSixelImageData.length / 4;
+        if (pixelCount != mSixelWidth * mSixelHeight) {
+            mClient.logError("SixelImage", "Invalid RGBA data size");
+            return;
+        }
+        
+        int[] pixels = new int[pixelCount];
+        for (int i = 0; i < pixelCount; i++) {
+            int r = mSixelImageData[i * 4] & 0xFF;
+            int g = mSixelImageData[i * 4 + 1] & 0xFF;
+            int b = mSixelImageData[i * 4 + 2] & 0xFF;
+            int a = mSixelImageData[i * 4 + 3] & 0xFF;
+            pixels[i] = (a << 24) | (r << 16) | (g << 8) | b;
+        }
+        
+        mSixelBitmap = Bitmap.createBitmap(pixels, mSixelWidth, mSixelHeight, Bitmap.Config.ARGB_8888);
+        mClient.logDebug("SixelImage", "Sixel bitmap created: " + mSixelWidth + "x" + mSixelHeight);
     }
 
     /**
      * 清除 Sixel 图像
      */
     public void clearSixelImage() {
-        if (mSixelImageView != null) {
-            mSixelImageView.clear();
-            mSixelImageView.setVisibility(View.GONE);
-            Log.d("SixelImage", "Sixel image cleared");
+        if (mSixelBitmap != null && !mSixelBitmap.isRecycled()) {
+            mSixelBitmap.recycle();
+            mSixelBitmap = null;
         }
+        mSixelImageData = null;
+        invalidate();
+        mClient.logDebug("SixelImage", "Sixel image cleared");
     }
 
     /**
-     * 获取 Sixel 图像视图
+     * 获取 Sixel 图像位图
      */
-    public SixelImageView getSixelImageView() {
-        return mSixelImageView;
+    public Bitmap getSixelBitmap() {
+        return mSixelBitmap;
     }
     
     /**
@@ -1684,35 +1709,12 @@ public final class TerminalView extends View {
      * @param bottom 区域底部行
      */
     public void onClearScreenRegion(int top, int bottom) {
-        if (mSixelImageView != null && mSixelImageView.hasImage()) {
-            int[] span = mSixelImageView.getCharacterSpan();
+        if (mSixelBitmap != null && !mSixelBitmap.isRecycled()) {
             // 检查图像是否在清除区域内
-            if (span[1] >= top && span[1] <= bottom) {
+            if (mSixelStartY >= top && mSixelStartY <= bottom) {
                 clearSixelImage();
-                Log.d("SixelImage", String.format("Sixel image cleared (region %d-%d contains row %d)",
-                        top, bottom, span[1]));
-            }
-        }
-    }
-    
-    /**
-     * Update font metrics for Sixel image scaling
-     * Called when font size changes
-     */
-    private void updateSixelImageFontMetrics() {
-        if (mSixelImageView != null && mRenderer != null && mSixelImageView.hasImage()) {
-            float fontWidth = mRenderer.getFontWidth();
-            float fontLineSpacing = mRenderer.getFontLineSpacing();
-            float fontAscent = mRenderer.getFontLineSpacingAndAscent();
-            
-            if (mSixelImageView.updateFontMetrics(fontWidth, fontLineSpacing, fontAscent)) {
-                // Image was rescaled, update position
-                int[] span = mSixelImageView.getCharacterSpan();
-                int pixelX = (int) (span[0] * fontWidth);
-                int pixelY = (int) ((span[1] - mTopRow) * fontLineSpacing + fontAscent);
-                mSixelImageView.updatePosition(pixelX, pixelY);
-                
-                Log.d("SixelImage", String.format("Font metrics updated, position updated to (%d,%d)", pixelX, pixelY));
+                mClient.logDebug("SixelImage", String.format("Sixel image cleared (region %d-%d contains row %d)",
+                        top, bottom, mSixelStartY));
             }
         }
     }
