@@ -21,12 +21,36 @@ fn test_reflow_stress_600_lines() {
     }
 
     // 2. 检查缩放前的状态
-    println!("Before Resize: Cols={}, Rows={}, Active History={}", 
+    println!("Before Resize: Cols={}, Rows={}, Active History={}",
              engine.state.cols, engine.state.rows, engine.state.main_screen.active_transcript_rows);
+
+    // 打印缩小前的历史行样本
+    println!("--- Sample rows BEFORE shrink ---");
+    let before_history = engine.state.main_screen.active_transcript_rows as i32;
+    for i in (-before_history..0).step_by(500) {
+        let text = get_row_text(&engine, i);
+        if !text.trim().is_empty() {
+            println!("Before[{}]: '{}'", i, text.trim());
+        } else {
+            println!("Before[{}]: (empty)", i);
+        }
+    }
     
     // 3. 执行极端缩小测试 (80 -> 15)
     println!("--- Step 2: Extreme Shrinking (80 -> 15) ---");
     engine.state.resize(15, 50); // 缩小宽度，增加高度
+
+    // 打印缩小后的历史行样本
+    println!("--- Sample rows AFTER shrink ---");
+    let after_history = engine.state.main_screen.active_transcript_rows as i32;
+    for i in (-after_history..0).step_by(500) {
+        let text = get_row_text(&engine, i);
+        if !text.trim().is_empty() {
+            println!("After[{}]: '{}'", i, text.trim());
+        } else {
+            println!("After[{}]: (empty)", i);
+        }
+    }
     
     println!("New State: Cols={}, Rows={}, Active History={}", 
              engine.state.cols, engine.state.rows, engine.state.main_screen.active_transcript_rows);
@@ -53,6 +77,10 @@ fn test_reflow_stress_600_lines() {
     println!("--- Step 3: Extreme Expanding (15 -> 150) ---");
     engine.state.resize(150, 24);
 
+    // 打印放大后的状态
+    println!("After Expand: Cols={}, Rows={}, Active History={}",
+             engine.state.cols, engine.state.rows, engine.state.main_screen.active_transcript_rows);
+
     // 5. 验证内容是否重新合并
     let mut all_text_expanded = String::new();
     let start_row_exp = -(engine.state.main_screen.active_transcript_rows as i32);
@@ -67,9 +95,29 @@ fn test_reflow_stress_600_lines() {
     // 注意：由于 resize 会导致历史行偏移，我们寻找包含 "Row 300" 的行
     let mut found_300 = false;
     let total_active = engine.state.main_screen.active_transcript_rows as i32;
+    println!("Searching for 'Row 300' in range [{}, {})", -total_active, engine.state.rows);
+    
+    // 打印最后 10 行和中间几行用于调试
+    println!("--- Last 10 rows ---");
+    for i in (engine.state.rows - 10)..engine.state.rows {
+        let text = get_row_text(&engine, i);
+        if !text.trim().is_empty() {
+            println!("Row[{}]: '{}'", i, text.trim());
+        }
+    }
+    
+    println!("--- Sample rows from history ---");
+    for i in (-total_active..0).step_by(300) {
+        let text = get_row_text(&engine, i);
+        if !text.trim().is_empty() {
+            println!("Row[{}]: '{}'", i, text.trim());
+        }
+    }
+    
     for i in -(total_active)..engine.state.rows {
         if get_row_text(&engine, i).contains("Row 300") {
             found_300 = true;
+            println!("Found 'Row 300' at row {}", i);
             break;
         }
     }

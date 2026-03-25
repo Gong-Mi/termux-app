@@ -285,7 +285,7 @@ impl Screen {
         let mut new_cursor_y: i32 = 0;
         let mut cursor_placed = false;
 
-        // Output position tracking
+        // Output position tracking - can go beyond new_rows into history area
         let mut output_row: usize = 0;
         let mut output_col: usize = 0;
 
@@ -316,21 +316,17 @@ impl Screen {
             // Insert skipped blank lines when encountering non-blank line
             if skipped_blank_lines > 0 {
                 for _ in 0..skipped_blank_lines {
-                    if output_row >= new_rows as usize - 1 {
-                        // Scroll down - scroll entire buffer like Java's scrollDownOneLine
+                    if output_row >= old_total - 1 {
+                        // Buffer is full - need to scroll (shouldn't happen in normal cases)
+                        // Scroll up: line 1→0, 2→1, etc., clear bottom
                         if cursor_placed && new_cursor_y > 0 {
                             new_cursor_y -= 1;
                         }
-                        // Block copy lines down in the new_buffer (entire buffer, not just screen)
-                        // Save the last line (will be overwritten)
-                        let last_line = new_buffer[old_total - 1].clone();
-                        // Copy from bottom to top
-                        for i in (1..old_total).rev() {
-                            new_buffer[i] = new_buffer[i - 1].clone();
+                        for i in 0..(old_total - 1) {
+                            new_buffer[i] = new_buffer[i + 1].clone();
                         }
-                        // Put the saved line at the top and clear it
-                        new_buffer[0] = last_line;
-                        new_buffer[0].clear_all(current_style);
+                        new_buffer[old_total - 1].clear_all(current_style);
+                        output_row = old_total - 1;
                     } else {
                         output_row += 1;
                     }
@@ -367,18 +363,16 @@ impl Screen {
                     if output_row < new_buffer.len() {
                         new_buffer[output_row].line_wrap = true;
                     }
-                    if output_row >= new_rows as usize - 1 {
-                        // Scroll down - scroll entire buffer like Java's scrollDownOneLine
+                    if output_row >= old_total - 1 {
+                        // Buffer is full - need to scroll (shouldn't happen in normal cases)
                         if cursor_placed && new_cursor_y > 0 {
                             new_cursor_y -= 1;
                         }
-                        // Block copy lines down in the new_buffer (entire buffer, not just screen)
-                        let last_line = new_buffer[old_total - 1].clone();
-                        for i in (1..old_total).rev() {
-                            new_buffer[i] = new_buffer[i - 1].clone();
+                        for i in 0..(old_total - 1) {
+                            new_buffer[i] = new_buffer[i + 1].clone();
                         }
-                        new_buffer[0] = last_line;
-                        new_buffer[0].clear_all(current_style);
+                        new_buffer[old_total - 1].clear_all(current_style);
+                        output_row = old_total - 1;
                     } else {
                         output_row += 1;
                     }
@@ -415,18 +409,16 @@ impl Screen {
 
             // Check if we need to insert newline (line was not wrapping)
             if external_old_row != (end_row - 1) && !old_line.line_wrap {
-                if output_row >= new_rows as usize - 1 {
-                    // Scroll down - scroll entire buffer like Java's scrollDownOneLine
+                if output_row >= old_total - 1 {
+                    // Buffer is full - need to scroll (shouldn't happen in normal cases)
                     if cursor_placed && new_cursor_y > 0 {
                         new_cursor_y -= 1;
                     }
-                    // Block copy lines down in the new_buffer (entire buffer, not just screen)
-                    let last_line = new_buffer[old_total - 1].clone();
-                    for i in (1..old_total).rev() {
-                        new_buffer[i] = new_buffer[i - 1].clone();
+                    for i in 0..(old_total - 1) {
+                        new_buffer[i] = new_buffer[i + 1].clone();
                     }
-                    new_buffer[0] = last_line;
-                    new_buffer[0].clear_all(current_style);
+                    new_buffer[old_total - 1].clear_all(current_style);
+                    output_row = old_total - 1;
                 } else {
                     output_row += 1;
                 }
@@ -445,9 +437,11 @@ impl Screen {
         self.cols = n_cols as i32;
         self.rows = new_rows;
         self.first_row = 0;
-        // Calculate active_transcript_rows based on how much content was written
-        // output_row is the total number of rows written, subtract visible rows to get history
-        self.active_transcript_rows = (output_row as i32).saturating_sub(new_rows as i32).max(0) as usize;
+        // Calculate active_transcript_rows:
+        // output_row is 0-indexed, so output_row + 1 = total rows written
+        // active_transcript_rows = rows written - visible rows (if positive)
+        let total_written = output_row + 1;
+        self.active_transcript_rows = total_written.saturating_sub(new_rows as usize);
 
         (new_cursor_x, new_cursor_y)
     }
