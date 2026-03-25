@@ -5,10 +5,10 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Matrix;
 import android.graphics.Paint;
-import android.graphics.RectF;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.View;
+import android.view.ViewParent;
 
 /**
  * View for rendering Sixel images in the terminal.
@@ -188,26 +188,60 @@ public class SixelImageView extends View {
         // Calculate how many character cells the image should occupy
         // Sixel images are typically designed to fit terminal character grids
         // Default: 1 sixel unit ≈ 1 pixel, scale to fit character cells
-        
+
         // Estimate character cell span from original sixel dimensions
         // Typical sixel aspect ratio: 6 vertical pixels per character row
         int charWidth = Math.max(1, (int) Math.ceil(mOriginalWidth / 6.0f));
         int charHeight = Math.max(1, (int) Math.ceil(mOriginalHeight / 6.0f));
+
+        // Boundary check: Limit to terminal bounds (default 80x24)
+        // This prevents images from exceeding the terminal window
+        int maxCols = 80;
+        int maxRows = 24;
         
-        // Limit to reasonable size (don't exceed terminal bounds)
-        charWidth = Math.min(charWidth, 80);
-        charHeight = Math.min(charHeight, 24);
+        // Try to get actual terminal size from parent if available
+        ViewParent parent = getParent();
+        if (parent != null && parent instanceof View) {
+            // Get terminal dimensions from the view hierarchy
+            View rootView = (View) parent;
+            int terminalWidth = rootView.getWidth();
+            int terminalHeight = rootView.getHeight();
+            
+            if (terminalWidth > 0 && terminalHeight > 0 && mFontWidth > 0 && mFontLineSpacing > 0) {
+                maxCols = (int) (terminalWidth / mFontWidth);
+                maxRows = (int) (terminalHeight / mFontLineSpacing);
+            }
+        }
         
+        // Ensure image doesn't exceed terminal bounds
+        if (mStartX + charWidth > maxCols) {
+            charWidth = Math.max(1, maxCols - mStartX);
+            Log.d(TAG, String.format("Image width cropped to %d chars (terminal width: %d, start: %d)",
+                    charWidth, maxCols, mStartX));
+        }
+        if (mStartY + charHeight > maxRows) {
+            charHeight = Math.max(1, maxRows - mStartY);
+            Log.d(TAG, String.format("Image height cropped to %d chars (terminal height: %d, start: %d)",
+                    charHeight, maxRows, mStartY));
+        }
+        
+        // Final safety limit
+        charWidth = Math.min(charWidth, maxCols);
+        charHeight = Math.min(charHeight, maxRows);
+
         // Calculate pixel dimensions
         mTargetPixelWidth = (int) (charWidth * mFontWidth);
         mTargetPixelHeight = (int) (charHeight * mFontLineSpacing);
-        
-        // Ensure minimum size
+
+        // Ensure minimum size (don't scale down below original)
         mTargetPixelWidth = Math.max(mTargetPixelWidth, mOriginalWidth);
         mTargetPixelHeight = Math.max(mTargetPixelHeight, mOriginalHeight);
-        
+
         mEndX = mStartX + charWidth;
         mEndY = mStartY + charHeight;
+        
+        Log.d(TAG, String.format("Target size calculated: %dx%d chars -> %dx%d pixels",
+                charWidth, charHeight, mTargetPixelWidth, mTargetPixelHeight));
     }
     
     /**
