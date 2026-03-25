@@ -317,14 +317,19 @@ impl Screen {
             if skipped_blank_lines > 0 {
                 for _ in 0..skipped_blank_lines {
                     if output_row >= new_rows as usize - 1 {
-                        // Scroll down
+                        // Scroll down - scroll entire buffer like Java's scrollDownOneLine
                         if cursor_placed && new_cursor_y > 0 {
                             new_cursor_y -= 1;
                         }
-                        // Scroll the new_buffer down
-                        for i in (1..new_rows as usize).rev() {
+                        // Block copy lines down in the new_buffer (entire buffer, not just screen)
+                        // Save the last line (will be overwritten)
+                        let last_line = new_buffer[old_total - 1].clone();
+                        // Copy from bottom to top
+                        for i in (1..old_total).rev() {
                             new_buffer[i] = new_buffer[i - 1].clone();
                         }
+                        // Put the saved line at the top and clear it
+                        new_buffer[0] = last_line;
                         new_buffer[0].clear_all(current_style);
                     } else {
                         output_row += 1;
@@ -363,13 +368,16 @@ impl Screen {
                         new_buffer[output_row].line_wrap = true;
                     }
                     if output_row >= new_rows as usize - 1 {
-                        // Scroll down
+                        // Scroll down - scroll entire buffer like Java's scrollDownOneLine
                         if cursor_placed && new_cursor_y > 0 {
                             new_cursor_y -= 1;
                         }
-                        for i in (1..new_rows as usize).rev() {
+                        // Block copy lines down in the new_buffer (entire buffer, not just screen)
+                        let last_line = new_buffer[old_total - 1].clone();
+                        for i in (1..old_total).rev() {
                             new_buffer[i] = new_buffer[i - 1].clone();
                         }
+                        new_buffer[0] = last_line;
                         new_buffer[0].clear_all(current_style);
                     } else {
                         output_row += 1;
@@ -408,12 +416,16 @@ impl Screen {
             // Check if we need to insert newline (line was not wrapping)
             if external_old_row != (end_row - 1) && !old_line.line_wrap {
                 if output_row >= new_rows as usize - 1 {
+                    // Scroll down - scroll entire buffer like Java's scrollDownOneLine
                     if cursor_placed && new_cursor_y > 0 {
                         new_cursor_y -= 1;
                     }
-                    for i in (1..new_rows as usize).rev() {
+                    // Block copy lines down in the new_buffer (entire buffer, not just screen)
+                    let last_line = new_buffer[old_total - 1].clone();
+                    for i in (1..old_total).rev() {
                         new_buffer[i] = new_buffer[i - 1].clone();
                     }
+                    new_buffer[0] = last_line;
                     new_buffer[0].clear_all(current_style);
                 } else {
                     output_row += 1;
