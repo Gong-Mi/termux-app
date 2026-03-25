@@ -441,10 +441,13 @@ impl Screen {
         // active_transcript_rows = rows written - visible rows (if positive)
         let total_written = output_row + 1;
         self.active_transcript_rows = total_written.saturating_sub(new_rows as usize);
-        // Set first_row so that internal_row(-active_transcript_rows) = 0
-        // internal_row(row) = (first_row + row) % total
-        // We want: (first_row - active_transcript_rows) % total = 0
-        // So: first_row = active_transcript_rows % total
+        // Set first_row so that content is correctly mapped:
+        // Content is written from new_buffer[0] to new_buffer[output_row]
+        // History rows: 0 to active_transcript_rows-1 (in buffer)
+        // Screen rows: active_transcript_rows to total_written-1 (in buffer)
+        // We want internal_row(0) = active_transcript_rows (screen row 0 is at buffer[active_transcript_rows])
+        // internal_row(0) = (first_row + 0) % total = first_row
+        // So first_row = active_transcript_rows
         self.first_row = self.active_transcript_rows % self.buffer.len();
 
         (new_cursor_x, new_cursor_y)
