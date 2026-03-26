@@ -443,6 +443,7 @@ public final class TerminalSession extends TerminalOutput {
                 // 现在清理资源（包括销毁原生引擎）
                 cleanupResources(exitCode);
                 
+                // 通知客户端会话已结束
                 mClient.onSessionFinished(TerminalSession.this);
             }
         }
