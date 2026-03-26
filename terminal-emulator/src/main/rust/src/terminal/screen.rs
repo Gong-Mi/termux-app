@@ -161,8 +161,16 @@ impl Screen {
         (((self.first_row as i64 + row as i64) % t + t) % t) as usize
     }
 
-    pub fn get_row(&self, row: i32) -> &TerminalRow { &self.buffer[self.internal_row(row)] }
-    pub fn get_row_mut(&mut self, row: i32) -> &mut TerminalRow { let idx = self.internal_row(row); &mut self.buffer[idx] }
+    /// Get a row by external row number (e.g., 0 = first visible row, -1 = last history row)
+    pub fn get_row(&self, row: i32) -> &TerminalRow { 
+        &self.buffer[self.internal_row(row)] 
+    }
+    
+    /// Get a mutable row by external row number
+    pub fn get_row_mut(&mut self, row: i32) -> &mut TerminalRow { 
+        let idx = self.internal_row(row); 
+        &mut self.buffer[idx] 
+    }
 
     pub fn block_clear(&mut self, top: usize, left: usize, bottom: usize, right: usize, style: u64) {
         let cols = self.cols as usize;
@@ -237,10 +245,15 @@ impl Screen {
     pub fn scroll_up(&mut self, top: i32, bottom: i32, style: u64) {
         let c = self.cols as usize;
         if top == 0 && bottom == self.rows {
+            // Full screen scroll - use ring buffer pointer adjustment (O(1))
             self.first_row = (self.first_row + 1) % self.buffer.len();
-            if self.active_transcript_rows < self.buffer.len() - self.rows as usize { self.active_transcript_rows += 1; }
+            // Incrementally maintain active_transcript_rows (matches Java logic)
+            if self.active_transcript_rows < self.buffer.len() - self.rows as usize { 
+                self.active_transcript_rows += 1; 
+            }
             self.get_row_mut(self.rows - 1).clear(0, c, style);
         } else {
+            // Partial scroll - move data
             for i in top..(bottom - 1) {
                 let s = self.internal_row(i + 1);
                 let d = self.internal_row(i);
@@ -456,19 +469,25 @@ impl Screen {
         self.buffer = new_buffer;
         self.cols = n_cols as i32;
         self.rows = new_rows;
-        // Calculate active_transcript_rows:
-        // output_row is 0-indexed, so output_row + 1 = total rows written
-        // active_transcript_rows = rows written - visible rows (if positive)
+        
+        // Calculate active_transcript_rows and first_row
+        // Use incremental approach: start from 0 and let scroll_up() maintain it
+        // This matches Java's approach where active_transcript_rows is maintained incrementally
+        self.active_transcript_rows = 0;
+        self.first_row = 0;
+        
+        // If we wrote more than new_rows, we need to simulate scrolling
+        // to properly set active_transcript_rows and first_row
         let total_written = output_row + 1;
-        self.active_transcript_rows = total_written.saturating_sub(new_rows as usize);
-        // Set first_row so that content is correctly mapped:
-        // Content is written from new_buffer[0] to new_buffer[output_row]
-        // History rows: 0 to active_transcript_rows-1 (in buffer)
-        // Screen rows: active_transcript_rows to total_written-1 (in buffer)
-        // We want internal_row(0) = active_transcript_rows (screen row 0 is at buffer[active_transcript_rows])
-        // internal_row(0) = (first_row + 0) % total = first_row
-        // So first_row = active_transcript_rows
-        self.first_row = self.active_transcript_rows % self.buffer.len();
+        if total_written > new_rows as usize {
+            // Content overflowed - simulate the scroll state
+            // active_transcript_rows = total_written - visible_rows
+            self.active_transcript_rows = total_written - new_rows as usize;
+            // first_row should point to the start of visible content
+            // In a ring buffer, if we have active_transcript_rows of history,
+            // the first visible row is at index active_transcript_rows
+            self.first_row = self.active_transcript_rows % self.buffer.len();
+        }
 
         (new_cursor_x, new_cursor_y)
     }
