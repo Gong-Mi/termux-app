@@ -237,135 +237,19 @@ impl ScreenState {
     pub fn decset_flags(&self) -> i32 { self.modes.flags }
 
     /// 执行 DECSET/DECRST 命令（设置/重置 DEC 私有模式）
+    /// 统一委托给 handle_decset() 处理，避免代码重复和状态不一致
     pub fn do_decset_or_reset(&mut self, setting: bool, mode: u32) {
-        match mode {
-            1 => { // Application Cursor Keys (DECCKM)
-                if setting { self.modes.set(DECSET_BIT_APPLICATION_CURSOR_KEYS); }
-                else { self.modes.reset(DECSET_BIT_APPLICATION_CURSOR_KEYS); }
-                self.application_cursor_keys = setting;
-            }
-            3 => { // 132 column mode (DECCOLM)
-                // 暂时不真正改变物理列数，但根据协议重置边距和清屏
-                let rows = self.rows as usize;
-                let cols = self.cols as usize;
-                let style = self.current_style;
-                self.top_margin = 0;
-                self.bottom_margin = self.rows;
-                self.left_margin = 0;
-                self.right_margin = self.cols;
-                self.modes.reset(DECSET_BIT_LEFTRIGHT_MARGIN_MODE);
-                // 清屏并重置光标
-                self.get_current_screen_mut().block_clear(0, 0, rows, cols, style);
-                self.cursor.x = 0;
-                self.cursor.y = 0;
-            }
-            4 => { // DECSCLM-Scrolling Mode - 忽略
-            }
-            5 => { // Reverse video
-                if setting { self.modes.set(DECSET_BIT_REVERSE_VIDEO); }
-                else { self.modes.reset(DECSET_BIT_REVERSE_VIDEO); }
-            }
-            6 => { // Origin Mode (DECOM)
-                if setting { self.modes.set(DECSET_BIT_ORIGIN_MODE); self.cursor.x = 0; self.cursor.y = 0; }
-                else { self.modes.reset(DECSET_BIT_ORIGIN_MODE); }
-            }
-            7 => { // Auto-wrap (DECAWM)
-                if setting { self.modes.set(DECSET_BIT_AUTOWRAP); }
-                else { self.modes.reset(DECSET_BIT_AUTOWRAP); }
-            }
-            12 => { // Start/Stop cursor blinking
-                self.cursor.blinking_enabled = setting;
-            }
-            25 => { // Show/hide cursor
-                self.cursor_enabled = setting;
-            }
-            40 => { // Allow 80 => 132 Mode
-                // 仅设置标志位
-            }
-            45 => { // Reverse wrap-around
-                // 仅记录状态
-            }
-            66 => { // Application keypad (DECNKM)
-                if setting { self.modes.set(DECSET_BIT_APPLICATION_KEYPAD); }
-                else { self.modes.reset(DECSET_BIT_APPLICATION_KEYPAD); }
-            }
-            69 => { // Left and right margin mode (DECLRMM)
-                if setting { self.modes.set(DECSET_BIT_LEFTRIGHT_MARGIN_MODE); }
-                else { 
-                    self.modes.reset(DECSET_BIT_LEFTRIGHT_MARGIN_MODE);
-                    self.left_margin = 0; 
-                    self.right_margin = self.cols; 
-                }
-            }
-            1000 => { // Mouse tracking: press/release
-                if setting { 
-                    self.modes.set(DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE);
-                    self.modes.reset(DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT);
-                    self.mouse_tracking = true; self.mouse_button_event = false;
-                } else { 
-                    self.modes.reset(DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE);
-                    self.mouse_tracking = false;
-                }
-            }
-            1002 => { // Mouse tracking: button event
-                if setting { 
-                    self.modes.set(DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT);
-                    self.modes.reset(DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE);
-                    self.mouse_button_event = true; self.mouse_tracking = false;
-                } else { 
-                    self.modes.reset(DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT);
-                    self.mouse_button_event = false;
-                }
-            }
-            1003 => { // Mouse tracking: any event (all motion)
-                if setting {
-                    self.modes.set(DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE);
-                    self.modes.set(DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT);
-                    self.mouse_tracking = true; self.mouse_button_event = true;
-                } else {
-                    self.modes.reset(DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE);
-                    self.modes.reset(DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT);
-                    self.mouse_tracking = false; self.mouse_button_event = false;
-                }
-            }
-            1004 => { // Send Focus events
-                if setting { self.modes.set(DECSET_BIT_SEND_FOCUS_EVENTS); }
-                else { self.modes.reset(DECSET_BIT_SEND_FOCUS_EVENTS); }
-                self.send_focus_events = setting;
-            }
-            1006 => { // SGR Mouse Mode
-                if setting { self.modes.set(DECSET_BIT_MOUSE_PROTOCOL_SGR); }
-                else { self.modes.reset(DECSET_BIT_MOUSE_PROTOCOL_SGR); }
-                self.sgr_mouse = setting;
-            }
-            1034 => { // Interpret "meta" key
-                // 仅标志位
-            }
-            1048 => { // Save/restore cursor
-                if setting { self.save_cursor(); }
-                else { self.restore_cursor(); }
-            }
-            47 | 1047 | 1049 => { // Alternate screen buffer
-                if setting {
-                    if !self.use_alternate_buffer {
-                        if mode == 1049 { self.save_cursor(); }
-                        self.use_alternate_buffer = true;
-                        self.erase_in_display(2);
-                    }
-                } else {
-                    if self.use_alternate_buffer {
-                        self.use_alternate_buffer = false;
-                        if mode == 1049 { self.restore_cursor(); }
-                    }
-                }
-            }
-            2004 => { // Bracketed paste mode
-                if setting { self.modes.set(DECSET_BIT_BRACKETED_PASTE_MODE); }
-                else { self.modes.reset(DECSET_BIT_BRACKETED_PASTE_MODE); }
-                self.bracketed_paste = setting;
-            }
-            _ => { /* 未知模式 - 忽略 */ }
+        // 使用 handle_decset() 统一处理所有 DECSET/DECRST 模式
+        // 这样可以确保状态一致性，避免 do_decset_or_reset 和 handle_decset 处理逻辑不同步
+        // 构造 Params 对象，模拟 CSI?h 和 CSI?l 命令的参数格式
+        use crate::vte_parser::Params;
+        let mut params = Params::new();
+        // 直接设置参数值
+        if params.len < params.values.len() {
+            params.values[params.len] = mode as i32;
+            params.len += 1;
         }
+        self.handle_decset(&params, setting);
     }
 
     pub fn scroll_up(&mut self) {
