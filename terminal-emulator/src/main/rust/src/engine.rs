@@ -547,64 +547,104 @@ impl ScreenState {
         for param in params.iter() {
             for &p in param.iter() {
                 match p {
-                    1 => {
+                    1 => { // DECCKM - 应用光标键模式
                         if set { self.modes.set(DECSET_BIT_APPLICATION_CURSOR_KEYS) } else { self.modes.reset(DECSET_BIT_APPLICATION_CURSOR_KEYS) }
                         self.application_cursor_keys = set;
                     },
-                    5 => { // DECSET 5 - 反色模式
+                    3 => { // DECCOLM - 132 列模式（未实现，忽略）
+                        // 不实现，避免屏幕闪烁
+                    },
+                    5 => { // DECSCNM - 反色模式
                         if set { self.modes.set(DECSET_BIT_REVERSE_VIDEO) } else { self.modes.reset(DECSET_BIT_REVERSE_VIDEO) }
                     },
-                    6 => if set { self.modes.set(DECSET_BIT_ORIGIN_MODE) } else { self.modes.reset(DECSET_BIT_ORIGIN_MODE) },
-                    7 => if set { self.modes.set(DECSET_BIT_AUTOWRAP) } else { self.modes.reset(DECSET_BIT_AUTOWRAP) },
-                    25 => self.cursor_enabled = set,
-                    69 => if set { self.modes.set(DECSET_BIT_LEFTRIGHT_MARGIN_MODE) } else { self.modes.reset(DECSET_BIT_LEFTRIGHT_MARGIN_MODE) },
-                    1000 => {
-                        if set { 
+                    6 => { // DECOM - 原点模式
+                        if set { self.modes.set(DECSET_BIT_ORIGIN_MODE) } else { self.modes.reset(DECSET_BIT_ORIGIN_MODE) }
+                    },
+                    7 => { // DECAWM - 自动换行
+                        if set { self.modes.set(DECSET_BIT_AUTOWRAP) } else { self.modes.reset(DECSET_BIT_AUTOWRAP) }
+                    },
+                    12 => { // 光标闪烁启动（未完全实现）
+                        // 简单处理，不实现完整逻辑
+                    },
+                    25 => { // DECTCEM - 光标显示/隐藏
+                        self.cursor_enabled = set;
+                    },
+                    40 => { // 132 列模式切换（未实现，忽略）
+                        // 不实现
+                    },
+                    45 => { // 反向换行（未实现，忽略）
+                        // 不实现
+                    },
+                    66 => { // DECNKM - 应用小键盘模式
+                        if set { self.modes.set(DECSET_BIT_APPLICATION_KEYPAD) } else { self.modes.reset(DECSET_BIT_APPLICATION_KEYPAD) }
+                    },
+                    69 => { // DECLRMM - 左右边距模式
+                        if set { self.modes.set(DECSET_BIT_LEFTRIGHT_MARGIN_MODE) } else { self.modes.reset(DECSET_BIT_LEFTRIGHT_MARGIN_MODE) }
+                    },
+                    1000 => { // 鼠标追踪 - 按下和释放
+                        if set {
                             self.modes.set(DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE);
                             self.modes.reset(DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT);
                             self.mouse_tracking = true;
                             self.mouse_button_event = false;
-                        } else { 
+                        } else {
                             self.modes.reset(DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE);
                             self.mouse_tracking = false;
                         }
                     },
-                    1002 => {
-                        if set { 
+                    1002 => { // 鼠标追踪 - 按钮事件
+                        if set {
                             self.modes.set(DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT);
                             self.modes.reset(DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE);
                             self.mouse_button_event = true;
                             self.mouse_tracking = false;
-                        } else { 
+                        } else {
                             self.modes.reset(DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT);
                             self.mouse_button_event = false;
                         }
                     },
-                    1004 => {
+                    1003 => { // 鼠标追踪 - 所有事件（未实现，忽略）
+                        // 暂时不实现
+                    },
+                    1004 => { // 焦点事件
                         if set { self.modes.set(DECSET_BIT_SEND_FOCUS_EVENTS) } else { self.modes.reset(DECSET_BIT_SEND_FOCUS_EVENTS) }
                         self.send_focus_events = set;
                     },
-                    1006 => {
+                    1006 => { // SGR 鼠标协议
                         if set { self.modes.set(DECSET_BIT_MOUSE_PROTOCOL_SGR) } else { self.modes.reset(DECSET_BIT_MOUSE_PROTOCOL_SGR) }
                         self.sgr_mouse = set;
                     },
-                    1047 | 1048 | 1049 => {
+                    1034 => { // 8 位输入模式（未实现，忽略）
+                        // 不实现
+                    },
+                    1047 => { // 备用屏幕
                         if set {
-                            if p == 1049 || p == 1048 { self.save_cursor(); }
-                            if p == 1047 || p == 1049 {
-                                self.use_alternate_buffer = true;
-                                self.erase_in_display(2);
-                            }
+                            self.use_alternate_buffer = true;
+                            self.erase_in_display(2);
                         } else {
-                            if p == 1047 || p == 1049 { self.use_alternate_buffer = false; }
-                            if p == 1049 || p == 1048 { self.restore_cursor(); }
+                            self.use_alternate_buffer = false;
                         }
-                    }
-                    2004 => {
+                    },
+                    1048 => { // 保存/恢复光标
+                        if set { self.save_cursor(); } else { self.restore_cursor(); }
+                    },
+                    1049 => { // 备用屏幕 + 保存/恢复光标
+                        if set {
+                            self.save_cursor();
+                            self.use_alternate_buffer = true;
+                            self.erase_in_display(2);
+                        } else {
+                            self.use_alternate_buffer = false;
+                            self.restore_cursor();
+                        }
+                    },
+                    2004 => { // 括号粘贴模式
                         if set { self.modes.set(DECSET_BIT_BRACKETED_PASTE_MODE) } else { self.modes.reset(DECSET_BIT_BRACKETED_PASTE_MODE) }
                         self.bracketed_paste = set;
                     },
-                    _ => {}
+                    _ => {
+                        // 未知的 DECSET 模式，忽略
+                    }
                 }
             }
         }
@@ -939,6 +979,23 @@ impl TerminalEngine {
             .unwrap_or('\u{FFFD}') // 使用替换字符处理无效码点
             .encode_utf8(&mut utf8_buf);
         self.process_bytes(utf8_str.as_bytes());
+    }
+}
+
+impl ScreenState {
+    /// 获取调试信息（用于 toString() 方法）
+    pub fn get_debug_info(&self) -> String {
+        format!(
+            "TerminalEngine[cursor=({},{}),style={},size={}x{},rows={},cols={},alt={}]",
+            self.cursor.y,
+            self.cursor.x,
+            self.cursor.style,
+            self.rows,
+            self.cols,
+            self.main_screen.rows,
+            self.main_screen.cols,
+            self.use_alternate_buffer
+        )
     }
 }
 struct PerformHandler<'a> { state: &'a mut ScreenState }

@@ -355,11 +355,8 @@ public final class TerminalEmulator {
         if (mEnginePtr == 0) {
             return "TerminalEmulator[destroyed]";
         }
-        return String.format(java.util.Locale.US,
-            "TerminalEmulator[cursor=(%d,%d),style=%d,size=%dx%d,rows=%d,cols=%d,alt=%b]",
-            getCursorRow(), getCursorCol(), getCursorStyle(),
-            getRows(), getCols(), getActiveRows(), getActiveTranscriptRows(),
-            isAlternateBufferActive());
+        // 使用 Rust 侧的调试信息获取方法
+        return getDebugInfoFromRust(mEnginePtr);
     }
 
     // --- Native 接口 ---
@@ -376,6 +373,8 @@ public final class TerminalEmulator {
     private static native void resizeEngineRustFull(
         long enginePtr, int cols, int rows, int cw, int ch
     );
+
+    private static native String getDebugInfoFromRust(long enginePtr);
 
     private static native int getCursorColFromRust(long enginePtr);
     private static native int getCursorRowFromRust(long enginePtr);

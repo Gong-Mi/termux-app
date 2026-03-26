@@ -162,14 +162,23 @@ impl Screen {
     }
 
     /// Get a row by external row number (e.g., 0 = first visible row, -1 = last history row)
-    pub fn get_row(&self, row: i32) -> &TerminalRow { 
-        &self.buffer[self.internal_row(row)] 
+    /// Adds bounds checking to prevent accessing invalid rows
+    pub fn get_row(&self, row: i32) -> &TerminalRow {
+        // Bounds checking: row must be in [-active_transcript_rows, rows-1]
+        let min_row = -(self.active_transcript_rows as i32);
+        let max_row = self.rows as i32 - 1;
+        let clamped_row = row.max(min_row).min(max_row);
+        &self.buffer[self.internal_row(clamped_row)]
     }
-    
+
     /// Get a mutable row by external row number
-    pub fn get_row_mut(&mut self, row: i32) -> &mut TerminalRow { 
-        let idx = self.internal_row(row); 
-        &mut self.buffer[idx] 
+    pub fn get_row_mut(&mut self, row: i32) -> &mut TerminalRow {
+        // Bounds checking: row must be in [-active_transcript_rows, rows-1]
+        let min_row = -(self.active_transcript_rows as i32);
+        let max_row = self.rows as i32 - 1;
+        let clamped_row = row.max(min_row).min(max_row);
+        let idx = self.internal_row(clamped_row);
+        &mut self.buffer[idx]
     }
 
     pub fn block_clear(&mut self, top: usize, left: usize, bottom: usize, right: usize, style: u64) {
@@ -469,23 +478,34 @@ impl Screen {
         self.buffer = new_buffer;
         self.cols = n_cols as i32;
         self.rows = new_rows;
-        
+
         // Calculate active_transcript_rows and first_row
-        // Use incremental approach: start from 0 and let scroll_up() maintain it
-        // This matches Java's approach where active_transcript_rows is maintained incrementally
-        self.active_transcript_rows = 0;
-        self.first_row = 0;
+        // Count actual non-empty lines in the new_buffer to determine transcript rows
+        // This is more accurate than using output_row which is an index, not a count
+        let mut last_non_empty_row = 0;
+        for (i, row) in self.buffer.iter().enumerate() {
+            if row.get_space_used() > 0 {
+                last_non_empty_row = i;
+            }
+        }
         
-        // If we wrote more than new_rows, we need to simulate scrolling
-        // to properly set active_transcript_rows and first_row
-        let total_written = output_row + 1;
-        if total_written > new_rows as usize {
-            // Content overflowed - simulate the scroll state
-            // active_transcript_rows = total_written - visible_rows
-            self.active_transcript_rows = total_written - new_rows as usize;
-            // first_row should point to the start of visible content
-            // In a ring buffer, if we have active_transcript_rows of history,
-            // the first visible row is at index active_transcript_rows
+        // Calculate how many lines of content we have
+        // Start from first_row and count to last_non_empty_row
+        let first_content_row = self.first_row;
+        let total_lines_of_content = if last_non_empty_row >= first_content_row {
+            last_non_empty_row - first_content_row + 1
+        } else {
+            // Wrapped around the ring buffer
+            self.buffer.len() - first_content_row + last_non_empty_row + 1
+        };
+        
+        // active_transcript_rows = total content lines - visible rows
+        self.active_transcript_rows = total_lines_of_content.saturating_sub(new_rows as usize);
+        
+        // first_row should point to the start of visible content
+        // If we have transcript rows, first_row points to the first visible row
+        // which is at index active_transcript_rows in the logical order
+        if self.active_transcript_rows > 0 {
             self.first_row = self.active_transcript_rows % self.buffer.len();
         }
 
@@ -537,15 +557,33 @@ impl Screen {
             }
         } else if shift_down_of_top_row < 0 {
             // Expanding: only move screen up if there's transcript to show
+            // Java logic: actualShift = max(shiftDownOfTopRow, -mActiveTranscriptRows)
             let actual_shift = std::cmp::max(shift_down_of_top_row, -(self.active_transcript_rows as i32));
-            
+
             if shift_down_of_top_row != actual_shift {
-                // The new lines revealed by resizing are not all from transcript
-                // Blank the below ones (Java allocates new lines, we just clear)
+                // The new lines revealed by resizing are not all from transcript.
+                // Blank the below ones.
+                // Java: for (int i = 0; i < actualShift - shiftDownOfTopRow; i++)
+                //         allocateFullLineIfNecessary((mScreenFirstRow + mScreenRows + i) % mTotalRows).clear(currentStyle);
                 let blank_count = actual_shift - shift_down_of_top_row;
+                
+                // Calculate the position of new visible rows AFTER expansion
+                // The new rows will be at positions [old_rows, old_rows + 1, ..., new_rows - 1]
+                // In the ring buffer, these correspond to:
+                // (first_row + old_rows) % len, (first_row + old_rows + 1) % len, etc.
+                // But first_row will change! We need to calculate based on the NEW first_row.
+                
+                // After expansion, first_row will be: first_row + actual_shift
+                // The new visible rows start at: first_row + actual_shift + old_rows
+                // But we want to clear rows that will be at the bottom of the NEW screen
+                
+                // Actually, Java clears rows at the BOTTOM of the old screen area
+                // These are rows that will become visible but are not from transcript
                 for i in 0..blank_count {
-                    let row_to_clear = (self.first_row + old_rows + i as usize) % self.buffer.len();
-                    self.buffer[row_to_clear].clear_all(current_style);
+                    // The row to clear is at position (first_row + old_rows + i) in the ring buffer
+                    // But we need to calculate this BEFORE changing first_row
+                    let row_idx = (self.first_row + old_rows + i as usize) % self.buffer.len();
+                    self.buffer[row_idx].clear_all(current_style);
                 }
                 shift_down_of_top_row = actual_shift;
             }

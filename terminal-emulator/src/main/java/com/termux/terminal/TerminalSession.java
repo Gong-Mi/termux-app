@@ -296,15 +296,12 @@ public final class TerminalSession extends TerminalOutput {
             mEmulator.destroy();
         }
 
-        // Stop the reader and writer threads, and close the I/O streams
+        // Stop the reader and writer threads, and close the I/O queues
         mTerminalToProcessIOQueue.close();
         mProcessToTerminalIOQueue.close();
-        if (mTerminalFileDescriptor != -1 && JNI.sNativeLibrariesLoaded) {
-            try {
-                JNI.close(mTerminalFileDescriptor);
-            } catch (UnsatisfiedLinkError | Exception ignored) {
-            }
-        }
+        // 注意：mTerminalFileDescriptor 由 try-with-resources 中的 I/O 流关闭
+        // 这里不再显式关闭，避免 FD 二次关闭问题
+        // 参考：PROCESS_AND_POINTER_BUG_REPORT.md
     }
 
     @Override
@@ -425,7 +422,6 @@ public final class TerminalSession extends TerminalOutput {
 
             if (msg.what == MSG_PROCESS_EXITED) {
                 int exitCode = (Integer) msg.obj;
-                cleanupResources(exitCode);
 
                 String exitDescription = "\r\n[Process completed";
                 if (exitCode > 0) {
@@ -438,11 +434,15 @@ public final class TerminalSession extends TerminalOutput {
                 exitDescription += " - press Enter]";
 
                 byte[] bytesToWrite = exitDescription.getBytes(StandardCharsets.UTF_8);
-                // 在进程退出后追加消息前，检查终端是否仍然有效
+                // 先追加退出消息，再销毁资源（修复进程退出消息无法显示的问题）
                 if (mEmulator != null && mEmulator.isAlive()) {
                     mEmulator.append(bytesToWrite, bytesToWrite.length);
                     notifyScreenUpdate();
                 }
+
+                // 现在清理资源（包括销毁原生引擎）
+                cleanupResources(exitCode);
+            }
 
                 mClient.onSessionFinished(TerminalSession.this);
             }

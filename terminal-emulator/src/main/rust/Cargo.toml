@@ -18,6 +18,9 @@ base64 = "0.22.1"
 zip = "8.2.0"
 once_cell = "1.19.0"
 
+[dev-dependencies]
+md5 = "0.7"
+
 [profile.release]
 opt-level = 3
 lto = true

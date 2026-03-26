@@ -1,6 +1,6 @@
 use jni::JNIEnv;
-use jni::objects::{JClass, JString, JObject, JByteArray};
-use jni::sys::{jint, jlong, jbyteArray, jboolean, jintArray, jstring, jbyte};
+use jni::objects::{JClass, JString, JObject};
+use jni::sys::{jint, jlong, jbyteArray, jboolean, jintArray, jstring};
 use once_cell::sync::OnceCell;
 
 // 声明子模块
@@ -502,6 +502,30 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeGetCursor
     let context = unsafe { &*(ptr as *const TerminalContext) };
     let engine = context.lock.read().unwrap();
     engine.state.cursor.y as jint
+}
+
+// ============================================================================
+// TerminalEmulator.java - 调试辅助方法
+// ============================================================================
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getDebugInfoFromRust(
+    env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) -> jstring {
+    if ptr == 0 { 
+        let empty = env.new_string("TerminalEmulator[destroyed]").ok();
+        return empty.map_or(std::ptr::null_mut(), |s| s.into_raw());
+    }
+    let context = unsafe { &*(ptr as *const TerminalContext) };
+    let engine = context.lock.read().unwrap();
+    let debug_info = engine.state.get_debug_info();
+    if let Ok(j_str) = env.new_string(debug_info) {
+        j_str.into_raw()
+    } else {
+        std::ptr::null_mut()
+    }
 }
 
 // ============================================================================
