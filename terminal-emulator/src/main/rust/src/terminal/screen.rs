@@ -257,8 +257,8 @@ impl Screen {
             // Full screen scroll - use ring buffer pointer adjustment (O(1))
             self.first_row = (self.first_row + 1) % self.buffer.len();
             // Incrementally maintain active_transcript_rows (matches Java logic)
-            if self.active_transcript_rows < self.buffer.len() - self.rows as usize { 
-                self.active_transcript_rows += 1; 
+            if self.active_transcript_rows < self.buffer.len() - self.rows as usize {
+                self.active_transcript_rows += 1;
             }
             self.get_row_mut(self.rows - 1).clear(0, c, style);
         } else {
@@ -480,8 +480,8 @@ impl Screen {
         self.rows = new_rows;
 
         // Calculate active_transcript_rows and first_row
-        // Count actual non-empty lines in the new_buffer to determine transcript rows
-        // This is more accurate than using output_row which is an index, not a count
+        // After rebuild, content starts at index 0 (new_buffer was filled sequentially)
+        // Count actual non-empty lines from index 0
         let mut last_non_empty_row = 0;
         for (i, row) in self.buffer.iter().enumerate() {
             if row.get_space_used() > 0 {
@@ -489,25 +489,15 @@ impl Screen {
             }
         }
         
-        // Calculate how many lines of content we have
-        // Start from first_row and count to last_non_empty_row
-        let first_content_row = self.first_row;
-        let total_lines_of_content = if last_non_empty_row >= first_content_row {
-            last_non_empty_row - first_content_row + 1
-        } else {
-            // Wrapped around the ring buffer
-            self.buffer.len() - first_content_row + last_non_empty_row + 1
-        };
+        // After rebuild, first_row should be 0 (content starts at beginning)
+        // total_lines_of_content = last_non_empty_row + 1 (since we start from 0)
+        let total_lines_of_content = last_non_empty_row + 1;
         
         // active_transcript_rows = total content lines - visible rows
         self.active_transcript_rows = total_lines_of_content.saturating_sub(new_rows as usize);
         
-        // first_row should point to the start of visible content
-        // If we have transcript rows, first_row points to the first visible row
-        // which is at index active_transcript_rows in the logical order
-        if self.active_transcript_rows > 0 {
-            self.first_row = self.active_transcript_rows % self.buffer.len();
-        }
+        // first_row = 0 after rebuild (content is linear from index 0)
+        self.first_row = 0;
 
         (new_cursor_x, new_cursor_y)
     }
