@@ -20,6 +20,12 @@ public class RustEngineCallback implements TerminalSessionClient {
         // 屏幕更新通知 - 目前不需要特殊处理
     }
 
+    public void onScreenUpdated() {
+        if (mClient != null) {
+            mClient.onTextChanged(null);
+        }
+    }
+
     public void reportTitleChange(String title) {
         if (mClient != null) mClient.reportTitleChange(title);
     }

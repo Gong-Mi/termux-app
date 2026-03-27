@@ -12,6 +12,12 @@ use crate::terminal::{
     cursor::{Cursor},
 };
 
+/// 安全包装原始指针，允许在线程间传递
+#[derive(Clone, Copy)]
+pub struct SharedBufferPtr(pub *mut SharedScreenBuffer);
+unsafe impl Send for SharedBufferPtr {}
+unsafe impl Sync for SharedBufferPtr {}
+
 /// Base64 解码辅助函数
 
 // -----------------------------------------------------------------------------
@@ -109,14 +115,19 @@ impl FlatScreenBuffer {
 }
 
 use std::sync::RwLock;
+use std::sync::atomic::AtomicBool;
 
 pub struct TerminalContext {
     pub lock: RwLock<TerminalEngine>,
+    pub running: AtomicBool,
 }
 
 impl TerminalContext {
     pub fn new(engine: TerminalEngine) -> Self {
-        Self { lock: RwLock::new(engine) }
+        Self { 
+            lock: RwLock::new(engine),
+            running: AtomicBool::new(true),
+        }
     }
 }
 
@@ -138,7 +149,7 @@ pub struct ScreenState {
     pub colors: TerminalColors,
     pub sixel_decoder: SixelDecoder,
     pub flat_buffer: Option<FlatScreenBuffer>,
-    pub shared_buffer_ptr: *mut SharedScreenBuffer,
+    pub shared_buffer_ptr: SharedBufferPtr,
     pub top_margin: i32,
     pub bottom_margin: i32,
     pub left_margin: i32,
@@ -187,7 +198,7 @@ impl ScreenState {
             colors: TerminalColors::new(),
             sixel_decoder: SixelDecoder::new(),
             flat_buffer: Some(FlatScreenBuffer::new(cols as usize, max(rows, total_rows) as usize)),
-            shared_buffer_ptr: std::ptr::null_mut(),
+            shared_buffer_ptr: SharedBufferPtr(std::ptr::null_mut()),
             top_margin: 0,
             bottom_margin: rows,
             left_margin: 0,
@@ -817,8 +828,8 @@ impl TerminalEngine {
         let mut handler = PerformHandler { state: &mut self.state };
         self.parser.advance(&mut handler, data);
         self.state.sync_screen_to_flat_buffer();
-        if !self.state.shared_buffer_ptr.is_null() {
-            unsafe { if let Some(flat) = &self.state.flat_buffer { flat.sync_to_shared(self.state.shared_buffer_ptr); } }
+        if !self.state.shared_buffer_ptr.0.is_null() {
+            unsafe { if let Some(flat) = &self.state.flat_buffer { flat.sync_to_shared(self.state.shared_buffer_ptr.0); } }
         }
     }
     
@@ -987,6 +998,16 @@ impl TerminalEngine {
             .unwrap_or('\u{FFFD}') // 使用替换字符处理无效码点
             .encode_utf8(&mut utf8_buf);
         self.process_bytes(utf8_str.as_bytes());
+    }
+
+    pub fn notify_screen_updated(&self) {
+        if let Some(obj) = &self.state.java_callback_obj {
+            if let Some(vm) = crate::JAVA_VM.get() {
+                if let Ok(mut env) = vm.get_env() {
+                    let _ = env.call_method(obj.as_obj(), "onScreenUpdated", "()V", &[]);
+                }
+            }
+        }
     }
 }
 

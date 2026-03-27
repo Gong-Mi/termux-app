@@ -2,6 +2,9 @@ use jni::JNIEnv;
 use jni::objects::{JClass, JString, JObject};
 use jni::sys::{jint, jlong, jbyteArray, jboolean, jintArray, jstring};
 use once_cell::sync::OnceCell;
+use std::io::Read;
+use std::os::unix::io::FromRawFd;
+use std::sync::atomic::Ordering;
 
 // 声明子模块
 pub mod terminal;
@@ -153,8 +156,54 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_destroyEngineRu
     ptr: jlong,
 ) {
     if ptr != 0 {
+        let context = unsafe { &*(ptr as *mut TerminalContext) };
+        context.running.store(false, Ordering::SeqCst);
         unsafe { let _ = Box::from_raw(ptr as *mut TerminalContext); }
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeStartIoThread(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+    fd: jint,
+) {
+    if ptr == 0 { return; }
+    
+    let context_ptr = ptr as *mut TerminalContext;
+    let context = unsafe { &*context_ptr };
+    
+    // 克隆 PTY FD 以便在独立线程中使用
+    let pty_fd = unsafe { libc::dup(fd) };
+    if pty_fd < 0 { return; }
+
+    std::thread::Builder::new()
+        .name("termux-rust-pty-reader".to_string())
+        .spawn(move || {
+            android_log(LogPriority::INFO, "Rust IO Thread started (termux-rust-pty-reader)");
+            
+            let mut file = unsafe { std::fs::File::from_raw_fd(pty_fd) };
+            let mut buffer = [0u8; 8192];
+            
+            // 获取 context 的原始指针进行长时间持有
+            // 注意：由于 TerminalEmulator 销毁时会设置 running=false，我们这里安全退出
+            while context.running.load(Ordering::SeqCst) {
+                match file.read(&mut buffer) {
+                    Ok(0) => break, // EOF
+                    Ok(n) => {
+                        let mut engine = context.lock.write().unwrap();
+                        engine.process_bytes(&buffer[..n]);
+                        // 通知 Java 层屏幕已更新
+                        engine.notify_screen_updated();
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                    Err(_) => break,
+                }
+            }
+            android_log(LogPriority::INFO, "Rust IO Thread stopped");
+        })
+        .expect("Failed to spawn Rust IO thread");
 }
 
 #[unsafe(no_mangle)]

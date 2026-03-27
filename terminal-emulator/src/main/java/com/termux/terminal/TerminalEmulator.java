@@ -12,6 +12,8 @@ public final class TerminalEmulator {
 
     // 原生引擎指针
     private long mEnginePtr;
+    // PTY 文件描述符
+    private int mNativePtyFd = -1;
     // 持有回调对象的强引用，防止被 GC 回收
     private final RustEngineCallback mRustCallback;
 
@@ -45,15 +47,21 @@ public final class TerminalEmulator {
      */
     public TerminalEmulator(TerminalOutput session, int columns, int rows, 
                            int cellWidthPixels, int cellHeightPixels, 
-                           Integer transcriptRows, TerminalSessionClient client) {
+                           Integer transcriptRows, int ptyFd, TerminalSessionClient client) {
         // 创建独立的回调对象并持有强引用
         this.mRustCallback = new RustEngineCallback(client);
+        this.mNativePtyFd = ptyFd;
         
         mEnginePtr = createEngineRustWithCallback(
             columns, rows, cellWidthPixels, cellHeightPixels, 
             transcriptRows != null ? transcriptRows : 600,
             mRustCallback
         );
+
+        // 如果提供了 PTY FD，启动原生 IO 线程
+        if (mEnginePtr != 0 && ptyFd != -1) {
+            nativeStartIoThread(mEnginePtr, ptyFd);
+        }
     }
 
     /**
@@ -365,6 +373,7 @@ public final class TerminalEmulator {
     );
 
     private static native void destroyEngineRust(long enginePtr);
+    private static native void nativeStartIoThread(long enginePtr, int fd);
 
     private static native void processBatchRust(long enginePtr, byte[] batch, int length);
 

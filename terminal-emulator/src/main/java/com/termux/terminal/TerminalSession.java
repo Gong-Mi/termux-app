@@ -131,8 +131,6 @@ public final class TerminalSession extends TerminalOutput {
      * @param rows    The number of rows in the terminal window.
      */
     public void initializeEmulator(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
-        mEmulator = new TerminalEmulator(this, columns, rows, cellWidthPixels, cellHeightPixels, mTranscriptRows, mClient);
-
         if (JNI.sNativeLibrariesLoaded) {
             try {
                 int[] processId = new int[1];
@@ -148,37 +146,11 @@ public final class TerminalSession extends TerminalOutput {
             mTerminalFileDescriptor = -1;
         }
 
+        mEmulator = new TerminalEmulator(this, columns, rows, cellWidthPixels, cellHeightPixels, mTranscriptRows, mTerminalFileDescriptor, mClient);
         mClient.setTerminalShellPid(this, mShellPid);
 
         if (mTerminalFileDescriptor != -1) {
             final FileDescriptor terminalFileDescriptorWrapped = wrapFileDescriptor(mTerminalFileDescriptor, mClient);
-
-            new Thread("TermSessionInputReader[pid=" + mShellPid + "]") {
-                @Override
-                public void run() {
-                    android.util.Log.d("Termux-Session", "InputReader thread started for PID: " + mShellPid);
-                    try (InputStream termIn = new FileInputStream(terminalFileDescriptorWrapped)) {
-                        final byte[] buffer = new byte[4096];
-                        while (true) {
-                            int read = termIn.read(buffer);
-                            if (read == -1) return;
-                            if (!mProcessToTerminalIOQueue.write(buffer, 0, read)) return;
-                            
-                            try {
-                                if (!mMainThreadHandler.hasMessages(MSG_NEW_INPUT)) {
-                                    mMainThreadHandler.sendEmptyMessage(MSG_NEW_INPUT);
-                                }
-                            } catch (IllegalStateException e) {
-                                // Handler's thread is dead, stop reading.
-                                android.util.Log.w("Termux-Session", "MainThreadHandler dead, stopping InputReader.");
-                                return;
-                            }
-                        }
-                    } catch (Exception e) {
-                        // Ignore, just shutting down.
-                    }
-                }
-            }.start();
 
             new Thread("TermSessionOutputWriter[pid=" + mShellPid + "]") {
                 @Override
