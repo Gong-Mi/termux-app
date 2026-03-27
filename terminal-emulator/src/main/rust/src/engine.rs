@@ -831,6 +831,7 @@ impl TerminalEngine {
         if !self.state.shared_buffer_ptr.0.is_null() {
             unsafe { if let Some(flat) = &self.state.flat_buffer { flat.sync_to_shared(self.state.shared_buffer_ptr.0); } }
         }
+        self.notify_screen_updated();
     }
     
     /// 处理按键事件 - 实现 KeyHandler.getCode() 的逻辑
@@ -998,12 +999,15 @@ impl TerminalEngine {
             .unwrap_or('\u{FFFD}') // 使用替换字符处理无效码点
             .encode_utf8(&mut utf8_buf);
         self.process_bytes(utf8_str.as_bytes());
+        // process_bytes 内部已经调用了 notify_screen_updated
     }
 
     pub fn notify_screen_updated(&self) {
         if let Some(obj) = &self.state.java_callback_obj {
             if let Some(vm) = crate::JAVA_VM.get() {
-                if let Ok(mut env) = vm.get_env() {
+                // 尝试获取当前线程的 JNIEnv，如果未附加则尝试附加
+                let env_res = vm.get_env().or_else(|_| vm.attach_current_thread_as_daemon());
+                if let Ok(mut env) = env_res {
                     let _ = env.call_method(obj.as_obj(), "onScreenUpdated", "()V", &[]);
                 }
             }

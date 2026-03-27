@@ -32,6 +32,7 @@ public final class TerminalSession extends TerminalOutput {
 
     private static final int MSG_NEW_INPUT = 1;
     private static final int MSG_PROCESS_EXITED = 4;
+    private static final int MSG_SCREEN_UPDATED = 5;
 
     public final String mHandle = UUID.randomUUID().toString();
 
@@ -237,6 +238,13 @@ public final class TerminalSession extends TerminalOutput {
         mClient.onTextChanged(this);
     }
 
+    /** Called by Rust IO thread when screen needs updating */
+    public void onNativeScreenUpdated() {
+        if (!mMainThreadHandler.hasMessages(MSG_SCREEN_UPDATED)) {
+            mMainThreadHandler.sendEmptyMessage(MSG_SCREEN_UPDATED);
+        }
+    }
+
     /** Reset state for terminal emulator state. */
     public void reset() {
         if (mEmulator != null && mEmulator.isAlive()) {
@@ -368,6 +376,11 @@ public final class TerminalSession extends TerminalOutput {
         public void handleMessage(Message msg) {
             // 检查终端是否已被销毁，防止在销毁后继续处理数据导致崩溃
             if (msg.what != MSG_PROCESS_EXITED && (mEmulator == null || !mEmulator.isAlive())) {
+                return;
+            }
+
+            if (msg.what == MSG_SCREEN_UPDATED) {
+                notifyScreenUpdate();
                 return;
             }
 

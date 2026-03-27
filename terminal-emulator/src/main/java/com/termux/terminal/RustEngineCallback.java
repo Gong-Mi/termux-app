@@ -11,9 +11,14 @@ import androidx.annotation.Nullable;
  */
 public class RustEngineCallback implements TerminalSessionClient {
     private final TerminalSessionClient mClient;
+    private TerminalSession mSession;
 
     public RustEngineCallback(TerminalSessionClient client) {
         this.mClient = client;
+    }
+
+    public void setSession(TerminalSession session) {
+        this.mSession = session;
     }
 
     public void onScreenUpdate() {
@@ -21,7 +26,9 @@ public class RustEngineCallback implements TerminalSessionClient {
     }
 
     public void onScreenUpdated() {
-        if (mClient != null) {
+        if (mSession != null) {
+            mSession.onNativeScreenUpdated();
+        } else if (mClient != null) {
             mClient.onTextChanged(null);
         }
     }

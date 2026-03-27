@@ -50,6 +50,9 @@ public final class TerminalEmulator {
                            Integer transcriptRows, int ptyFd, TerminalSessionClient client) {
         // 创建独立的回调对象并持有强引用
         this.mRustCallback = new RustEngineCallback(client);
+        if (session instanceof TerminalSession) {
+            this.mRustCallback.setSession((TerminalSession) session);
+        }
         this.mNativePtyFd = ptyFd;
         
         mEnginePtr = createEngineRustWithCallback(

@@ -183,6 +183,11 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeStartIoTh
         .spawn(move || {
             android_log(LogPriority::INFO, "Rust IO Thread started (termux-rust-pty-reader)");
             
+            // 必须附加当前线程到 JVM，否则无法通过 JNI 调用 Java 方法
+            let _attached_env = crate::JAVA_VM.get().and_then(|vm| {
+                vm.attach_current_thread_as_daemon().ok()
+            });
+
             let mut file = unsafe { std::fs::File::from_raw_fd(pty_fd) };
             let mut buffer = [0u8; 8192];
             
