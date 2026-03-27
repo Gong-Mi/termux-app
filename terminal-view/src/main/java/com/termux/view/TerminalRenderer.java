@@ -113,22 +113,21 @@ public final class TerminalRenderer {
             boolean lastRunInsideCursor = false;
             boolean lastRunInsideSelection = false;
             int lastRunStartColumn = -1;
-            int lastRunStartIndex = 0;
             boolean lastRunFontWidthMismatch = false;
-            int currentCharIndex = 0;
             float measuredWidthForRun = 0.f;
 
             for (int column = 0; column < columns; ) {
                 final int codePoint = line[column];
-                if (codePoint == 0) { column++; currentCharIndex++; continue; } // 跳过占位符
+                if (codePoint == 0) { 
+                    column++; 
+                    continue; 
+                } // Skip placeholders for wide characters
 
                 final int codePointWcWidth = WcWidth.width(codePoint);
                 final boolean insideCursor = (cursorX == column || (codePointWcWidth == 2 && cursorX == column + 1));
                 final boolean insideSelection = column >= selx1 && column <= selx2;
                 final long style = styles[column];
 
-                // 计算码点宽度（考虑 surrogate pairs）
-                final int charsForCodePoint = Character.isSupplementaryCodePoint(codePoint) ? 2 : 1;
                 final float measuredCodePointWidth = (codePoint < asciiMeasures.length) ? asciiMeasures[codePoint] :
                     mTextPaint.measureText(new String(new int[]{codePoint}, 0, 1));
 
@@ -137,41 +136,39 @@ public final class TerminalRenderer {
                 if (column == 0 || style != lastRunStyle || insideCursor != lastRunInsideCursor ||
                     insideSelection != lastRunInsideSelection || fontWidthMismatch != lastRunFontWidthMismatch) {
 
-                    if (column != 0) {
+                    if (column != 0 && lastRunStartColumn != -1) {
                         renderRun(canvas, line, lastRunStartColumn, column - lastRunStartColumn, heightOffset,
                                   measuredWidthForRun, lastRunStyle, lastRunInsideCursor,
                                   lastRunInsideSelection, reverseVideo, palette, cursorColorForRun(lastRunInsideCursor, palette),
-                                  cursorShape, lastRunStartIndex, currentCharIndex - lastRunStartIndex);
+                                  cursorShape);
                     }
 
                     lastRunStyle = style;
                     lastRunInsideCursor = insideCursor;
                     lastRunInsideSelection = insideSelection;
                     lastRunStartColumn = column;
-                    lastRunStartIndex = currentCharIndex;
                     lastRunFontWidthMismatch = fontWidthMismatch;
                     measuredWidthForRun = 0.f;
                 }
 
                 measuredWidthForRun += measuredCodePointWidth;
-                column += Math.max(1, codePointWcWidth);
-                currentCharIndex += charsForCodePoint;
+                int nextColumn = column + Math.max(1, codePointWcWidth);
                 
-                // 恢复 combining chars 处理：跳过结合符，将它们视为前一个字符的一部分
-                while (currentCharIndex < columns && WcWidth.width(line[currentCharIndex]) <= 0) {
-                    int combiningChars = 1;
-                    if (Character.isHighSurrogate((char) line[currentCharIndex])) {
-                        combiningChars = 2;
-                    }
-                    currentCharIndex += combiningChars;
+                // Handle combining characters which follow the base character
+                while (nextColumn < columns && line[nextColumn] != 0 && WcWidth.width(line[nextColumn]) <= 0) {
+                    float combiningWidth = (line[nextColumn] < asciiMeasures.length) ? asciiMeasures[line[nextColumn]] :
+                        mTextPaint.measureText(new String(new int[]{line[nextColumn]}, 0, 1));
+                    measuredWidthForRun += combiningWidth;
+                    nextColumn++;
                 }
+                column = nextColumn;
             }
 
             if (columns > lastRunStartColumn && lastRunStartColumn != -1) {
                 renderRun(canvas, line, lastRunStartColumn, columns - lastRunStartColumn, heightOffset,
                           measuredWidthForRun, lastRunStyle, lastRunInsideCursor,
                           lastRunInsideSelection, reverseVideo, palette, cursorColorForRun(lastRunInsideCursor, palette),
-                          cursorShape, lastRunStartIndex, currentCharIndex - lastRunStartIndex);
+                          cursorShape);
             }
         }
     }
@@ -184,14 +181,17 @@ public final class TerminalRenderer {
 
     private void renderRun(Canvas canvas, int[] line, int offset, int count, float y, float measuredWidth,
                            long style, boolean insideCursor, boolean insideSelection, boolean globalReverse,
-                           int[] palette, int cursorColor, int cursorShape,
-                           int startCharIndex, int runWidthChars) {
+                           int[] palette, int cursorColor, int cursorShape) {
 
         mRunBuilder.setLength(0);
-        for (int i = startCharIndex; i < startCharIndex + runWidthChars; i++) {
+        int end = offset + count;
+        if (end > line.length) {
+            android.util.Log.w("TerminalRenderer", String.format("Boundary overrun prevented: offset=%d, count=%d, length=%d", offset, count, line.length));
+            end = line.length;
+        }
+        for (int i = offset; i < end; i++) {
             int cp = line[i];
             if (cp != 0) {
-                // 仅添加有效码点，彻底过滤掉会导致位移的 \0 占位符
                 if (Character.isSupplementaryCodePoint(cp)) {
                     mRunBuilder.append(Character.highSurrogate(cp));
                     mRunBuilder.append(Character.lowSurrogate(cp));
@@ -202,7 +202,6 @@ public final class TerminalRenderer {
         }
 
         String text = mRunBuilder.toString();
-        // 修复：使用 0 和 text.length() 作为索引，因为 text 是新构建的字符串
         drawTextRun(canvas, text, palette, y, offset, count, measuredWidth, cursorColor, cursorShape, style,
                     globalReverse || insideSelection, 0, text.length());
     }
