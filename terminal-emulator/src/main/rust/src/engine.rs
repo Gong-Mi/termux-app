@@ -406,6 +406,14 @@ impl ScreenState {
         
         self.cols = cols; 
         self.rows = rows;
+        
+        // 关键修复：同步更新滚动区域和侧边边距
+        // 确保 resize 后 bottom_margin 等于新的物理行数，从而触发全屏滚动逻辑并记录历史
+        self.top_margin = 0;
+        self.bottom_margin = rows;
+        self.left_margin = 0;
+        self.right_margin = cols;
+
         self.cursor.x = new_cx;
         self.cursor.y = new_cy;
         
