@@ -1082,6 +1082,14 @@ public final class TerminalView extends View {
         int newColumns = Math.max(4, (int) (viewWidth / mRenderer.getFontWidth()));
         int newRows = Math.max(4, (viewHeight - mRenderer.getFontLineSpacingAndAscent()) / mRenderer.getFontLineSpacing());
 
+        // 如果引擎尚未完全初始化，我们只发起一次初始化请求，然后等待回调。
+        // 防止由于 mEmulator 为空而在每一帧都重复触发 initializeEmulator。
+        if (!mTermSession.isEngineInitialized()) {
+            mTermSession.updateSize(newColumns, newRows, (int) mRenderer.getFontWidth(), mRenderer.getFontLineSpacing());
+            return;
+        }
+
+        // 引擎已就绪，仅在尺寸变化时执行 resize
         if (mEmulator == null || (newColumns != mEmulator.getCols() || newRows != mEmulator.getRows())) {
             mTermSession.updateSize(newColumns, newRows, (int) mRenderer.getFontWidth(), mRenderer.getFontLineSpacing());
             mEmulator = mTermSession.getEmulator();

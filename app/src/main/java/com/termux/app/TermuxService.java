@@ -572,7 +572,7 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
 
     /** Create a {@link TermuxSession}. */
     @Nullable
-    public synchronized TermuxSession createTermuxSession(ExecutionCommand executionCommand) {
+    public TermuxSession createTermuxSession(ExecutionCommand executionCommand) {
         if (executionCommand == null) return null;
 
         Logger.logDebug(LOG_TAG, "Creating \"" + executionCommand.getCommandIdAndLabelLogString() + "\" TermuxSession");
@@ -605,22 +605,28 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
             return null;
         }
 
-        mShellManager.mTermuxSessions.add(newTermuxSession);
+        synchronized (mShellManager.mTermuxSessions) {
+            mShellManager.mTermuxSessions.add(newTermuxSession);
+        }
 
         // Remove the execution command from the pending plugin execution commands list since it has
         // now been processed
-        if (executionCommand.isPluginExecutionCommand)
-            mShellManager.mPendingPluginExecutionCommands.remove(executionCommand);
+        if (executionCommand.isPluginExecutionCommand) {
+            synchronized (mShellManager.mPendingPluginExecutionCommands) {
+                mShellManager.mPendingPluginExecutionCommands.remove(executionCommand);
+            }
+        }
 
         // Notify {@link TermuxSessionsListViewController} that sessions list has been updated if
         // activity in is foreground
-        if (mTermuxTerminalSessionActivityClient != null)
-            mTermuxTerminalSessionActivityClient.termuxSessionListNotifyUpdated();
+        if (mTermuxTerminalSessionActivityClient != null) {
+            mHandler.post(() -> mTermuxTerminalSessionActivityClient.termuxSessionListNotifyUpdated());
+        }
 
-        updateNotification();
+        mHandler.post(() -> updateNotification());
 
         // No need to recreate the activity since it likely just started and theme should already have applied
-        TermuxActivity.updateTermuxActivityStyling(this, false);
+        mHandler.post(() -> TermuxActivity.updateTermuxActivityStyling(this, false));
 
         return newTermuxSession;
     }
