@@ -35,6 +35,7 @@ import java.util.List;
 public class PermissionUtils {
 
     public static final int REQUEST_GRANT_STORAGE_PERMISSION = 1000;
+    public static final int REQUEST_GRANT_NOTIFICATION_PERMISSION = 1001;
 
     public static final int REQUEST_DISABLE_BATTERY_OPTIMIZATIONS = 2000;
     public static final int REQUEST_GRANT_DISPLAY_OVER_OTHER_APPS_PERMISSION = 2001;

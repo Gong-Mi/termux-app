@@ -18,6 +18,7 @@ import com.termux.shared.logger.Logger;
 import com.termux.shared.markdown.MarkdownUtils;
 import com.termux.shared.errors.Error;
 import com.termux.shared.android.PackageUtils;
+import com.termux.shared.android.PermissionUtils;
 import com.termux.shared.termux.TermuxConstants;
 import com.termux.shared.termux.TermuxUtils;
 import com.termux.shared.termux.shell.command.environment.TermuxShellEnvironment;

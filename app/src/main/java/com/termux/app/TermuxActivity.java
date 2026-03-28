@@ -9,8 +9,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
-import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.IBinder;
 import android.os.IBinder;
 import android.view.ContextMenu;
 import android.view.ContextMenu.ContextMenuInfo;
@@ -791,7 +792,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     }
 
     private void requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             PermissionUtils.checkAndRequestNotificationPermission(this, PermissionUtils.REQUEST_GRANT_NOTIFICATION_PERMISSION);
         }
     }
