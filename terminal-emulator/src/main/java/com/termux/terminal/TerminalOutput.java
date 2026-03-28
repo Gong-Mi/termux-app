@@ -38,4 +38,7 @@ public abstract class TerminalOutput {
     /** Notify the terminal client that the terminal cursor visibility has changed. */
     public abstract void onTerminalCursorStateChange(boolean visible);
 
+    /** Notify the terminal client about a Sixel image. */
+    public void onSixelImage(byte[] rgbaData, int width, int height, int startX, int startY) {}
+
 }

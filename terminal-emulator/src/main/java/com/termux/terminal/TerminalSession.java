@@ -337,6 +337,11 @@ public final class TerminalSession extends TerminalOutput {
         mClient.onTerminalCursorStateChange(visible);
     }
 
+    @Override
+    public void onSixelImage(byte[] rgbaData, int width, int height, int startX, int startY) {
+        mClient.onSixelImage(rgbaData, width, height, startX, startY);
+    }
+
     public int getPid() {
         return mShellPid;
     }
