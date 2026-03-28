@@ -2,51 +2,61 @@ use std::cmp::{max, min};
 use crate::engine::ScreenState;
 use crate::vte_parser::Params;
 
+/// 处理 CSI (Control Sequence Introducer) 序列
+/// 参数默认值行为与 Java TerminalEmulator.getArg0()/getArg1() 保持一致
 pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8], action: char) {
     let is_private = intermediates.contains(&b'?');
     let is_bang = intermediates.contains(&b'!');
 
     match action {
         '@' => {
-            let n = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+            // ICH - Insert Character (默认 1)
+            let n = params.get_arg0(1);
             state.cursor.about_to_wrap = false;
             state.insert_characters(n);
         }
         'A' => {
-            let dist = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+            // CUU - Cursor Up (默认 1)
+            let dist = params.get_arg0(1);
             state.cursor.y = max(state.top_margin, state.cursor.y - dist);
             state.cursor.about_to_wrap = false;
         }
         'B' => {
-            let dist = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+            // CUD - Cursor Down (默认 1)
+            let dist = params.get_arg0(1);
             state.cursor.y = min(state.bottom_margin - 1, state.cursor.y + dist);
             state.cursor.about_to_wrap = false;
         }
         'C' | 'a' => {
-            let dist = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+            // CUF - Cursor Forward (默认 1)
+            let dist = params.get_arg0(1);
             state.cursor_horizontal_relative(dist);
         }
         'D' => {
-            let dist = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+            // CUB - Cursor Backward (默认 1)
+            let dist = params.get_arg0(1);
             state.cursor.x = max(state.left_margin, state.cursor.x - dist);
             state.cursor.about_to_wrap = false;
         }
         'E' => {
-            let n = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+            // CNL - Cursor Next Line (默认 1)
+            let n = params.get_arg0(1);
             state.cursor_next_line(n);
         }
         'F' => {
-            let n = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+            // CPL - Cursor Previous Line (默认 1)
+            let n = params.get_arg0(1);
             state.cursor_previous_line(n);
         }
         'G' | '`' => {
-            let n = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+            // CHA - Cursor Horizontal Absolute (默认 1)
+            let n = params.get_arg0(1);
             state.cursor_horizontal_absolute(n);
         }
         'H' | 'f' => {
-            let mut iter = params.iter();
-            let row = iter.next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
-            let col = iter.next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+            // CUP - Cursor Position (默认 row=1, col=1)
+            let row = params.get_arg0(1);
+            let col = params.get_arg1(1);
             if state.origin_mode() {
                 state.cursor.y = max(state.top_margin, min(state.bottom_margin - 1, state.top_margin + row - 1));
             } else {
@@ -56,107 +66,126 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
             state.cursor.about_to_wrap = false;
         }
         'I' => {
-            let n = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+            // CHT - Cursor Horizontal Tab (默认 1)
+            let n = params.get_arg0(1);
             for _ in 0..n { state.cursor_forward_tab(); }
         }
         'J' => {
-            let mode = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(0) as i32;
+            // ED - Erase in Display (默认 0)
+            let mode = params.get_arg0(0);
             state.cursor.about_to_wrap = false;
             state.erase_in_display(mode);
         }
         'K' => {
-            let mode = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(0) as i32;
+            // EL - Erase in Line (默认 0)
+            let mode = params.get_arg0(0);
             state.cursor.about_to_wrap = false;
             state.erase_in_line(mode);
         }
         'L' => {
-            let n = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+            // IL - Insert Line (默认 1)
+            let n = params.get_arg0(1);
             state.cursor.about_to_wrap = false;
             state.insert_lines(n);
         }
         'M' => {
-            let n = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+            // DL - Delete Line (默认 1)
+            let n = params.get_arg0(1);
             state.cursor.about_to_wrap = false;
             state.delete_lines(n);
         }
         'P' => {
-            let n = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+            // DCH - Delete Character (默认 1)
+            let n = params.get_arg0(1);
             state.cursor.about_to_wrap = false;
             state.delete_characters(n);
         }
         'S' => {
-            let n = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+            // SU - Scroll Up (默认 1)
+            let n = params.get_arg0(1);
             state.cursor.about_to_wrap = false;
             state.scroll_up_lines(n);
         }
         'T' => {
-            let n = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+            // SD - Scroll Down (默认 1)
+            let n = params.get_arg0(1);
             state.cursor.about_to_wrap = false;
             state.scroll_down_lines(n);
         }
         'X' => {
-            let n = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+            // ECH - Erase Character (默认 1)
+            let n = params.get_arg0(1);
             state.cursor.about_to_wrap = false;
             state.erase_characters(n);
         }
         'Z' => {
-            let n = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+            // CBT - Cursor Backward Tab (默认 1)
+            let n = params.get_arg0(1);
             state.cursor_backward_tab(n);
         }
         'b' => {
-            let n = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+            // REP - Repeat (默认 1)
+            let n = params.get_arg0(1);
             if let Some(c) = state.last_printed_char {
                 state.repeat_character(n, c);
             }
         }
         'c' => {
+            // DA - Device Attributes
             state.report_terminal_response("\x1b[?6c");
         }
         'd' => {
-            let n = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+            // VPA - Vertical Position Absolute (默认 1)
+            let n = params.get_arg0(1);
             state.cursor_vertical_absolute(n);
         }
         'e' => {
-            let n = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+            // VPR - Vertical Position Relative (默认 1)
+            let n = params.get_arg0(1);
             state.cursor_vertical_relative(n);
         }
         'g' => {
-            let mode = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(0) as i32;
+            // TBC - Tab Clear (默认 0)
+            let mode = params.get_arg0(0);
             state.clear_tab_stop(mode);
         }
         'h' => {
+            // SM - Set Mode
             if is_private { state.handle_decset(params, true); }
             else { state.handle_set_mode(params, true); }
         }
         'l' => {
+            // RM - Reset Mode
             if is_private { state.handle_decset(params, false); }
             else { state.handle_set_mode(params, false); }
         }
         'm' => { state.handle_sgr(params); }
         'n' => {
-            let mode = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(0) as i32;
+            // DSR - Device Status Report
+            // Java: getArg0(-1) - 默认 -1 表示无参数
+            let mode = if params.len == 0 { -1 } else { params.get(0, 0) };
             match mode {
-                5 => state.report_terminal_response("\x1b[0n"),
-                6 => {
+                5 => state.report_terminal_response("\x1b[0n"),  // DSR Status Report
+                6 => {  // CPR - Cursor Position Report
                     let r = state.cursor.y + 1;
                     let c = state.cursor.x + 1;
                     state.report_terminal_response(&format!("\x1b[{};{}R", r, c));
                 }
-                _ => {}
+                _ => {}  // 其他值或无参数时忽略
             }
         }
         'p' => { if is_bang { state.decstr_soft_reset(); } }
         'r' => {
-            let mut iter = params.iter();
-            let top = iter.next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
-            let bottom = iter.next().and_then(|p| p.first()).copied().unwrap_or(state.rows as i32) as i32;
+            // DECSTBM - Set Top and Bottom Margins (默认 top=1, bottom=rows)
+            let top = params.get_arg0(1);
+            let bottom = params.get_arg1(state.rows as i32);
             state.set_margins(top, bottom);
         }
         's' => {
             if state.leftright_margin_mode() {
-                let mut iter = params.iter();
-                let left = iter.next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
-                let right = iter.next().and_then(|p| p.first()).copied().unwrap_or(state.cols as i32) as i32;
+                // DECSLRM - Set Left and Right Margins (默认 left=1, right=cols)
+                let left = params.get_arg0(1);
+                let right = params.get_arg1(state.cols as i32);
                 state.set_left_right_margins(left, right);
             } else {
                 state.save_cursor();

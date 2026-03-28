@@ -152,6 +152,47 @@ impl Params {
             default
         }
     }
+
+    /// 获取第 n 个参数的值，将 0 视为默认值（与 Java getArg() 行为一致）
+    /// 
+    /// # Arguments
+    /// * `index` - 参数索引
+    /// * `default` - 默认值
+    /// * `treat_zero_as_default` - 是否将 0 视为默认值
+    /// 
+    /// # Examples
+    /// ```
+    /// // getArg0(1) - 默认 1，0 也返回 1
+    /// params.get_with_zero_default(0, 1, true);
+    /// 
+    /// // getArg0(-1) - 默认 -1，0 返回 -1
+    /// params.get_with_zero_default(0, -1, true);
+    /// 
+    /// // 不将 0 视为默认值（如 SGR 颜色）
+    /// params.get_with_zero_default(0, 39, false);
+    /// ```
+    pub fn get_with_zero_default(&self, index: usize, default: i32, treat_zero_as_default: bool) -> i32 {
+        if index < self.len {
+            let val = self.values[index];
+            if val < 0 || (val == 0 && treat_zero_as_default) {
+                default
+            } else {
+                val
+            }
+        } else {
+            default
+        }
+    }
+
+    /// 获取第 0 个参数，将 0 视为默认值（对应 Java getArg0）
+    pub fn get_arg0(&self, default: i32) -> i32 {
+        self.get_with_zero_default(0, default, true)
+    }
+
+    /// 获取第 1 个参数，将 0 视为默认值（对应 Java getArg1）
+    pub fn get_arg1(&self, default: i32) -> i32 {
+        self.get_with_zero_default(1, default, true)
+    }
     
     /// 迭代器 - 返回参数组（主参数 + 子参数）
     pub fn iter(&self) -> ParamsIter<'_> {
