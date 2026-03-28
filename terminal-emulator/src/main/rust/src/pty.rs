@@ -34,15 +34,14 @@ pub unsafe fn create_subprocess(
         Err(_) => return -1,
     };
 
-    // 安全获取字符串
-    let cmd_str: String = if !cmd.is_null() {
+    let cmd_str = if !cmd.is_null() {
         let js = unsafe { JString::from_raw(cmd) };
         env.get_string(&js).map(|s| s.into()).unwrap_or_default()
     } else {
         String::new()
     };
 
-    let cwd_str: String = if !cwd.is_null() {
+    let cwd_str = if !cwd.is_null() {
         let js = unsafe { JString::from_raw(cwd) };
         env.get_string(&js).map(|s| s.into()).unwrap_or_default()
     } else {
@@ -79,27 +78,48 @@ pub unsafe fn create_subprocess(
         }
     }
 
+    let (ptm, pid) = match create_subprocess_with_data(cmd_str, cwd_str, argv, envp, rows, columns, cell_width, cell_height) {
+        Ok(res) => res,
+        Err(_) => return -1,
+    };
+
+    let pid_buf = [pid];
+    let j_pid_array = JIntArray::from_raw(process_id_array);
+    let _ = env.set_int_array_region(&j_pid_array, 0, &pid_buf);
+    ptm as jint
+}
+
+pub fn create_subprocess_with_data(
+    cmd_str: String,
+    cwd_str: String,
+    argv: Vec<String>,
+    envp: Vec<String>,
+    rows: jint,
+    columns: jint,
+    cell_width: jint,
+    cell_height: jint,
+) -> Result<(i32, i32), ()> {
     // 1. 打开 PTM
     use std::os::fd::IntoRawFd;
     let ptm = match open("/dev/ptmx", OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::empty()) {
         Ok(fd) => fd.into_raw_fd(),
-        Err(_) => return -1,
+        Err(_) => return Err(()),
     };
 
     unsafe {
         if grantpt(ptm) != 0 || unlockpt(ptm) != 0 {
             let _ = close(ptm);
-            return -1;
+            return Err(());
         }
 
         let mut devname_buf = [0u8; 64];
         if ptsname_r(ptm, devname_buf.as_mut_ptr() as *mut libc::c_char, devname_buf.len()) != 0 {
             let _ = close(ptm);
-            return -1;
+            return Err(());
         }
         let devname = match CStr::from_ptr(devname_buf.as_ptr() as *const libc::c_char).to_str() {
             Ok(s) => s.to_owned(),
-            Err(_) => { let _ = close(ptm); return -1; }
+            Err(_) => { let _ = close(ptm); return Err(()); }
         };
 
         // 2. 设置初始 winsize
@@ -114,12 +134,7 @@ pub unsafe fn create_subprocess(
         // 3. Fork
         match fork() {
             Ok(ForkResult::Parent { child }) => {
-                // 将 PID 写回 Java 数组
-                let pid = child.as_raw();
-                let pid_buf = [pid];
-                let j_pid_array = JIntArray::from_raw(process_id_array);
-                let _ = env.set_int_array_region(&j_pid_array, 0, &pid_buf);
-                ptm as jint
+                Ok((ptm, child.as_raw()))
             }
             Ok(ForkResult::Child) => {
                 let _ = setsid();
@@ -160,7 +175,7 @@ pub unsafe fn create_subprocess(
                 }
                 libc::_exit(1);
             }
-            Err(_) => -1,
+            Err(_) => Err(()),
         }
     }
 }

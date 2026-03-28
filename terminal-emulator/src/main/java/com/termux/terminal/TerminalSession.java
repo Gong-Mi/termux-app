@@ -71,14 +71,10 @@ public final class TerminalSession extends TerminalOutput {
 
     final Handler mMainThreadHandler = new MainThreadHandler();
 
-    private final String mShellPath;
-    private final String mCwd;
-    private final String[] mArgs;
-    private final String[] mEnv;
-    private final Integer mTranscriptRows;
+    private final ByteQueue mTerminalToProcessIOQueue = new ByteQueue(4096);
 
-
-    private static final String LOG_TAG = "TerminalSession";
+    /** The Rust engine callback object. */
+    private final RustEngineCallback mRustCallback;
 
     public TerminalSession(String shellPath, String cwd, String[] args, String[] env, Integer transcriptRows, TerminalSessionClient client) {
         this.mShellPath = shellPath;
@@ -87,6 +83,8 @@ public final class TerminalSession extends TerminalOutput {
         this.mEnv = env;
         this.mTranscriptRows = transcriptRows;
         this.mClient = client;
+        this.mRustCallback = new RustEngineCallback(client);
+        this.mRustCallback.setSession(this);
     }
 
     /**
@@ -126,28 +124,30 @@ public final class TerminalSession extends TerminalOutput {
     }
 
     /**
-     * Set the terminal emulator's window size and start terminal emulation.
-     *
-     * @param columns The number of columns in the terminal window.
-     * @param rows    The number of rows in the terminal window.
+     * Set the terminal emulator's window size and start terminal emulation asynchronously.
      */
     public void initializeEmulator(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
         if (JNI.sNativeLibrariesLoaded) {
-            try {
-                int[] processId = new int[1];
-                mTerminalFileDescriptor = JNI.createSubprocess(mShellPath, mCwd, mArgs, mEnv, processId, rows, columns, cellWidthPixels, cellHeightPixels);
-                mShellPid = processId[0];
-            } catch (UnsatisfiedLinkError | Exception e) {
-                mShellPid = 99999;
-                mTerminalFileDescriptor = -1;
-            }
+            JNI.createSessionAsync(mShellPath, mCwd, mArgs, mEnv, rows, columns, cellWidthPixels, cellHeightPixels,
+                mTranscriptRows != null ? mTranscriptRows : TerminalEmulator.DEFAULT_TERMINAL_TRANSCRIPT_ROWS, mRustCallback);
         } else {
-            // Mock PID for unit tests
+            // Mock for unit tests
             mShellPid = 99999;
             mTerminalFileDescriptor = -1;
+            mEmulator = new TerminalEmulator(this, columns, rows, cellWidthPixels, cellHeightPixels, mTranscriptRows, mTerminalFileDescriptor, mClient);
+            mClient.setTerminalShellPid(this, mShellPid);
         }
+    }
 
-        mEmulator = new TerminalEmulator(this, columns, rows, cellWidthPixels, cellHeightPixels, mTranscriptRows, mTerminalFileDescriptor, mClient);
+    /**
+     * Callback from Rust when async initialization is complete.
+     */
+    public void onEngineInitialized(long enginePtr, int ptyFd, int pid) {
+        mEngineInitialized = true;
+        mTerminalFileDescriptor = ptyFd;
+        mShellPid = pid;
+
+        mEmulator = new TerminalEmulator(this, enginePtr, ptyFd, mRustCallback);
         mClient.setTerminalShellPid(this, mShellPid);
 
         if (mTerminalFileDescriptor != -1) {
@@ -180,10 +180,16 @@ public final class TerminalSession extends TerminalOutput {
                     mMainThreadHandler.sendMessage(mMainThreadHandler.obtainMessage(MSG_PROCESS_EXITED, processExitCode));
                 }
             }.start();
-        } else if (!JNI.sNativeLibrariesLoaded) {
-            // For tests, simulate process exit if needed, or just let it stay "running"
         }
 
+        // Notify client that session is ready
+        mMainThreadHandler.sendEmptyMessage(MSG_SCREEN_UPDATED);
+    }
+
+    private boolean mEngineInitialized = false;
+
+    public boolean isEngineInitialized() {
+        return mEngineInitialized;
     }
 
     /** Write data to the shell process. */

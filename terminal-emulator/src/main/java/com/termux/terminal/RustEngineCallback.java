@@ -33,6 +33,15 @@ public class RustEngineCallback implements TerminalSessionClient {
         }
     }
 
+    /**
+     * Called when the Rust engine and PTY are initialized asynchronously.
+     */
+    public void onEngineInitialized(long enginePtr, int ptyFd, int pid) {
+        if (mSession != null) {
+            mSession.onEngineInitialized(enginePtr, ptyFd, pid);
+        }
+    }
+
     public void reportTitleChange(String title) {
         if (mClient != null) mClient.reportTitleChange(title);
     }

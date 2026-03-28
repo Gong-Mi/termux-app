@@ -68,6 +68,20 @@ public final class TerminalEmulator {
     }
 
     /**
+     * Constructor for pre-initialized engine (used by async session creation).
+     */
+    public TerminalEmulator(TerminalOutput session, long enginePtr, int ptyFd, RustEngineCallback callback) {
+        this.mRustCallback = callback;
+        if (session instanceof TerminalSession) {
+            this.mRustCallback.setSession((TerminalSession) session);
+        }
+        this.mNativePtyFd = ptyFd;
+        this.mEnginePtr = enginePtr;
+        
+        // Native IO thread is already started in async creation on the Rust side
+    }
+
+    /**
      * 处理输入数据
      */
     public synchronized void append(byte[] batch, int length) {

@@ -129,6 +129,26 @@ impl TerminalContext {
             running: AtomicBool::new(true),
         }
     }
+
+    pub fn start_io_thread(self: std::sync::Arc<Self>, pty_fd: i32) {
+        let context = self.clone();
+        std::thread::spawn(move || {
+            let mut buffer = [0u8; 8192];
+            let mut pty_file = unsafe { std::fs::File::from_raw_fd(pty_fd) };
+            
+            while context.running.load(std::sync::atomic::Ordering::Relaxed) {
+                match std::io::Read::read(&mut pty_file, &mut buffer) {
+                    Ok(0) => break, // EOF
+                    Ok(n) => {
+                        let mut engine = context.lock.write().unwrap();
+                        engine.process_bytes(&buffer[..n]);
+                    }
+                    Err(_) => break,
+                }
+            }
+            // Ensure the file is closed (though from_raw_fd + drop does this)
+        });
+    }
 }
 
 // -----------------------------------------------------------------------------
