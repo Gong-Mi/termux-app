@@ -341,15 +341,46 @@ public final class TerminalEmulator {
 
     /**
      * 获取终端缓冲区（兼容性方法）
-     * Rust 版本使用共享内存访问屏幕数据，此方法返回 null
+     * Rust 版本使用共享内存访问屏幕数据，返回兼容包装类
      * @deprecated 直接使用 readRow() 方法访问屏幕数据
      */
     @Deprecated
-    public TerminalBuffer getScreen() {
-        // Rust 版本使用共享内存，不创建 TerminalBuffer 对象
-        // 如果需要访问屏幕数据，请使用 readRow() 方法
-        return null;
+    public TerminalBufferCompat getScreen() {
+        // 返回兼容包装类，为依赖 getScreen() 的旧应用提供兼容性
+        return new TerminalBufferCompat(this, getCols(), getRows(), getTotalRows());
     }
+    
+    /**
+     * 获取总行数（包括历史）
+     * @return 总行数
+     */
+    public int getTotalRows() {
+        if (mEnginePtr != 0) {
+            return getTotalRowsFromRust(mEnginePtr);
+        }
+        return DEFAULT_TERMINAL_TRANSCRIPT_ROWS + getRows();
+    }
+    
+    // ========================================================================
+    // 辅助 JNI 方法（用于 TerminalBufferCompat）
+    // ========================================================================
+    
+    /** 获取总行数（JNI 本地方法） */
+    private static native int getTotalRowsFromRust(long ptr);
+    
+    /** 读取行样式（JNI 本地方法） */
+    public synchronized native void readRowStyleFromRust(long ptr, int externalRow, long[] styles, int startCol, int length);
+    
+    /** 设置或清除效果位（JNI 本地方法） */
+    public synchronized native void setOrClearEffectFromRust(long ptr, int bits, boolean setOrClear, boolean reverse, 
+                                                              boolean rectangular, int leftMargin, int rightMargin,
+                                                              int top, int left, int bottom, int right);
+    
+    /** 清除历史记录（JNI 本地方法） */
+    public synchronized native void clearTranscriptFromRust(long ptr);
+    
+    /** 获取行换行状态（JNI 本地方法） */
+    public synchronized native boolean getLineWrapFromRust(long ptr, int externalRow);
 
     public synchronized void destroy() {
         if (mEnginePtr != 0) {

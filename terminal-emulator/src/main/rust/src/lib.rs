@@ -664,3 +664,154 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
 pub extern "system" fn Java_com_termux_terminal_WcWidth_widthRust(_env: JNIEnv, _class: JClass, ucs: jint) -> jint {
     crate::utils::get_char_width(ucs as u32) as jint
 }
+
+// ============================================================================
+// TerminalEmulator 辅助 JNI 方法（用于 TerminalBufferCompat）
+// ============================================================================
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getTotalRowsFromRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) -> jint {
+    if ptr == 0 { return 0; }
+    let context = unsafe { &*(ptr as *const TerminalContext) };
+    let engine = context.lock.read().unwrap();
+    // total_rows = main screen buffer size
+    engine.state.main_screen.buffer.len() as jint
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_readRowStyleFromRust(
+    env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+    external_row: jint,
+    styles: jni::objects::JLongArray,
+    start_col: jint,
+    length: jint,
+) {
+    if ptr == 0 || styles.is_null() { return; }
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let context = unsafe { &*(ptr as *const TerminalContext) };
+        let engine = context.lock.read().unwrap();
+        let screen = engine.state.get_current_screen();
+        
+        let row_idx = screen.internal_row(external_row);
+        let row = &screen.buffer[row_idx];
+        
+        let len = length as usize;
+        let start = start_col as usize;
+        let end = std::cmp::min(start + len, row.styles.len());
+        
+        let mut rust_styles = vec![0i64; end - start];
+        for i in 0..(end - start) {
+            rust_styles[i] = row.styles[start + i] as i64;
+        }
+        
+        env.set_long_array_region(&styles, 0, &rust_styles).ok();
+    }));
+    if result.is_err() {
+        android_log(LogPriority::ERROR, "readRowStyleFromRust: panic caught");
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_setOrClearEffectFromRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+    bits: jint,
+    set_or_clear: jboolean,
+    reverse: jboolean,
+    rectangular: jboolean,
+    left_margin: jint,
+    right_margin: jint,
+    top: jint,
+    left: jint,
+    bottom: jint,
+    right: jint,
+) {
+    if ptr == 0 { return; }
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let context = unsafe { &*(ptr as *const TerminalContext) };
+        let mut engine = context.lock.write().unwrap();
+        let screen = engine.state.get_current_screen_mut();
+        
+        let rect_left = if rectangular != 0 { left } else { left_margin };
+        let rect_right = if rectangular != 0 { right } else { right_margin };
+        
+        for y in top..bottom {
+            let row_idx = screen.internal_row(y);
+            let row = &mut screen.buffer[row_idx];
+            
+            let start = rect_left as usize;
+            let end = std::cmp::min(rect_right as usize, row.styles.len());
+            
+            for x in start..end {
+                let current_style = row.styles[x];
+                let fore_color = (current_style & 0xFF) as i32;
+                let back_color = ((current_style >> 8) & 0xFF) as i32;
+                let mut effect = ((current_style >> 16) & 0xFFFF) as i32;
+                
+                if reverse != 0 {
+                    effect = (effect & !bits) | (bits & !effect);
+                } else if set_or_clear != 0 {
+                    effect |= bits;
+                } else {
+                    effect &= !bits;
+                }
+                
+                row.styles[x] = ((effect as u64) << 16) | ((back_color as u64) << 8) | (fore_color as u64);
+            }
+        }
+    }));
+    if result.is_err() {
+        android_log(LogPriority::ERROR, "setOrClearEffectFromRust: panic caught");
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_clearTranscriptFromRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) {
+    if ptr == 0 { return; }
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let context = unsafe { &*(ptr as *const TerminalContext) };
+        let mut engine = context.lock.write().unwrap();
+        // Clear transcript by resetting active_transcript_rows
+        engine.state.main_screen.active_transcript_rows = 0;
+        engine.state.main_screen.first_row = 0;
+    }));
+    if result.is_err() {
+        android_log(LogPriority::ERROR, "clearTranscriptFromRust: panic caught");
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getLineWrapFromRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+    external_row: jint,
+) -> jboolean {
+    if ptr == 0 { return 0; }
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let context = unsafe { &*(ptr as *const TerminalContext) };
+        let engine = context.lock.read().unwrap();
+        let screen = engine.state.get_current_screen();
+        let row_idx = screen.internal_row(external_row);
+        if row_idx < screen.buffer.len() {
+            screen.buffer[row_idx].line_wrap as jboolean
+        } else {
+            0
+        }
+    }));
+    if result.is_err() {
+        android_log(LogPriority::ERROR, "getLineWrapFromRust: panic caught");
+    }
+    0
+}
