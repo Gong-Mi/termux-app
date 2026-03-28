@@ -34,9 +34,9 @@ public final class TerminalEmulator {
     public static final int UNICODE_REPLACEMENT_CHAR = 0xFFFD;
 
     /** 默认滚动历史行数 */
-    public static final int DEFAULT_TERMINAL_TRANSCRIPT_ROWS = 600;
+    public static final int DEFAULT_TERMINAL_TRANSCRIPT_ROWS = 2000;
     /** 最小滚动历史行数 */
-    public static final int TERMINAL_TRANSCRIPT_ROWS_MIN = 0;
+    public static final int TERMINAL_TRANSCRIPT_ROWS_MIN = 100;
     /** 最大滚动历史行数 */
     public static final int TERMINAL_TRANSCRIPT_ROWS_MAX = 50000;
     /** 默认光标样式 */
@@ -56,8 +56,8 @@ public final class TerminalEmulator {
         this.mNativePtyFd = ptyFd;
         
         mEnginePtr = createEngineRustWithCallback(
-            columns, rows, cellWidthPixels, cellHeightPixels, 
-            transcriptRows != null ? transcriptRows : 600,
+            columns, rows, cellWidthPixels, cellHeightPixels,
+            transcriptRows != null ? transcriptRows : DEFAULT_TERMINAL_TRANSCRIPT_ROWS,
             mRustCallback
         );
 
