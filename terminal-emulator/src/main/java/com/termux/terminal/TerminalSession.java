@@ -71,7 +71,13 @@ public final class TerminalSession extends TerminalOutput {
 
     final Handler mMainThreadHandler = new MainThreadHandler();
 
-    private final ByteQueue mTerminalToProcessIOQueue = new ByteQueue(4096);
+    private final String mShellPath;
+    private final String mCwd;
+    private final String[] mArgs;
+    private final String[] mEnv;
+    private final Integer mTranscriptRows;
+
+    private static final String LOG_TAG = "TerminalSession";
 
     /** The Rust engine callback object. */
     private final RustEngineCallback mRustCallback;
@@ -100,9 +106,10 @@ public final class TerminalSession extends TerminalOutput {
 
     /** Inform the attached pty of the new size and reflow or initialize the emulator. */
     public void updateSize(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
-        if (mEmulator == null) {
+        if (mEmulator == null && !mInitializing) {
+            mInitializing = true;
             initializeEmulator(columns, rows, cellWidthPixels, cellHeightPixels);
-        } else {
+        } else if (mEmulator != null) {
             if (JNI.sNativeLibrariesLoaded) {
                 try {
                     JNI.setPtyWindowSize(mTerminalFileDescriptor, rows, columns, cellWidthPixels, cellHeightPixels);
@@ -186,6 +193,7 @@ public final class TerminalSession extends TerminalOutput {
         mMainThreadHandler.sendEmptyMessage(MSG_SCREEN_UPDATED);
     }
 
+    private boolean mInitializing = false;
     private boolean mEngineInitialized = false;
 
     public boolean isEngineInitialized() {
