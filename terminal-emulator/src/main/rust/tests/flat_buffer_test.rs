@@ -3,7 +3,7 @@
 //
 // 运行：cargo test --test flat_buffer_test -- --nocapture
 
-use termux_rust::engine::TerminalEngine;
+use termux_rust::engine::{TerminalEngine, SharedBufferPtr};
 
 /// 测试 flat_buffer 的大小是否等于 total_rows
 #[test]
@@ -12,7 +12,7 @@ fn test_flat_buffer_size_equals_total_rows() {
     let screen_rows = 24;
     let total_rows = 2000; // 滚动历史 + 屏幕
 
-    let mut engine = TerminalEngine::new(cols, screen_rows, total_rows, 10, 20);
+    let engine = TerminalEngine::new(cols, screen_rows, total_rows, 10, 20);
 
     // 验证 flat_buffer 已创建
     assert!(engine.state.flat_buffer.is_some(), "flat_buffer should be created");
@@ -103,12 +103,12 @@ fn test_sync_all_rows_to_shared_buffer() {
     }
 
     // 创建共享缓冲区
-    let shared_ptr = engine.state.flat_buffer.as_mut().unwrap().create_shared_buffer();
-    engine.state.shared_buffer_ptr = shared_ptr;
+    let shared_ptr = engine.state.flat_buffer.as_ref().unwrap().create_shared_buffer();
+    engine.state.shared_buffer_ptr = SharedBufferPtr(shared_ptr);
 
     // 手动同步数据（模拟 syncToSharedBufferRust 的行为）
     if let Some(ref mut flat_buffer) = engine.state.flat_buffer {
-        if !engine.state.shared_buffer_ptr.is_null() {
+        if !engine.state.shared_buffer_ptr.0.is_null() {
             let buffer_len = engine.state.main_screen.buffer.len();
             for physical_row in 0..buffer_len {
                 if let Some(buffer_row) = engine.state.main_screen.buffer.get(physical_row) {

@@ -297,30 +297,16 @@ impl Parser {
     /// 处理单个字节
     fn process_byte<P: Perform>(&mut self, handler: &mut P, byte: u8) {
         self.continue_sequence = false;
-        
         // 处理特殊控制字符
         match byte {
-            0x00..=0x17 | 0x19 | 0x1C..=0x1F => {
-                if self.escape_state == ESC_NONE {
-                    handler.execute(byte);
-                    return;
-                }
-                // CAN (0x18) 和 SUB (0x1A) 在转义序列中会取消当前序列
-                if byte == 0x18 || byte == 0x1A {
-                    self.escape_state = ESC_NONE;
-                    return;
-                }
-            }
             0x18 | 0x1A => {
                 // CAN / SUB - 取消转义序列
                 self.escape_state = ESC_NONE;
                 return;
             }
-            0x7F => {
-                // DEL - 在转义序列中忽略
-                if self.escape_state == ESC_NONE {
-                    // 正常模式下也忽略
-                }
+            0x07 => {
+                // BEL - 铃声
+                handler.bell();
                 return;
             }
             0x1B => {
@@ -342,6 +328,17 @@ impl Parser {
                 if self.escape_state == ESC_NONE {
                     handler.execute(0x0A);
                 }
+                return;
+            }
+            0x00..=0x17 | 0x19 | 0x1C..=0x1F => {
+                // 其他普通控制字符
+                if self.escape_state == ESC_NONE {
+                    handler.execute(byte);
+                }
+                return;
+            }
+            0x7F => {
+                // DEL - 在转义序列中忽略
                 return;
             }
             _ => {}
@@ -791,14 +788,6 @@ impl Parser {
     /// APC 序列处理
     fn do_apc<P: Perform>(&mut self, handler: &mut P, byte: u8) {
         match byte {
-            0x00..=0x1F => {
-                // 控制字符
-            }
-            0x20..=0x7F => {
-                if self.osc_buffer.len() < MAX_OSC_STRING_LENGTH {
-                    self.osc_buffer.push(byte as char);
-                }
-            }
             0x07 => {
                 // BEL 终止
                 handler.apc_dispatch(self.osc_buffer.as_bytes());
@@ -816,6 +805,14 @@ impl Parser {
                 handler.apc_dispatch(self.osc_buffer.as_bytes());
                 self.osc_buffer.clear();
                 self.escape_state = ESC_NONE;
+            }
+            0x00..=0x1F => {
+                // 其他控制字符
+            }
+            0x20..=0x7F => {
+                if self.osc_buffer.len() < MAX_OSC_STRING_LENGTH {
+                    self.osc_buffer.push(byte as char);
+                }
             }
             _ => {}
         }

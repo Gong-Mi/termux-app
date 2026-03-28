@@ -518,6 +518,38 @@ public class PermissionUtils {
 
 
     /**
+     * Check if {@link Manifest.permission#POST_NOTIFICATIONS} permission has been granted.
+     *
+     * @param context The context for operations.
+     * @return Returns {@code true} if permission is granted, otherwise {@code false}.
+     */
+    public static boolean checkNotificationPermission(@NonNull Context context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+            return checkPermission(context, Manifest.permission.POST_NOTIFICATIONS);
+        else
+            return true;
+    }
+
+    /**
+     * Check and request {@link Manifest.permission#POST_NOTIFICATIONS} permission.
+     *
+     * @param context The context for operations.
+     * @param requestCode The request code to use while asking for permission.
+     * @return Returns {@code true} if permission is granted, otherwise {@code false}.
+     */
+    public static boolean checkAndRequestNotificationPermission(@NonNull Context context, int requestCode) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (!checkNotificationPermission(context)) {
+                if (requestCode >= 0) {
+                    requestPermission(context, Manifest.permission.POST_NOTIFICATIONS, requestCode);
+                }
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * Check if {@link Manifest.permission#REQUEST_IGNORE_BATTERY_OPTIMIZATIONS} permission has been
      * granted.
      *

@@ -790,6 +790,12 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         }.start();
     }
 
+    private void requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            PermissionUtils.checkAndRequestNotificationPermission(this, PermissionUtils.REQUEST_GRANT_NOTIFICATION_PERMISSION);
+        }
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
