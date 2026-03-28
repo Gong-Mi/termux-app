@@ -116,6 +116,8 @@ public final class TerminalRenderer {
             boolean lastRunFontWidthMismatch = false;
             float measuredWidthForRun = 0.f;
 
+            final char[] measureBuffer = new char[2];
+
             for (int column = 0; column < columns; ) {
                 final int codePoint = line[column];
                 if (codePoint == 0) { 
@@ -128,8 +130,13 @@ public final class TerminalRenderer {
                 final boolean insideSelection = column >= selx1 && column <= selx2;
                 final long style = styles[column];
 
-                final float measuredCodePointWidth = (codePoint < asciiMeasures.length) ? asciiMeasures[codePoint] :
-                    mTextPaint.measureText(new String(new int[]{codePoint}, 0, 1));
+                float measuredCodePointWidth;
+                if (codePoint < asciiMeasures.length) {
+                    measuredCodePointWidth = asciiMeasures[codePoint];
+                } else {
+                    int charCount = Character.toChars(codePoint, measureBuffer, 0);
+                    measuredCodePointWidth = mTextPaint.measureText(measureBuffer, 0, charCount);
+                }
 
                 final boolean fontWidthMismatch = Math.abs(measuredCodePointWidth / mFontWidth - Math.max(1, codePointWcWidth)) > 0.01;
 

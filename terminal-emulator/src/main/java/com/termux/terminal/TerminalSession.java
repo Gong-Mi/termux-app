@@ -150,6 +150,7 @@ public final class TerminalSession extends TerminalOutput {
      * Callback from Rust when async initialization is complete.
      */
     public void onEngineInitialized(long enginePtr, int ptyFd, int pid) {
+        mInitializing = false;
         mEngineInitialized = true;
         mTerminalFileDescriptor = ptyFd;
         mShellPid = pid;
