@@ -141,9 +141,14 @@ impl TerminalContext {
                 match std::io::Read::read(&mut pty_file, &mut buffer) {
                     Ok(0) => break, // EOF
                     Ok(n) => {
+                        {
+                            let mut engine = context.lock.write().unwrap();
+                            engine.process_bytes(&buffer[..n]);
+                        } // 写锁在此释放
+                        
+                        // 锁释放后安全执行回调
                         let mut engine = context.lock.write().unwrap();
-                        engine.process_bytes(&buffer[..n]);
-                        engine.notify_screen_updated();
+                        engine.flush_events();
                     }
                     Err(_) => break,
                 }
@@ -842,19 +847,95 @@ impl ScreenState {
     }
 }
 
-pub struct TerminalEngine { pub parser: Parser, pub state: ScreenState }
+#[derive(Clone)]
+pub enum TerminalEvent {
+    ScreenUpdated,
+    Bell,
+    ColorsChanged,
+    TitleChanged(String),
+    TerminalResponse(String),
+    SixelImage {
+        rgba_data: Vec<u8>,
+        width: i32,
+        height: i32,
+        start_x: i32,
+        start_y: i32,
+    },
+}
+
+pub struct TerminalEngine { 
+    pub parser: Parser, 
+    pub state: ScreenState,
+    pub events: Vec<TerminalEvent>,
+}
+
 impl TerminalEngine {
     pub fn new(cols: i32, rows: i32, total_rows: i32, cw: i32, ch: i32) -> Self {
-        Self { parser: Parser::new(), state: ScreenState::new(cols, rows, total_rows, cw, ch) }
+        Self { 
+            parser: Parser::new(), 
+            state: ScreenState::new(cols, rows, total_rows, cw, ch),
+            events: Vec::with_capacity(16),
+        }
     }
+
+    pub fn flush_events(&mut self) {
+        if self.events.is_empty() { return; }
+        
+        let events_to_process = std::mem::replace(&mut self.events, Vec::with_capacity(16));
+        
+        if let Some(obj) = &self.state.java_callback_obj {
+            if let Some(vm) = crate::JAVA_VM.get() {
+                if let Ok(mut env) = vm.get_env().or_else(|_| vm.attach_current_thread_as_daemon()) {
+                    for event in events_to_process {
+                        match event {
+                            TerminalEvent::ScreenUpdated => {
+                                let _ = env.call_method(obj.as_obj(), "onScreenUpdated", "()V", &[]);
+                            }
+                            TerminalEvent::Bell => {
+                                let _ = env.call_method(obj.as_obj(), "onBell", "()V", &[]);
+                            }
+                            TerminalEvent::ColorsChanged => {
+                                let _ = env.call_method(obj.as_obj(), "onColorsChanged", "()V", &[]);
+                            }
+                            TerminalEvent::TitleChanged(title) => {
+                                if let Ok(j_title) = env.new_string(title) {
+                                    let _ = env.call_method(obj.as_obj(), "reportTitleChange", "(Ljava/lang/String;)V", &[(&j_title).into()]);
+                                }
+                            }
+                            TerminalEvent::TerminalResponse(resp) => {
+                                if let Ok(j_resp) = env.new_string(resp) {
+                                    let _ = env.call_method(obj.as_obj(), "reportTerminalResponse", "(Ljava/lang/String;)V", &[(&j_resp).into()]);
+                                }
+                            }
+                            TerminalEvent::SixelImage { rgba_data, width, height, start_x, start_y } => {
+                                if let Ok(j_data) = env.new_byte_array(rgba_data.len() as i32) {
+                                    unsafe {
+                                        let _ = env.set_byte_array_region(&j_data, 0, std::mem::transmute::<&[u8], &[i8]>(&rgba_data));
+                                    }
+                                    let _ = env.call_method(obj.as_obj(), "onSixelImage", "([BIIII)V", &[
+                                        (&j_data).into(),
+                                        width.into(),
+                                        height.into(),
+                                        start_x.into(),
+                                        start_y.into(),
+                                    ]);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub fn process_bytes(&mut self, data: &[u8]) {
-        let mut handler = PerformHandler { state: &mut self.state };
+        let mut handler = PerformHandler { state: &mut self.state, events: &mut self.events };
         self.parser.advance(&mut handler, data);
         self.state.sync_screen_to_flat_buffer();
         if !self.state.shared_buffer_ptr.0.is_null() {
             unsafe { if let Some(flat) = &self.state.flat_buffer { flat.sync_to_shared(self.state.shared_buffer_ptr.0); } }
         }
-        self.notify_screen_updated();
+        self.events.push(TerminalEvent::ScreenUpdated);
     }
     
     /// 处理按键事件 - 实现 KeyHandler.getCode() 的逻辑
@@ -1054,11 +1135,15 @@ impl ScreenState {
         )
     }
 }
-struct PerformHandler<'a> { state: &'a mut ScreenState }
+struct PerformHandler<'a> { 
+    state: &'a mut ScreenState,
+    events: &'a mut Vec<TerminalEvent>
+}
+
 impl<'a> Perform for PerformHandler<'a> {
     fn print(&mut self, c: char) {
         self.state.last_printed_char = Some(c);
-        crate::terminal::handlers::print::handle_print(self.state, c); 
+        crate::terminal::handlers::print::handle_print(self.state, c);
     }
     fn execute(&mut self, byte: u8) { crate::terminal::handlers::control::handle_control(self.state, byte); }
     fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], _ignore: bool, action: char) {
@@ -1072,12 +1157,19 @@ impl<'a> Perform for PerformHandler<'a> {
     fn put(&mut self, byte: u8) { self.state.sixel_decoder.process_data(&[byte]); }
     fn unhook(&mut self) {
         self.state.sixel_decoder.finish();
-        // Sixel 图像完成，回调到 Java 渲染
-        self.state.report_sixel_image(&self.state.java_callback_obj);
+        // 将 Sixel 图像加入队列，待锁释放后传输
+        let decoder = &self.state.sixel_decoder;
+        self.events.push(TerminalEvent::SixelImage {
+            rgba_data: decoder.get_image_data().to_vec(),
+            width: decoder.width.max(1) as i32,
+            height: decoder.height.max(1) as i32,
+            start_x: decoder.start_x,
+            start_y: decoder.start_y,
+        });
     }
 
     // 实现解析器缺失的直接回调，统一走 handle_control
-    fn bell(&mut self) { crate::terminal::handlers::control::handle_control(self.state, 0x07); }
+    fn bell(&mut self) { self.events.push(TerminalEvent::Bell); }
     fn backspace(&mut self) { crate::terminal::handlers::control::handle_control(self.state, 0x08); }
     fn tab(&mut self) { crate::terminal::handlers::control::handle_control(self.state, 0x09); }
     fn linefeed(&mut self) { crate::terminal::handlers::control::handle_control(self.state, 0x0a); }
