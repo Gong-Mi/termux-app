@@ -5,6 +5,7 @@ use once_cell::sync::OnceCell;
 use std::io::Read;
 use std::os::unix::io::FromRawFd;
 use std::sync::atomic::Ordering;
+use libc;
 
 // 声明子模块
 pub mod terminal;
@@ -179,15 +180,18 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeStartIoTh
     if pty_fd < 0 { return; }
 
     std::thread::Builder::new()
-        .name("termux-rust-engine".to_string())
+        .name("RustEngine".to_string())
         .spawn(move || {
-            // 设置线程名称（在某些 Android top/ps 版本中可见）
-            let thread_name = std::ffi::CString::new("termux-rust-engine").unwrap();
+            // 设置线程名称（Android 限制 16 字符，包括 null 终止符）
+            let thread_name = std::ffi::CString::new("RustEngine").unwrap();
             unsafe {
+                // 方法 1: prctl (Linux 标准)
                 libc::prctl(libc::PR_SET_NAME, thread_name.as_ptr(), 0, 0, 0);
+                // 方法 2: pthread_setname_np (Android 更可靠)
+                libc::pthread_setname_np(libc::pthread_self(), thread_name.as_ptr());
             }
 
-            android_log(LogPriority::INFO, "Rust IO Thread started (termux-rust-engine)");
+            android_log(LogPriority::INFO, "Rust IO Thread started (RustEngine)");
             
             // 必须附加当前线程到 JVM，否则无法通过 JNI 调用 Java 方法
             let _attached_env = crate::JAVA_VM.get().and_then(|vm| {
