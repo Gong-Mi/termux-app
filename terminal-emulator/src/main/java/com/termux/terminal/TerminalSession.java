@@ -204,6 +204,7 @@ public final class TerminalSession extends TerminalOutput {
     /** Write data to the shell process. */
     @Override
     public void write(byte[] data, int offset, int count) {
+        if (mInitializing || !mEngineInitialized) return;
         if (mShellPid > 0) mTerminalToProcessIOQueue.write(data, offset, count);
     }
 

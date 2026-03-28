@@ -181,6 +181,7 @@ pub fn create_subprocess_with_data(
 }
 
 pub fn set_pty_window_size(fd: jint, rows: jint, cols: jint, cell_width: jint, cell_height: jint) {
+    if fd < 0 { return; }
     let sz = libc::winsize {
         ws_row: rows as u16,
         ws_col: cols as u16,
