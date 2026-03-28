@@ -21,6 +21,7 @@ simdutf8 = "0.1.4"
 base64 = "0.22.1"
 zip = "8.2.0"
 once_cell = "1.19.0"
+crossterm = "0.28.1"
 
 [dev-dependencies]
 md5 = "0.7"
