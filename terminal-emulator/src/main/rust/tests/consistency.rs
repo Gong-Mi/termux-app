@@ -345,12 +345,13 @@ fn test_erase_display_mode_1_includes_current_row() {
 
     // 第 3 行 (0-indexed row 2) 从开始到光标位置 (col=3) 应该被清除
     // 光标在 col=3 (0-indexed)，所以 col 0-3 被清除，col 4+ 保留
+    // Row 2 原始内容：UVWXYZ1234，清除 0-3 后应该是"    Z1234"
     let row2 = engine.state.main_screen.get_row(2);
     assert_eq!(row2.text[0], ' ', "Row 2 col 0 should be cleared");
     assert_eq!(row2.text[1], ' ', "Row 2 col 1 should be cleared");
     assert_eq!(row2.text[2], ' ', "Row 2 col 2 should be cleared");
     assert_eq!(row2.text[3], ' ', "Row 2 col 3 should be cleared");
-    assert_eq!(row2.text[4], '1', "Row 2 col 4 should be '1'");
+    assert_eq!(row2.text[4], 'Z', "Row 2 col 4 should be 'Z'");
 }
 
 // =============================================================================
