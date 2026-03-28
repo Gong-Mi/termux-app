@@ -257,7 +257,9 @@ impl Screen {
             // Full screen scroll - use ring buffer pointer adjustment (O(1))
             self.first_row = (self.first_row + 1) % self.buffer.len();
             // Incrementally maintain active_transcript_rows (matches Java logic)
-            if self.active_transcript_rows < self.buffer.len() - self.rows as usize {
+            // Java: if (mActiveTranscriptRows < mTotalRows - mScreenRows) mActiveTranscriptRows++
+            let max_transcript_rows = self.buffer.len() - self.rows as usize;
+            if self.active_transcript_rows < max_transcript_rows {
                 self.active_transcript_rows += 1;
             }
             self.get_row_mut(self.rows - 1).clear(0, c, style);
@@ -478,26 +480,14 @@ impl Screen {
         self.buffer = new_buffer;
         self.cols = n_cols as i32;
         self.rows = new_rows;
-
-        // Calculate active_transcript_rows and first_row
-        // After rebuild, content starts at index 0 (new_buffer was filled sequentially)
-        // Count actual non-empty lines from index 0
-        let mut last_non_empty_row = 0;
-        for (i, row) in self.buffer.iter().enumerate() {
-            if row.get_space_used() > 0 {
-                last_non_empty_row = i;
-            }
-        }
-        
-        // After rebuild, first_row should be 0 (content starts at beginning)
-        // total_lines_of_content = last_non_empty_row + 1 (since we start from 0)
-        let total_lines_of_content = last_non_empty_row + 1;
-        
-        // active_transcript_rows = total content lines - visible rows
-        self.active_transcript_rows = total_lines_of_content.saturating_sub(new_rows as usize);
-        
-        // first_row = 0 after rebuild (content is linear from index 0)
         self.first_row = 0;
+
+        // Calculate active_transcript_rows (matches Java slow path logic)
+        // Java resets to 0 and then increments via scrollDownOneLine during content reflow
+        // The final value equals total content lines written minus visible rows
+        // output_row tracks the last written row index (0-based), so total lines = output_row + 1
+        let total_content_lines = output_row + 1;
+        self.active_transcript_rows = total_content_lines.saturating_sub(new_rows as usize);
 
         (new_cursor_x, new_cursor_y)
     }
@@ -587,13 +577,15 @@ impl Screen {
             (new_first_row as usize) % self.buffer.len()
         };
         
-        // Update active_transcript_rows
+        // Update active_transcript_rows (matches Java: mActiveTranscriptRows = max(0, mActiveTranscriptRows + shiftDownOfTopRow))
+        // shift_down_of_top_row > 0 means shrinking (more transcript rows)
+        // shift_down_of_top_row < 0 means expanding (fewer transcript rows)
         let shift_i32 = shift_down_of_top_row;
         self.active_transcript_rows = if shift_i32 > 0 {
             // Shrinking: increase transcript rows
             self.active_transcript_rows + shift_i32 as usize
         } else {
-            // Expanding: decrease transcript rows
+            // Expanding: decrease transcript rows (use saturating_sub for max(0, ...))
             self.active_transcript_rows.saturating_sub((-shift_i32) as usize)
         };
         
