@@ -82,6 +82,12 @@ public final class TerminalSession extends TerminalOutput {
     /** The Rust engine callback object. */
     private final RustEngineCallback mRustCallback;
 
+    private enum SessionState {
+        IDLE, INITIALIZING, READY
+    }
+    private SessionState mSessionState = SessionState.IDLE;
+    private final java.util.concurrent.atomic.AtomicBoolean mScreenUpdatePending = new java.util.concurrent.atomic.AtomicBoolean(false);
+
     public TerminalSession(String shellPath, String cwd, String[] args, String[] env, Integer transcriptRows, TerminalSessionClient client) {
         this.mShellPath = shellPath;
         this.mCwd = cwd;
@@ -106,11 +112,10 @@ public final class TerminalSession extends TerminalOutput {
 
     /** Inform the attached pty of the new size and reflow or initialize the emulator. */
     public void updateSize(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
-        if (mEmulator == null && !mInitializing) {
-            mInitializing = true;
+        if (mEmulator == null && mSessionState == SessionState.IDLE) {
             initializeEmulator(columns, rows, cellWidthPixels, cellHeightPixels);
-        } else if (mEmulator != null) {
-            if (JNI.sNativeLibrariesLoaded) {
+        } else if (mSessionState == SessionState.READY && mEmulator != null) {
+            if (JNI.sNativeLibrariesLoaded && mTerminalFileDescriptor != -1) {
                 try {
                     JNI.setPtyWindowSize(mTerminalFileDescriptor, rows, columns, cellWidthPixels, cellHeightPixels);
                 } catch (UnsatisfiedLinkError | Exception ignored) {
@@ -124,7 +129,7 @@ public final class TerminalSession extends TerminalOutput {
 
     /** The terminal title as set through escape sequences or null if none set. */
     public String getTitle() {
-        if (mEmulator == null || !mEmulator.isAlive()) {
+        if (mSessionState != SessionState.READY || mEmulator == null || !mEmulator.isAlive()) {
             return null;
         }
         return mEmulator.getTitle();
@@ -135,6 +140,7 @@ public final class TerminalSession extends TerminalOutput {
      */
     public void initializeEmulator(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
         android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 4. initializeEmulator called (" + columns + "x" + rows + ")");
+        mSessionState = SessionState.INITIALIZING;
         if (JNI.sNativeLibrariesLoaded) {
             android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 5. Calling JNI.createSessionAsync");
             JNI.createSessionAsync(mShellPath, mCwd, mArgs, mEnv, rows, columns, cellWidthPixels, cellHeightPixels,
@@ -145,6 +151,7 @@ public final class TerminalSession extends TerminalOutput {
             mShellPid = 99999;
             mTerminalFileDescriptor = -1;
             mEmulator = new TerminalEmulator(this, columns, rows, cellWidthPixels, cellHeightPixels, mTranscriptRows, mTerminalFileDescriptor, mClient);
+            mSessionState = SessionState.READY;
             mClient.setTerminalShellPid(this, mShellPid);
         }
     }
@@ -156,8 +163,7 @@ public final class TerminalSession extends TerminalOutput {
         android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 6. onEngineInitialized callback received (pid=" + pid + ")");
         mMainThreadHandler.post(() -> {
             android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 7. Running onEngineInitialized logic on MainThread");
-            mInitializing = false;
-            mEngineInitialized = true;
+            mSessionState = SessionState.READY;
             mTerminalFileDescriptor = ptyFd;
             mShellPid = pid;
 
@@ -202,17 +208,14 @@ public final class TerminalSession extends TerminalOutput {
         });
     }
 
-    private boolean mInitializing = false;
-    private boolean mEngineInitialized = false;
-
     public boolean isEngineInitialized() {
-        return mEngineInitialized;
+        return mSessionState == SessionState.READY;
     }
 
     /** Write data to the shell process. */
     @Override
     public void write(byte[] data, int offset, int count) {
-        if (mInitializing || !mEngineInitialized) return;
+        if (mSessionState != SessionState.READY) return;
         if (mShellPid > 0) mTerminalToProcessIOQueue.write(data, offset, count);
     }
 
@@ -259,12 +262,13 @@ public final class TerminalSession extends TerminalOutput {
 
     /** Notify the {@link #mClient} that the screen has changed. */
     protected void notifyScreenUpdate() {
+        mScreenUpdatePending.set(false);
         mClient.onTextChanged(this);
     }
 
     /** Called by Rust IO thread when screen needs updating */
     public void onNativeScreenUpdated() {
-        if (!mMainThreadHandler.hasMessages(MSG_SCREEN_UPDATED)) {
+        if (mSessionState == SessionState.READY && mScreenUpdatePending.compareAndSet(false, true)) {
             mMainThreadHandler.sendEmptyMessage(MSG_SCREEN_UPDATED);
         }
     }
