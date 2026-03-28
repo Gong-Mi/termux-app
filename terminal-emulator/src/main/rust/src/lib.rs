@@ -816,19 +816,23 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
     };
 
     std::thread::spawn(move || {
-        android_log(LogPriority::DEBUG, "Async session creation started in background");
+        android_log(LogPriority::DEBUG, "[TRACE_SESSION] 5.1. Background thread started in Rust");
         
         // 1. 创建子进程
         let pty_res = crate::pty::create_subprocess_with_data(cmd_str, cwd_str, argv, envp, rows, cols, cw, ch);
         let (pty_fd, pid) = match pty_res {
-            Ok(res) => res,
+            Ok(res) => {
+                android_log(LogPriority::DEBUG, &format!("[TRACE_SESSION] 5.2. PTY created (fd={}, pid={})", res.0, res.1));
+                res
+            },
             Err(_) => {
-                android_log(LogPriority::ERROR, "Async session creation failed: pty creation error");
+                android_log(LogPriority::ERROR, "[TRACE_SESSION] 5.2. ERROR: PTY creation failed");
                 return;
             }
         };
 
         // 2. 创建 Engine
+        android_log(LogPriority::DEBUG, "[TRACE_SESSION] 5.3. Creating TerminalEngine");
         let mut engine = TerminalEngine::new(cols, rows, transcript_rows, cw, ch);
         if let Some(ref cb) = callback_ref {
             engine.state.java_callback_obj = Some(cb.clone());
@@ -838,10 +842,12 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
         let context_ptr = Arc::into_raw(context.clone());
 
         // 3. 启动 IO 线程
+        android_log(LogPriority::DEBUG, "[TRACE_SESSION] 5.4. Starting IO thread");
         context.start_io_thread(pty_fd);
 
         // 4. 回调 Java
         if let Some(ref cb) = callback_ref {
+            android_log(LogPriority::DEBUG, "[TRACE_SESSION] 5.5. Attempting to callback Java");
             if let Some(vm) = crate::JAVA_VM.get() {
                 if let Ok(mut env) = vm.attach_current_thread_as_daemon() {
                     let _ = env.call_method(
@@ -854,6 +860,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
                             jni::objects::JValue::Int(pid),
                         ],
                     );
+                    android_log(LogPriority::DEBUG, "[TRACE_SESSION] 5.6. Java callback executed");
                 }
             }
         }

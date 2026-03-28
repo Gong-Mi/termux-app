@@ -134,10 +134,13 @@ public final class TerminalSession extends TerminalOutput {
      * Set the terminal emulator's window size and start terminal emulation asynchronously.
      */
     public void initializeEmulator(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
+        android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 4. initializeEmulator called (" + columns + "x" + rows + ")");
         if (JNI.sNativeLibrariesLoaded) {
+            android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 5. Calling JNI.createSessionAsync");
             JNI.createSessionAsync(mShellPath, mCwd, mArgs, mEnv, rows, columns, cellWidthPixels, cellHeightPixels,
                 mTranscriptRows != null ? mTranscriptRows : TerminalEmulator.DEFAULT_TERMINAL_TRANSCRIPT_ROWS, mRustCallback);
         } else {
+            android.util.Log.w("TermuxTrace", "[TRACE_SESSION] JNI libraries not loaded, using mock");
             // Mock for unit tests
             mShellPid = 99999;
             mTerminalFileDescriptor = -1;
@@ -150,7 +153,9 @@ public final class TerminalSession extends TerminalOutput {
      * Callback from Rust when async initialization is complete.
      */
     public void onEngineInitialized(long enginePtr, int ptyFd, int pid) {
+        android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 6. onEngineInitialized callback received (pid=" + pid + ")");
         mMainThreadHandler.post(() -> {
+            android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 7. Running onEngineInitialized logic on MainThread");
             mInitializing = false;
             mEngineInitialized = true;
             mTerminalFileDescriptor = ptyFd;
@@ -158,6 +163,7 @@ public final class TerminalSession extends TerminalOutput {
 
             mEmulator = new TerminalEmulator(this, enginePtr, ptyFd, mRustCallback);
             mClient.setTerminalShellPid(this, mShellPid);
+            android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 8. Emulator instance created");
 
             if (mTerminalFileDescriptor != -1) {
                 final FileDescriptor terminalFileDescriptorWrapped = wrapFileDescriptor(mTerminalFileDescriptor, mClient);

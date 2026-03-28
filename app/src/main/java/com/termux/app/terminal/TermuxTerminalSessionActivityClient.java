@@ -377,10 +377,15 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     }
 
     public void addNewSession(boolean isFailSafe, String sessionName) {
+        android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 1. addNewSession called");
         TermuxService service = mActivity.getTermuxService();
-        if (service == null) return;
+        if (service == null) {
+            android.util.Log.e("TermuxTrace", "[TRACE_SESSION] Error: Service is null");
+            return;
+        }
 
         if (service.getTermuxSessionsSize() >= MAX_SESSIONS) {
+            android.util.Log.w("TermuxTrace", "[TRACE_SESSION] Max sessions reached");
             new AlertDialog.Builder(mActivity).setTitle(R.string.title_max_terminals_reached).setMessage(R.string.msg_max_terminals_reached)
                 .setPositiveButton(android.R.string.ok, null).show();
         } else {
@@ -393,10 +398,15 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
                 workingDirectory = currentSession.getCwd();
             }
 
+            android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 2. Calling service.createTermuxSession");
             TermuxSession newTermuxSession = service.createTermuxSession(null, null, null, workingDirectory, isFailSafe, sessionName);
-            if (newTermuxSession == null) return;
+            if (newTermuxSession == null) {
+                android.util.Log.e("TermuxTrace", "[TRACE_SESSION] Error: newTermuxSession is null");
+                return;
+            }
 
             TerminalSession newTerminalSession = newTermuxSession.getTerminalSession();
+            android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 3. Setting current session");
             setCurrentSession(newTerminalSession);
 
             mActivity.getDrawer().closeDrawers();
