@@ -84,7 +84,7 @@ pub unsafe fn create_subprocess(
     };
 
     let pid_buf = [pid];
-    let j_pid_array = JIntArray::from_raw(process_id_array);
+    let j_pid_array = unsafe { JIntArray::from_raw(process_id_array) };
     let _ = env.set_int_array_region(&j_pid_array, 0, &pid_buf);
     ptm as jint
 }

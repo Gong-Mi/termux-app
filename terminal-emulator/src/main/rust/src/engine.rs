@@ -1,5 +1,6 @@
 use jni::objects::JValue;
 use std::cmp::{max, min};
+use std::os::fd::FromRawFd;
 
 use crate::vte_parser::{Params, Parser, Perform};
 pub use crate::terminal::style::*;
