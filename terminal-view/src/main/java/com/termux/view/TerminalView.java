@@ -630,6 +630,7 @@ public final class TerminalView extends View {
 
     /** Send a single mouse event code to the terminal. */
     void sendMouseEventCode(MotionEvent e, int button, boolean pressed) {
+        if (mEmulator == null) return;
         int[] columnAndRow = getColumnAndRow(e, false);
         int x = columnAndRow[0] + 1;
         int y = columnAndRow[1] + 1;
@@ -648,6 +649,7 @@ public final class TerminalView extends View {
 
     /** Perform a scroll, either from dragging the screen or by scrolling a mouse wheel. */
     void doScroll(MotionEvent event, int rowsDown) {
+        if (mEmulator == null) return;
         boolean up = rowsDown < 0;
         int amount = Math.abs(rowsDown);
         for (int i = 0; i < amount; i++) {
@@ -722,26 +724,30 @@ public final class TerminalView extends View {
     public boolean onKeyPreIme(int keyCode, KeyEvent event) {
         if (TERMINAL_VIEW_KEY_LOGGING_ENABLED)
             mClient.logInfo(LOG_TAG, "onKeyPreIme(keyCode=" + keyCode + ", event=" + event + ")");
-        if (keyCode == KeyEvent.KEYCODE_BACK) {
-            cancelRequestAutoFill();
-            if (isSelectingText()) {
-                stopTextSelectionMode();
-                return true;
-            } else if (mClient.shouldBackButtonBeMappedToEscape()) {
-                // Intercept back button to treat it as escape:
-                switch (event.getAction()) {
-                    case KeyEvent.ACTION_DOWN:
-                        return onKeyDown(keyCode, event);
-                    case KeyEvent.ACTION_UP:
-                        return onKeyUp(keyCode, event);
+
+        if (mEmulator != null) {
+            if (keyCode == KeyEvent.KEYCODE_BACK) {
+                cancelRequestAutoFill();
+                if (isSelectingText()) {
+                    stopTextSelectionMode();
+                    return true;
+                } else if (mClient.shouldBackButtonBeMappedToEscape()) {
+                    // Intercept back button to treat it as escape:
+                    switch (event.getAction()) {
+                        case KeyEvent.ACTION_DOWN:
+                            return onKeyDown(keyCode, event);
+                        case KeyEvent.ACTION_UP:
+                            return onKeyUp(keyCode, event);
+                    }
                 }
+            } else if (mClient.shouldUseCtrlSpaceWorkaround() &&
+                    keyCode == KeyEvent.KEYCODE_SPACE && event.isCtrlPressed()) {
+                /* ctrl+space does not work on some ROMs without this workaround.
+                   However, this breaks it on devices where it works out of the box. */
+                return onKeyDown(keyCode, event);
             }
-        } else if (mClient.shouldUseCtrlSpaceWorkaround() &&
-                   keyCode == KeyEvent.KEYCODE_SPACE && event.isCtrlPressed()) {
-            /* ctrl+space does not work on some ROMs without this workaround.
-               However, this breaks it on devices where it works out of the box. */
-            return onKeyDown(keyCode, event);
         }
+
         return super.onKeyPreIme(keyCode, event);
     }
 
@@ -1151,6 +1157,7 @@ public final class TerminalView extends View {
     }
 
     private CharSequence getText() {
+        if (mEmulator == null) return "";
         return mEmulator.getSelectedText(0, mTopRow, mEmulator.getCols(), mTopRow + mEmulator.getRows());
     }
 
@@ -1163,8 +1170,10 @@ public final class TerminalView extends View {
     }
 
     public int getPointX(int cx) {
-        if (cx > mEmulator.getCols()) {
-            cx = mEmulator.getCols();
+        if (mEmulator != null) {
+            if (cx > mEmulator.getCols()) {
+                cx = mEmulator.getCols();
+            }
         }
         return Math.round(cx * mRenderer.getFontWidth());
     }
@@ -1496,7 +1505,7 @@ public final class TerminalView extends View {
     }
 
     private void renderTextSelection() {
-        if (mTextSelectionCursorController != null)
+        if (mEmulator != null && mTextSelectionCursorController != null)
             mTextSelectionCursorController.render();
     }
 

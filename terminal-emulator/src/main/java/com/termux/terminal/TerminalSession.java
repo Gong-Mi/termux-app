@@ -150,48 +150,50 @@ public final class TerminalSession extends TerminalOutput {
      * Callback from Rust when async initialization is complete.
      */
     public void onEngineInitialized(long enginePtr, int ptyFd, int pid) {
-        mInitializing = false;
-        mEngineInitialized = true;
-        mTerminalFileDescriptor = ptyFd;
-        mShellPid = pid;
+        mMainThreadHandler.post(() -> {
+            mInitializing = false;
+            mEngineInitialized = true;
+            mTerminalFileDescriptor = ptyFd;
+            mShellPid = pid;
 
-        mEmulator = new TerminalEmulator(this, enginePtr, ptyFd, mRustCallback);
-        mClient.setTerminalShellPid(this, mShellPid);
+            mEmulator = new TerminalEmulator(this, enginePtr, ptyFd, mRustCallback);
+            mClient.setTerminalShellPid(this, mShellPid);
 
-        if (mTerminalFileDescriptor != -1) {
-            final FileDescriptor terminalFileDescriptorWrapped = wrapFileDescriptor(mTerminalFileDescriptor, mClient);
+            if (mTerminalFileDescriptor != -1) {
+                final FileDescriptor terminalFileDescriptorWrapped = wrapFileDescriptor(mTerminalFileDescriptor, mClient);
 
-            new Thread("TermSessionOutputWriter[pid=" + mShellPid + "]") {
-                @Override
-                public void run() {
-                    final byte[] buffer = new byte[4096];
-                    try (FileOutputStream termOut = new FileOutputStream(terminalFileDescriptorWrapped)) {
-                        while (true) {
-                            int bytesToWrite = mTerminalToProcessIOQueue.read(buffer, true);
-                            if (bytesToWrite == -1) return;
-                            termOut.write(buffer, 0, bytesToWrite);
+                new Thread("TermSessionOutputWriter[pid=" + mShellPid + "]") {
+                    @Override
+                    public void run() {
+                        final byte[] buffer = new byte[4096];
+                        try (FileOutputStream termOut = new FileOutputStream(terminalFileDescriptorWrapped)) {
+                            while (true) {
+                                int bytesToWrite = mTerminalToProcessIOQueue.read(buffer, true);
+                                if (bytesToWrite == -1) return;
+                                termOut.write(buffer, 0, bytesToWrite);
+                            }
+                        } catch (IOException e) {
+                            // Ignore.
                         }
-                    } catch (IOException e) {
-                        // Ignore.
                     }
-                }
-            }.start();
+                }.start();
 
-            new Thread("TermSessionWaiter[pid=" + mShellPid + "]") {
-                @Override
-                public void run() {
-                    int processExitCode = 0;
-                    try {
-                        processExitCode = JNI.waitFor(mShellPid);
-                    } catch (UnsatisfiedLinkError | Exception ignored) {
+                new Thread("TermSessionWaiter[pid=" + mShellPid + "]") {
+                    @Override
+                    public void run() {
+                        int processExitCode = 0;
+                        try {
+                            processExitCode = JNI.waitFor(mShellPid);
+                        } catch (UnsatisfiedLinkError | Exception ignored) {
+                        }
+                        mMainThreadHandler.sendMessage(mMainThreadHandler.obtainMessage(MSG_PROCESS_EXITED, processExitCode));
                     }
-                    mMainThreadHandler.sendMessage(mMainThreadHandler.obtainMessage(MSG_PROCESS_EXITED, processExitCode));
-                }
-            }.start();
-        }
+                }.start();
+            }
 
-        // Notify client that session is ready
-        mMainThreadHandler.sendEmptyMessage(MSG_SCREEN_UPDATED);
+            // Notify client that session is ready
+            notifyScreenUpdate();
+        });
     }
 
     private boolean mInitializing = false;
