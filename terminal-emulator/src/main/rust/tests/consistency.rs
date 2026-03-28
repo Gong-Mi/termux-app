@@ -281,12 +281,13 @@ fn test_erase_display_mode_0_includes_current_row() {
     let mut engine = TerminalEngine::new(10, 5, 100, 10, 20);
 
     // 填充屏幕 (5 行，每行 10 字符)
+    // 使用 \r\n 而不是 \n，因为 \n 只换行不回车 (LF vs LF+CR)
     // Row 0: ABCDEFGHIJ
     // Row 1: KLMNOPQRST
     // Row 2: UVWXYZ1234
     // Row 3: 56789ABCDE
     // Row 4: FGHIJKLMNO
-    engine.process_bytes(b"ABCDEFGHIJ\nKLMNOPQRST\nUVWXYZ1234\n56789ABCDE\nFGHIJKLMNO");
+    engine.process_bytes(b"ABCDEFGHIJ\r\nKLMNOPQRST\r\nUVWXYZ1234\r\n56789ABCDE\r\nFGHIJKLMNO");
 
     // 移动光标到第 2 行第 3 列 (1-indexed: row=2, col=3 -> 0-indexed: row=1, col=2)
     // CSI 2;3H = row 2, col 3 (1-indexed)
@@ -315,12 +316,13 @@ fn test_erase_display_mode_1_includes_current_row() {
     let mut engine = TerminalEngine::new(10, 5, 100, 10, 20);
 
     // 填充屏幕 (5 行，每行 10 字符)
+    // 使用 \r\n 而不是 \n，因为 \n 只换行不回车
     // Row 0: ABCDEFGHIJ
     // Row 1: KLMNOPQRST
     // Row 2: UVWXYZ1234
     // Row 3: 56789ABCDE
     // Row 4: FGHIJKLMNO
-    engine.process_bytes(b"ABCDEFGHIJ\nKLMNOPQRST\nUVWXYZ1234\n56789ABCDE\nFGHIJKLMNO");
+    engine.process_bytes(b"ABCDEFGHIJ\r\nKLMNOPQRST\r\nUVWXYZ1234\r\n56789ABCDE\r\nFGHIJKLMNO");
 
     // 移动光标到第 3 行第 4 列 (1-indexed: row=3, col=4 -> 0-indexed: row=2, col=3)
     // CSI 3;4H = row 3, col 4 (1-indexed)
