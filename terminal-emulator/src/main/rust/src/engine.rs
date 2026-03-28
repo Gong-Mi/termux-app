@@ -441,11 +441,12 @@ impl ScreenState {
     }
 
     pub fn erase_in_display(&mut self, mode: i32) {
+        let x = self.cursor.x;
         let y = self.cursor.y;
         let style = self.current_style;
-        self.get_current_screen_mut().erase_in_display(mode, y, style);
+        self.get_current_screen_mut().erase_in_display(mode, y, x, style);
         if mode == 3 { self.scroll_counter = 0; }
-        
+
         // 清屏时通知 Java 侧清除 Sixel 图像
         // mode 0=从光标到末尾，1=从开头到光标，2=整个屏幕，3=整个屏幕并清除滚动缓冲区
         if mode == 2 || mode == 3 {

@@ -213,11 +213,19 @@ impl Screen {
         res
     }
 
-    pub fn erase_in_display(&mut self, mode: i32, cursor_y: i32, style: u64) {
+    pub fn erase_in_display(&mut self, mode: i32, cursor_y: i32, cursor_x: i32, style: u64) {
         let c = self.cols as usize;
         match mode {
-            0 => { for y in (cursor_y + 1)..self.rows { self.get_row_mut(y).clear(0, c, style); } }
-            1 => { for y in 0..cursor_y { self.get_row_mut(y).clear(0, c, style); } }
+            0 => {
+                // Erase from cursor to end of screen (including current row from cursor)
+                self.get_row_mut(cursor_y).clear(cursor_x as usize, c, style);
+                for y in (cursor_y + 1)..self.rows { self.get_row_mut(y).clear(0, c, style); }
+            }
+            1 => {
+                // Erase from start of screen to cursor (including current row up to cursor)
+                for y in 0..cursor_y { self.get_row_mut(y).clear(0, c, style); }
+                self.get_row_mut(cursor_y).clear(0, (cursor_x + 1) as usize, style);
+            }
             2 => { for y in 0..self.rows { self.get_row_mut(y).clear(0, c, style); } }
             3 => {
                 for y in 0..self.buffer.len() { self.buffer[y].clear(0, c, style); }

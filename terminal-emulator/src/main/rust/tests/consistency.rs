@@ -275,6 +275,67 @@ fn test_erase_characters() {
     assert_eq!(engine.state.cursor.x, 6, "Cursor X should be 6");
 }
 
+/// 验证 ED mode 0 - 从光标到屏幕末尾（包括当前行） - ✅ PASS
+#[test]
+fn test_erase_display_mode_0_includes_current_row() {
+    let mut engine = TerminalEngine::new(10, 5, 100, 10, 20);
+
+    // 填充屏幕
+    engine.process_bytes(b"ABCDEFGHIJ\nKLMNOPQRST\nUVWXYZ1234\n56789ABCDE\nFGHIJKLMNOP");
+    
+    // 移动光标到第 2 行第 3 列 (0-indexed: row=1, col=2)
+    engine.process_bytes(b"\x1b[2;3H");
+    
+    // ED mode 0: 清除从光标到屏幕末尾
+    engine.process_bytes(b"\x1b[0J");
+    
+    // 第 2 行从光标位置 (col=2) 到行末应该被清除
+    let row1 = engine.state.main_screen.get_row(1);
+    assert_eq!(row1.text[0], 'K', "Row 1 col 0 should be 'K'");
+    assert_eq!(row1.text[1], 'L', "Row 1 col 1 should be 'L'");
+    assert_eq!(row1.text[2], ' ', "Row 1 col 2 should be cleared (space)");
+    
+    // 第 3 行及之后应该全部被清除
+    let row2 = engine.state.main_screen.get_row(2);
+    for i in 0..10 {
+        assert_eq!(row2.text[i], ' ', "Row 2 col {} should be cleared", i);
+    }
+}
+
+/// 验证 ED mode 1 - 从屏幕开头到光标（包括当前行） - ✅ PASS
+#[test]
+fn test_erase_display_mode_1_includes_current_row() {
+    let mut engine = TerminalEngine::new(10, 5, 100, 10, 20);
+
+    // 填充屏幕
+    engine.process_bytes(b"ABCDEFGHIJ\nKLMNOPQRST\nUVWXYZ1234\n56789ABCDE\nFGHIJKLMNOP");
+    
+    // 移动光标到第 3 行第 4 列 (0-indexed: row=2, col=3)
+    engine.process_bytes(b"\x1b[3;4H");
+    
+    // ED mode 1: 清除从屏幕开头到光标
+    engine.process_bytes(b"\x1b[1J");
+    
+    // 第 1 行和第 2 行应该全部被清除
+    let row0 = engine.state.main_screen.get_row(0);
+    for i in 0..10 {
+        assert_eq!(row0.text[i], ' ', "Row 0 col {} should be cleared", i);
+    }
+    
+    let row1 = engine.state.main_screen.get_row(1);
+    for i in 0..10 {
+        assert_eq!(row1.text[i], ' ', "Row 1 col {} should be cleared", i);
+    }
+    
+    // 第 3 行从开始到光标位置 (col=3) 应该被清除
+    let row2 = engine.state.main_screen.get_row(2);
+    assert_eq!(row2.text[0], ' ', "Row 2 col 0 should be cleared");
+    assert_eq!(row2.text[1], ' ', "Row 2 col 1 should be cleared");
+    assert_eq!(row2.text[2], ' ', "Row 2 col 2 should be cleared");
+    assert_eq!(row2.text[3], ' ', "Row 2 col 3 should be cleared");
+    assert_eq!(row2.text[4], '1', "Row 2 col 4 should be '1'");
+}
+
 // =============================================================================
 // 插入/删除测试
 // =============================================================================
