@@ -578,9 +578,11 @@ impl Screen {
         }
         
         // Adjust first_row pointer (O(1) operation)
+        // Matches Java: mScreenFirstRow = (mScreenFirstRow < 0) ? (mScreenFirstRow + mTotalRows) : (mScreenFirstRow % mTotalRows)
         let new_first_row = self.first_row as i32 + shift_down_of_top_row;
         self.first_row = if new_first_row < 0 {
-            (new_first_row + self.buffer.len() as i32) as usize
+            // Use modulo to handle large negative shifts (e.g., expanding from very small to very large)
+            ((new_first_row % self.buffer.len() as i32) + self.buffer.len() as i32) as usize % self.buffer.len()
         } else {
             (new_first_row as usize) % self.buffer.len()
         };
@@ -596,6 +598,11 @@ impl Screen {
             // Expanding: decrease transcript rows (use saturating_sub for max(0, ...))
             self.active_transcript_rows.saturating_sub((-shift_i32) as usize)
         };
+
+        // Ensure active_transcript_rows doesn't exceed max possible (matches Java constraint)
+        // Java: mActiveTranscriptRows is implicitly limited by mTotalRows - mScreenRows
+        let max_transcript_rows = self.buffer.len().saturating_sub(self.rows as usize);
+        self.active_transcript_rows = self.active_transcript_rows.min(max_transcript_rows);
         
         // Adjust cursor position
         let new_cursor_y = cursor_y - shift_i32;
