@@ -319,6 +319,19 @@ final class TermuxInstaller {
 
         Logger.logInfo(LOG_TAG, "Setting up storage symlinks.");
 
+        // 在开始前检查权限是否已经获得，尤其针对 Android 11+ (API 30+)
+        boolean isLegacy = PermissionUtils.isLegacyExternalStoragePossible(context);
+        if (!PermissionUtils.checkStoragePermission(context, isLegacy)) {
+            String msg;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                msg = context.getString(R.string.msg_storage_manager_permission_not_granted);
+            } else {
+                msg = context.getString(R.string.msg_storage_permission_not_granted);
+            }
+            Logger.logErrorAndShowToast(context, LOG_TAG, msg);
+            return;
+        }
+
         new Thread() {
             public void run() {
                 try {
