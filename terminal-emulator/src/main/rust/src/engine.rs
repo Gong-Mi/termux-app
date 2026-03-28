@@ -684,8 +684,9 @@ impl ScreenState {
         self.cursor_enabled = true;
         self.application_cursor_keys = false;
         self.bracketed_paste = false;
-        self.main_screen.erase_in_display(2, 0, STYLE_NORMAL);
-        self.alt_screen.erase_in_display(2, 0, STYLE_NORMAL);
+        // ED mode 2: Clear entire screen (cursor position doesn't matter for mode 2)
+        self.main_screen.erase_in_display(2, 0, 0, STYLE_NORMAL);
+        self.alt_screen.erase_in_display(2, 0, 0, STYLE_NORMAL);
         self.use_alternate_buffer = false;
         self.top_margin = 0; self.bottom_margin = self.rows; self.title = None;
         self.fore_color = COLOR_INDEX_FOREGROUND; self.back_color = COLOR_INDEX_BACKGROUND; self.effect = 0; self.current_style = STYLE_NORMAL;
