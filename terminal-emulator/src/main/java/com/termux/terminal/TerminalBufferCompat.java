@@ -62,35 +62,6 @@ public final class TerminalBufferCompat {
     }
     
     /**
-     * 获取指定行的文本
-     * 
-     * @param externalRow 外部行坐标（-activeTranscriptRows 到 screenRows-1）
-     * @return 行文本
-     */
-    public String getLine(int externalRow) {
-        if (mEmulator == null) return "";
-        
-        char[] buffer = new char[mColumns];
-        mEmulator.readRow(externalRow, buffer);
-        return new String(buffer).trim();
-    }
-    
-    /**
-     * 获取指定位置的字符
-     * 
-     * @param col 列坐标
-     * @param row 行坐标（外部坐标）
-     * @return 字符
-     */
-    public char getChar(int col, int row) {
-        if (mEmulator == null) return ' ';
-        
-        char[] buffer = new char[1];
-        mEmulator.readRow(row, buffer, col, 1);
-        return buffer[0];
-    }
-    
-    /**
      * 获取转义文本（整个缓冲区）
      */
     public String getTranscriptText() {
@@ -114,36 +85,5 @@ public final class TerminalBufferCompat {
             return mEmulator.getSelectedText(selX1, selY1, selX2, selY2);
         }
         return "";
-    }
-    
-    /**
-     * 检查是否为空行
-     * 
-     * @param row 行坐标（外部坐标）
-     * @return true 如果是空行
-     */
-    public boolean isBlankLine(int row) {
-        if (mEmulator == null) return true;
-        
-        char[] buffer = new char[mColumns];
-        mEmulator.readRow(row, buffer);
-        
-        for (char c : buffer) {
-            if (c != ' ') return false;
-        }
-        return true;
-    }
-    
-    /**
-     * 获取行包装状态
-     * 
-     * @param row 行坐标（外部坐标）
-     * @return true 如果该行被换行
-     */
-    public boolean getLineWrap(int row) {
-        if (mEmulator != null) {
-            return mEmulator.getLineWrap(row);
-        }
-        return false;
     }
 }

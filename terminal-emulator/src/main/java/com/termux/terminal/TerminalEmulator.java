@@ -349,16 +349,14 @@ public final class TerminalEmulator {
         // 返回兼容包装类，为依赖 getScreen() 的旧应用提供兼容性
         return new TerminalBufferCompat(this, getCols(), getRows(), getTotalRows());
     }
-    
+
     /**
      * 获取总行数（包括历史）
      * @return 总行数
      */
     public int getTotalRows() {
-        if (mEnginePtr != 0) {
-            return getTotalRowsFromRust(mEnginePtr);
-        }
-        return DEFAULT_TERMINAL_TRANSCRIPT_ROWS + getRows();
+        // Rust 版本总行数 = 活动历史行数 + 屏幕行数
+        return getActiveTranscriptRows() + getRows();
     }
 
     public synchronized void destroy() {
