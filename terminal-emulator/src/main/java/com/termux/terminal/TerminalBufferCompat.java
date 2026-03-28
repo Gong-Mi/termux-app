@@ -56,7 +56,7 @@ public final class TerminalBufferCompat {
      */
     public int getActiveTranscriptRows() {
         if (mEmulator != null) {
-            return mEmulator.getActiveTranscriptRowsFromRust();
+            return mEmulator.getActiveTranscriptRows();
         }
         return 0;
     }
@@ -71,7 +71,7 @@ public final class TerminalBufferCompat {
         if (mEmulator == null) return "";
         
         char[] buffer = new char[mColumns];
-        mEmulator.readRowFromRust(mEmulator.mEnginePtr, externalRow, buffer);
+        mEmulator.readRow(externalRow, buffer);
         return new String(buffer).trim();
     }
     
@@ -84,24 +84,9 @@ public final class TerminalBufferCompat {
      */
     public char getChar(int col, int row) {
         if (mEmulator == null) return ' ';
-
-        char[] buffer = new char[1];
-        mEmulator.readRowFromRust(mEmulator.mEnginePtr, row, buffer, col, 1);
-        return buffer[0];
-    }
-    
-    /**
-     * 获取指定位置的样式
-     * 
-     * @param col 列坐标
-     * @param row 行坐标（外部坐标）
-     * @return 样式值
-     */
-    public long getStyle(int col, int row) {
-        if (mEmulator == null) return TextStyle.NORMAL;
         
-        long[] buffer = new long[1];
-        mEmulator.readRowStyleFromRust(mEmulator.mEnginePtr, row, buffer, col, 1);
+        char[] buffer = new char[1];
+        mEmulator.readRow(row, buffer, col, 1);
         return buffer[0];
     }
     
@@ -110,7 +95,7 @@ public final class TerminalBufferCompat {
      */
     public String getTranscriptText() {
         if (mEmulator != null) {
-            return mEmulator.getTranscriptTextFromRust();
+            return mEmulator.getTranscriptText();
         }
         return "";
     }
@@ -126,45 +111,14 @@ public final class TerminalBufferCompat {
      */
     public String getSelectedText(int selX1, int selY1, int selX2, int selY2) {
         if (mEmulator != null) {
-            return mEmulator.getSelectedTextFromRust(selX1, selY1, selX2, selY2);
+            return mEmulator.getSelectedText(selX1, selY1, selX2, selY2);
         }
         return "";
     }
     
     /**
-     * 设置或清除效果位（DECCARA 支持）
-     *
-     * @param bits 效果位
-     * @param setOrClear true=设置，false=清除
-     * @param reverse 是否反转
-     * @param rectangular 是否矩形区域
-     * @param leftMargin 左边距
-     * @param rightMargin 右边距
-     * @param top 顶部行
-     * @param left 左侧列
-     * @param bottom 底部行
-     * @param right 右侧列
-     */
-    public void setOrClearEffect(int bits, boolean setOrClear, boolean reverse, boolean rectangular,
-                                 int leftMargin, int rightMargin, int top, int left, int bottom, int right) {
-        if (mEmulator != null) {
-            mEmulator.setOrClearEffectFromRust(mEmulator.mEnginePtr, bits, setOrClear, reverse, rectangular,
-                                               leftMargin, rightMargin, top, left, bottom, right);
-        }
-    }
-    
-    /**
-     * 清除历史记录
-     */
-    public void clearTranscript() {
-        if (mEmulator != null) {
-            mEmulator.clearTranscriptFromRust(mEmulator.mEnginePtr);
-        }
-    }
-    
-    /**
      * 检查是否为空行
-     *
+     * 
      * @param row 行坐标（外部坐标）
      * @return true 如果是空行
      */
@@ -172,7 +126,7 @@ public final class TerminalBufferCompat {
         if (mEmulator == null) return true;
         
         char[] buffer = new char[mColumns];
-        mEmulator.readRowFromRust(mEmulator.mEnginePtr, row, buffer);
+        mEmulator.readRow(row, buffer);
         
         for (char c : buffer) {
             if (c != ' ') return false;
@@ -182,13 +136,13 @@ public final class TerminalBufferCompat {
     
     /**
      * 获取行包装状态
-     *
+     * 
      * @param row 行坐标（外部坐标）
      * @return true 如果该行被换行
      */
     public boolean getLineWrap(int row) {
         if (mEmulator != null) {
-            return mEmulator.getLineWrapFromRust(mEmulator.mEnginePtr, row);
+            return mEmulator.getLineWrap(row);
         }
         return false;
     }
