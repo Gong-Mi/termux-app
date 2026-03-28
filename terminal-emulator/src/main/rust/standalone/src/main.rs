@@ -34,7 +34,7 @@ fn main() -> io::Result<()> {
 
     // 启动 PTY 子进程（优先使用 Termux 环境下的 shell）
     let shell = std::env::var("SHELL").unwrap_or_else(|_| {
-        let prefix = std::env::var("PREFIX").unwrap_or_else(|_| "/data/data/com.termux/files/usr".to_string());
+        let prefix = std::env::var("PREFIX").unwrap_or_else(|_| "/data/user/0/com.termux/files/usr".to_string());
         format!("{}/bin/sh", prefix)
     });
     let pty_fd = match spawn_pty(&shell, cols as i32, rows as i32) {
@@ -343,8 +343,8 @@ fn spawn_pty(shell: &str, cols: i32, rows: i32) -> io::Result<i32> {
                 set_pty_winsize(libc::STDIN_FILENO, cols, rows);
 
                 // 设置环境变量
-                let prefix = "/data/data/com.termux/files/usr";
-                let home = "/data/data/com.termux/files/home";
+                let prefix = "/data/user/0/com.termux/files/usr";
+                let home = "/data/user/0/com.termux/files/home";
                 let path = format!("{}/bin:{}/bin/applets", prefix, prefix);
 
                 let env_map = [

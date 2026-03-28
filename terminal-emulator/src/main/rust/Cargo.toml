@@ -9,7 +9,7 @@ crate-type = ["cdylib", "rlib"]
 
 [[bin]]
 name = "termux-rust-engine"
-path = "src/main.rs"
+path = "standalone/src/main.rs"
 
 [dependencies]
 jni = "0.21.1"
