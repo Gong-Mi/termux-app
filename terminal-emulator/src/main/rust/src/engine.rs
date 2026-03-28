@@ -142,11 +142,11 @@ impl TerminalContext {
                     Ok(n) => {
                         let mut engine = context.lock.write().unwrap();
                         engine.process_bytes(&buffer[..n]);
+                        engine.notify_screen_updated();
                     }
                     Err(_) => break,
                 }
             }
-            // Ensure the file is closed (though from_raw_fd + drop does this)
         });
     }
 }
