@@ -359,6 +359,47 @@ fn test_erase_display_mode_1_includes_current_row() {
 // 插入/删除测试
 // =============================================================================
 
+/// 验证 resize 时历史内容不会丢失 - ✅ PASS
+#[test]
+fn test_resize_preserves_history() {
+    let mut engine = TerminalEngine::new(10, 5, 100, 10, 20);
+
+    // 填充屏幕并产生滚动历史
+    // 5 行可见区域，写入 10 行内容，应该有 5 行历史
+    for i in 0..10 {
+        engine.process_bytes(format!("Line {:02}\r\n", i).as_bytes());
+    }
+
+    // 验证有历史内容
+    let initial_active_transcript = engine.state.main_screen.active_transcript_rows;
+    eprintln!("Initial active_transcript_rows: {}", initial_active_transcript);
+    assert!(initial_active_transcript > 0, "Should have some history");
+
+    // 缩小终端（从 5 行到 3 行）
+    engine.state.resize(10, 3);
+    let shrunk_active_transcript = engine.state.main_screen.active_transcript_rows;
+    eprintln!("After shrink (5->3): active_transcript_rows: {}", shrunk_active_transcript);
+    
+    // 缩小后历史内容应该增加
+    assert!(shrunk_active_transcript >= initial_active_transcript, 
+        "Shrinking should preserve or increase history");
+
+    // 放大终端（从 3 行回到 5 行）
+    engine.state.resize(10, 5);
+    let expanded_active_transcript = engine.state.main_screen.active_transcript_rows;
+    eprintln!("After expand (3->5): active_transcript_rows: {}", expanded_active_transcript);
+
+    // 放大后历史内容应该减少，但不应该丢失
+    // 关键验证：第一行历史内容应该还能访问
+    let min_row = -(expanded_active_transcript as i32);
+    let first_history_row = engine.state.main_screen.get_row(min_row);
+    let text: String = first_history_row.text.iter().take(10).collect();
+    eprintln!("First history row: '{}'", text.trim());
+    
+    // 第一行历史应该是 "Line 00" 或类似的早期内容
+    assert!(text.contains("Line"), "History content should be preserved after resize");
+}
+
 /// 验证插入字符 (ICH) - ✅ PASS
 #[test]
 fn test_insert_characters() {
