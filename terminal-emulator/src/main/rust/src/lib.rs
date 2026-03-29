@@ -15,8 +15,10 @@ pub mod bootstrap;
 pub mod fastpath;
 pub mod pty;
 pub mod vte_parser;
+pub mod coordinator;
 
 pub use crate::engine::{TerminalEngine, TerminalContext, TerminalEvent};
+pub use crate::coordinator::{SessionCoordinator, SessionState};
 pub use crate::terminal::style::*;
 pub use crate::terminal::modes::*;
 pub use crate::terminal::colors::*;
@@ -908,8 +910,13 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
     };
 
     std::thread::spawn(move || {
-        android_log(LogPriority::DEBUG, "[TRACE_SESSION] 5.1. Background thread started in Rust");
+        // 注册 session 到协调器
+        let coordinator = SessionCoordinator::get();
+        let session_id = coordinator.register_session();
         
+        android_log(LogPriority::DEBUG, "[TRACE_SESSION] 5.1. Background thread started in Rust");
+        android_log(LogPriority::INFO, &format!("[TRACE_SESSION] Session ID: {}", session_id));
+
         // 1. 创建子进程
         let pty_res = crate::pty::create_subprocess_with_data(cmd_str, cwd_str, argv, envp, rows, cols, cw, ch);
         let (pty_fd, pid) = match pty_res {
@@ -919,6 +926,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
             },
             Err(_) => {
                 android_log(LogPriority::ERROR, "[TRACE_SESSION] 5.2. ERROR: PTY creation failed");
+                coordinator.unregister_session(session_id);
                 return;
             }
         };

@@ -45,4 +45,14 @@ final class JNI {
     public static native void setPtyWindowSize(int fd, int rows, int cols, int cellWidth, int cellHeight);
     public static native int waitFor(int processId);
     public static native void close(int fileDescriptor);
+    
+    // Session Coordinator methods
+    public static native int registerSession();
+    public static native void unregisterSession(int sessionId);
+    public static native boolean tryAcquirePkgLock(int sessionId);
+    public static native void releasePkgLock(int sessionId);
+    public static native boolean isPkgLockHeld();
+    public static native int getPkgLockOwner();
+    public static native String getSessionState(int sessionId);
+    public static native String getAllSessionStates();
 }
