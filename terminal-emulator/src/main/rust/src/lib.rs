@@ -698,12 +698,19 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColorsFromRu
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_resetColorsFromRust(mut env: JNIEnv, _class: JClass, ptr: jlong) {
     if ptr == 0 { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    
+    // 修复：在锁外回调，避免死锁
     let (events, cb) = {
         let mut engine = context.lock.write().unwrap();
         engine.state.colors.reset();
-        engine.state.report_colors_changed();
-        (engine.take_events(), engine.state.java_callback_obj.clone())
-    };
+        // 不再调用 report_colors_changed()，而是手动添加事件
+        // 这样事件会在锁释放后通过 flush_events_to_java 处理
+        let mut events = engine.take_events();
+        events.push(crate::engine::TerminalEvent::ColorsChanged);
+        (events, engine.state.java_callback_obj.clone())
+    }; // 锁在此处释放
+    
+    // 在锁外安全回调 Java
     flush_events_to_java(&mut env, &cb, events);
     let _ = Arc::into_raw(context);
 }

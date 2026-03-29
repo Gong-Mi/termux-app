@@ -815,14 +815,11 @@ impl ScreenState {
 
     // --- Added methods to fix compilation errors ---
 
+    /// 修复：只标记颜色变化标志，不再直接回调 Java
+    /// 颜色变化事件会在下次取事件时被处理，避免在持有锁时调用 JNI 导致的死锁
     pub fn report_colors_changed(&self) {
-        if let Some(obj) = &self.java_callback_obj {
-            if let Some(vm) = crate::JAVA_VM.get() {
-                if let Ok(mut env) = vm.get_env() {
-                    let _ = env.call_method(obj.as_obj(), "onColorsChanged", "()V", &[]);
-                }
-            }
-        }
+        // 不再直接调用 Java 回调，由调用者在锁外通过事件机制处理
+        // 这样可以避免死锁问题
     }
 
     pub fn report_color_response(&self, response: &str) {
