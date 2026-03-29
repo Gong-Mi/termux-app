@@ -84,7 +84,7 @@ public final class TerminalEmulator {
     /**
      * 处理输入数据
      */
-    public synchronized void append(byte[] batch, int length) {
+    public void append(byte[] batch, int length) {
         if (mEnginePtr != 0) {
             try {
                 processBatchRust(mEnginePtr, batch, length);
@@ -98,7 +98,7 @@ public final class TerminalEmulator {
      * 处理单个 Unicode 码点
      * @param codePoint Unicode 码点
      */
-    public synchronized void processCodePoint(int codePoint) {
+    public void processCodePoint(int codePoint) {
         if (mEnginePtr != 0) {
             try {
                 processCodePointRust(mEnginePtr, codePoint);
@@ -111,14 +111,14 @@ public final class TerminalEmulator {
     /**
      * 检查终端引擎是否仍然有效（未被销毁）
      */
-    public synchronized boolean isAlive() {
+    public boolean isAlive() {
         return mEnginePtr != 0;
     }
 
     /**
      * 调整终端大小
      */
-    public synchronized void resize(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
+    public void resize(int columns, int rows, int cellWidthPixels, int cellHeightPixels) {
         if (mEnginePtr != 0) {
             resizeEngineRustFull(mEnginePtr, columns, rows, cellWidthPixels, cellHeightPixels);
         }
@@ -373,7 +373,7 @@ public final class TerminalEmulator {
         return getActiveTranscriptRows() + getRows();
     }
 
-    public synchronized void destroy() {
+    public void destroy() {
         if (mEnginePtr != 0) {
             destroyEngineRust(mEnginePtr);
             mEnginePtr = 0;

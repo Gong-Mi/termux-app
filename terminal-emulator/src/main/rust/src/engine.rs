@@ -141,14 +141,47 @@ impl TerminalContext {
                 match std::io::Read::read(&mut pty_file, &mut buffer) {
                     Ok(0) => break, // EOF
                     Ok(n) => {
-                        {
+                        let (events, callback_obj) = {
                             let mut engine = context.lock.write().unwrap();
                             engine.process_bytes(&buffer[..n]);
-                        } // 写锁在此释放
+                            (engine.take_events(), engine.state.java_callback_obj.clone())
+                        }; // 锁在此处彻底释放
                         
                         // 锁释放后安全执行回调
-                        let mut engine = context.lock.write().unwrap();
-                        engine.flush_events();
+                        if !events.is_empty() {
+                            if let Some(vm) = crate::JAVA_VM.get() {
+                                if let Ok(mut env) = vm.attach_current_thread_as_daemon() {
+                                    // 这里我们需要一个内部 helper 来处理，或者直接在这里处理
+                                    for event in events {
+                                        if let Some(obj) = &callback_obj {
+                                            match event {
+                                                TerminalEvent::ScreenUpdated => { let _ = env.call_method(obj.as_obj(), "onScreenUpdated", "()V", &[]); }
+                                                TerminalEvent::Bell => { let _ = env.call_method(obj.as_obj(), "onBell", "()V", &[]); }
+                                                TerminalEvent::ColorsChanged => { let _ = env.call_method(obj.as_obj(), "onColorsChanged", "()V", &[]); }
+                                                TerminalEvent::TitleChanged(title) => {
+                                                    if let Ok(j_title) = env.new_string(title) {
+                                                        let _ = env.call_method(obj.as_obj(), "reportTitleChange", "(Ljava/lang/String;)V", &[(&j_title).into()]);
+                                                    }
+                                                }
+                                                TerminalEvent::TerminalResponse(resp) => {
+                                                    if let Ok(j_resp) = env.new_string(resp) {
+                                                        let _ = env.call_method(obj.as_obj(), "write", "(Ljava/lang/String;)V", &[(&j_resp).into()]);
+                                                    }
+                                                }
+                                                TerminalEvent::SixelImage { rgba_data, width, height, start_x, start_y } => {
+                                                    if let Ok(j_data) = env.new_byte_array(rgba_data.len() as i32) {
+                                                        unsafe { let _ = env.set_byte_array_region(&j_data, 0, std::mem::transmute::<&[u8], &[i8]>(&rgba_data)); }
+                                                        let _ = env.call_method(obj.as_obj(), "onSixelImage", "([BIIII)V", &[
+                                                            (&j_data).into(), width.into(), height.into(), start_x.into(), start_y.into()
+                                                        ]);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                     Err(_) => break,
                 }
@@ -878,54 +911,8 @@ impl TerminalEngine {
         }
     }
 
-    pub fn flush_events(&mut self) {
-        if self.events.is_empty() { return; }
-        
-        let events_to_process = std::mem::replace(&mut self.events, Vec::with_capacity(16));
-        
-        if let Some(obj) = &self.state.java_callback_obj {
-            if let Some(vm) = crate::JAVA_VM.get() {
-                if let Ok(mut env) = vm.get_env().or_else(|_| vm.attach_current_thread_as_daemon()) {
-                    for event in events_to_process {
-                        match event {
-                            TerminalEvent::ScreenUpdated => {
-                                let _ = env.call_method(obj.as_obj(), "onScreenUpdated", "()V", &[]);
-                            }
-                            TerminalEvent::Bell => {
-                                let _ = env.call_method(obj.as_obj(), "onBell", "()V", &[]);
-                            }
-                            TerminalEvent::ColorsChanged => {
-                                let _ = env.call_method(obj.as_obj(), "onColorsChanged", "()V", &[]);
-                            }
-                            TerminalEvent::TitleChanged(title) => {
-                                if let Ok(j_title) = env.new_string(title) {
-                                    let _ = env.call_method(obj.as_obj(), "reportTitleChange", "(Ljava/lang/String;)V", &[(&j_title).into()]);
-                                }
-                            }
-                            TerminalEvent::TerminalResponse(resp) => {
-                                if let Ok(j_resp) = env.new_string(resp) {
-                                    let _ = env.call_method(obj.as_obj(), "reportTerminalResponse", "(Ljava/lang/String;)V", &[(&j_resp).into()]);
-                                }
-                            }
-                            TerminalEvent::SixelImage { rgba_data, width, height, start_x, start_y } => {
-                                if let Ok(j_data) = env.new_byte_array(rgba_data.len() as i32) {
-                                    unsafe {
-                                        let _ = env.set_byte_array_region(&j_data, 0, std::mem::transmute::<&[u8], &[i8]>(&rgba_data));
-                                    }
-                                    let _ = env.call_method(obj.as_obj(), "onSixelImage", "([BIIII)V", &[
-                                        (&j_data).into(),
-                                        width.into(),
-                                        height.into(),
-                                        start_x.into(),
-                                        start_y.into(),
-                                    ]);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    pub fn take_events(&mut self) -> Vec<TerminalEvent> {
+        std::mem::replace(&mut self.events, Vec::with_capacity(16))
     }
 
     pub fn process_bytes(&mut self, data: &[u8]) {

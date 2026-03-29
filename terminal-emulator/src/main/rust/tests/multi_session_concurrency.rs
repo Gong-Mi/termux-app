@@ -32,13 +32,14 @@ fn test_dual_session_concurrency() {
     let c1 = context1.clone();
     let t1 = thread::spawn(move || {
         for i in 0..100 {
-            let mut engine = c1.lock.write().unwrap();
-            let data = format!("Session 1 - Line {}\r\n", i);
-            engine.process_bytes(data.as_bytes());
-            // 模拟释锁后的 flush
-            drop(engine);
-            let mut engine = c1.lock.write().unwrap();
-            engine.flush_events();
+            let events = {
+                let mut engine = c1.lock.write().unwrap();
+                let data = format!("Session 1 - Line {}\r\n", i);
+                engine.process_bytes(data.as_bytes());
+                engine.take_events()
+            }; // 锁在此处释放
+            // 模拟在锁外部处理事件
+            let _ = events; 
             thread::sleep(Duration::from_millis(1));
         }
     });
@@ -46,12 +47,13 @@ fn test_dual_session_concurrency() {
     let c2 = context2.clone();
     let t2 = thread::spawn(move || {
         for i in 0..100 {
-            let mut engine = c2.lock.write().unwrap();
-            let data = format!("Session 2 - Line {}\r\n", i);
-            engine.process_bytes(data.as_bytes());
-            drop(engine);
-            let mut engine = c2.lock.write().unwrap();
-            engine.flush_events();
+            let events = {
+                let mut engine = c2.lock.write().unwrap();
+                let data = format!("Session 2 - Line {}\r\n", i);
+                engine.process_bytes(data.as_bytes());
+                engine.take_events()
+            };
+            let _ = events;
             thread::sleep(Duration::from_millis(1));
         }
     });
