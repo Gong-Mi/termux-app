@@ -52,6 +52,13 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
     private static final String LOG_TAG = "TermuxTerminalSessionActivityClient";
 
+    private final Handler mRefreshHandler = new Handler(Looper.getMainLooper());
+    private final Runnable mRefreshRunnable = () -> {
+        if (mActivity != null && !mActivity.isFinishing()) {
+            mActivity.termuxSessionListNotifyUpdated();
+        }
+    };
+
     public TermuxTerminalSessionActivityClient(TermuxActivity activity) {
         this.mActivity = activity;
     }
