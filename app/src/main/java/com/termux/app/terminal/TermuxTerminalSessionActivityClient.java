@@ -555,8 +555,3 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     }
 
 }
-lator().getCurrentColors()[TextStyle.COLOR_INDEX_BACKGROUND]);
-        }
-    }
-
-}
