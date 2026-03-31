@@ -11,6 +11,8 @@ import android.graphics.Typeface;
 import android.media.AudioAttributes;
 import android.media.SoundPool;
 import android.text.TextUtils;
+import android.os.Handler;
+import android.os.Looper;
 import android.widget.ListView;
 
 import androidx.annotation.NonNull;
@@ -132,7 +134,9 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
             mActivity.showToast(toToastTitle(updatedSession), true);
         }
 
-        termuxSessionListNotifyUpdated();
+        // 使用节流刷新：每 100ms 最多刷新一次列表，显著降低高频更新下的 CPU 占用
+        mRefreshHandler.removeCallbacks(mRefreshRunnable);
+        mRefreshHandler.postDelayed(mRefreshRunnable, 100);
     }
 
     @Override
@@ -547,6 +551,11 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         TerminalSession session = mActivity.getCurrentSession();
         if (session != null && session.getEmulator() != null) {
             mActivity.getWindow().getDecorView().setBackgroundColor(session.getEmulator().getCurrentColors()[TextStyle.COLOR_INDEX_BACKGROUND]);
+        }
+    }
+
+}
+lator().getCurrentColors()[TextStyle.COLOR_INDEX_BACKGROUND]);
         }
     }
 
