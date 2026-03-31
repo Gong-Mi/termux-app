@@ -130,7 +130,10 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     public void onTextChanged(@NonNull TerminalSession changedSession) {
         if (!mActivity.isVisible()) return;
 
-        if (mActivity.getCurrentSession() == changedSession) mActivity.getTerminalView().onScreenUpdated();
+        if (mActivity.getCurrentSession() == changedSession) {
+            // 必须在主线程更新 UI 视图
+            mActivity.runOnUiThread(() -> mActivity.getTerminalView().onScreenUpdated());
+        }
     }
 
     @Override
@@ -138,10 +141,8 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
         if (!mActivity.isVisible()) return;
 
         if (updatedSession != mActivity.getCurrentSession()) {
-            // Only show toast for other sessions than the current one, since the user
-            // probably consciously caused the title change to change in the current session
-            // and don't want an annoying toast for that.
-            mActivity.showToast(toToastTitle(updatedSession), true);
+            // Toast 弹出也强制切换到主线程，防止部分设备崩溃
+            mActivity.runOnUiThread(() -> mActivity.showToast(toToastTitle(updatedSession), true));
         }
 
         // 使用节流刷新：每 100ms 最多刷新一次列表，显著降低高频更新下的 CPU 占用
