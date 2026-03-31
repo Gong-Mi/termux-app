@@ -200,8 +200,6 @@ fn extract_zip_to_dir(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_extract_zip() {
         assert!(true);

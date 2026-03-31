@@ -4,8 +4,10 @@
 //! 参考：termux-app-upstream/terminal-emulator/src/main/java/com/termux/terminal/TerminalEmulator.java
 
 /// 最大参数数量
+#[allow(dead_code)]
 pub const MAX_ESCAPE_PARAMETERS: usize = 32;
 /// 最大 OSC 字符串长度
+#[allow(dead_code)]
 pub const MAX_OSC_STRING_LENGTH: usize = 8192;
 
 // =============================================================================
@@ -29,52 +31,66 @@ pub const ESC_CSI_QUESTIONMARK: u8 = 7;
 /// 转义处理：ESC [ $
 pub const ESC_CSI_DOLLAR: u8 = 8;
 /// 转义处理：ESC %
+#[allow(dead_code)]
 pub const ESC_PERCENT: u8 = 9;
-/// 转义处理：ESC ] (AKA OSC - Operating System Controls)
+#[allow(dead_code)]
 pub const ESC_OSC: u8 = 10;
-/// 转义处理：ESC ] ESC
+#[allow(dead_code)]
 pub const ESC_OSC_ESC: u8 = 11;
-/// 转义处理：ESC [ >
+#[allow(dead_code)]
 pub const ESC_CSI_BIGGERTHAN: u8 = 12;
-/// 转义处理："ESC P" 或 Device Control String (DCS)
+#[allow(dead_code)]
 pub const ESC_P: u8 = 13;
-/// 转义处理：CSI >
+#[allow(dead_code)]
 pub const ESC_CSI_QUESTIONMARK_ARG_DOLLAR: u8 = 14;
-/// 转义处理：CSI $ARGS ' '
+#[allow(dead_code)]
 pub const ESC_CSI_ARGS_SPACE: u8 = 15;
-/// 转义处理：CSI $ARGS '*'
+#[allow(dead_code)]
 pub const ESC_CSI_ARGS_ASTERIX: u8 = 16;
-/// 转义处理：CSI "
+#[allow(dead_code)]
 pub const ESC_CSI_DOUBLE_QUOTE: u8 = 17;
-/// 转义处理：CSI '
+#[allow(dead_code)]
 pub const ESC_CSI_SINGLE_QUOTE: u8 = 18;
-/// 转义处理：CSI !
+#[allow(dead_code)]
 pub const ESC_CSI_EXCLAMATION: u8 = 19;
-/// 转义处理："ESC _" 或 Application Program Command (APC)
+#[allow(dead_code)]
 pub const ESC_APC: u8 = 20;
-/// 转义处理："ESC _" APC 后跟 ESC
+#[allow(dead_code)]
 pub const ESC_APC_ESCAPE: u8 = 21;
-/// 转义处理：ESC [ <parameter bytes>
+#[allow(dead_code)]
 pub const ESC_CSI_UNSUPPORTED_PARAMETER_BYTE: u8 = 22;
-/// 转义处理：ESC [ <parameter bytes> <intermediate bytes>
+#[allow(dead_code)]
 pub const ESC_CSI_UNSUPPORTED_INTERMEDIATE_BYTE: u8 = 23;
 
 // =============================================================================
 // DECSET 位标志定义
 // =============================================================================
 
+#[allow(dead_code)]
 pub const DECSET_BIT_APPLICATION_CURSOR_KEYS: u32 = 1;
+#[allow(dead_code)]
 pub const DECSET_BIT_REVERSE_VIDEO: u32 = 1 << 1;
+#[allow(dead_code)]
 pub const DECSET_BIT_ORIGIN_MODE: u32 = 1 << 2;
+#[allow(dead_code)]
 pub const DECSET_BIT_AUTOWRAP: u32 = 1 << 3;
+#[allow(dead_code)]
 pub const DECSET_BIT_CURSOR_ENABLED: u32 = 1 << 4;
+#[allow(dead_code)]
 pub const DECSET_BIT_APPLICATION_KEYPAD: u32 = 1 << 5;
+#[allow(dead_code)]
 pub const DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE: u32 = 1 << 6;
+#[allow(dead_code)]
 pub const DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT: u32 = 1 << 7;
+#[allow(dead_code)]
 pub const DECSET_BIT_SEND_FOCUS_EVENTS: u32 = 1 << 8;
+#[allow(dead_code)]
 pub const DECSET_BIT_MOUSE_PROTOCOL_SGR: u32 = 1 << 9;
+#[allow(dead_code)]
 pub const DECSET_BIT_BRACKETED_PASTE_MODE: u32 = 1 << 10;
+#[allow(dead_code)]
 pub const DECSET_BIT_LEFTRIGHT_MARGIN_MODE: u32 = 1 << 11;
+#[allow(dead_code)]
 pub const DECSET_BIT_RECTANGULAR_CHANGEATTRIBUTE: u32 = 1 << 12;
 
 // =============================================================================
@@ -152,7 +168,7 @@ impl Params {
     }
     
     /// 迭代器 - 返回参数组（主参数 + 子参数）
-    pub fn iter(&self) -> ParamsIter {
+    pub fn iter(&self) -> ParamsIter<'_> {
         ParamsIter { params: self, index: 0 }
     }
 }
@@ -237,22 +253,24 @@ pub trait Perform {
     fn esc_dispatch(&mut self, intermediates: &[u8], ignore: bool, byte: u8);
     
     /// CSI 序列调度
-    fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], ignore: bool, action: char);
+    fn csi_dispatch(&mut self, _params: &Params, _intermediates: &[u8], _ignore: bool, _action: char);
     
     /// OSC 序列调度
-    fn osc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool);
+    fn osc_dispatch(&mut self, _params: &[&[u8]], _bell_terminated: bool);
     
     /// DCS 序列钩子
-    fn hook(&mut self, params: &Params, intermediates: &[u8], ignore: bool, action: char) {}
+    #[allow(dead_code)]
+    fn hook(&mut self, _params: &Params, _intermediates: &[u8], _ignore: bool, _action: char) {}
     
     /// DCS 数据
-    fn put(&mut self, byte: u8) {}
+    #[allow(dead_code)]
+    fn put(&mut self, _byte: u8) {}
     
     /// DCS 结束
     fn unhook(&mut self) {}
     
     /// APC 序列
-    fn apc_dispatch(&mut self, data: &[u8]) {}
+    fn apc_dispatch(&mut self, _data: &[u8]) {}
 }
 
 // =============================================================================

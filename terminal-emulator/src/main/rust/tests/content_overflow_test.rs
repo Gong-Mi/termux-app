@@ -47,7 +47,7 @@ fn test_content_goes_beyond_screen() {
     
     // 验证：应该能看到 Line 1 在历史中
     let mut found_line_1 = false;
-    for i in (-active..engine.state.rows) {
+    for i in -active..engine.state.rows {
         if get_row_text(&engine, i).contains("Line 1") {
             found_line_1 = true;
             println!("\n✓ Found 'Line 1' at row {}", i);
@@ -96,7 +96,7 @@ fn test_resize_preserves_history() {
     // 验证历史内容仍然存在
     let mut found_line_1 = false;
     let active = engine.state.main_screen.active_transcript_rows as i32;
-    for i in (-active..engine.state.rows) {
+    for i in -active..engine.state.rows {
         if get_row_text(&engine, i).contains("Line 1") {
             found_line_1 = true;
             println!("Found 'Line 1' at row {}", i);

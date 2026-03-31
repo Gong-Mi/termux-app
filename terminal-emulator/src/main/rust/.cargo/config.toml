@@ -13,12 +13,11 @@ rustflags = [
 
 # Android ARM64 特定配置
 [target.aarch64-linux-android]
-# -C target-feature=-sve,-sve2,+neon:
-# 强制关闭 SVE/SVE2，强制开启 NEON。
-# 为了防止现代 ARMv9 芯片在处理极宽向量时遭遇 Double Pumping 导致的性能倒挂和功耗降频。
+# 允许编译器生成 SVE/SVE2 指令，并配合运行时分发进行动态选择。
+# 保留 NEON 为基准指令集。
 rustflags = [
     "-C", "link-arg=-Wl,-z,max-page-size=16384",
-    "-C", "target-feature=-sve,-sve2,+neon",
+    "-C", "target-feature=+neon",
 ]
 
 # Android ARMv7 特定配置

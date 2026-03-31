@@ -10,7 +10,9 @@ pub struct Cell {
     pub bg_color: Option<(u8, u8, u8)>,
     pub bold: bool,
     pub underline: bool,
+    #[allow(dead_code)]
     pub italic: bool,
+    #[allow(dead_code)]
     pub reverse: bool,
 }
 

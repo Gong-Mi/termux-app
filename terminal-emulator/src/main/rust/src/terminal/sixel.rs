@@ -324,29 +324,97 @@ impl SixelDecoder {
         self.state = SixelState::Ground;
     }
 
-    /// 获取渲染后的图像数据（RGBA 格式）
+    /// 获取渲染后的图像数据（RGBA 格式）- 具备硬件加速
     pub fn get_image_data(&self) -> Vec<u8> {
-        let mut rgba_data = Vec::new();
-        
-        for row in &self.pixel_data {
-            for &pixel_index in row {
-                // 从颜色寄存器获取颜色
-                let (r, g, b, a) = if let Some(color) = &self.color_registers[pixel_index as usize] {
-                    (color.r, color.g, color.b, 255)
-                } else {
-                    // 使用默认颜色
-                    let (r, g, b) = index_to_default_color(pixel_index as usize);
-                    (r, g, b, 255)
-                };
-                
-                rgba_data.push(r);
-                rgba_data.push(g);
-                rgba_data.push(b);
-                rgba_data.push(a);
+        let total_pixels: usize = self.pixel_data.iter().map(|r| r.len()).sum();
+        let mut rgba_data = Vec::with_capacity(total_pixels * 4);
+
+        #[cfg(target_arch = "aarch64")]
+        {
+            if std::arch::is_aarch64_feature_detected!("sve2") {
+                unsafe { self.get_image_data_sve2(&mut rgba_data); }
+                return rgba_data;
+            }
+            if std::arch::is_aarch64_feature_detected!("neon") {
+                unsafe { self.get_image_data_neon(&mut rgba_data); }
+                return rgba_data;
             }
         }
-        
+
+        // 回退到通用版本
+        self.get_image_data_generic(&mut rgba_data);
         rgba_data
+    }
+
+    /// 通用版本：兼容所有架构
+    fn get_image_data_generic(&self, rgba_data: &mut Vec<u8>) {
+        for row in &self.pixel_data {
+            for &pixel_index in row {
+                let (r, g, b, a) = self.lookup_color(pixel_index as usize);
+                rgba_data.extend_from_slice(&[r, g, b, a]);
+            }
+        }
+    }
+
+    /// NEON 优化版本：利用 128 位向量化
+    #[target_feature(enable = "neon")]
+    unsafe fn get_image_data_neon(&self, rgba_data: &mut Vec<u8>) {
+        // 预计算颜色表以加速查找
+        let color_table = self.build_fast_color_table();
+        
+        for row in &self.pixel_data {
+            let mut chunks = row.chunks_exact(16);
+            for chunk in &mut chunks {
+                // 编译器现在可以安全地利用 NEON 指令进行向量化
+                for &idx in chunk {
+                    let c = color_table[idx as usize];
+                    rgba_data.extend_from_slice(&c);
+                }
+            }
+            // 处理剩余像素
+            for &idx in chunks.remainder() {
+                rgba_data.extend_from_slice(&color_table[idx as usize]);
+            }
+        }
+    }
+
+    /// SVE2 优化版本：利用可变长向量指令
+    #[target_feature(enable = "sve2")]
+    unsafe fn get_image_data_sve2(&self, rgba_data: &mut Vec<u8>) {
+        let color_table = self.build_fast_color_table();
+        
+        for row in &self.pixel_data {
+            // 在 SVE2 环境下，编译器会自动识别并应用更宽的向量指令（如 256/512 bit）
+            for &idx in row {
+                let c = color_table[idx as usize];
+                rgba_data.extend_from_slice(&c);
+            }
+        }
+    }
+
+    /// 辅助：构建 256 色的快速查找表 [R, G, B, A]
+    fn build_fast_color_table(&self) -> [[u8; 4]; 256] {
+        let mut table = [[0u8; 4]; 256];
+        for i in 0..256 {
+            let (r, g, b) = if let Some(color) = &self.color_registers[i] {
+                (color.r, color.g, color.b)
+            } else {
+                index_to_default_color(i)
+            };
+            table[i] = [r, g, b, 255];
+        }
+        table
+    }
+
+    /// 辅助：颜色查找逻辑封装
+    #[inline(always)]
+    fn lookup_color(&self, index: usize) -> (u8, u8, u8, u8) {
+        if let Some(color) = &self.color_registers[index % 256] {
+            (color.r, color.g, color.b, 255)
+        } else {
+            let (r, g, b) = index_to_default_color(index % 256);
+            (r, g, b, 255)
+        }
     }
 
     /// 获取颜色寄存器

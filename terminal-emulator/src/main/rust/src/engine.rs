@@ -137,45 +137,61 @@ impl TerminalContext {
             let mut buffer = [0u8; 8192];
             let mut pty_file = unsafe { std::fs::File::from_raw_fd(pty_fd) };
             
+            // 核心优化：线程启动时附加 JVM，使用 Guard 确保退出时自动 Detach
+            let vm = match crate::JAVA_VM.get() {
+                Some(v) => v,
+                None => {
+                    crate::utils::android_log(crate::utils::LogPriority::ERROR, "IO Thread: JAVA_VM not initialized");
+                    return;
+                }
+            };
+
+            let mut guard = match vm.attach_current_thread() {
+                Ok(g) => g,
+                Err(e) => {
+                    crate::utils::android_log(crate::utils::LogPriority::ERROR, &format!("IO Thread: Failed to attach to JVM: {:?}", e));
+                    return;
+                }
+            };
+
+            crate::utils::android_log(crate::utils::LogPriority::DEBUG, "IO Thread: Attached and running");
+
             while context.running.load(std::sync::atomic::Ordering::Relaxed) {
                 match std::io::Read::read(&mut pty_file, &mut buffer) {
                     Ok(0) => break, // EOF
                     Ok(n) => {
                         let (events, callback_obj) = {
+                            // 锁的作用域尽可能小
                             let mut engine = context.lock.write().unwrap();
                             engine.process_bytes(&buffer[..n]);
                             (engine.take_events(), engine.state.java_callback_obj.clone())
-                        }; // 锁在此处彻底释放
+                        };
                         
-                        // 锁释放后安全执行回调
+                        // 锁释放后，在附加好的 env 中执行回调
                         if !events.is_empty() {
-                            if let Some(vm) = crate::JAVA_VM.get() {
-                                if let Ok(mut env) = vm.attach_current_thread_as_daemon() {
-                                    // 这里我们需要一个内部 helper 来处理，或者直接在这里处理
-                                    for event in events {
-                                        if let Some(obj) = &callback_obj {
-                                            match event {
-                                                TerminalEvent::ScreenUpdated => { let _ = env.call_method(obj.as_obj(), "onScreenUpdated", "()V", &[]); }
-                                                TerminalEvent::Bell => { let _ = env.call_method(obj.as_obj(), "onBell", "()V", &[]); }
-                                                TerminalEvent::ColorsChanged => { let _ = env.call_method(obj.as_obj(), "onColorsChanged", "()V", &[]); }
-                                                TerminalEvent::TitleChanged(title) => {
-                                                    if let Ok(j_title) = env.new_string(title) {
-                                                        let _ = env.call_method(obj.as_obj(), "reportTitleChange", "(Ljava/lang/String;)V", &[(&j_title).into()]);
-                                                    }
-                                                }
-                                                TerminalEvent::TerminalResponse(resp) => {
-                                                    if let Ok(j_resp) = env.new_string(resp) {
-                                                        let _ = env.call_method(obj.as_obj(), "write", "(Ljava/lang/String;)V", &[(&j_resp).into()]);
-                                                    }
-                                                }
-                                                TerminalEvent::SixelImage { rgba_data, width, height, start_x, start_y } => {
-                                                    if let Ok(j_data) = env.new_byte_array(rgba_data.len() as i32) {
-                                                        unsafe { let _ = env.set_byte_array_region(&j_data, 0, std::mem::transmute::<&[u8], &[i8]>(&rgba_data)); }
-                                                        let _ = env.call_method(obj.as_obj(), "onSixelImage", "([BIIII)V", &[
-                                                            (&j_data).into(), width.into(), height.into(), start_x.into(), start_y.into()
-                                                        ]);
-                                                    }
-                                                }
+                            if let Some(obj) = &callback_obj {
+                                let env = &mut *guard;
+                                for event in events {
+                                    match event {
+                                        TerminalEvent::ScreenUpdated => { let _ = env.call_method(obj.as_obj(), "onScreenUpdated", "()V", &[]); }
+                                        TerminalEvent::Bell => { let _ = env.call_method(obj.as_obj(), "onBell", "()V", &[]); }
+                                        TerminalEvent::ColorsChanged => { let _ = env.call_method(obj.as_obj(), "onColorsChanged", "()V", &[]); }
+                                        TerminalEvent::TitleChanged(title) => {
+                                            if let Ok(j_title) = env.new_string(title) {
+                                                let _ = env.call_method(obj.as_obj(), "reportTitleChange", "(Ljava/lang/String;)V", &[(&j_title).into()]);
+                                            }
+                                        }
+                                        TerminalEvent::TerminalResponse(resp) => {
+                                            if let Ok(j_resp) = env.new_string(resp) {
+                                                let _ = env.call_method(obj.as_obj(), "write", "(Ljava/lang/String;)V", &[(&j_resp).into()]);
+                                            }
+                                        }
+                                        TerminalEvent::SixelImage { rgba_data, width, height, start_x, start_y } => {
+                                            if let Ok(j_data) = env.new_byte_array(rgba_data.len() as i32) {
+                                                unsafe { let _ = env.set_byte_array_region(&j_data, 0, std::mem::transmute::<&[u8], &[i8]>(&rgba_data)); }
+                                                let _ = env.call_method(obj.as_obj(), "onSixelImage", "([BIIII)V", &[
+                                                    (&j_data).into(), width.into(), height.into(), start_x.into(), start_y.into()
+                                                ]);
                                             }
                                         }
                                     }
@@ -186,6 +202,7 @@ impl TerminalContext {
                     Err(_) => break,
                 }
             }
+            crate::utils::android_log(crate::utils::LogPriority::DEBUG, "IO Thread: Exiting (Detach will be automatic)");
         });
     }
 }

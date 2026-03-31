@@ -69,7 +69,7 @@ fn test_reflow_with_full_scrollback() {
     
     // 检查屏幕范围内或历史范围内的内容一致性
     // 在极小缓冲区下，我们至少保证内容没有崩溃且关键行可访问
-    let row0 = get_row_text(&engine, 0);
+    let _row0 = get_row_text(&engine, 0);
     assert!(engine.state.rows == 30);
 }
 
