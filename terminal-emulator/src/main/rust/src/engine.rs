@@ -171,28 +171,41 @@ impl TerminalContext {
                         if !events.is_empty() {
                             if let Some(obj) = &callback_obj {
                                 let env = &mut *guard;
-                                for event in events {
-                                    match event {
-                                        TerminalEvent::ScreenUpdated => { let _ = env.call_method(obj.as_obj(), "onScreenUpdated", "()V", &[]); }
-                                        TerminalEvent::Bell => { let _ = env.call_method(obj.as_obj(), "onBell", "()V", &[]); }
-                                        TerminalEvent::ColorsChanged => { let _ = env.call_method(obj.as_obj(), "onColorsChanged", "()V", &[]); }
-                                        TerminalEvent::TitleChanged(title) => {
-                                            if let Ok(j_title) = env.new_string(title) {
-                                                let _ = env.call_method(obj.as_obj(), "reportTitleChange", "(Ljava/lang/String;)V", &[(&j_title).into()]);
+                                // 核心修复：检查上下文是否仍在运行，并捕获潜在的 JNI 异常
+                                if context.running.load(std::sync::atomic::Ordering::Relaxed) {
+                                    for event in events {
+                                        // 再次双重检查对象有效性，防止在循环过程中 Java 对象被销毁
+                                        if obj.as_obj().is_null() { break; }
+                                        
+                                        match event {
+                                            TerminalEvent::ScreenUpdated => { let _ = env.call_method(obj.as_obj(), "onScreenUpdated", "()V", &[]); }
+                                            TerminalEvent::Bell => { let _ = env.call_method(obj.as_obj(), "onBell", "()V", &[]); }
+                                            TerminalEvent::ColorsChanged => { let _ = env.call_method(obj.as_obj(), "onColorsChanged", "()V", &[]); }
+                                            TerminalEvent::TitleChanged(title) => {
+                                                if let Ok(j_title) = env.new_string(title) {
+                                                    let _ = env.call_method(obj.as_obj(), "reportTitleChange", "(Ljava/lang/String;)V", &[(&j_title).into()]);
+                                                }
+                                            }
+                                            TerminalEvent::TerminalResponse(resp) => {
+                                                if let Ok(j_resp) = env.new_string(resp) {
+                                                    let _ = env.call_method(obj.as_obj(), "write", "(Ljava/lang/String;)V", &[(&j_resp).into()]);
+                                                }
+                                            }
+                                            TerminalEvent::SixelImage { rgba_data, width, height, start_x, start_y } => {
+                                                if let Ok(j_data) = env.new_byte_array(rgba_data.len() as i32) {
+                                                    unsafe { let _ = env.set_byte_array_region(&j_data, 0, std::mem::transmute::<&[u8], &[i8]>(&rgba_data)); }
+                                                    let _ = env.call_method(obj.as_obj(), "onSixelImage", "([BIIII)V", &[
+                                                        (&j_data).into(), width.into(), height.into(), start_x.into(), start_y.into()
+                                                    ]);
+                                                }
                                             }
                                         }
-                                        TerminalEvent::TerminalResponse(resp) => {
-                                            if let Ok(j_resp) = env.new_string(resp) {
-                                                let _ = env.call_method(obj.as_obj(), "write", "(Ljava/lang/String;)V", &[(&j_resp).into()]);
-                                            }
-                                        }
-                                        TerminalEvent::SixelImage { rgba_data, width, height, start_x, start_y } => {
-                                            if let Ok(j_data) = env.new_byte_array(rgba_data.len() as i32) {
-                                                unsafe { let _ = env.set_byte_array_region(&j_data, 0, std::mem::transmute::<&[u8], &[i8]>(&rgba_data)); }
-                                                let _ = env.call_method(obj.as_obj(), "onSixelImage", "([BIIII)V", &[
-                                                    (&j_data).into(), width.into(), height.into(), start_x.into(), start_y.into()
-                                                ]);
-                                            }
+                                        
+                                        // 每次回调后检查是否有待处理的异常，如果有则清除并中止，防止触发 GetObjectClass 的 FATAL
+                                        if env.exception_check().unwrap_or(false) {
+                                            let _ = env.exception_describe();
+                                            let _ = env.exception_clear();
+                                            break;
                                         }
                                     }
                                 }
