@@ -8,15 +8,30 @@ pub enum LogPriority {
     ERROR = 6,
 }
 
+#[cfg(target_os = "android")]
 unsafe extern "C" {
     fn __android_log_print(prio: i32, tag: *const libc::c_char, fmt: *const libc::c_char, ...);
 }
 
 pub fn android_log(prio: LogPriority, msg: &str) {
-    let tag = CString::new("Termux-Rust").unwrap();
-    let msg_c = CString::new(msg).unwrap();
-    unsafe {
-        __android_log_print(prio as i32, tag.as_ptr(), msg_c.as_ptr());
+    #[cfg(target_os = "android")]
+    {
+        let tag = CString::new("Termux-Rust").unwrap();
+        let msg_c = CString::new(msg).unwrap();
+        unsafe {
+            __android_log_print(prio as i32, tag.as_ptr(), msg_c.as_ptr());
+        }
+    }
+    
+    #[cfg(not(target_os = "android"))]
+    {
+        let prefix = match prio {
+            LogPriority::ERROR => "E",
+            LogPriority::WARN => "W",
+            LogPriority::INFO => "I",
+            _ => "D",
+        };
+        println!("[{}] Termux-Rust: {}", prefix, msg);
     }
 }
 

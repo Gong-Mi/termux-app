@@ -321,6 +321,7 @@ impl Parser {
         while pos < len {
             // 只有在初始状态才尝试硬件加速扫描文本块
             if self.escape_state == ESC_NONE {
+                #[allow(unused_mut)]
                 let mut chunk_end = pos;
                 
                 // 查找当前可见字符块的末尾（不包含控制字符 0x00..0x1F 和 0x7F）
