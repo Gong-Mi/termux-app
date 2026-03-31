@@ -269,6 +269,29 @@ pub struct ScreenState {
     pub underline_color: u64,
 }
 
+impl Drop for ScreenState {
+    fn drop(&mut self) {
+        // 显式释放 JNI 全局引用
+        if self.java_callback_obj.take().is_some() {
+            crate::utils::android_log(crate::utils::LogPriority::DEBUG, "ScreenState: Released java_callback_obj GlobalRef");
+        }
+
+        // 显式释放共享内存指针
+        let ptr = self.shared_buffer_ptr.0;
+        if !ptr.is_null() {
+            unsafe {
+                // 修正：使用实际分配的 buffer 长度来计算大小，确保 dealloc 时的 Layout 匹配
+                let total_allocated_rows = self.main_screen.buffer.len();
+                let size = SharedScreenBuffer::required_size(self.cols as usize, total_allocated_rows);
+                let layout = std::alloc::Layout::from_size_align(size, 8).unwrap();
+                std::alloc::dealloc(ptr as *mut u8, layout);
+            }
+            self.shared_buffer_ptr = SharedBufferPtr(std::ptr::null_mut());
+            crate::utils::android_log(crate::utils::LogPriority::DEBUG, "ScreenState: Deallocated shared_buffer_ptr");
+        }
+    }
+}
+
 impl ScreenState {
     pub fn new(cols: i32, rows: i32, total_rows: i32, _cw: i32, _ch: i32) -> Self {
         let mut tab_stops = vec![false; cols as usize];
