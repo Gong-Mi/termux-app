@@ -357,6 +357,7 @@ impl SixelDecoder {
     }
 
     /// NEON 优化版本：利用 128 位向量化
+    #[cfg(target_arch = "aarch64")]
     #[target_feature(enable = "neon")]
     unsafe fn get_image_data_neon(&self, rgba_data: &mut Vec<u8>) {
         // 预计算颜色表以加速查找
@@ -379,6 +380,7 @@ impl SixelDecoder {
     }
 
     /// SVE2 优化版本：利用可变长向量指令
+    #[cfg(target_arch = "aarch64")]
     #[target_feature(enable = "sve2")]
     unsafe fn get_image_data_sve2(&self, rgba_data: &mut Vec<u8>) {
         let color_table = self.build_fast_color_table();
