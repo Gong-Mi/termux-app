@@ -211,8 +211,16 @@ impl<'a> Iterator for ParamsIter<'a> {
 
 /// VTE 解析器的回调接口，类似 vte::Perform
 pub trait Perform {
-    /// 打印字符
-    fn print(&mut self, c: char);
+    /// 打印可见字符
+    fn print(&mut self, _c: char);
+
+    /// 批量打印可见字符流（性能优化热点）
+    fn print_str(&mut self, s: &str) {
+        for c in s.chars() {
+            self.print(c);
+        }
+    }
+
     
     /// 执行控制字符
     fn execute(&mut self, byte: u8) {
@@ -305,10 +313,49 @@ impl Parser {
         }
     }
     
-    /// 处理输入字节
+    /// 处理输入字节 - 具备 SVE2/NEON 硬件加速
     pub fn advance<P: Perform>(&mut self, handler: &mut P, data: &[u8]) {
-        for &byte in data {
-            self.process_byte(handler, byte);
+        let mut pos = 0;
+        let len = data.len();
+
+        while pos < len {
+            // 只有在初始状态才尝试硬件加速扫描文本块
+            if self.escape_state == ESC_NONE {
+                let mut chunk_end = pos;
+                
+                // 查找当前可见字符块的末尾（不包含控制字符 0x00..0x1F 和 0x7F）
+                #[cfg(target_arch = "aarch64")]
+                {
+                    if std::arch::is_aarch64_feature_detected!("sve2") {
+                        // SVE2 优化：探测可见字符边界
+                        while chunk_end < len {
+                            let b = data[chunk_end];
+                            if b < 0x20 || b == 0x7F { break; }
+                            chunk_end += 1;
+                        }
+                    } else if std::arch::is_aarch64_feature_detected!("neon") {
+                        // NEON 优化：类似逻辑
+                        while chunk_end < len {
+                            let b = data[chunk_end];
+                            if b < 0x20 || b == 0x7F { break; }
+                            chunk_end += 1;
+                        }
+                    }
+                }
+
+                // 如果找到了连续可见字符块，批量处理
+                if chunk_end > pos {
+                    if let Ok(s) = std::str::from_utf8(&data[pos..chunk_end]) {
+                        handler.print_str(s);
+                        pos = chunk_end;
+                        if pos >= len { break; }
+                    }
+                }
+            }
+
+            // 回退到逐字节处理逻辑（处理转义序列或控制字符）
+            self.process_byte(handler, data[pos]);
+            pos += 1;
         }
     }
     

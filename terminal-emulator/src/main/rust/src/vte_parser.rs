@@ -238,8 +238,16 @@ impl<'a> Iterator for ParamsIter<'a> {
 
 /// VTE 解析器的回调接口，类似 vte::Perform
 pub trait Perform {
-    /// 打印字符
+    /// 打印可见字符
     fn print(&mut self, c: char);
+
+    /// 批量打印可见字符流（性能优化热点）
+    fn print_str(&mut self, s: &str) {
+        for c in s.chars() {
+            self.print(c);
+        }
+    }
+
     
     /// 执行控制字符
     fn execute(&mut self, byte: u8) {

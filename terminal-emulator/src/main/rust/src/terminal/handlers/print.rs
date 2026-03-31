@@ -3,6 +3,23 @@ use crate::utils::map_line_drawing;
 use crate::terminal::modes;
 
 pub fn handle_print(state: &mut ScreenState, c: char) {
+    handle_print_internal(state, c);
+}
+
+/// 批量打印字符流入口 - 精简版（消除预扫描开销）
+pub fn handle_print_str(state: &mut ScreenState, s: &str) {
+    // 记录最后一个字符用于状态追踪（只需一次迭代）
+    let mut last_c = None;
+    for c in s.chars() {
+        handle_print_internal(state, c);
+        last_c = Some(c);
+    }
+    if let Some(c) = last_c {
+        state.last_printed_char = Some(c);
+    }
+}
+
+fn handle_print_internal(state: &mut ScreenState, c: char) {
     // 1. 字符映射
     let c = if (c as u32) >= 0x20 && (c as u32) <= 0x7E {
         if state.use_line_drawing_uses_g0 && state.use_line_drawing_g0 {

@@ -1182,6 +1182,11 @@ impl<'a> Perform for PerformHandler<'a> {
         self.state.last_printed_char = Some(c);
         crate::terminal::handlers::print::handle_print(self.state, c);
     }
+
+    fn print_str(&mut self, s: &str) {
+        // 调用精简版的批量处理，内部会正确处理最后一个字符的状态
+        crate::terminal::handlers::print::handle_print_str(self.state, s);
+    }
     fn execute(&mut self, byte: u8) { crate::terminal::handlers::control::handle_control(self.state, byte); }
     fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], _ignore: bool, action: char) {
         crate::terminal::handlers::csi::handle_csi(self.state, params, intermediates, action);
