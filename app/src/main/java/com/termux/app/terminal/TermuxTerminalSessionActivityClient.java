@@ -44,6 +44,9 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
     private final TermuxActivity mActivity;
 
+    private final Handler mRefreshHandler;
+    private final Runnable mRefreshRunnable;
+
     private static final int MAX_SESSIONS = 8;
 
     private SoundPool mBellSoundPool;
@@ -52,16 +55,16 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
     private static final String LOG_TAG = "TermuxTerminalSessionActivityClient";
 
-    private final Handler mRefreshHandler = new Handler(Looper.getMainLooper());
-    private final Runnable mRefreshRunnable = () -> {
-        if (mActivity != null && !mActivity.isFinishing()) {
-            mActivity.termuxSessionListNotifyUpdated();
-        }
-    };
-
     public TermuxTerminalSessionActivityClient(TermuxActivity activity) {
         this.mActivity = activity;
+        this.mRefreshHandler = new Handler(Looper.getMainLooper());
+        this.mRefreshRunnable = () -> {
+            if (mActivity != null && !mActivity.isFinishing()) {
+                mActivity.termuxSessionListNotifyUpdated();
+            }
+        };
     }
+
 
     /**
      * Should be called when mActivity.onCreate() is called
