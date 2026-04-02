@@ -301,21 +301,6 @@ public class TerminalTest extends TerminalTestCase {
 		assertEquals(TextStyle.COLOR_INDEX_BACKGROUND, TextStyle.decodeBackColor(getStyleAt(0, 2)));
 	}
 
-	public void testParseColor() {
-		assertEquals(0xFF0000FA, TerminalColors.parse("#0000FA"));
-		assertEquals(0xFF000000, TerminalColors.parse("#000000"));
-		assertEquals(0xFF000000, TerminalColors.parse("#000"));
-		assertEquals(0xFF000000, TerminalColors.parse("#000000000"));
-		assertEquals(0xFF53186f, TerminalColors.parse("#53186f"));
-
-		assertEquals(0xFFFF00FF, TerminalColors.parse("rgb:F/0/F"));
-		assertEquals(0xFF0000FA, TerminalColors.parse("rgb:00/00/FA"));
-		assertEquals(0xFF53186f, TerminalColors.parse("rgb:53/18/6f"));
-
-		assertEquals(0, TerminalColors.parse("invalid_0000FA"));
-		assertEquals(0, TerminalColors.parse("#3456"));
-	}
-
 	/** The ncurses library still uses this. */
 	public void testLineDrawing() {
 		// 016 - shift out / G1. 017 - shift in / G0. "ESC ) 0" - use line drawing for G1

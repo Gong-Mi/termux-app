@@ -325,8 +325,8 @@ impl ScreenState {
             scroll_counter: 0,
             java_callback_obj: None,
             last_printed_char: None,
-            fore_color: COLOR_INDEX_FOREGROUND,
-            back_color: COLOR_INDEX_BACKGROUND,
+            fore_color: COLOR_INDEX_FOREGROUND as u64,
+            back_color: COLOR_INDEX_BACKGROUND as u64,
             effect: 0,
             cursor_enabled: true,
             application_cursor_keys: false,
@@ -336,7 +336,7 @@ impl ScreenState {
             mouse_button_event: false,
             sgr_mouse: false,
             auto_scroll_disabled: false,
-            underline_color: COLOR_INDEX_FOREGROUND,
+            underline_color: COLOR_INDEX_FOREGROUND as u64,
         }
     }
 
@@ -615,15 +615,15 @@ impl ScreenState {
 
     pub fn handle_sgr(&mut self, params: &Params) {
         if params.len == 0 {
-            self.current_style = STYLE_NORMAL; self.fore_color = COLOR_INDEX_FOREGROUND;
-            self.back_color = COLOR_INDEX_BACKGROUND; self.effect = 0; return;
+            self.current_style = STYLE_NORMAL; self.fore_color = COLOR_INDEX_FOREGROUND as u64;
+            self.back_color = COLOR_INDEX_BACKGROUND as u64; self.effect = 0; return;
         }
         
         let mut i = 0;
         while i < params.len {
             let p = params.values[i];
             match p {
-                0 => { self.fore_color = COLOR_INDEX_FOREGROUND; self.back_color = COLOR_INDEX_BACKGROUND; self.effect = 0; }
+                0 => { self.fore_color = COLOR_INDEX_FOREGROUND as u64; self.back_color = COLOR_INDEX_BACKGROUND as u64; self.effect = 0; }
                 1 => self.effect |= EFFECT_BOLD,
                 2 => self.effect |= EFFECT_DIM,
                 3 => self.effect |= EFFECT_ITALIC,
@@ -648,7 +648,7 @@ impl ScreenState {
                         self.fore_color = (0xff000000 | (r << 16) | (g << 8) | b) as u64; i += 4;
                     }
                 }
-                39 => self.fore_color = COLOR_INDEX_FOREGROUND,
+                39 => self.fore_color = COLOR_INDEX_FOREGROUND as u64,
                 40..=47 => self.back_color = (p - 40) as u64,
                 48 => {
                     if i + 2 < params.len && params.values[i+1] == 5 { self.back_color = params.values[i+2] as u64; i += 2; }
@@ -657,7 +657,7 @@ impl ScreenState {
                         self.back_color = (0xff000000 | (r << 16) | (g << 8) | b) as u64; i += 4;
                     }
                 }
-                49 => self.back_color = COLOR_INDEX_BACKGROUND,
+                49 => self.back_color = COLOR_INDEX_BACKGROUND as u64,
                 58 => {
                     if i + 2 < params.len && params.values[i+1] == 5 { self.underline_color = params.values[i+2] as u64; i += 2; }
                     else if i + 4 < params.len && params.values[i+1] == 2 {
@@ -665,7 +665,7 @@ impl ScreenState {
                         self.underline_color = (0xff000000 | (r << 16) | (g << 8) | b) as u64; i += 4;
                     }
                 }
-                59 => self.underline_color = COLOR_INDEX_FOREGROUND,
+                59 => self.underline_color = COLOR_INDEX_FOREGROUND as u64,
                 90..=97 => self.fore_color = (p - 90 + 8) as u64,
                 100..=107 => self.back_color = (p - 100 + 8) as u64,
                 _ => {}
@@ -801,7 +801,7 @@ impl ScreenState {
         self.alt_screen.erase_in_display(2, 0, 0, STYLE_NORMAL);
         self.use_alternate_buffer = false;
         self.top_margin = 0; self.bottom_margin = self.rows; self.title = None;
-        self.fore_color = COLOR_INDEX_FOREGROUND; self.back_color = COLOR_INDEX_BACKGROUND; self.effect = 0; self.current_style = STYLE_NORMAL;
+        self.fore_color = COLOR_INDEX_FOREGROUND as u64; self.back_color = COLOR_INDEX_BACKGROUND as u64; self.effect = 0; self.current_style = STYLE_NORMAL;
     }
 
     pub fn decaln_screen_align(&mut self) {
@@ -819,7 +819,7 @@ impl ScreenState {
     pub fn decstr_soft_reset(&mut self) {
         self.modes.reset(DECSET_BIT_ORIGIN_MODE); self.modes.set(DECSET_BIT_AUTOWRAP);
         self.cursor_enabled = true; self.top_margin = 0; self.bottom_margin = self.rows;
-        self.current_style = STYLE_NORMAL; self.fore_color = COLOR_INDEX_FOREGROUND; self.back_color = COLOR_INDEX_BACKGROUND; self.effect = 0;
+        self.current_style = STYLE_NORMAL; self.fore_color = COLOR_INDEX_FOREGROUND as u64; self.back_color = COLOR_INDEX_BACKGROUND as u64; self.effect = 0;
     }
 
     pub fn cursor_horizontal_relative(&mut self, n: i32) { self.cursor.move_relative(n, 0, self.cols, self.rows); }

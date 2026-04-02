@@ -1,6 +1,5 @@
 use crate::engine::ScreenState;
-use crate::terminal::colors::TerminalColors;
-use crate::terminal::style::{COLOR_INDEX_FOREGROUND, COLOR_INDEX_BACKGROUND, COLOR_INDEX_CURSOR};
+use crate::terminal::colors::{TerminalColors, COLOR_INDEX_FOREGROUND, COLOR_INDEX_BACKGROUND, COLOR_INDEX_CURSOR};
 
 pub fn handle_osc(state: &mut ScreenState, opcode: &str, params: &[&[u8]]) {
     // 将除 opcode 外的所有参数拼接成字符串

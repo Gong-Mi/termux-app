@@ -29,7 +29,6 @@ import com.termux.app.TermuxService;
 import com.termux.shared.termux.settings.properties.TermuxPropertyConstants;
 import com.termux.shared.termux.terminal.io.BellHandler;
 import com.termux.shared.logger.Logger;
-import com.termux.terminal.TerminalColors;
 import com.termux.terminal.TerminalSession;
 import com.termux.terminal.TerminalSessionClient;
 import com.termux.terminal.TextStyle;
@@ -543,10 +542,11 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
                 }
             }
 
-            TerminalColors.COLOR_SCHEME.updateWith(props);
+            // Update Rust-side colors for all active sessions
             TerminalSession session = mActivity.getCurrentSession();
             if (session != null && session.getEmulator() != null) {
-                session.getEmulator().resetColors();
+                // Use Rust implementation to update colors
+                session.getEmulator().updateColorsFromProperties(props);
             }
             updateBackgroundColor();
 

@@ -42,6 +42,22 @@ pub const DEFAULT_COLORSCHEME: [u32; 259] = [
     0xffffffff, // 258: COLOR_INDEX_CURSOR
 ];
 
+/// 颜色索引常量（与 Java TextStyle 保持一致）
+/// 注意：这些是 usize 类型，因为用于数组索引
+pub const COLOR_INDEX_FOREGROUND: usize = 256;
+pub const COLOR_INDEX_BACKGROUND: usize = 257;
+pub const COLOR_INDEX_CURSOR: usize = 258;
+
+/// 感知亮度计算的系数（来自 Java TerminalColors.getPerceivedBrightnessOfColor）
+/// https://www.nbdtech.com/Blog/archive/2008/04/27/Calculating-the-Perceived-Brightness-of-a-Color.aspx
+/// http://alienryderflex.com/hsp.html
+const BRIGHTNESS_R_COEF: f64 = 0.241;
+const BRIGHTNESS_G_COEF: f64 = 0.691;
+const BRIGHTNESS_B_COEF: f64 = 0.068;
+
+/// 光标颜色自动设置的亮度阈值（与 Java 一致）
+const CURSOR_BRIGHTNESS_THRESHOLD: u8 = 130;
+
 pub struct TerminalColors {
     pub current_colors: [u32; 259],
 }
@@ -51,28 +67,142 @@ impl TerminalColors {
         Self { current_colors: DEFAULT_COLORSCHEME }
     }
 
+    /// 解析颜色字符串，支持多种格式：
+    /// - #RGB, #RRGGBB, #RRRGGGBBB, #RRRRGGGGBBBB
+    /// - rgb:r/g/b (r/g/b 可以是 1-4 位十六进制)
+    /// 
+    /// 返回格式：0xFFRRGGBB
     pub fn parse_color(color_str: &str) -> Option<u32> {
         let color_str = color_str.trim_end_matches(|c| c == '\x07' || c == '\x1b' || c == '\\').trim();
+        
         if color_str.starts_with('#') {
+            // #RGB, #RRGGBB, #RRRGGGBBB, #RRRRGGGGBBBB
             let hex = &color_str[1..];
             match hex.len() {
                 3 => {
+                    // #RGB -> 每位重复
                     let r = u8::from_str_radix(&hex[0..1].repeat(2), 16).ok()?;
                     let g = u8::from_str_radix(&hex[1..2].repeat(2), 16).ok()?;
                     let b = u8::from_str_radix(&hex[2..3].repeat(2), 16).ok()?;
                     Some(0xff000000 | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32))
                 }
                 6 => {
+                    // #RRGGBB
                     let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
                     let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
                     let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
                     Some(0xff000000 | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32))
                 }
+                9 => {
+                    // #RRRGGGBBB - 3 位每通道，取最高有效位
+                    let r = u16::from_str_radix(&hex[0..3], 16).ok()?;
+                    let g = u16::from_str_radix(&hex[3..6], 16).ok()?;
+                    let b = u16::from_str_radix(&hex[6..9], 16).ok()?;
+                    let r = ((r * 255) / 0xFFF) as u8;
+                    let g = ((g * 255) / 0xFFF) as u8;
+                    let b = ((b * 255) / 0xFFF) as u8;
+                    Some(0xff000000 | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32))
+                }
+                12 => {
+                    // #RRRRGGGGBBBB - 4 位每通道，取最高有效位
+                    let r = u16::from_str_radix(&hex[0..4], 16).ok()?;
+                    let g = u16::from_str_radix(&hex[4..8], 16).ok()?;
+                    let b = u16::from_str_radix(&hex[8..12], 16).ok()?;
+                    let r = ((r * 255) / 0xFFFF) as u8;
+                    let g = ((g * 255) / 0xFFFF) as u8;
+                    let b = ((b * 255) / 0xFFFF) as u8;
+                    Some(0xff000000 | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32))
+                }
                 _ => None,
             }
+        } else if color_str.starts_with("rgb:") {
+            // rgb:r/g/b 格式，r/g/b 可以是 1-4 位十六进制
+            let rgb_part = &color_str[4..];
+            let parts: Vec<&str> = rgb_part.split('/').collect();
+            if parts.len() != 3 {
+                return None;
+            }
+            
+            let r = parse_rgb_component(parts[0])?;
+            let g = parse_rgb_component(parts[1])?;
+            let b = parse_rgb_component(parts[2])?;
+            Some(0xff000000 | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32))
         } else {
             None
         }
+    }
+
+    /// 计算颜色的感知亮度 (0-255)
+    /// 公式：sqrt(R^2 * 0.241 + G^2 * 0.691 + B^2 * 0.068)
+    pub fn get_perceived_brightness(color: u32) -> u8 {
+        let r = ((color >> 16) & 0xff) as f64;
+        let g = ((color >> 8) & 0xff) as f64;
+        let b = (color & 0xff) as f64;
+        
+        let brightness = (r * r * BRIGHTNESS_R_COEF 
+                        + g * g * BRIGHTNESS_G_COEF 
+                        + b * b * BRIGHTNESS_B_COEF).sqrt();
+        
+        brightness as u8
+    }
+
+    /// 根据背景颜色自动设置合适的光标颜色
+    /// - 暗背景 -> 白色光标
+    /// - 亮背景 -> 黑色光标
+    pub fn set_cursor_color_for_background(&mut self) {
+        let bg_color = self.current_colors[COLOR_INDEX_BACKGROUND];
+        let brightness = Self::get_perceived_brightness(bg_color);
+        
+        if brightness < CURSOR_BRIGHTNESS_THRESHOLD {
+            // 暗背景，使用白色光标
+            self.current_colors[COLOR_INDEX_CURSOR] = 0xffffffff;
+        } else {
+            // 亮背景，使用黑色光标
+            self.current_colors[COLOR_INDEX_CURSOR] = 0xff000000;
+        }
+    }
+
+    /// 从 Properties 格式更新颜色配置
+    /// 支持的键：foreground, background, cursor, color0-color255
+    pub fn update_with_properties(&mut self, props: &std::collections::HashMap<String, String>) -> Result<(), String> {
+        // 先重置为默认值
+        self.reset();
+        
+        let mut cursor_prop_exists = false;
+        
+        for (key, value) in props {
+            let color_index;
+            
+            if key == "foreground" {
+                color_index = COLOR_INDEX_FOREGROUND;
+            } else if key == "background" {
+                color_index = COLOR_INDEX_BACKGROUND;
+            } else if key == "cursor" {
+                color_index = COLOR_INDEX_CURSOR;
+                cursor_prop_exists = true;
+            } else if key.starts_with("color") {
+                let index_str = key.strip_prefix("color").ok_or(format!("Invalid key: {}", key))?;
+                color_index = index_str.parse::<usize>()
+                    .map_err(|_| format!("Invalid color index: {}", key))?;
+                if color_index >= COLOR_INDEX_FOREGROUND {
+                    return Err(format!("Color index out of range: {}", color_index));
+                }
+            } else {
+                return Err(format!("Unknown property: {}", key));
+            }
+            
+            let color_value = Self::parse_color(value)
+                .ok_or_else(|| format!("Invalid color value for '{}': '{}'", key, value))?;
+            
+            self.current_colors[color_index] = color_value;
+        }
+        
+        // 如果没有显式设置光标颜色，根据背景自动设置
+        if !cursor_prop_exists {
+            self.set_cursor_color_for_background();
+        }
+        
+        Ok(())
     }
 
     pub fn reset(&mut self) {
@@ -105,8 +235,176 @@ impl TerminalColors {
     }
 }
 
+/// 解析 rgb:r/g/b 格式中的单个分量
+/// 支持 1-4 位十六进制，缩放到 0-255
+fn parse_rgb_component(s: &str) -> Option<u8> {
+    let len = s.len();
+    if len == 0 || len > 4 {
+        return None;
+    }
+
+    let value = u16::from_str_radix(s, 16).ok()?;
+
+    // 根据位数缩放到 0-255
+    // 1 位：0-F -> 0-255 (乘以 17)
+    // 2 位：00-FF -> 0-255 (不变)
+    // 3 位：000-FFF -> 0-255 (乘以 255 除以 4095)
+    // 4 位：0000-FFFF -> 0-255 (乘以 255 除以 65535)
+    let result = match len {
+        1 => (value * 17) as u8,
+        2 => value as u8,
+        3 => ((value as u32 * 255) / 0xFFF) as u8,
+        4 => ((value as u32 * 255) / 0xFFFF) as u8,
+        _ => return None,
+    };
+
+    Some(result)
+}
+
 impl Default for TerminalColors {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_hex_colors() {
+        // #RGB
+        assert_eq!(TerminalColors::parse_color("#000"), Some(0xff000000));
+        assert_eq!(TerminalColors::parse_color("#fff"), Some(0xffffffff));
+        assert_eq!(TerminalColors::parse_color("#f00"), Some(0xffff0000));
+        assert_eq!(TerminalColors::parse_color("#0f0"), Some(0xff00ff00));
+        assert_eq!(TerminalColors::parse_color("#00f"), Some(0xff0000ff));
+        
+        // #RRGGBB
+        assert_eq!(TerminalColors::parse_color("#000000"), Some(0xff000000));
+        assert_eq!(TerminalColors::parse_color("#ffffff"), Some(0xffffffff));
+        assert_eq!(TerminalColors::parse_color("#0000FA"), Some(0xff0000fa));
+        assert_eq!(TerminalColors::parse_color("#53186f"), Some(0xff53186f));
+        
+        // #RRRGGGBBB
+        assert_eq!(TerminalColors::parse_color("#000000000"), Some(0xff000000));
+        assert_eq!(TerminalColors::parse_color("#FFF"), Some(0xffffffff)); // Falls back to 3-char
+        
+        // Invalid
+        assert_eq!(TerminalColors::parse_color("#3456"), None);
+        assert_eq!(TerminalColors::parse_color("invalid"), None);
+    }
+
+    #[test]
+    fn test_parse_rgb_format() {
+        // rgb:r/g/b with 1 digit
+        assert_eq!(TerminalColors::parse_color("rgb:0/0/0"), Some(0xff000000));
+        assert_eq!(TerminalColors::parse_color("rgb:f/f/f"), Some(0xffffffff));
+        assert_eq!(TerminalColors::parse_color("rgb:f/0/0"), Some(0xffff0000));
+        
+        // rgb:r/g/b with 2 digits
+        assert_eq!(TerminalColors::parse_color("rgb:00/00/00"), Some(0xff000000));
+        assert_eq!(TerminalColors::parse_color("rgb:ff/ff/ff"), Some(0xffffffff));
+        assert_eq!(TerminalColors::parse_color("rgb:00/00/FA"), Some(0xff0000fa));
+        assert_eq!(TerminalColors::parse_color("rgb:53/18/6f"), Some(0xff53186f));
+        
+        // rgb:r/g/b with 4 digits
+        assert_eq!(TerminalColors::parse_color("rgb:0000/0000/0000"), Some(0xff000000));
+        assert_eq!(TerminalColors::parse_color("rgb:ffff/ffff/ffff"), Some(0xffffffff));
+        assert_eq!(TerminalColors::parse_color("rgb:ffff/0000/ffff"), Some(0xffff00ff));
+        
+        // With trailing control chars (OSC termination)
+        assert_eq!(TerminalColors::parse_color("rgb:f/0/f\x07"), Some(0xffff00ff));
+        assert_eq!(TerminalColors::parse_color("rgb:f/0/f\x1b"), Some(0xffff00ff));
+        assert_eq!(TerminalColors::parse_color("rgb:f/0/f\\"), Some(0xffff00ff));
+        
+        // Invalid
+        assert_eq!(TerminalColors::parse_color("rgb:invalid"), None);
+        assert_eq!(TerminalColors::parse_color("rgb:1/2"), None);
+    }
+
+    #[test]
+    fn test_perceived_brightness() {
+        // Black = 0 brightness
+        assert_eq!(TerminalColors::get_perceived_brightness(0xff000000), 0);
+        
+        // White = max brightness (~255)
+        let white_brightness = TerminalColors::get_perceived_brightness(0xffffffff);
+        assert!(white_brightness > 250);
+        
+        // Green is perceived brighter than red
+        let green = TerminalColors::get_perceived_brightness(0xff00ff00);
+        let red = TerminalColors::get_perceived_brightness(0xffff0000);
+        assert!(green > red);
+        
+        // Test threshold
+        let dark_color = 0xff303030;
+        let light_color = 0xffd0d0d0;
+        assert!(TerminalColors::get_perceived_brightness(dark_color) < CURSOR_BRIGHTNESS_THRESHOLD);
+        assert!(TerminalColors::get_perceived_brightness(light_color) > CURSOR_BRIGHTNESS_THRESHOLD);
+    }
+
+    #[test]
+    fn test_cursor_color_auto_set() {
+        let mut colors = TerminalColors::new();
+        
+        // Set dark background
+        colors.current_colors[COLOR_INDEX_BACKGROUND] = 0xff101010;
+        colors.set_cursor_color_for_background();
+        assert_eq!(colors.current_colors[COLOR_INDEX_CURSOR], 0xffffffff); // White cursor
+        
+        // Set light background
+        colors.current_colors[COLOR_INDEX_BACKGROUND] = 0xffeeeeee;
+        colors.set_cursor_color_for_background();
+        assert_eq!(colors.current_colors[COLOR_INDEX_CURSOR], 0xff000000); // Black cursor
+    }
+
+    #[test]
+    fn test_update_with_properties() {
+        let mut colors = TerminalColors::new();
+        let mut props = std::collections::HashMap::new();
+        
+        props.insert("foreground".to_string(), "#ffffff".to_string());
+        props.insert("background".to_string(), "#000000".to_string());
+        props.insert("color1".to_string(), "#ff0000".to_string());
+        
+        colors.update_with_properties(&props).unwrap();
+        
+        assert_eq!(colors.current_colors[COLOR_INDEX_FOREGROUND], 0xffffffff);
+        assert_eq!(colors.current_colors[COLOR_INDEX_BACKGROUND], 0xff000000);
+        assert_eq!(colors.current_colors[1], 0xffff0000);
+        
+        // Cursor should be auto-set to white (dark background)
+        assert_eq!(colors.current_colors[COLOR_INDEX_CURSOR], 0xffffffff);
+    }
+
+    #[test]
+    fn test_update_with_properties_cursor_override() {
+        let mut colors = TerminalColors::new();
+        let mut props = std::collections::HashMap::new();
+        
+        props.insert("background".to_string(), "#000000".to_string());
+        props.insert("cursor".to_string(), "#00ff00".to_string());
+        
+        colors.update_with_properties(&props).unwrap();
+        
+        // Cursor should be the specified green, not auto-set
+        assert_eq!(colors.current_colors[COLOR_INDEX_CURSOR], 0xff00ff00);
+    }
+
+    #[test]
+    fn test_reset() {
+        let mut colors = TerminalColors::new();
+        
+        // Modify colors
+        colors.current_colors[0] = 0xffffffff;
+        colors.current_colors[COLOR_INDEX_FOREGROUND] = 0x00000000;
+        
+        // Reset
+        colors.reset();
+        
+        // Should be back to defaults
+        assert_eq!(colors.current_colors[0], DEFAULT_COLORSCHEME[0]);
+        assert_eq!(colors.current_colors[COLOR_INDEX_FOREGROUND], DEFAULT_COLORSCHEME[COLOR_INDEX_FOREGROUND]);
     }
 }

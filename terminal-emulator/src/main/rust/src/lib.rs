@@ -700,7 +700,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColorsFromRu
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_resetColorsFromRust(mut env: JNIEnv, _class: JClass, ptr: jlong) {
     if ptr == 0 { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
-    
+
     // 修复：在锁外回调，避免死锁
     let (events, cb) = {
         let mut engine = context.lock.write().unwrap();
@@ -711,10 +711,125 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_resetColorsFrom
         events.push(crate::engine::TerminalEvent::ColorsChanged);
         (events, engine.state.java_callback_obj.clone())
     }; // 锁在此处释放
-    
+
     // 在锁外安全回调 Java
     flush_events_to_java(&mut env, &cb, events);
     let _ = Arc::into_raw(context);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_updateColorsFromProperties(
+    mut env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+    properties_obj: JObject,
+) {
+    if ptr == 0 || properties_obj.is_null() { return; }
+
+    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+
+    // 从 Java Properties 对象读取键值对
+    let props_map = {
+        let mut map = std::collections::HashMap::new();
+
+        // 调用 Properties.entrySet() 获取所有键值对
+        if let Ok(entry_set) = env.call_method(&properties_obj, "entrySet", "()Ljava/util/Set;", &[]) {
+            if let Ok(entry_set_obj) = entry_set.l() {
+                // 调用 Set.iterator()
+                if let Ok(iterator) = env.call_method(&entry_set_obj, "iterator", "()Ljava/util/Iterator;", &[]) {
+                    if let Ok(iter_obj) = iterator.l() {
+                        // 遍历所有 entry
+                        loop {
+                            // 检查 hasNext()
+                            if let Ok(has_next) = env.call_method(&iter_obj, "hasNext", "()Z", &[]) {
+                                if let Ok(has_next_val) = has_next.z() {
+                                    if !has_next_val { break; }
+                                } else { break; }
+                            } else { break; }
+
+                            // 调用 next()
+                            if let Ok(entry) = env.call_method(&iter_obj, "next", "()Ljava/lang/Object;", &[]) {
+                                if let Ok(entry_obj) = entry.l() {
+                                    // 调用 Map.Entry.getKey()
+                                    if let Ok(key) = env.call_method(&entry_obj, "getKey", "()Ljava/lang/Object;", &[]) {
+                                        if let Ok(key_obj) = key.l() {
+                                            // 调用 Map.Entry.getValue()
+                                            if let Ok(value) = env.call_method(&entry_obj, "getValue", "()Ljava/lang/Object;", &[]) {
+                                                if let Ok(value_obj) = value.l() {
+                                                    // 转换为 Rust String
+                                                    let key_jstring = jni::objects::JString::from(key_obj);
+                                                    let value_jstring = jni::objects::JString::from(value_obj);
+                                                    
+                                                    if let (Ok(key_rust), Ok(value_rust)) = (
+                                                        env.get_string(&key_jstring),
+                                                        env.get_string(&value_jstring)
+                                                    ) {
+                                                        map.insert(key_rust.to_string_lossy().to_string(), value_rust.to_string_lossy().to_string());
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        map
+    };
+
+    let (events, cb) = {
+        let mut engine = context.lock.write().unwrap();
+
+        // 调用 Rust 的 update_with_properties
+        if let Err(e) = engine.state.colors.update_with_properties(&props_map) {
+            android_log(crate::utils::LogPriority::WARN, &format!("Failed to update colors: {}", e));
+        }
+
+        let mut events = engine.take_events();
+        events.push(crate::engine::TerminalEvent::ColorsChanged);
+        (events, engine.state.java_callback_obj.clone())
+    };
+
+    flush_events_to_java(&mut env, &cb, events);
+    let _ = Arc::into_raw(context);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorColorForBackgroundFromRust(
+    mut env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) {
+    if ptr == 0 { return; }
+    
+    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    
+    let (events, cb) = {
+        let mut engine = context.lock.write().unwrap();
+        engine.state.colors.set_cursor_color_for_background();
+        
+        let mut events = engine.take_events();
+        events.push(crate::engine::TerminalEvent::ColorsChanged);
+        (events, engine.state.java_callback_obj.clone())
+    };
+    
+    flush_events_to_java(&mut env, &cb, events);
+    let _ = Arc::into_raw(context);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getPerceivedBrightnessOfColor(
+    _env: JNIEnv,
+    _class: JClass,
+    color: jint,
+) -> jint {
+    // 将 Java 的 int (0xAARRGGBB) 转换为 u32
+    let color_u32 = color as u32;
+    TerminalColors::get_perceived_brightness(color_u32) as jint
 }
 
 #[unsafe(no_mangle)]

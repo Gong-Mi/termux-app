@@ -354,6 +354,41 @@ public final class TerminalEmulator {
     }
 
     /**
+     * Update colors from Properties configuration.
+     * This is the Rust implementation of TerminalColorScheme.updateWith().
+     * 
+     * @param props Properties object containing color configuration
+     *              Supported keys: foreground, background, cursor, color0-color255
+     */
+    public void updateColorsFromProperties(java.util.Properties props) {
+        if (mEnginePtr != 0 && props != null) {
+            updateColorsFromProperties(mEnginePtr, props);
+        }
+    }
+
+    /**
+     * Auto-set cursor color based on background brightness.
+     * Dark background -> White cursor
+     * Light background -> Black cursor
+     */
+    public void setCursorColorForBackground() {
+        if (mEnginePtr != 0) {
+            setCursorColorForBackgroundFromRust(mEnginePtr);
+        }
+    }
+
+    /**
+     * Get current colors array from Rust.
+     * @return Array of 259 color values (0xAARRGGBB format)
+     */
+    public int[] getCurrentColors() {
+        if (mEnginePtr != 0) {
+            return getColorsFromRust(mEnginePtr);
+        }
+        return new int[259];
+    }
+
+    /**
      * 获取终端缓冲区（兼容性方法）
      * Rust 版本使用共享内存访问屏幕数据，返回兼容包装类
      * @deprecated 直接使用 readRow() 方法访问屏幕数据
@@ -446,6 +481,9 @@ public final class TerminalEmulator {
     private static native void pasteTextFromRust(long enginePtr, String text);
     private static native int[] getColorsFromRust(long enginePtr);
     private static native void resetColorsFromRust(long enginePtr);
+    private static native void updateColorsFromProperties(long enginePtr, java.util.Properties properties);
+    private static native void setCursorColorForBackgroundFromRust(long enginePtr);
+    private static native int getPerceivedBrightnessOfColor(int color);
     private static native void updateTerminalSessionClientFromRust(long enginePtr, TerminalSessionClient client);
     private static native void setCursorBlinkStateInRust(long enginePtr, boolean state);
     private static native void setCursorBlinkingEnabledInRust(long enginePtr, boolean enabled);

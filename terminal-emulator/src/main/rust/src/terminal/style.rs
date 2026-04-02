@@ -1,7 +1,8 @@
-/// STYLE_NORMAL: 前景 256, 背景 257, 无效果
-pub const STYLE_NORMAL: u64 = encode_style(COLOR_INDEX_FOREGROUND, COLOR_INDEX_BACKGROUND, 0);
+// 从 colors.rs 导入颜色索引常量
+use crate::terminal::colors::{COLOR_INDEX_FOREGROUND, COLOR_INDEX_BACKGROUND};
 
-/// SGR 样式位字段定义（与 Java TextStyle 格式兼容）
+/// STYLE_NORMAL: 前景 256, 背景 257, 无效果
+pub const STYLE_NORMAL: u64 = encode_style(COLOR_INDEX_FOREGROUND as u64, COLOR_INDEX_BACKGROUND as u64, 0);
 pub const STYLE_MASK_EFFECT: u64 = 0x7FF;           // 位 0-10 (11 位效果标志)
 pub const STYLE_MASK_BG: u64 = 0xFFFFFF << 16;      // 位 16-39 (24 位背景色)
 pub const STYLE_MASK_FG: u64 = 0xFFFFFF << 40;      // 位 40-63 (24 位前景色)
@@ -20,11 +21,6 @@ pub const EFFECT_INVISIBLE: u64 = 1 << 5;
 pub const EFFECT_STRIKETHROUGH: u64 = 1 << 6;
 pub const EFFECT_PROTECTED: u64 = 1 << 7;
 pub const EFFECT_DIM: u64 = 1 << 8;
-
-// 特殊颜色索引
-pub const COLOR_INDEX_FOREGROUND: u64 = 256;
-pub const COLOR_INDEX_BACKGROUND: u64 = 257;
-pub const COLOR_INDEX_CURSOR: u64 = 258;
 
 #[inline]
 pub const fn encode_style(fore_color: u64, back_color: u64, effect: u64) -> u64 {
