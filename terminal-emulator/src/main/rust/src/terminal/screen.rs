@@ -325,9 +325,15 @@ impl Screen {
         let old_rows = self.rows as usize;
         let old_active_transcript = self.active_transcript_rows;
 
-        // Create new buffer with new column size
-        let mut new_buffer: Vec<TerminalRow> = Vec::with_capacity(old_total);
-        for _ in 0..old_total {
+        // 核心修复：使用足够大的缓冲区来容纳所有内容
+        // Java 版使用 newTotalRows，我们也需要足够的空间来处理重排
+        // 计算需要的总行数 = 历史行 + 屏幕行
+        let needed_capacity = old_total; // 保持与旧缓冲区相同的容量
+        let new_total_rows = needed_capacity.max(new_rows as usize * 2); // 至少是屏幕的 2 倍
+
+        // Create new buffer with sufficient capacity
+        let mut new_buffer: Vec<TerminalRow> = Vec::with_capacity(new_total_rows);
+        for _ in 0..new_total_rows {
             let mut row = TerminalRow::new(n_cols);
             row.clear_all(current_style);
             new_buffer.push(row);
@@ -343,6 +349,9 @@ impl Screen {
 
         // Track skipped blank lines (Java logic)
         let mut skipped_blank_lines = 0;
+
+        // 实际屏幕行数（用于滚动判断）
+        let screen_rows = new_rows as usize;
 
         // Loop over every character in the initial state
         let start_row = -(old_active_transcript as i32);
@@ -368,17 +377,17 @@ impl Screen {
             // Insert skipped blank lines when encountering non-blank line
             if skipped_blank_lines > 0 {
                 for _ in 0..skipped_blank_lines {
-                    if output_row >= old_total - 1 {
-                        // Buffer is full - need to scroll (shouldn't happen in normal cases)
+                    if output_row >= screen_rows - 1 {
+                        // Buffer is full - scroll up to make room
                         // Scroll up: line 1→0, 2→1, etc., clear bottom
                         if cursor_placed && new_cursor_y > 0 {
                             new_cursor_y -= 1;
                         }
-                        for i in 0..(old_total - 1) {
+                        for i in 0..(new_total_rows - 1) {
                             new_buffer[i] = new_buffer[i + 1].clone();
                         }
-                        new_buffer[old_total - 1].clear_all(current_style);
-                        output_row = old_total - 1;
+                        new_buffer[new_total_rows - 1].clear_all(current_style);
+                        output_row = screen_rows - 1;
                     } else {
                         output_row += 1;
                     }
@@ -415,16 +424,16 @@ impl Screen {
                     if output_row < new_buffer.len() {
                         new_buffer[output_row].line_wrap = true;
                     }
-                    if output_row >= old_total - 1 {
-                        // Buffer is full - need to scroll (shouldn't happen in normal cases)
+                    if output_row >= screen_rows - 1 {
+                        // Buffer is full - scroll up
                         if cursor_placed && new_cursor_y > 0 {
                             new_cursor_y -= 1;
                         }
-                        for i in 0..(old_total - 1) {
+                        for i in 0..(new_total_rows - 1) {
                             new_buffer[i] = new_buffer[i + 1].clone();
                         }
-                        new_buffer[old_total - 1].clear_all(current_style);
-                        output_row = old_total - 1;
+                        new_buffer[new_total_rows - 1].clear_all(current_style);
+                        output_row = screen_rows - 1;
                     } else {
                         output_row += 1;
                     }
@@ -461,16 +470,16 @@ impl Screen {
 
             // Check if we need to insert newline (line was not wrapping)
             if external_old_row != (end_row - 1) && !old_line.line_wrap {
-                if output_row >= old_total - 1 {
-                    // Buffer is full - need to scroll (shouldn't happen in normal cases)
+                if output_row >= screen_rows - 1 {
+                    // Buffer is full - scroll up
                     if cursor_placed && new_cursor_y > 0 {
                         new_cursor_y -= 1;
                     }
-                    for i in 0..(old_total - 1) {
+                    for i in 0..(new_total_rows - 1) {
                         new_buffer[i] = new_buffer[i + 1].clone();
                     }
-                    new_buffer[old_total - 1].clear_all(current_style);
-                    output_row = old_total - 1;
+                    new_buffer[new_total_rows - 1].clear_all(current_style);
+                    output_row = screen_rows - 1;
                 } else {
                     output_row += 1;
                 }
