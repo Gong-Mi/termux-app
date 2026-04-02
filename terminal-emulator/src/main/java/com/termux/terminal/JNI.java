@@ -55,4 +55,8 @@ final class JNI {
     public static native int getPkgLockOwner();
     public static native String getSessionState(int sessionId);
     public static native String getAllSessionStates();
+
+    // KeyHandler methods (Rust implementation)
+    public static native String getKeyCode(int keyCode, int keyMode, boolean cursorApp, boolean keypad);
+    public static native String getKeyCodeFromTermcap(String termcap, boolean cursorApp, boolean keypad);
 }

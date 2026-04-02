@@ -5,3 +5,4 @@ pub mod modes;
 pub mod sixel;
 pub mod cursor;
 pub mod handlers;
+pub mod key_handler;
