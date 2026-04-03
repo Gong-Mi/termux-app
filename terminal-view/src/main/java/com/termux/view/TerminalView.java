@@ -40,7 +40,6 @@ import android.widget.Scroller;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 
-import com.termux.terminal.KeyHandler;
 import com.termux.terminal.TerminalEmulator;
 import com.termux.terminal.TerminalSession;
 import com.termux.view.textselection.TextSelectionCursorController;
@@ -999,11 +998,11 @@ public final class TerminalView extends View {
         if (handleKeyCodeAction(keyCode, keyMod))
             return true;
 
-        TerminalEmulator term = mTermSession.getEmulator();
-        String code = KeyHandler.getCode(keyCode, keyMod, term.isCursorKeysApplicationMode(), term.isKeypadApplicationMode());
-        if (code == null) return false;
-        mTermSession.write(code);
-        return true;
+        if (mEmulator != null) {
+            mEmulator.sendKeyEvent(keyCode, keyMod);
+            return true;
+        }
+        return false;
     }
 
     public boolean handleKeyCodeAction(int keyCode, int keyMod) {

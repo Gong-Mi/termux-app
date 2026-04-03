@@ -40,7 +40,6 @@ import com.termux.shared.termux.TermuxUtils;
 import com.termux.shared.termux.data.TermuxUrlUtils;
 import com.termux.shared.view.KeyboardUtils;
 import com.termux.shared.view.ViewUtils;
-import com.termux.terminal.KeyHandler;
 import com.termux.terminal.TerminalEmulator;
 import com.termux.terminal.TerminalSession;
 
@@ -454,7 +453,7 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
 
             if (resultingKeyCode != -1) {
                 TerminalEmulator term = session.getEmulator();
-                session.write(KeyHandler.getCode(resultingKeyCode, 0, term.isCursorKeysApplicationMode(), term.isKeypadApplicationMode()));
+                if (term != null) term.sendKeyEvent(resultingKeyCode, 0);
             } else if (resultingCodePoint != -1) {
                 session.writeCodePoint(altDown, resultingCodePoint);
             }
