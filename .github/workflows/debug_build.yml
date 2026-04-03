@@ -51,10 +51,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build
-          # Download and install gn
-          curl -s https://chrome-infra-packages.appspot.com/dl/gn/gn/linux-amd64/+/latest -o gn.zip
-          unzip gn.zip
-          sudo mv gn /usr/local/bin/gn
+          # Download and install gn (use a more reliable source)
+          curl -sL https://storage.googleapis.com/chrome-infra/gn -o /tmp/gn
+          sudo mv /tmp/gn /usr/local/bin/gn
           chmod +x /usr/local/bin/gn
           gn --version
           ninja --version
