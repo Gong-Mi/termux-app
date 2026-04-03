@@ -353,6 +353,11 @@ impl Screen {
         // 实际屏幕行数（用于滚动判断）
         let screen_rows = new_rows as usize;
 
+        // 追踪历史行数（模拟 Java 的 scrollDownOneLine 累积逻辑）
+        // Java: if (mActiveTranscriptRows < mTotalRows - mScreenRows) mActiveTranscriptRows++;
+        let mut new_active_transcript_rows: usize = 0;
+        let max_transcript_rows = new_total_rows.saturating_sub(screen_rows);
+
         // Loop over every character in the initial state
         let start_row = -(old_active_transcript as i32);
         let end_row = old_rows as i32;
@@ -388,6 +393,10 @@ impl Screen {
                         }
                         new_buffer[new_total_rows - 1].clear_all(current_style);
                         output_row = screen_rows - 1;
+                        // 模拟 Java scrollDownOneLine: 增加历史行数
+                        if new_active_transcript_rows < max_transcript_rows {
+                            new_active_transcript_rows += 1;
+                        }
                     } else {
                         output_row += 1;
                     }
@@ -434,6 +443,10 @@ impl Screen {
                         }
                         new_buffer[new_total_rows - 1].clear_all(current_style);
                         output_row = screen_rows - 1;
+                        // 模拟 Java scrollDownOneLine: 增加历史行数
+                        if new_active_transcript_rows < max_transcript_rows {
+                            new_active_transcript_rows += 1;
+                        }
                     } else {
                         output_row += 1;
                     }
@@ -480,6 +493,10 @@ impl Screen {
                     }
                     new_buffer[new_total_rows - 1].clear_all(current_style);
                     output_row = screen_rows - 1;
+                    // 模拟 Java scrollDownOneLine: 增加历史行数
+                    if new_active_transcript_rows < max_transcript_rows {
+                        new_active_transcript_rows += 1;
+                    }
                 } else {
                     output_row += 1;
                 }
@@ -499,12 +516,8 @@ impl Screen {
         self.rows = new_rows;
         self.first_row = 0;
 
-        // Calculate active_transcript_rows (matches Java slow path logic)
-        // Java resets to 0 and then increments via scrollDownOneLine during content reflow
-        // The final value equals total content lines written minus visible rows
-        // output_row tracks the last written row index (0-based), so total lines = output_row + 1
-        let total_content_lines = output_row + 1;
-        self.active_transcript_rows = total_content_lines.saturating_sub(new_rows as usize);
+        // 使用正确累积的历史行数（模拟 Java scrollDownOneLine 逻辑）
+        self.active_transcript_rows = new_active_transcript_rows;
 
         (new_cursor_x, new_cursor_y)
     }
