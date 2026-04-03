@@ -325,11 +325,8 @@ impl Screen {
         let old_rows = self.rows as usize;
         let old_active_transcript = self.active_transcript_rows;
 
-        // 核心修复：使用足够大的缓冲区来容纳所有内容
-        // Java 版使用 newTotalRows，我们也需要足够的空间来处理重排
-        // 计算需要的总行数 = 历史行 + 屏幕行
-        let needed_capacity = old_total; // 保持与旧缓冲区相同的容量
-        let new_total_rows = needed_capacity.max(new_rows as usize * 2); // 至少是屏幕的 2 倍
+        // 使用与 Java 相同的 newTotalRows
+        let new_total_rows = old_total;
 
         // Create new buffer with sufficient capacity
         let mut new_buffer: Vec<TerminalRow> = Vec::with_capacity(new_total_rows);
@@ -343,8 +340,10 @@ impl Screen {
         let mut new_cursor_y: i32 = 0;
         let mut cursor_placed = false;
 
-        // Output position tracking - can go beyond new_rows into history area
-        let mut output_row: usize = 0;
+        // 使用环形缓冲区写入：维护 first_row 和 output_row
+        // 内容写入 (first_row + output_row) % total_rows
+        let mut screen_first_row: usize = 0;
+        let mut output_row: usize = 0; // 相对于 first_row 的偏移
         let mut output_col: usize = 0;
 
         // Track skipped blank lines (Java logic)
@@ -354,9 +353,24 @@ impl Screen {
         let screen_rows = new_rows as usize;
 
         // 追踪历史行数（模拟 Java 的 scrollDownOneLine 累积逻辑）
-        // Java: if (mActiveTranscriptRows < mTotalRows - mScreenRows) mActiveTranscriptRows++;
         let mut new_active_transcript_rows: usize = 0;
         let max_transcript_rows = new_total_rows.saturating_sub(screen_rows);
+
+        // 辅助闭包：获取当前 output_row 对应的 buffer 索引
+        let row_idx = |first_row: usize, row: usize, total: usize| -> usize {
+            (first_row + row) % total
+        };
+
+        // 辅助闭包：执行滚动（模拟 Java scrollDownOneLine）
+        let do_scroll = |first_row: &mut usize, active: &mut usize, sr: usize, style: u64, total: usize, max_active: usize, buf: &mut Vec<TerminalRow>| {
+            // Java: mScreenFirstRow = (mScreenFirstRow + 1) % mTotalRows;
+            *first_row = (*first_row + 1) % total;
+            // Java: if (mActiveTranscriptRows < mTotalRows - mScreenRows) mActiveTranscriptRows++;
+            if *active < max_active { *active += 1; }
+            // 清空新底部行
+            let bottom_idx = (*first_row + sr - 1) % total;
+            buf[bottom_idx].clear_all(style);
+        };
 
         // Loop over every character in the initial state
         let start_row = -(old_active_transcript as i32);
@@ -383,20 +397,11 @@ impl Screen {
             if skipped_blank_lines > 0 {
                 for _ in 0..skipped_blank_lines {
                     if output_row >= screen_rows - 1 {
-                        // Buffer is full - scroll up to make room
-                        // Scroll up: line 1→0, 2→1, etc., clear bottom
+                        // Buffer is full - scroll up
                         if cursor_placed && new_cursor_y > 0 {
                             new_cursor_y -= 1;
                         }
-                        for i in 0..(new_total_rows - 1) {
-                            new_buffer[i] = new_buffer[i + 1].clone();
-                        }
-                        new_buffer[new_total_rows - 1].clear_all(current_style);
-                        output_row = screen_rows - 1;
-                        // 模拟 Java scrollDownOneLine: 增加历史行数
-                        if new_active_transcript_rows < max_transcript_rows {
-                            new_active_transcript_rows += 1;
-                        }
+                        do_scroll(&mut screen_first_row, &mut new_active_transcript_rows, screen_rows, current_style, new_total_rows, max_transcript_rows, &mut new_buffer);
                     } else {
                         output_row += 1;
                     }
@@ -431,22 +436,15 @@ impl Screen {
                 // Line wrap as necessary
                 if output_col + display_width as usize > n_cols {
                     if output_row < new_buffer.len() {
-                        new_buffer[output_row].line_wrap = true;
+                        let idx = row_idx(screen_first_row, output_row, new_total_rows);
+                        new_buffer[idx].line_wrap = true;
                     }
                     if output_row >= screen_rows - 1 {
                         // Buffer is full - scroll up
                         if cursor_placed && new_cursor_y > 0 {
                             new_cursor_y -= 1;
                         }
-                        for i in 0..(new_total_rows - 1) {
-                            new_buffer[i] = new_buffer[i + 1].clone();
-                        }
-                        new_buffer[new_total_rows - 1].clear_all(current_style);
-                        output_row = screen_rows - 1;
-                        // 模拟 Java scrollDownOneLine: 增加历史行数
-                        if new_active_transcript_rows < max_transcript_rows {
-                            new_active_transcript_rows += 1;
-                        }
+                        do_scroll(&mut screen_first_row, &mut new_active_transcript_rows, screen_rows, current_style, new_total_rows, max_transcript_rows, &mut new_buffer);
                     } else {
                         output_row += 1;
                     }
@@ -459,8 +457,9 @@ impl Screen {
 
                 // Set character in new buffer
                 if output_column < n_cols && output_row < new_buffer.len() {
-                    new_buffer[output_row].text[output_column] = c;
-                    new_buffer[output_row].styles[output_column] = style_at_col;
+                    let idx = row_idx(screen_first_row, output_row, new_total_rows);
+                    new_buffer[idx].text[output_column] = c;
+                    new_buffer[idx].styles[output_column] = style_at_col;
                 }
 
                 // Track cursor position
@@ -488,15 +487,7 @@ impl Screen {
                     if cursor_placed && new_cursor_y > 0 {
                         new_cursor_y -= 1;
                     }
-                    for i in 0..(new_total_rows - 1) {
-                        new_buffer[i] = new_buffer[i + 1].clone();
-                    }
-                    new_buffer[new_total_rows - 1].clear_all(current_style);
-                    output_row = screen_rows - 1;
-                    // 模拟 Java scrollDownOneLine: 增加历史行数
-                    if new_active_transcript_rows < max_transcript_rows {
-                        new_active_transcript_rows += 1;
-                    }
+                    do_scroll(&mut screen_first_row, &mut new_active_transcript_rows, screen_rows, current_style, new_total_rows, max_transcript_rows, &mut new_buffer);
                 } else {
                     output_row += 1;
                 }
@@ -514,7 +505,7 @@ impl Screen {
         self.buffer = new_buffer;
         self.cols = n_cols as i32;
         self.rows = new_rows;
-        self.first_row = 0;
+        self.first_row = screen_first_row;
 
         // 使用正确累积的历史行数（模拟 Java scrollDownOneLine 逻辑）
         self.active_transcript_rows = new_active_transcript_rows;
