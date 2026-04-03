@@ -137,8 +137,9 @@ public final class TerminalEmulator {
     public void sendMouseEvent(int button, int col, int row, boolean pressed) {
         if (mEnginePtr != 0) sendMouseEventFromRust(mEnginePtr, button, col, row, pressed);
     }
-    public void sendKeyEvent(int keyCode, int metaState) {
-        if (mEnginePtr != 0) sendKeyCodeFromRust(mEnginePtr, keyCode, null, metaState);
+    public String sendKeyEvent(int keyCode, int metaState) {
+        if (mEnginePtr != 0) return sendKeyCodeFromRust(mEnginePtr, keyCode, null, metaState);
+        return null;
     }
     public void sendCharEvent(char c, int metaState) {
         if (mEnginePtr != 0) sendKeyCodeFromRust(mEnginePtr, 0, String.valueOf(c), metaState);
@@ -191,7 +192,7 @@ public final class TerminalEmulator {
     private static native String getTranscriptTextFromRust(long enginePtr);
     private static native String getTitleFromRust(long enginePtr);
     private static native void sendMouseEventFromRust(long enginePtr, int button, int col, int row, boolean pressed);
-    private static native void sendKeyCodeFromRust(long enginePtr, int keyCode, String charStr, int metaState);
+    private static native String sendKeyCodeFromRust(long enginePtr, int keyCode, String charStr, int metaState);
     private static native void pasteTextFromRust(long enginePtr, String text);
     private static native int[] getColorsFromRust(long enginePtr);
     private static native void resetColorsFromRust(long enginePtr);

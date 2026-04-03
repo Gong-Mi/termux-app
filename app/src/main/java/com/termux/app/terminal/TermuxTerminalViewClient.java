@@ -453,7 +453,10 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
 
             if (resultingKeyCode != -1) {
                 TerminalEmulator term = session.getEmulator();
-                if (term != null) term.sendKeyEvent(resultingKeyCode, 0);
+                if (term != null) {
+                    String seq = term.sendKeyEvent(resultingKeyCode, 0);
+                    if (seq != null) session.write(seq);
+                }
             } else if (resultingCodePoint != -1) {
                 session.writeCodePoint(altDown, resultingCodePoint);
             }

@@ -999,7 +999,8 @@ public final class TerminalView extends View {
             return true;
 
         if (mEmulator != null) {
-            mEmulator.sendKeyEvent(keyCode, keyMod);
+            String seq = mEmulator.sendKeyEvent(keyCode, keyMod);
+            if (seq != null) mTermSession.write(seq);
             return true;
         }
         return false;

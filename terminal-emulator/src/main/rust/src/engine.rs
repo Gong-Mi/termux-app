@@ -976,7 +976,8 @@ impl TerminalEngine {
     }
     
     /// 处理按键事件 - 实现 KeyHandler.getCode() 的逻辑
-    pub fn send_key_event(&mut self, key_code: i32, _char_str: Option<String>, meta_state: i32) {
+    /// 返回生成的转义序列，由 Java 侧写入 PTY，绝不调用 process_bytes
+    pub fn send_key_event(&mut self, key_code: i32, _char_str: Option<String>, meta_state: i32) -> Option<String> {
         // KeyEvent 常量定义
         const KEYCODE_DPAD_UP: i32 = 19;
         const KEYCODE_DPAD_DOWN: i32 = 20;
@@ -1005,19 +1006,19 @@ impl TerminalEngine {
         const KEYCODE_FORWARD_DEL: i32 = 112;
         const KEYCODE_INSERT: i32 = 124;
         
-        const KEYMOD_SHIFT: i32 = 1;
-        const KEYMOD_ALT: i32 = 2;
-        const KEYMOD_CTRL: i32 = 4;
-        
+        const KEYMOD_SHIFT: i32 = 0x20000000;
+        const KEYMOD_ALT: i32 = 0x80000000;
+        const KEYMOD_CTRL: i32 = 0x40000000;
+
         let shift_down = (meta_state & KEYMOD_SHIFT) != 0;
         let alt_down = (meta_state & KEYMOD_ALT) != 0;
         let ctrl_down = (meta_state & KEYMOD_CTRL) != 0;
-        
-        // 确定 keyMode
-        let key_mode = if shift_down { 1 } 
-            else if alt_down { 2 } 
-            else if ctrl_down { 4 } 
-            else { 0 };
+
+        // 确定 keyMode (xterm 标准: 1=Shift, 2=Alt, 4=Ctrl, 累加)
+        let mut key_mode = 0;
+        if shift_down { key_mode |= 1; }
+        if alt_down   { key_mode |= 2; }
+        if ctrl_down  { key_mode |= 4; }
         
         let cursor_app = self.state.application_cursor_keys;
         
@@ -1117,10 +1118,8 @@ impl TerminalEngine {
             KEYCODE_F12 => Some(self.transform_for_modifiers("\x1b[24", key_mode, '~')),
             _ => None,
         };
-        
-        if let Some(seq) = escape_seq {
-            self.process_bytes(seq.as_bytes());
-        }
+
+        escape_seq
     }
     
     /// 为功能键转换修饰符

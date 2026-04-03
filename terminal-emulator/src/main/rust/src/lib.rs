@@ -628,21 +628,28 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendMouseEventF
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendKeyCodeFromRust(
     mut env: JNIEnv, _class: JClass, ptr: jlong, key_code: jint, char_str: jstring, meta_state: jint,
-) {
-    if ptr == 0 { return; }
+) -> jstring {
+    if ptr == 0 { return std::ptr::null_mut(); }
     let rust_str = if !char_str.is_null() {
         let j_str = unsafe { JString::from_raw(char_str) };
         env.get_string(&j_str).ok().map(|s| String::from(s)).unwrap_or_default()
     } else { String::new() };
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
-    let (events, cb) = {
+    
+    let seq = {
         let mut engine = context.lock.write().unwrap();
-        // send_key_event 现在在 TerminalEngine 上实现
-        engine.send_key_event(key_code, Some(rust_str), meta_state);
-        (engine.take_events(), engine.state.java_callback_obj.clone())
+        // send_key_event 现在返回生成的序列，由 Java 写入 PTY
+        engine.send_key_event(key_code, Some(rust_str), meta_state)
     };
-    flush_events_to_java(&mut env, &cb, events);
     let _ = Arc::into_raw(context);
+
+    match seq {
+        Some(s) => match env.new_string(s) {
+            Ok(j_str) => j_str.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        },
+        None => std::ptr::null_mut(),
+    }
 }
 
 #[unsafe(no_mangle)]
