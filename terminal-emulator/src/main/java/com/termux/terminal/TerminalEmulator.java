@@ -378,17 +378,6 @@ public final class TerminalEmulator {
     }
 
     /**
-     * Get current colors array from Rust.
-     * @return Array of 259 color values (0xAARRGGBB format)
-     */
-    public int[] getCurrentColors() {
-        if (mEnginePtr != 0) {
-            return getColorsFromRust(mEnginePtr);
-        }
-        return new int[259];
-    }
-
-    /**
      * 获取终端缓冲区（兼容性方法）
      * Rust 版本使用共享内存访问屏幕数据，返回兼容包装类
      * @deprecated 直接使用 readRow() 方法访问屏幕数据
