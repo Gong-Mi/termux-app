@@ -47,6 +47,18 @@ jobs:
         with:
           tool: cargo-ndk@3.5.0
 
+      - name: Install Skia build dependencies (gn, ninja)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+          # Download and install gn
+          curl -s https://chrome-infra-packages.appspot.com/dl/gn/gn/linux-amd64/+/latest -o gn.zip
+          unzip gn.zip
+          sudo mv gn /usr/local/bin/gn
+          chmod +x /usr/local/bin/gn
+          gn --version
+          ninja --version
+
       - name: Run Rust Tests
         run: |
           cd terminal-emulator/src/main/rust
