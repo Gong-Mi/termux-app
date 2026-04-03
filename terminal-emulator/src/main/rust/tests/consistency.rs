@@ -2831,30 +2831,45 @@ fn test_erase_display_mode_3() {
         engine.process_bytes(msg.as_bytes());
     }
 
-    // 确认有滚动历史 (screen_first_row 应该已经滚动)
-    assert!(engine.state.screen_first_row() > 0, "Should have scrolled");
+    // 确认有滚动历史
+    let history_before = engine.state.main_screen.active_transcript_rows;
+    assert!(history_before > 0, "Should have scroll history");
+
+    // 记录屏幕内容（可见区域）
+    let screen_content_before: Vec<String> = (0..engine.state.rows)
+        .map(|row| {
+            let r = engine.state.main_screen.get_row(row);
+            r.text.iter().filter(|&&c| c != ' ' && c != '\0').collect()
+        })
+        .filter(|s: &String| !s.is_empty())
+        .collect();
 
     // 执行 CSI 3 J (清历史)
     engine.process_bytes(b"\x1b[3J");
 
-    // 验证 screen_first_row 已重置
+    // 验证历史行已清空（对齐 Java clearTranscript() 行为）
     assert_eq!(
-        engine.state.screen_first_row(), 0,
-        "Screen first row should be reset"
+        engine.state.main_screen.active_transcript_rows, 0,
+        "Active transcript rows should be cleared"
     );
     assert_eq!(
         engine.state.scroll_counter, 0,
         "Scroll counter should be reset"
     );
 
-    // 验证整个 buffer 都是空的
-    for y in 0..engine.state.main_screen.buffer.len() {
-        let row = &engine.state.main_screen.buffer[y];
-        for x in 0..80 {
-            let c = row.text[x];
-            assert_eq!(c, ' ', "Cell ({}, {}) should be empty space", x, y);
-        }
-    }
+    // 验证屏幕内容保留（mode 3 只清历史，不清屏幕）
+    let screen_content_after: Vec<String> = (0..engine.state.rows)
+        .map(|row| {
+            let r = engine.state.main_screen.get_row(row);
+            r.text.iter().filter(|&&c| c != ' ' && c != '\0').collect()
+        })
+        .filter(|s: &String| !s.is_empty())
+        .collect();
+
+    assert_eq!(
+        screen_content_before, screen_content_after,
+        "Screen content should be preserved after CSI 3J"
+    );
 }
 
 // =============================================================================
