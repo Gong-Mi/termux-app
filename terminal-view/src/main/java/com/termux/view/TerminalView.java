@@ -874,10 +874,10 @@ public final class TerminalView extends View {
         final boolean rightAltDownFromEvent = (metaState & KeyEvent.META_ALT_RIGHT_ON) != 0;
 
         int keyMod = 0;
-        if (controlDown) keyMod |= KeyHandler.KEYMOD_CTRL;
-        if (event.isAltPressed() || leftAltDown) keyMod |= KeyHandler.KEYMOD_ALT;
-        if (shiftDown) keyMod |= KeyHandler.KEYMOD_SHIFT;
-        if (event.isNumLockOn()) keyMod |= KeyHandler.KEYMOD_NUM_LOCK;
+        if (controlDown) keyMod |= 0x40000000; // KEYMOD_CTRL
+        if (event.isAltPressed() || leftAltDown) keyMod |= 0x80000000; // KEYMOD_ALT
+        if (shiftDown) keyMod |= 0x20000000; // KEYMOD_SHIFT
+        if (event.isNumLockOn()) keyMod |= 0x10000000; // KEYMOD_NUM_LOCK
         // https://github.com/termux/termux-app/issues/731
         if (!event.isFunctionPressed() && handleKeyCode(keyCode, keyMod)) {
             if (TERMINAL_VIEW_KEY_LOGGING_ENABLED) mClient.logInfo(LOG_TAG, "handleKeyCode() took key event");
@@ -1006,7 +1006,7 @@ public final class TerminalView extends View {
     }
 
     public boolean handleKeyCodeAction(int keyCode, int keyMod) {
-        boolean shiftDown = (keyMod & KeyHandler.KEYMOD_SHIFT) != 0;
+        boolean shiftDown = (keyMod & 0x20000000) != 0; // KEYMOD_SHIFT
 
         switch (keyCode) {
             case KeyEvent.KEYCODE_PAGE_UP:
