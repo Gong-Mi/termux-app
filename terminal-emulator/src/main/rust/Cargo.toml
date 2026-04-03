@@ -24,6 +24,7 @@ once_cell = "1.19.0"
 crossterm = "0.28.1"
 log = "0.4"
 android_logger = "0.13"
+skia-safe = { version = "0.80.0", features = ["vulkan"] }
 
 [dev-dependencies]
 md5 = "0.7"
@@ -59,3 +60,4 @@ path = "tests/fix_verification.rs"
 [[test]]
 name = "key_event_handling"
 path = "tests/key_event_handling.rs"
+skia-safe = "0.80.0"

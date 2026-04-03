@@ -1006,9 +1006,9 @@ impl TerminalEngine {
         const KEYCODE_FORWARD_DEL: i32 = 112;
         const KEYCODE_INSERT: i32 = 124;
         
-        const KEYMOD_SHIFT: i32 = 0x20000000;
-        const KEYMOD_ALT: i32 = 0x80000000;
-        const KEYMOD_CTRL: i32 = 0x40000000;
+        const KEYMOD_SHIFT: i32 = 0x20000000u32 as i32;
+        const KEYMOD_ALT: i32 = 0x80000000u32 as i32;
+        const KEYMOD_CTRL: i32 = 0x40000000u32 as i32;
 
         let shift_down = (meta_state & KEYMOD_SHIFT) != 0;
         let alt_down = (meta_state & KEYMOD_ALT) != 0;
