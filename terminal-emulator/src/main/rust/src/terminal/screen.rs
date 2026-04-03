@@ -228,11 +228,36 @@ impl Screen {
             }
             2 => { for y in 0..self.rows { self.get_row_mut(y).clear(0, c, style); } }
             3 => {
-                for y in 0..self.buffer.len() { self.buffer[y].clear(0, c, style); }
-                self.first_row = 0; self.active_transcript_rows = 0;
+                // 只清除历史行（transcript），保留屏幕上的可见内容
+                // 对齐 Java TerminalBuffer.clearTranscript() 的行为
+                self.clear_transcript(style);
             }
             _ => {}
         }
+    }
+
+    /// 清除历史行（transcript），保留屏幕上的可见内容
+    /// 对齐 Java TerminalBuffer.clearTranscript() 的行为
+    pub fn clear_transcript(&mut self, style: u64) {
+        let total_rows = self.buffer.len();
+        let c = self.cols as usize;
+        if self.first_row < self.active_transcript_rows {
+            // 历史行跨越了环形缓冲区边界
+            let start = total_rows + self.first_row - self.active_transcript_rows;
+            for i in start..total_rows {
+                self.buffer[i].clear(0, c, style);
+            }
+            for i in 0..self.first_row {
+                self.buffer[i].clear(0, c, style);
+            }
+        } else {
+            // 历史行在 first_row 之前连续存储
+            let start = self.first_row - self.active_transcript_rows;
+            for i in start..self.first_row {
+                self.buffer[i].clear(0, c, style);
+            }
+        }
+        self.active_transcript_rows = 0;
     }
 
     pub fn insert_lines(&mut self, cursor_y: i32, bottom: i32, n: i32, style: u64) {
