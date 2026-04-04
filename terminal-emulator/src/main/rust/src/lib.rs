@@ -95,6 +95,17 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
 ) {
     #[cfg(target_os = "android")]
     {
+        // Handle null surface: clean up Vulkan context if surface is destroyed
+        if surface.is_null() {
+            android_log(LogPriority::INFO, "nativeSetSurface: Surface destroyed, cleaning up");
+            if let Some(mutex) = VULKAN_CONTEXT.get() {
+                let mut guard = mutex.lock().unwrap();
+                *guard = None; // Drop Vulkan context
+                android_log(LogPriority::INFO, "nativeSetSurface: Vulkan context destroyed");
+            }
+            return;
+        }
+
         let window = unsafe {
             ndk_sys::ANativeWindow_fromSurface(env.get_native_interface(), surface.as_raw())
         };
