@@ -101,7 +101,6 @@ impl VulkanContext {
         let swapchain = unsafe { swapchain_loader.create_swapchain(&swapchain_create_info, None).ok()? };
         let swapchain_images = unsafe { swapchain_loader.get_swapchain_images(swapchain).ok()? };
 
-        // 同步信号量
         let semaphore_info = ash_vk::SemaphoreCreateInfo::default();
         let image_available_semaphore = unsafe { device.create_semaphore(&semaphore_info, None).ok()? };
         let render_finished_semaphore = unsafe { device.create_semaphore(&semaphore_info, None).ok()? };
@@ -158,17 +157,16 @@ impl VulkanContext {
 
     pub fn get_sk_surface(&mut self, index: u32) -> Option<SkSurface> {
         let image = self.swapchain_images.get(index as usize)?;
-        let image_info = vk::ImageInfo {
-            image: image.as_raw() as _,
-            alloc: vk::Alloc::default(),
-            tiling: vk::ImageTiling::OPTIMAL,
-            layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            format: vk::Format::R8G8B8A8_UNORM,
-            image_usage_flags: ash_vk::ImageUsageFlags::COLOR_ATTACHMENT.as_raw() as _,
-            sample_count: 1,
-            level_count: 1,
-            ..Default::default()
-        };
+        
+        // 修复：在 0.81.0 中使用构造函数而不是字段初始化
+        let mut image_info = vk::ImageInfo::default();
+        image_info.image = image.as_raw() as _;
+        image_info.tiling = vk::ImageTiling::OPTIMAL;
+        image_info.layout = vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
+        image_info.format = vk::Format::R8G8B8A8_UNORM;
+        image_info.image_usage_flags = ash_vk::ImageUsageFlags::COLOR_ATTACHMENT.as_raw() as _;
+        image_info.sample_count = 1;
+        image_info.level_count = 1;
 
         let render_target = skia_safe::gpu::backend_render_targets::make_vk(
             (self.extent.width as i32, self.extent.height as i32),
