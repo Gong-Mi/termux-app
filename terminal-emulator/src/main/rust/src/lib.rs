@@ -2,6 +2,7 @@ use jni::JNIEnv;
 use jni::objects::{JClass, JString, JObject};
 use jni::sys::{jint, jlong, jbyteArray, jboolean, jintArray, jstring};
 use once_cell::sync::OnceCell;
+use std::sync::Mutex;
 use std::io::Read;
 use std::os::unix::io::FromRawFd;
 use std::sync::atomic::Ordering;
@@ -16,6 +17,8 @@ pub mod fastpath;
 pub mod pty;
 pub mod vte_parser;
 pub mod coordinator;
+pub mod renderer;
+pub mod vulkan_context;
 
 pub use crate::engine::{TerminalEngine, TerminalContext, TerminalEvent};
 pub use crate::coordinator::{SessionCoordinator, SessionState};
@@ -26,6 +29,9 @@ pub use crate::terminal::sixel::{SixelDecoder, SixelState, SixelColor};
 use crate::utils::{android_log, LogPriority};
 
 pub static JAVA_VM: OnceCell<jni::JavaVM> = OnceCell::new();
+
+static VULKAN_CONTEXT: OnceCell<Mutex<Option<crate::vulkan_context::VulkanContext>>> = OnceCell::new();
+static TERMINAL_RENDERER: OnceCell<Mutex<Option<crate::renderer::TerminalRenderer>>> = OnceCell::new();
 
 /// 核心修复：在不持有锁的情况下将事件刷新到 Java，彻底杜绝双向死锁
 fn flush_events_to_java(env: &mut JNIEnv, callback_obj: &Option<jni::objects::GlobalRef>, events: Vec<TerminalEvent>) {
@@ -79,6 +85,76 @@ pub extern "system" fn JNI_OnLoad(vm: jni::JavaVM, _reserved: std::ffi::c_void) 
     let _ = JAVA_VM.set(vm);
     android_log(LogPriority::INFO, "JNI_OnLoad: Termux-Rust library loaded");
     jni::sys::JNI_VERSION_1_6
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
+    env: JNIEnv,
+    _obj: JObject,
+    surface: JObject,
+) {
+    let window = unsafe {
+        ndk_sys::ANativeWindow_fromSurface(env.get_native_interface(), surface.as_raw())
+    };
+
+    if window.is_null() {
+        android_log(LogPriority::ERROR, "nativeSetSurface: Failed to get ANativeWindow");
+        return;
+    }
+
+    unsafe {
+        if let Some(ctx) = crate::vulkan_context::VulkanContext::new(window as _) {
+            let mutex = VULKAN_CONTEXT.get_or_init(|| Mutex::new(None));
+            let mut guard = mutex.lock().unwrap();
+            *guard = Some(ctx);
+            android_log(LogPriority::INFO, "nativeSetSurface: Vulkan Context initialized");
+        } else {
+            android_log(LogPriority::ERROR, "nativeSetSurface: Failed to initialize Vulkan Context");
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_view_TerminalView_nativeRender(
+    _env: JNIEnv,
+    _obj: JObject,
+    _engine_ptr: jlong,
+) {
+    let ctx_mutex = match VULKAN_CONTEXT.get() {
+        Some(m) => m,
+        None => return,
+    };
+
+    let mut ctx_guard = ctx_mutex.lock().unwrap();
+    let ctx = match ctx_guard.as_mut() {
+        Some(c) => c,
+        None => return,
+    };
+
+    let image_index = 0; 
+    if let Some(mut sk_surface) = ctx.get_sk_surface(image_index) {
+        let _canvas = sk_surface.canvas();
+        
+        let renderer_mutex = TERMINAL_RENDERER.get_or_init(|| Mutex::new(None));
+        let mut renderer_guard = renderer_mutex.lock().unwrap();
+        
+        if renderer_guard.is_none() {
+            *renderer_guard = Some(crate::renderer::TerminalRenderer::new(&[], 12.0));
+        }
+
+        ctx.context.flush_and_submit();
+        
+        let present_info = ash::vk::PresentInfoKHR {
+            swapchain_count: 1,
+            p_swapchains: &ctx.swapchain,
+            p_image_indices: &(image_index as u32),
+            ..Default::default()
+        };
+        
+        unsafe {
+            let _ = ctx.swapchain_loader.queue_present(ctx.queue, &present_info);
+        }
+    }
 }
 
 // ============================================================================

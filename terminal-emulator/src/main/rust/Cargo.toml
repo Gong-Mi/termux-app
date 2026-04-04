@@ -23,12 +23,15 @@ zip = "8.2.0"
 once_cell = "1.19.0"
 crossterm = "0.28.1"
 log = "0.4"
-android_logger = "0.13"
 skia-safe = { version = "0.81.0", features = ["vulkan"] }
+raw-window-handle = "0.6.2"
+ash = "0.38.0"
+ash-window = "0.13.0"
+
+[target.'cfg(target_os = "android")'.dependencies]
 ndk = "0.9.0"
 ndk-sys = "0.6.0"
-raw-window-handle = "0.6.0"
-ash = "0.38.0"
+android_logger = "0.13"
 
 [dev-dependencies]
 md5 = "0.7"

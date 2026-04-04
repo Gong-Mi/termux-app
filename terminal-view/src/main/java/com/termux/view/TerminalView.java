@@ -1735,4 +1735,12 @@ public final class TerminalView extends View {
             }
         }
     }
+
+    // ============================================================================
+    // Rust 渲染 JNI 接口
+    // ============================================================================
+
+    public native void nativeSetSurface(android.view.Surface surface);
+    public native void nativeRender(long enginePtr);
+    public native void nativeOnSizeChanged(int width, int height);
 }
