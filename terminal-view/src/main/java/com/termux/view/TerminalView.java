@@ -50,6 +50,15 @@ import android.view.SurfaceView;
 /** View displaying and interacting with a {@link TerminalSession}. */
 public final class TerminalView extends SurfaceView implements SurfaceHolder.Callback {
 
+    static {
+        try {
+            System.loadLibrary("termux_rust");
+            Log.i("TerminalView", "libtermux_rust.so loaded successfully");
+        } catch (UnsatisfiedLinkError e) {
+            Log.e("TerminalView", "Failed to load libtermux_rust.so: " + e.getMessage());
+        }
+    }
+
     /** Log terminal view key and IME events. */
     private static boolean TERMINAL_VIEW_KEY_LOGGING_ENABLED = false;
 
