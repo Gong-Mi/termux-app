@@ -70,6 +70,9 @@ public final class TerminalEmulator {
 
     public boolean isAlive() { return mEnginePtr != 0; }
 
+    /** 获取 Rust 引擎的原始指针，用于渲染 */
+    public long getNativePointer() { return mEnginePtr; }
+
     // --- 光标 ---
     public int getCursorCol() { return mEnginePtr != 0 ? getCursorColFromRust(mEnginePtr) : 0; }
     public int getCursorRow() { return mEnginePtr != 0 ? getCursorRowFromRust(mEnginePtr) : 0; }
