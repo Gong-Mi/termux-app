@@ -1764,7 +1764,7 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
     // Rust 渲染 JNI 接口
     // ============================================================================
 
-    public native void nativeSetSurface(android.view.Surface surface);
+    public native void nativeSetSurface(@Nullable android.view.Surface surface);
     public native void nativeRender(long enginePtr, float scale, float scrollOffset);
     public native void nativeOnSizeChanged(int width, int height);
 }
