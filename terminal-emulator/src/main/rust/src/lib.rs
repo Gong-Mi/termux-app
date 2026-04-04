@@ -118,6 +118,25 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_view_TerminalView_nativeOnSizeChanged(
+    _env: JNIEnv,
+    _obj: JObject,
+    width: jint,
+    height: jint,
+) {
+    let mutex = match VULKAN_CONTEXT.get() {
+        Some(m) => m,
+        None => return,
+    };
+
+    let mut guard = mutex.lock().unwrap();
+    if let Some(ctx) = guard.as_mut() {
+        ctx.recreate_swapchain(width as u32, height as u32);
+        android_log(LogPriority::INFO, &format!("nativeOnSizeChanged: Swapchain recreated ({}x{})", width, height));
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeRender(
     _env: JNIEnv,
     _obj: JObject,
@@ -155,8 +174,8 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeRender(
             }
 
             if let Some(renderer) = renderer_guard.as_mut() {
-                // TODO: 正确计算字体宽高
-                renderer.draw_terminal(canvas, &engine, 10.0, 20.0);
+                // 使用动态字体度量绘制内容
+                renderer.draw_terminal(canvas, &engine);
             }
 
             ctx.context.flush_and_submit();
