@@ -116,9 +116,9 @@ impl VulkanContext {
                             .map(|f| f as _)
                             .unwrap_or(std::ptr::null())
                     }
-                    vk::GetProcOf::Device(dev, name) => {
+                    vk::GetProcOf::Device(_dev, name) => {
                         let name_cstr = CStr::from_ptr(name);
-                        entry_ptr.get_device_proc_addr(ash_vk::Device::from_raw(dev as _), name_cstr.as_ptr())
+                        entry_ptr.get_instance_proc_addr(ash_vk::Instance::from_raw(ash_vk::Instance::null().as_raw() as _), name_cstr.as_ptr())
                             .map(|f| f as _)
                             .unwrap_or(std::ptr::null())
                     }

@@ -137,8 +137,8 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeRender(
     };
 
     // 获取 Engine 实例
-    let term_ctx = unsafe { &*(engine_ptr as *const TerminalContext) };
-    let engine = term_ctx.engine.lock().unwrap();
+    let term_ctx = unsafe { &*(engine_ptr as *const crate::engine::TerminalContext) };
+    let engine = term_ctx.lock.read().unwrap();
 
     // 1. 获取下一个交换链图像索引
     if let Some(image_index) = ctx.acquire_next_image() {
