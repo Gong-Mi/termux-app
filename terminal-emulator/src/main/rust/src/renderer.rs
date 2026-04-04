@@ -37,36 +37,52 @@ impl TerminalRenderer {
         font_height: f32,
     ) {
         let state = &engine.state;
-        let palette = &state.colors.palette;
+        let palette = &state.colors.current_colors;
         
         // 1. 获取当前活动的缓冲区
         let screen = if state.use_alternate_buffer { &state.alt_screen } else { &state.main_screen };
-        let bg_default = Color::new(palette[256]);
+        let bg_default = Color::new(palette[257]); // 注意：257 是背景索引
         canvas.clear(bg_default);
 
-        let rows = state.rows;
-        let cols = state.cols;
+        let rows = state.rows as usize;
+        let cols = state.cols as usize;
 
-        // 2. 遍历可见区域
-        for row in 0..rows {
-            let y = (row as f32 + 1.0) * font_height;
+        // 2. 遍历可见区域 (Row 从 0 到 rows-1)
+        for r in 0..rows {
+            if r >= screen.buffer.len() { break; }
+            let row_data = &screen.buffer[r];
+            let y = (r as f32 + 1.0) * font_height;
             
-            for col in 0..cols {
-                let cell = screen.get_cell_at(col, row);
-                if cell.code_point == 0 { continue; }
+            for c in 0..cols {
+                if c >= row_data.text.len() { break; }
+                let char_val = row_data.text[c];
+                if char_val == ' ' || char_val == '\0' {
+                    // 如果背景色不是默认背景，仍需绘制背景
+                    let style = row_data.styles[c];
+                    let bg_idx = crate::terminal::style::decode_back_color(style) as usize;
+                    if bg_idx != 257 {
+                        let bg_color = Color::new(if bg_idx < 259 { palette[bg_idx] } else { palette[257] });
+                        self.bg_paint.set_color(bg_color);
+                        canvas.draw_rect(
+                            Rect::from_xywh(c as f32 * font_width, y - font_height, font_width, font_height),
+                            &self.bg_paint
+                        );
+                    }
+                    continue;
+                }
 
-                let x = col as f32 * font_width;
+                let x = c as f32 * font_width;
+                let style = row_data.styles[c];
                 
                 // 解析颜色
-                let style = cell.style;
                 let fg_idx = crate::terminal::style::decode_fore_color(style) as usize;
                 let bg_idx = crate::terminal::style::decode_back_color(style) as usize;
                 
-                let fg_color = Color::new(if fg_idx < 258 { palette[fg_idx] } else { palette[257] });
-                let bg_color = Color::new(if bg_idx < 258 { palette[bg_idx] } else { palette[256] });
+                let fg_color = Color::new(if fg_idx < 259 { palette[fg_idx] } else { palette[256] });
+                let bg_color = Color::new(if bg_idx < 259 { palette[bg_idx] } else { palette[257] });
 
                 // 绘制背景
-                if bg_idx != 256 {
+                if bg_idx != 257 {
                     self.bg_paint.set_color(bg_color);
                     canvas.draw_rect(
                         Rect::from_xywh(x, y - font_height, font_width, font_height),
@@ -76,8 +92,7 @@ impl TerminalRenderer {
 
                 // 绘制文字
                 self.paint.set_color(fg_color);
-                let text = std::char::from_u32(cell.code_point as u32).unwrap_or(' ').to_string();
-                canvas.draw_str(&text, (x, y - 4.0), &self.font, &self.paint);
+                canvas.draw_str(&char_val.to_string(), (x, y - 4.0), &self.font, &self.paint);
             }
         }
 
