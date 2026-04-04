@@ -25,7 +25,7 @@ unsafe impl Sync for VulkanContext {}
 
 impl VulkanContext {
     pub unsafe fn new(window: *mut std::ffi::c_void) -> Option<Self> {
-        let entry = unsafe { Entry::load().ok()? };
+        let entry = Entry::load().ok()?;
         
         let app_info = ash_vk::ApplicationInfo {
             api_version: ash_vk::API_VERSION_1_1,
@@ -44,7 +44,7 @@ impl VulkanContext {
             ..Default::default()
         };
 
-        let instance = unsafe { entry.create_instance(&create_info, None).ok()? };
+        let instance = entry.create_instance(&create_info, None).ok()?;
         let surface_loader = ash::khr::surface::Instance::new(&entry, &instance);
         let android_surface_loader = ash::khr::android_surface::Instance::new(&entry, &instance);
         
@@ -52,9 +52,9 @@ impl VulkanContext {
             window,
             ..Default::default()
         };
-        let surface = unsafe { android_surface_loader.create_android_surface(&surface_create_info, None).ok()? };
+        let surface = android_surface_loader.create_android_surface(&surface_create_info, None).ok()?;
 
-        let pdevices = unsafe { instance.enumerate_physical_devices().ok()? };
+        let pdevices = instance.enumerate_physical_devices().ok()?;
         if pdevices.is_empty() { return None; }
         let pdevice = pdevices[0];
         let queue_family_index = 0;
@@ -76,11 +76,11 @@ impl VulkanContext {
             ..Default::default()
         };
 
-        let device = unsafe { instance.create_device(pdevice, &device_create_info, None).ok()? };
-        let queue = unsafe { device.get_device_queue(queue_family_index, 0) };
+        let device = instance.create_device(pdevice, &device_create_info, None).ok()?;
+        let queue = device.get_device_queue(queue_family_index, 0);
         let swapchain_loader = swapchain::Device::new(&instance, &device);
 
-        let caps = unsafe { surface_loader.get_physical_device_surface_capabilities(pdevice, surface).ok()? };
+        let caps = surface_loader.get_physical_device_surface_capabilities(pdevice, surface).ok()?;
         let extent = caps.current_extent;
         let swapchain_create_info = ash_vk::SwapchainCreateInfoKHR {
             surface,
@@ -97,42 +97,38 @@ impl VulkanContext {
             ..Default::default()
         };
         
-        let swapchain = unsafe { swapchain_loader.create_swapchain(&swapchain_create_info, None).ok()? };
-        let swapchain_images = unsafe { swapchain_loader.get_swapchain_images(swapchain).ok()? };
+        let swapchain = swapchain_loader.create_swapchain(&swapchain_create_info, None).ok()?;
+        let swapchain_images = swapchain_loader.get_swapchain_images(swapchain).ok()?;
 
         let semaphore_info = ash_vk::SemaphoreCreateInfo::default();
-        let image_available_semaphore = unsafe { device.create_semaphore(&semaphore_info, None).ok()? };
-        let render_finished_semaphore = unsafe { device.create_semaphore(&semaphore_info, None).ok()? };
+        let image_available_semaphore = device.create_semaphore(&semaphore_info, None).ok()?;
+        let render_finished_semaphore = device.create_semaphore(&semaphore_info, None).ok()?;
 
         let entry_ptr = entry.clone();
         let get_proc = move |of: vk::GetProcOf| {
-            unsafe {
-                match of {
-                    vk::GetProcOf::Instance(inst, name) => {
-                        let name_cstr = CStr::from_ptr(name);
-                        entry_ptr.get_instance_proc_addr(ash_vk::Instance::from_raw(inst as _), name_cstr.as_ptr())
-                            .map(|f| f as _)
-                            .unwrap_or(std::ptr::null())
-                    }
-                    vk::GetProcOf::Device(_dev, name) => {
-                        let name_cstr = CStr::from_ptr(name);
-                        entry_ptr.get_instance_proc_addr(ash_vk::Instance::from_raw(ash_vk::Instance::null().as_raw() as _), name_cstr.as_ptr())
-                            .map(|f| f as _)
-                            .unwrap_or(std::ptr::null())
-                    }
+            match of {
+                vk::GetProcOf::Instance(inst, name) => {
+                    let name_cstr = CStr::from_ptr(name);
+                    entry_ptr.get_instance_proc_addr(ash_vk::Instance::from_raw(inst as _), name_cstr.as_ptr())
+                        .map(|f| f as _)
+                        .unwrap_or(std::ptr::null())
+                }
+                vk::GetProcOf::Device(_dev, name) => {
+                    let name_cstr = CStr::from_ptr(name);
+                    entry_ptr.get_instance_proc_addr(ash_vk::Instance::from_raw(ash_vk::Instance::null().as_raw() as _), name_cstr.as_ptr())
+                        .map(|f| f as _)
+                        .unwrap_or(std::ptr::null())
                 }
             }
         };
 
-        let backend_context = unsafe {
-            vk::BackendContext::new(
-                instance.handle().as_raw() as _,
-                pdevice.as_raw() as _,
-                device.handle().as_raw() as _,
-                (queue.as_raw() as _, queue_family_index as usize),
-                &get_proc,
-            )
-        };
+        let backend_context = vk::BackendContext::new(
+            instance.handle().as_raw() as _,
+            pdevice.as_raw() as _,
+            device.handle().as_raw() as _,
+            (queue.as_raw() as _, queue_family_index as usize),
+            &get_proc,
+        );
 
         let context = skia_safe::gpu::direct_contexts::make_vulkan(&backend_context, None)?;
 
@@ -157,19 +153,33 @@ impl VulkanContext {
     pub fn get_sk_surface(&mut self, index: u32) -> Option<SkSurface> {
         let image = self.swapchain_images.get(index as usize)?;
         
-        // 修复：在 0.81.0 中 ImageInfo 的所有字段都是私有的
-        // 必须使用构造函数或 unsafe 初始化
-        let image_info = unsafe {
-            let mut info: vk::ImageInfo = std::mem::zeroed();
-            info.image = image.as_raw() as _;
-            info.alloc = vk::Alloc::default();
-            info.tiling = vk::ImageTiling::OPTIMAL;
-            info.layout = vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
-            info.format = vk::Format::R8G8B8A8_UNORM;
-            info.image_usage_flags = ash_vk::ImageUsageFlags::COLOR_ATTACHMENT.as_raw() as _;
-            info.sample_count = 1;
-            info.level_count = 1;
-            info
+        // 使用影子结构体绕过私有字段限制
+        #[repr(C)]
+        struct ImageInfoShadow {
+            image: *mut std::ffi::c_void,
+            alloc: vk::Alloc,
+            tiling: vk::ImageTiling,
+            layout: vk::ImageLayout,
+            format: vk::Format,
+            image_usage_flags: ash_vk::ImageUsageFlags,
+            sample_count: u32,
+            level_count: u32,
+            current_queue_family: u32,
+            protected: vk::Bool,
+            ycbcr_conversion_info: [u64; 16], // 简化占位
+            sharing_mode: vk::SharingMode,
+        }
+
+        let image_info: vk::ImageInfo = unsafe {
+            let mut shadow: ImageInfoShadow = std::mem::zeroed();
+            shadow.image = image.as_raw() as _;
+            shadow.tiling = vk::ImageTiling::OPTIMAL;
+            shadow.layout = vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
+            shadow.format = vk::Format::R8G8B8A8_UNORM;
+            shadow.image_usage_flags = ash_vk::ImageUsageFlags::COLOR_ATTACHMENT;
+            shadow.sample_count = 1;
+            shadow.level_count = 1;
+            std::mem::transmute(shadow)
         };
 
         let render_target = skia_safe::gpu::backend_render_targets::make_vk(
