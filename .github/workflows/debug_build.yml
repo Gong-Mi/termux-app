@@ -75,9 +75,11 @@ jobs:
         run: |
           exit_on_error() { echo "$1"; exit 1; }
 
-          # Force skip Skia layout assertions to fix compilation error for Android
+          # Force Vulkan build only, skip GL to reduce complexity
           export SKIA_BINDINGS_SKIP_LAYOUT_ASSERTIONS=1
           export FORCE_SKIA_BUILD=1
+          export SKIA_USE_VULKAN=1
+          export SKIA_USE_GL=0
           export CXXFLAGS="-DSK_TYPEFACE_FACTORY_FREETYPE"
 
           echo "Setting vars"
