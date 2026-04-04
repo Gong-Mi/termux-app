@@ -3,6 +3,7 @@ use ash::{vk as ash_vk, Entry, Instance, Device};
 use ash::khr::swapchain;
 use ash::vk::Handle;
 use std::ffi::CStr;
+use crate::utils::{android_log, LogPriority};
 
 pub struct VulkanContext {
     pub instance: Instance,
@@ -25,36 +26,82 @@ unsafe impl Sync for VulkanContext {}
 
 impl VulkanContext {
     pub unsafe fn new(window: *mut std::ffi::c_void) -> Option<Self> {
-        let entry = unsafe { Entry::load().ok()? };
-        
+        android_log(LogPriority::INFO, "VulkanContext::new: Starting initialization");
+
+        let entry = unsafe { Entry::load().ok() };
+        if entry.is_none() {
+            android_log(LogPriority::ERROR, "VulkanContext::new: Entry::load() failed");
+            return None;
+        }
+        let entry = entry.unwrap();
+        android_log(LogPriority::INFO, "VulkanContext::new: Entry loaded");
+
         let app_info = ash_vk::ApplicationInfo { api_version: ash_vk::API_VERSION_1_1, ..Default::default() };
         let extension_names = [ash::khr::surface::NAME.as_ptr(), ash::khr::android_surface::NAME.as_ptr()];
         let create_info = ash_vk::InstanceCreateInfo { p_application_info: &app_info, enabled_extension_count: extension_names.len() as u32, pp_enabled_extension_names: extension_names.as_ptr(), ..Default::default() };
-        
-        let instance = unsafe { entry.create_instance(&create_info, None).ok()? };
+
+        let instance = unsafe { entry.create_instance(&create_info, None) };
+        if instance.is_err() {
+            android_log(LogPriority::ERROR, &format!("VulkanContext::new: create_instance failed: {:?}", instance.err()));
+            return None;
+        }
+        let instance = instance.unwrap();
+        android_log(LogPriority::INFO, "VulkanContext::new: Instance created");
+
         let surface_loader = ash::khr::surface::Instance::new(&entry, &instance);
         let android_surface_loader = ash::khr::android_surface::Instance::new(&entry, &instance);
-        let surface = unsafe { android_surface_loader.create_android_surface(&ash_vk::AndroidSurfaceCreateInfoKHR { window, ..Default::default() }, None).ok()? };
-        
-        let pdevices = unsafe { instance.enumerate_physical_devices().ok()? };
-        if pdevices.is_empty() { return None; }
+        let surface = unsafe { android_surface_loader.create_android_surface(&ash_vk::AndroidSurfaceCreateInfoKHR { window, ..Default::default() }, None) };
+        if surface.is_err() {
+            android_log(LogPriority::ERROR, &format!("VulkanContext::new: create_android_surface failed: {:?}", surface.err()));
+            return None;
+        }
+        let surface = surface.unwrap();
+        android_log(LogPriority::INFO, "VulkanContext::new: Surface created");
+
+        let pdevices = unsafe { instance.enumerate_physical_devices() };
+        if pdevices.is_err() || pdevices.as_ref().unwrap().is_empty() {
+            android_log(LogPriority::ERROR, "VulkanContext::new: enumerate_physical_devices failed or empty");
+            return None;
+        }
+        let pdevices = pdevices.unwrap();
         let pdevice = pdevices[0];
+        android_log(LogPriority::INFO, "VulkanContext::new: Physical device found");
+
         let queue_family_index = 0;
-        
+
         let device_extensions = [swapchain::NAME.as_ptr()];
         let queue_info = ash_vk::DeviceQueueCreateInfo { queue_family_index, queue_count: 1, p_queue_priorities: [1.0].as_ptr(), ..Default::default() };
         let device_create_info = ash_vk::DeviceCreateInfo { queue_create_info_count: 1, p_queue_create_infos: &queue_info, enabled_extension_count: device_extensions.len() as u32, pp_enabled_extension_names: device_extensions.as_ptr(), ..Default::default() };
-        
-        let device = unsafe { instance.create_device(pdevice, &device_create_info, None).ok()? };
+
+        let device = unsafe { instance.create_device(pdevice, &device_create_info, None) };
+        if device.is_err() {
+            android_log(LogPriority::ERROR, &format!("VulkanContext::new: create_device failed: {:?}", device.err()));
+            return None;
+        }
+        let device = device.unwrap();
+        android_log(LogPriority::INFO, "VulkanContext::new: Device created");
+
         let queue = unsafe { device.get_device_queue(queue_family_index, 0) };
         let swapchain_loader = swapchain::Device::new(&instance, &device);
-        
-        let caps = unsafe { surface_loader.get_physical_device_surface_capabilities(pdevice, surface).ok()? };
+
+        let caps = unsafe { surface_loader.get_physical_device_surface_capabilities(pdevice, surface) };
+        if caps.is_err() {
+            android_log(LogPriority::ERROR, &format!("VulkanContext::new: get_capabilities failed: {:?}", caps.err()));
+            return None;
+        }
+        let caps = caps.unwrap();
         let extent = caps.current_extent;
+        android_log(LogPriority::INFO, &format!("VulkanContext::new: Surface caps {}/{}", extent.width, extent.height));
 
         let semaphore_info = ash_vk::SemaphoreCreateInfo::default();
-        let image_available_semaphore = unsafe { device.create_semaphore(&semaphore_info, None).ok()? };
-        let render_finished_semaphore = unsafe { device.create_semaphore(&semaphore_info, None).ok()? };
+        let image_available_semaphore = unsafe { device.create_semaphore(&semaphore_info, None) };
+        let render_finished_semaphore = unsafe { device.create_semaphore(&semaphore_info, None) };
+        if image_available_semaphore.is_err() || render_finished_semaphore.is_err() {
+            android_log(LogPriority::ERROR, "VulkanContext::new: create_semaphore failed");
+            return None;
+        }
+        let image_available_semaphore = image_available_semaphore.unwrap();
+        let render_finished_semaphore = render_finished_semaphore.unwrap();
 
         let entry_ptr = entry.clone();
         let instance_handle = instance.handle();
@@ -72,17 +119,25 @@ impl VulkanContext {
                 }
             }
         };
-        
+
         let backend_context = unsafe {
             vk::BackendContext::new(
-                instance_handle.as_raw() as _, 
-                pdevice.as_raw() as _, 
-                device.handle().as_raw() as _, 
-                (queue.as_raw() as _, queue_family_index as usize), 
+                instance_handle.as_raw() as _,
+                pdevice.as_raw() as _,
+                device.handle().as_raw() as _,
+                (queue.as_raw() as _, queue_family_index as usize),
                 &get_proc
             )
         };
-        let context = skia_safe::gpu::direct_contexts::make_vulkan(&backend_context, None)?;
+
+        android_log(LogPriority::INFO, "VulkanContext::new: Creating Skia context");
+        let context = skia_safe::gpu::direct_contexts::make_vulkan(&backend_context, None);
+        if context.is_none() {
+            android_log(LogPriority::ERROR, "VulkanContext::new: Skia make_vulkan failed");
+            return None;
+        }
+        let context = context.unwrap();
+        android_log(LogPriority::INFO, "VulkanContext::new: Skia context created");
 
         let mut ctx = Self {
             instance, device, context, queue, graphics_queue_index: queue_family_index,
@@ -94,7 +149,12 @@ impl VulkanContext {
             render_finished_semaphore,
         };
 
-        ctx.recreate_swapchain(extent.width, extent.height);
+        let swapchain_ok = ctx.recreate_swapchain(extent.width, extent.height);
+        if !swapchain_ok {
+            android_log(LogPriority::ERROR, "VulkanContext::new: recreate_swapchain failed");
+            return None;
+        }
+        android_log(LogPriority::INFO, "VulkanContext::new: SUCCESS");
         Some(ctx)
     }
 
