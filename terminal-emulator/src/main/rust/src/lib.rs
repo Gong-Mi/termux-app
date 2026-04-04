@@ -135,15 +135,18 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeOnSizeChanged(
     width: jint,
     height: jint,
 ) {
+    android_log(LogPriority::INFO, &format!("nativeOnSizeChanged: {}x{}", width, height));
     let mutex = match VULKAN_CONTEXT.get() {
         Some(m) => m,
-        None => return,
+        None => { android_log(LogPriority::ERROR, "nativeOnSizeChanged: VULKAN_CONTEXT not initialized"); return; },
     };
 
     let mut guard = mutex.lock().unwrap();
     if let Some(ctx) = guard.as_mut() {
-        ctx.recreate_swapchain(width as u32, height as u32);
-        android_log(LogPriority::INFO, &format!("nativeOnSizeChanged: Swapchain recreated ({}x{})", width, height));
+        let ok = ctx.recreate_swapchain(width as u32, height as u32);
+        android_log(LogPriority::INFO, &format!("nativeOnSizeChanged: Swapchain recreated ({}x{}) success={}", width, height, ok));
+    } else {
+        android_log(LogPriority::ERROR, "nativeOnSizeChanged: VulkanContext is None");
     }
 }
 
@@ -160,62 +163,77 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeRender(
     sel_y2: jint,
     sel_active: jboolean,
 ) {
-    if engine_ptr == 0 { return; }
+    if engine_ptr == 0 { android_log(LogPriority::WARN, "nativeRender: engine_ptr is 0"); return; }
 
     let ctx_mutex = match VULKAN_CONTEXT.get() {
         Some(m) => m,
-        None => return,
+        None => { android_log(LogPriority::ERROR, "nativeRender: VULKAN_CONTEXT not initialized"); return; },
     };
 
     let mut ctx_guard = ctx_mutex.lock().unwrap();
     let ctx = match ctx_guard.as_mut() {
         Some(c) => c,
-        None => return,
+        None => { android_log(LogPriority::ERROR, "nativeRender: VulkanContext is None"); return; },
     };
+
+    android_log(LogPriority::INFO, &format!("nativeRender: start scale={} scroll={}", scale, scroll_offset));
 
     // 获取 Engine 实例
     let term_ctx = unsafe { &*(engine_ptr as *const crate::engine::TerminalContext) };
     let engine = term_ctx.lock.read().unwrap();
 
     // 1. 获取下一个交换链图像索引
-    if let Some(image_index) = ctx.acquire_next_image() {
-        // 2. 获取 Skia Surface
-        if let Some(mut sk_surface) = ctx.get_sk_surface(image_index) {
-            let canvas = sk_surface.canvas();
+    let image_index = match ctx.acquire_next_image() {
+        Some(idx) => idx,
+        None => { android_log(LogPriority::ERROR, "nativeRender: acquire_next_image failed"); return; },
+    };
+    android_log(LogPriority::INFO, &format!("nativeRender: acquired image index {}", image_index));
 
-            // 3. 执行绘制
-            let renderer_mutex = TERMINAL_RENDERER.get_or_init(|| Mutex::new(None));
-            let mut renderer_guard = renderer_mutex.lock().unwrap();
+    // 2. 获取 Skia Surface
+    let mut sk_surface = match ctx.get_sk_surface(image_index) {
+        Some(s) => s,
+        None => { android_log(LogPriority::ERROR, "nativeRender: get_sk_surface failed"); return; },
+    };
+    let canvas = sk_surface.canvas();
 
-            if renderer_guard.is_none() {
-                *renderer_guard = Some(crate::renderer::TerminalRenderer::new(&[], 12.0));
-            }
+    // 3. 执行绘制
+    let renderer_mutex = TERMINAL_RENDERER.get_or_init(|| Mutex::new(None));
+    let mut renderer_guard = renderer_mutex.lock().unwrap();
 
-            if let Some(renderer) = renderer_guard.as_mut() {
-                // 设置选区
-                if sel_active != 0 {
-                    renderer.set_selection(sel_x1, sel_y1, sel_x2, sel_y2);
-                } else {
-                    renderer.clear_selection();
-                }
-                // 传入缩放和平移参数
-                renderer.draw_terminal(canvas, &engine, scale as f32, scroll_offset as f32);
-            }
+    if renderer_guard.is_none() {
+        android_log(LogPriority::INFO, "nativeRender: creating TerminalRenderer");
+        *renderer_guard = Some(crate::renderer::TerminalRenderer::new(&[], 12.0));
+    }
 
-            ctx.context.flush_and_submit();
-
-            // 4. 呈现图像
-            let present_info = ash::vk::PresentInfoKHR {
-                swapchain_count: 1,
-                p_swapchains: &ctx.swapchain,
-                p_image_indices: &image_index,
-                ..Default::default()
-            };
-
-            unsafe {
-                let _ = ctx.swapchain_loader.queue_present(ctx.queue, &present_info);
-            }
+    if let Some(renderer) = renderer_guard.as_mut() {
+        // 设置选区
+        if sel_active != 0 {
+            renderer.set_selection(sel_x1, sel_y1, sel_x2, sel_y2);
+        } else {
+            renderer.clear_selection();
         }
+        // 传入缩放和平移参数
+        renderer.draw_terminal(canvas, &engine, scale as f32, scroll_offset as f32);
+    }
+
+    ctx.context.flush_and_submit();
+    android_log(LogPriority::INFO, "nativeRender: flushed");
+
+    // 4. 呈现图像
+    let present_info = ash::vk::PresentInfoKHR {
+        swapchain_count: 1,
+        p_swapchains: &ctx.swapchain,
+        p_image_indices: &image_index,
+        ..Default::default()
+    };
+
+    let present_result = unsafe {
+        ctx.swapchain_loader.queue_present(ctx.queue, &present_info)
+    };
+    if let Err(e) = present_result {
+        android_log(LogPriority::ERROR, &format!("nativeRender: queue_present failed: {:?}", e));
+    } else {
+        android_log(LogPriority::INFO, "nativeRender: present OK");
     }
 }
 

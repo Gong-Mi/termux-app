@@ -1760,11 +1760,13 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
 
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
+        android.util.Log.i("TerminalView", "surfaceCreated: " + holder.getSurface());
         nativeSetSurface(holder.getSurface());
     }
 
     @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+        android.util.Log.i("TerminalView", "surfaceChanged: " + width + "x" + height);
         nativeOnSizeChanged(width, height);
     }
 
