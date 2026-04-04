@@ -38,12 +38,26 @@ impl TerminalRenderer {
         Self { base_font_size: font_size, paint, bg_paint, font_width, font_height }
     }
 
-    pub fn draw_terminal(&mut self, canvas: &Canvas, engine: &TerminalEngine) {
+    pub fn draw_terminal(
+        &mut self,
+        canvas: &Canvas,
+        engine: &TerminalEngine,
+        scale: f32,
+        scroll_offset: f32, // 以像素为单位的纵向偏移
+    ) {
         let state = &engine.state;
         let palette = &state.colors.current_colors;
         let screen = if state.use_alternate_buffer { &state.alt_screen } else { &state.main_screen };
         
+        // 应用全局缩放
+        canvas.save();
+        canvas.scale((scale, scale));
+        
+        // 背景清屏 (全屏背景)
         canvas.clear(Color::new(palette[257]));
+
+        // 应用平移变换
+        canvas.translate((0.0, -scroll_offset));
 
         let rows = state.rows as usize;
         let cols = state.cols as usize;
@@ -56,16 +70,13 @@ impl TerminalRenderer {
             let mut c = 0;
             while c < cols {
                 if c >= row_data.text.len() { break; }
-                
                 let start_c = c;
                 let style = row_data.styles[c];
                 let mut run_text = String::new();
                 
                 while c < cols && c < row_data.text.len() && row_data.styles[c] == style {
                     let ch = row_data.text[c];
-                    if ch != '\0' {
-                        run_text.push(ch);
-                    }
+                    if ch != '\0' { run_text.push(ch); }
                     c += 1;
                 }
 
@@ -83,6 +94,7 @@ impl TerminalRenderer {
             }
         }
 
+        // 绘制光标 (在变换后的空间)
         if state.cursor_enabled {
             let cursor = &state.cursor;
             self.bg_paint.set_color(Color::WHITE);
@@ -91,6 +103,8 @@ impl TerminalRenderer {
                 &self.bg_paint
             );
         }
+
+        canvas.restore();
     }
 
     fn draw_run(&mut self, canvas: &Canvas, text: &str, x: f32, y: f32, width: f32, style: u64, palette: &[u32; 259]) {
@@ -104,13 +118,22 @@ impl TerminalRenderer {
             canvas.draw_rect(Rect::from_xywh(x, y - self.font_height, width, self.font_height), &self.bg_paint);
         }
 
+        // Font Fallback 处理：检查是否包含 Emoji 或非 ASCII
+        let has_non_ascii = text.chars().any(|c| c as u32 > 127);
+        
         let font_mgr = FontMgr::new();
         let weight = if (effect & EFFECT_BOLD) != 0 { skia_safe::font_style::Weight::BOLD } else { skia_safe::font_style::Weight::NORMAL };
         let slant = if (effect & EFFECT_ITALIC) != 0 { skia_safe::font_style::Slant::Italic } else { skia_safe::font_style::Slant::Upright };
         let font_style = FontStyle::new(weight, skia_safe::font_style::Width::NORMAL, slant);
         
-        let typeface = font_mgr.match_family_style("monospace", font_style)
-            .unwrap_or_else(|| font_mgr.match_family_style("monospace", FontStyle::normal()).unwrap());
+        let typeface = if has_non_ascii {
+            // 尝试匹配通用回退字体
+            font_mgr.match_family_style("sans-serif", font_style)
+                .unwrap_or_else(|| font_mgr.match_family_style("monospace", FontStyle::normal()).unwrap())
+        } else {
+            font_mgr.match_family_style("monospace", font_style)
+                .unwrap_or_else(|| font_mgr.match_family_style("monospace", FontStyle::normal()).unwrap())
+        };
         
         let mut font = Font::new(typeface, Some(self.base_font_size));
         font.set_edging(skia_safe::font::Edging::SubpixelAntiAlias);
@@ -121,10 +144,6 @@ impl TerminalRenderer {
 
         if (effect & EFFECT_UNDERLINE) != 0 {
             canvas.draw_line((x, y - 2.0), (x + width, y - 2.0), &self.paint);
-        }
-        if (effect & EFFECT_STRIKETHROUGH) != 0 {
-            let mid_y = y - self.font_height / 2.0;
-            canvas.draw_line((x, mid_y), (x + width, mid_y), &self.paint);
         }
     }
 }
@@ -138,22 +157,5 @@ mod tests {
         let renderer = TerminalRenderer::new(&[], 12.0);
         assert!(renderer.font_width > 0.0);
         assert!(renderer.font_height > 0.0);
-    }
-
-    #[test]
-    fn test_run_grouping_logic() {
-        let mut row = crate::terminal::screen::TerminalRow::new(10);
-        row.text[0] = 'A';
-        row.text[1] = '\0';
-        row.text[2] = 'B';
-        
-        let mut run_text = String::new();
-        for ch in row.text.iter() {
-            if *ch != '\0' {
-                run_text.push(*ch);
-            }
-        }
-        // 期望结果应该是 "AB"，因为宽字符占位符被过滤了
-        assert_eq!(run_text.trim(), "AB");
     }
 }

@@ -1741,6 +1741,6 @@ public final class TerminalView extends View {
     // ============================================================================
 
     public native void nativeSetSurface(android.view.Surface surface);
-    public native void nativeRender(long enginePtr);
+    public native void nativeRender(long enginePtr, float scale, float scrollOffset);
     public native void nativeOnSizeChanged(int width, int height);
 }

@@ -1,6 +1,6 @@
 use jni::JNIEnv;
 use jni::objects::{JClass, JString, JObject};
-use jni::sys::{jint, jlong, jbyteArray, jboolean, jintArray, jstring};
+use jni::sys::{jint, jlong, jbyteArray, jboolean, jintArray, jstring, jfloat};
 use once_cell::sync::OnceCell;
 use std::sync::Mutex;
 use std::io::Read;
@@ -141,6 +141,8 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeRender(
     _env: JNIEnv,
     _obj: JObject,
     engine_ptr: jlong,
+    scale: jfloat,
+    scroll_offset: jfloat,
 ) {
     if engine_ptr == 0 { return; }
 
@@ -174,8 +176,8 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeRender(
             }
 
             if let Some(renderer) = renderer_guard.as_mut() {
-                // 使用动态字体度量绘制内容
-                renderer.draw_terminal(canvas, &engine);
+                // 传入缩放和平移参数
+                renderer.draw_terminal(canvas, &engine, scale as f32, scroll_offset as f32);
             }
 
             ctx.context.flush_and_submit();
