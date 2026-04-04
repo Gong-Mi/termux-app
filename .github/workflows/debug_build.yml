@@ -15,6 +15,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   SKIA_BINDINGS_SKIP_LAYOUT_ASSERTIONS: 1
   FORCE_SKIA_BUILD: 1
+  SKIA_NATIVE_API_LEVEL: 35
 
 jobs:
   build:
@@ -78,6 +79,7 @@ jobs:
           # Force Vulkan build only, skip GL to reduce complexity
           export SKIA_BINDINGS_SKIP_LAYOUT_ASSERTIONS=1
           export FORCE_SKIA_BUILD=1
+          export SKIA_NATIVE_API_LEVEL=35
           export SKIA_USE_VULKAN=1
           export SKIA_USE_GL=0
           export CXXFLAGS="-DSK_TYPEFACE_FACTORY_FREETYPE"
