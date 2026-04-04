@@ -16,6 +16,8 @@ pub struct VulkanContext {
     pub swapchain: ash_vk::SwapchainKHR,
     pub swapchain_images: Vec<ash_vk::Image>,
     pub extent: ash_vk::Extent2D,
+    pub image_available_semaphore: ash_vk::Semaphore,
+    pub render_finished_semaphore: ash_vk::Semaphore,
 }
 
 unsafe impl Send for VulkanContext {}
@@ -99,6 +101,11 @@ impl VulkanContext {
         let swapchain = unsafe { swapchain_loader.create_swapchain(&swapchain_create_info, None).ok()? };
         let swapchain_images = unsafe { swapchain_loader.get_swapchain_images(swapchain).ok()? };
 
+        // 同步信号量
+        let semaphore_info = ash_vk::SemaphoreCreateInfo::default();
+        let image_available_semaphore = unsafe { device.create_semaphore(&semaphore_info, None).ok()? };
+        let render_finished_semaphore = unsafe { device.create_semaphore(&semaphore_info, None).ok()? };
+
         let entry_ptr = entry.clone();
         let get_proc = move |of: vk::GetProcOf| {
             unsafe {
@@ -111,7 +118,7 @@ impl VulkanContext {
                     }
                     vk::GetProcOf::Device(dev, name) => {
                         let name_cstr = CStr::from_ptr(name);
-                        entry_ptr.get_instance_proc_addr(ash_vk::Instance::from_raw(dev as _), name_cstr.as_ptr())
+                        entry_ptr.get_device_proc_addr(ash_vk::Device::from_raw(dev as _), name_cstr.as_ptr())
                             .map(|f| f as _)
                             .unwrap_or(std::ptr::null())
                     }
@@ -133,12 +140,24 @@ impl VulkanContext {
 
         Some(Self {
             instance, device, context, queue, graphics_queue_index: queue_family_index,
-            surface, surface_loader, swapchain_loader, swapchain, swapchain_images, extent
+            surface, surface_loader, swapchain_loader, swapchain, swapchain_images, extent,
+            image_available_semaphore, render_finished_semaphore
         })
     }
 
-    pub fn get_sk_surface(&mut self, index: usize) -> Option<SkSurface> {
-        let image = self.swapchain_images.get(index)?;
+    pub fn acquire_next_image(&mut self) -> Option<u32> {
+        unsafe {
+            self.swapchain_loader.acquire_next_image(
+                self.swapchain,
+                u64::MAX,
+                self.image_available_semaphore,
+                ash_vk::Fence::null()
+            ).ok().map(|(idx, _)| idx)
+        }
+    }
+
+    pub fn get_sk_surface(&mut self, index: u32) -> Option<SkSurface> {
+        let image = self.swapchain_images.get(index as usize)?;
         let image_info = vk::ImageInfo {
             image: image.as_raw() as _,
             alloc: vk::Alloc::default(),

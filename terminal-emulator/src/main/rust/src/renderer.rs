@@ -1,5 +1,5 @@
 use skia_safe::{Canvas, Paint, Color, Font, Typeface, Rect, PaintStyle, FontMgr, FontStyle};
-use crate::terminal::style::*;
+use crate::engine::TerminalEngine;
 
 pub struct TerminalRenderer {
     font: Font,
@@ -32,127 +32,64 @@ impl TerminalRenderer {
     pub fn draw_terminal(
         &mut self,
         canvas: &Canvas,
-        rows: i32,
-        cols: i32,
+        engine: &TerminalEngine,
         font_width: f32,
         font_height: f32,
-        font_ascent: f32,
-        palette: &[u32; 258],
-        cursor_x: i32,
-        cursor_y: i32,
-        cursor_style: i32,
-        cursor_visible: bool,
-        mut get_row: impl FnMut(i32, &mut Vec<u32>, &mut Vec<u64>),
     ) {
-        let bg_default = palette[256];
-        canvas.clear(Color::new(bg_default));
+        // 1. 获取颜色方案
+        let palette = &engine.state.colors.palette;
+        let bg_default = Color::new(palette[256]);
+        canvas.clear(bg_default);
 
-        let mut code_points = Vec::with_capacity(cols as usize);
-        let mut styles = Vec::with_capacity(cols as usize);
+        // 2. 遍历屏幕缓冲区
+        let screen = &engine.screen;
+        let rows = screen.get_rows();
+        let cols = screen.get_cols();
 
         for row in 0..rows {
-            get_row(row, &mut code_points, &mut styles);
+            let y = (row as f32 + 1.0) * font_height;
             
-            let y_base = (row as f32 + 1.0) * font_height;
-            let mut col = 0;
-            
-            while col < cols as usize {
-                let cp = code_points[col];
-                if cp == 0 { col += 1; continue; }
+            // 获取该行的数据（简化：直接逐格获取）
+            for col in 0..cols {
+                let (code_point, style) = screen.get_cell_at(col, row);
+                if code_point == 0 { continue; }
 
-                let style = styles[col];
-                let mut run_text = String::new();
-                run_text.push(std::char::from_u32(cp).unwrap_or(' '));
+                let x = col as f32 * font_width;
                 
-                let mut run_width_cols = 1;
-                let mut current = col + 1;
+                // 解析颜色
+                let fg_idx = crate::terminal::style::decode_fore_color(style) as usize;
+                let bg_idx = crate::terminal::style::decode_back_color(style) as usize;
                 
-                while current < cols as usize && styles[current] == style {
-                    let next_cp = code_points[current];
-                    if next_cp != 0 {
-                        run_text.push(std::char::from_u32(next_cp).unwrap_or(' '));
-                        run_width_cols += 1;
-                    }
-                    current += 1;
+                let fg_color = Color::new(if fg_idx < 258 { palette[fg_idx] } else { palette[257] });
+                let bg_color = Color::new(if bg_idx < 258 { palette[bg_idx] } else { palette[256] });
+
+                // 绘制背景
+                if bg_idx != 256 {
+                    self.bg_paint.set_color(bg_color);
+                    canvas.draw_rect(
+                        Rect::from_xywh(x, y - font_height, font_width, font_height),
+                        &self.bg_paint
+                    );
                 }
 
-                self.draw_run(
-                    canvas,
-                    &run_text,
-                    col as f32 * font_width,
-                    y_base,
-                    run_width_cols as f32 * font_width,
-                    font_height,
-                    font_ascent,
-                    style,
-                    palette,
-                );
-
-                col = current;
+                // 绘制文字
+                self.paint.set_color(fg_color);
+                let text = std::char::from_u32(code_point as u32).unwrap_or(' ').to_string();
+                canvas.draw_str(&text, (x, y - 4.0), &self.font, &self.paint);
             }
         }
 
-        if cursor_visible && cursor_x >= 0 && cursor_x < cols && cursor_y >= 0 && cursor_y < rows {
-            self.draw_cursor(
-                canvas,
-                cursor_x as f32 * font_width,
-                (cursor_y as f32 + 1.0) * font_height,
+        // 3. 绘制光标
+        let cursor = &engine.cursor;
+        self.bg_paint.set_color(Color::WHITE);
+        canvas.draw_rect(
+            Rect::from_xywh(
+                cursor.x as f32 * font_width,
+                cursor.y as f32 * font_height,
                 font_width,
-                font_height,
-                palette[257],
-                cursor_style,
-            );
-        }
-    }
-
-    fn draw_cursor(&mut self, canvas: &Canvas, x: f32, y: f32, width: f32, height: f32, color: u32, style: i32) {
-        self.bg_paint.set_color(Color::new(color));
-        let cursor_rect = match style {
-            1 => Rect::from_xywh(x, y - height / 4.0, width, height / 4.0),
-            2 => Rect::from_xywh(x, y - height, width / 4.0, height),
-            _ => Rect::from_xywh(x, y - height, width, height),
-        };
-        canvas.draw_rect(cursor_rect, &self.bg_paint);
-    }
-
-    fn draw_run(
-        &mut self,
-        canvas: &Canvas,
-        text: &str,
-        x: f32,
-        y: f32,
-        width: f32,
-        height: f32,
-        ascent: f32,
-        style: u64,
-        palette: &[u32; 258],
-    ) {
-        let mut fg_idx = decode_fore_color(style) as usize;
-        let mut bg_idx = decode_back_color(style) as usize;
-        let effect = decode_effect(style);
-
-        if (effect & EFFECT_REVERSE) != 0 {
-            std::mem::swap(&mut fg_idx, &mut bg_idx);
-        }
-
-        let fg_color = if fg_idx < 258 { palette[fg_idx] } else { palette[257] };
-        let bg_color = if bg_idx < 258 { palette[bg_idx] } else { palette[256] };
-
-        if bg_idx != 256 {
-            self.bg_paint.set_color(Color::new(bg_color));
-            canvas.draw_rect(Rect::from_xywh(x, y - height, width, height), &self.bg_paint);
-        }
-
-        if (effect & EFFECT_INVISIBLE) == 0 {
-            let mut color = fg_color;
-            if (effect & EFFECT_DIM) != 0 {
-                let r = ((color >> 16) & 0xFF) * 2 / 3;
-                let g = ((color >> 8) & 0xFF) * 2 / 3;
-                let b = (color & 0xFF) * 2 / 3;
-                color = 0xFF000000 | (r << 16) | (g << 8) | b;
-            }
-            self.paint.set_color(Color::new(color));
-            canvas.draw_str(text, (x, y + ascent), &self.font, &self.paint);
-        }
+                font_height
+            ),
+            &self.bg_paint
+        );
     }
 }

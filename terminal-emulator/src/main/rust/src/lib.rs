@@ -118,8 +118,10 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeRender(
     _env: JNIEnv,
     _obj: JObject,
-    _engine_ptr: jlong,
+    engine_ptr: jlong,
 ) {
+    if engine_ptr == 0 { return; }
+
     let ctx_mutex = match VULKAN_CONTEXT.get() {
         Some(m) => m,
         None => return,
@@ -131,28 +133,42 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeRender(
         None => return,
     };
 
-    let image_index = 0; 
-    if let Some(mut sk_surface) = ctx.get_sk_surface(image_index) {
-        let _canvas = sk_surface.canvas();
-        
-        let renderer_mutex = TERMINAL_RENDERER.get_or_init(|| Mutex::new(None));
-        let mut renderer_guard = renderer_mutex.lock().unwrap();
-        
-        if renderer_guard.is_none() {
-            *renderer_guard = Some(crate::renderer::TerminalRenderer::new(&[], 12.0));
-        }
+    // 获取 Engine 实例
+    let term_ctx = unsafe { &*(engine_ptr as *const TerminalContext) };
+    let engine = term_ctx.engine.lock().unwrap();
 
-        ctx.context.flush_and_submit();
-        
-        let present_info = ash::vk::PresentInfoKHR {
-            swapchain_count: 1,
-            p_swapchains: &ctx.swapchain,
-            p_image_indices: &(image_index as u32),
-            ..Default::default()
-        };
-        
-        unsafe {
-            let _ = ctx.swapchain_loader.queue_present(ctx.queue, &present_info);
+    // 1. 获取下一个交换链图像索引
+    if let Some(image_index) = ctx.acquire_next_image() {
+        // 2. 获取 Skia Surface
+        if let Some(mut sk_surface) = ctx.get_sk_surface(image_index) {
+            let canvas = sk_surface.canvas();
+            
+            // 3. 执行绘制
+            let renderer_mutex = TERMINAL_RENDERER.get_or_init(|| Mutex::new(None));
+            let mut renderer_guard = renderer_mutex.lock().unwrap();
+            
+            if renderer_guard.is_none() {
+                *renderer_guard = Some(crate::renderer::TerminalRenderer::new(&[], 12.0));
+            }
+
+            if let Some(renderer) = renderer_guard.as_mut() {
+                // TODO: 正确计算字体宽高
+                renderer.draw_terminal(canvas, &engine, 10.0, 20.0);
+            }
+
+            ctx.context.flush_and_submit();
+            
+            // 4. 呈现图像
+            let present_info = ash::vk::PresentInfoKHR {
+                swapchain_count: 1,
+                p_swapchains: &ctx.swapchain,
+                p_image_indices: &image_index,
+                ..Default::default()
+            };
+            
+            unsafe {
+                let _ = ctx.swapchain_loader.queue_present(ctx.queue, &present_info);
+            }
         }
     }
 }
