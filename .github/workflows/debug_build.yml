@@ -69,6 +69,15 @@ jobs:
           # 运行 Rust 原生一致性测试
           cargo test --test consistency -- --test-threads=1
 
+      - name: Cache Skia Build
+        uses: actions/cache@v4
+        with:
+          path: |
+            terminal-emulator/src/main/rust/target/*/build/skia-bindings-*/out
+          key: skia-v2-${{ runner.os }}-${{ env.SKIA_NATIVE_API_LEVEL }}-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            skia-v2-${{ runner.os }}-${{ env.SKIA_NATIVE_API_LEVEL }}-
+
       - name: Build APKs
         shell: bash
         env:
