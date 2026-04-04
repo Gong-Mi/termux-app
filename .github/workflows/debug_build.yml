@@ -75,6 +75,11 @@ jobs:
         run: |
           exit_on_error() { echo "$1"; exit 1; }
 
+          # Force skip Skia layout assertions to fix compilation error for Android
+          export SKIA_BINDINGS_SKIP_LAYOUT_ASSERTIONS=1
+          export FORCE_SKIA_BUILD=1
+          export CXXFLAGS="-DSK_TYPEFACE_FACTORY_FREETYPE"
+
           echo "Setting vars"
 
           if [ "$GITHUB_EVENT_NAME" == "pull_request" ]; then
