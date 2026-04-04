@@ -1137,9 +1137,12 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
 
     @Override
     protected void onDraw(Canvas canvas) {
+        android.util.Log.i("TerminalView", "onDraw CALLED: mEmulator=" + (mEmulator != null));
         if (mEmulator == null) {
+            android.util.Log.w("TerminalView", "onDraw: mEmulator is null, drawing black");
             canvas.drawColor(0XFF000000);
         } else {
+            android.util.Log.i("TerminalView", "onDraw: emulator ptr=" + mEmulator.getNativePointer() + " scale=" + mScaleFactor + " topRow=" + mTopRow);
             // 获取选区坐标
             boolean selActive = false;
             int selX1 = 0, selY1 = 0, selX2 = 0, selY2 = 0;
