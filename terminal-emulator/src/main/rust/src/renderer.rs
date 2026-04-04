@@ -244,10 +244,9 @@ impl TerminalRenderer {
         let cols = state.cols as usize;
         let global_reverse = state.modes.is_enabled(crate::terminal::modes::DECSET_BIT_REVERSE_VIDEO);
 
-        // 先绘制文本行
-        for r in 0..rows {
-            if r >= screen.buffer.len() { break; }
-            let row_data = &screen.buffer[r];
+        // 先绘制文本行 - 使用 get_row() 处理环形缓冲区映射
+        for r in 0..rows as i32 {
+            let row_data = screen.get_row(r);
             let y_base = (r as f32 + 1.0) * self.font_height;
 
             let mut c = 0;
@@ -267,7 +266,7 @@ impl TerminalRenderer {
                 let mut run_width = 0.0f32;
 
                 // 合并相同样式 + 相同选区状态的 run
-                let sel = self.is_cell_selected(c as i32, r as i32);
+                let sel = self.is_cell_selected(c as i32, r);
                 while c < cols && c < row_data.text.len() {
                     let cell_style = row_data.styles[c];
                     let cell_effect = decode_effect(cell_style);
@@ -278,7 +277,7 @@ impl TerminalRenderer {
                         continue;
                     }
 
-                    let cell_sel = self.is_cell_selected(c as i32, r as i32);
+                    let cell_sel = self.is_cell_selected(c as i32, r);
                     let style_match = cell_style == style;
                     let sel_match = cell_sel == sel;
 
