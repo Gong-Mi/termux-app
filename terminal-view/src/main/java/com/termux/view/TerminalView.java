@@ -44,8 +44,11 @@ import com.termux.terminal.TerminalEmulator;
 import com.termux.terminal.TerminalSession;
 import com.termux.view.textselection.TextSelectionCursorController;
 
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
+
 /** View displaying and interacting with a {@link TerminalSession}. */
-public final class TerminalView extends View {
+public final class TerminalView extends SurfaceView implements SurfaceHolder.Callback {
 
     /** Log terminal view key and IME events. */
     private static boolean TERMINAL_VIEW_KEY_LOGGING_ENABLED = false;
@@ -195,6 +198,7 @@ public final class TerminalView extends View {
 
     public TerminalView(Context context, AttributeSet attributes) { // NO_UCD (unused code)
         super(context, attributes);
+        getHolder().addCallback(this);
         updateRefreshRate(context);
         mGestureRecognizer = new GestureAndScaleRecognizer(context, new GestureAndScaleRecognizer.Listener() {
 
@@ -1127,15 +1131,11 @@ public final class TerminalView extends View {
         if (mEmulator == null) {
             canvas.drawColor(0XFF000000);
         } else {
-            // render the terminal view and highlight any selected text
-            int[] sel = mDefaultSelectors;
-            if (mTextSelectionCursorController != null) {
-                mTextSelectionCursorController.getSelectors(sel);
-            }
+            // 正式接入 Rust Vulkan 渲染
+            // 传入：engine指针, 缩放系数, 纵向像素偏移
+            nativeRender(mEmulator.getNativePointer(), mScaleFactor, mTopRow * mRenderer.getFontLineSpacing());
 
-            mRenderer.render(mEmulator, canvas, mTopRow, sel[0], sel[1], sel[2], sel[3]);
-
-            // Draw Sixel image if available
+            // 暂时保留 Sixel 图像在 Canvas 上的绘制（如果 Rust 侧尚未接管 Sixel）
             if (mSixelBitmap != null && !mSixelBitmap.isRecycled()) {
                 float fontWidth = mRenderer.getFontWidth();
                 float fontLineSpacing = mRenderer.getFontLineSpacing();
@@ -1734,6 +1734,21 @@ public final class TerminalView extends View {
                         top, bottom, mSixelStartY));
             }
         }
+    }
+
+    @Override
+    public void surfaceCreated(SurfaceHolder holder) {
+        nativeSetSurface(holder.getSurface());
+    }
+
+    @Override
+    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+        nativeOnSizeChanged(width, height);
+    }
+
+    @Override
+    public void surfaceDestroyed(SurfaceHolder holder) {
+        nativeSetSurface(null);
     }
 
     // ============================================================================
