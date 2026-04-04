@@ -154,6 +154,11 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeRender(
     engine_ptr: jlong,
     scale: jfloat,
     scroll_offset: jfloat,
+    sel_x1: jint,
+    sel_y1: jint,
+    sel_x2: jint,
+    sel_y2: jint,
+    sel_active: jboolean,
 ) {
     if engine_ptr == 0 { return; }
 
@@ -177,22 +182,28 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeRender(
         // 2. 获取 Skia Surface
         if let Some(mut sk_surface) = ctx.get_sk_surface(image_index) {
             let canvas = sk_surface.canvas();
-            
+
             // 3. 执行绘制
             let renderer_mutex = TERMINAL_RENDERER.get_or_init(|| Mutex::new(None));
             let mut renderer_guard = renderer_mutex.lock().unwrap();
-            
+
             if renderer_guard.is_none() {
                 *renderer_guard = Some(crate::renderer::TerminalRenderer::new(&[], 12.0));
             }
 
             if let Some(renderer) = renderer_guard.as_mut() {
+                // 设置选区
+                if sel_active != 0 {
+                    renderer.set_selection(sel_x1, sel_y1, sel_x2, sel_y2);
+                } else {
+                    renderer.clear_selection();
+                }
                 // 传入缩放和平移参数
                 renderer.draw_terminal(canvas, &engine, scale as f32, scroll_offset as f32);
             }
 
             ctx.context.flush_and_submit();
-            
+
             // 4. 呈现图像
             let present_info = ash::vk::PresentInfoKHR {
                 swapchain_count: 1,
@@ -200,7 +211,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeRender(
                 p_image_indices: &image_index,
                 ..Default::default()
             };
-            
+
             unsafe {
                 let _ = ctx.swapchain_loader.queue_present(ctx.queue, &present_info);
             }

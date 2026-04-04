@@ -1140,23 +1140,36 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
         if (mEmulator == null) {
             canvas.drawColor(0XFF000000);
         } else {
-            // 正式接入 Rust Vulkan 渲染
-            // 传入：engine指针, 缩放系数, 纵向像素偏移
-            nativeRender(mEmulator.getNativePointer(), mScaleFactor, mTopRow * mRenderer.getFontLineSpacing());
+            // 获取选区坐标
+            boolean selActive = false;
+            int selX1 = 0, selY1 = 0, selX2 = 0, selY2 = 0;
+            if (isSelectingText() && mTextSelectionCursorController != null) {
+                mTextSelectionCursorController.getSelectors(mSelCoords);
+                // 将缓冲區坐标转换为可见屏幕坐标
+                selY1 = mSelCoords[0] + mTopRow;
+                selY2 = mSelCoords[1] + mTopRow;
+                selX1 = mSelCoords[2];
+                selX2 = mSelCoords[3];
+                selActive = true;
+            }
+
+            // Rust Vulkan 渲染
+            nativeRender(mEmulator.getNativePointer(), mScaleFactor, mTopRow * mRenderer.getFontLineSpacing(),
+                         selX1, selY1, selX2, selY2, selActive);
 
             // 暂时保留 Sixel 图像在 Canvas 上的绘制（如果 Rust 侧尚未接管 Sixel）
             if (mSixelBitmap != null && !mSixelBitmap.isRecycled()) {
                 float fontWidth = mRenderer.getFontWidth();
                 float fontLineSpacing = mRenderer.getFontLineSpacing();
                 float fontAscent = mRenderer.getFontLineSpacingAndAscent();
-                
+
                 int pixelX = (int) (mSixelStartX * fontWidth);
                 int pixelY = (int) ((mSixelStartY - mTopRow) * fontLineSpacing + fontAscent);
-                
+
                 canvas.drawBitmap(mSixelBitmap, pixelX, pixelY, mSixelPaint);
             }
 
-            // render the text selection handles
+            // render the text selection handles (仅绘制拖拽手柄，选区高亮已由 Rust 渲染)
             renderTextSelection();
         }
     }
@@ -1765,6 +1778,10 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
     // ============================================================================
 
     public native void nativeSetSurface(@Nullable android.view.Surface surface);
-    public native void nativeRender(long enginePtr, float scale, float scrollOffset);
+    public native void nativeRender(long enginePtr, float scale, float scrollOffset,
+                                    int selX1, int selY1, int selX2, int selY2, boolean selActive);
     public native void nativeOnSizeChanged(int width, int height);
+
+    /** 获取选区坐标传递给 nativeRender */
+    private final int[] mSelCoords = new int[4];
 }
