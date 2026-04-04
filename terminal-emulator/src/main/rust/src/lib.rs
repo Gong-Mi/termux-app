@@ -93,23 +93,26 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
     _obj: JObject,
     surface: JObject,
 ) {
-    let window = unsafe {
-        ndk_sys::ANativeWindow_fromSurface(env.get_native_interface(), surface.as_raw())
-    };
+    #[cfg(target_os = "android")]
+    {
+        let window = unsafe {
+            ndk_sys::ANativeWindow_fromSurface(env.get_native_interface(), surface.as_raw())
+        };
 
-    if window.is_null() {
-        android_log(LogPriority::ERROR, "nativeSetSurface: Failed to get ANativeWindow");
-        return;
-    }
+        if window.is_null() {
+            android_log(LogPriority::ERROR, "nativeSetSurface: Failed to get ANativeWindow");
+            return;
+        }
 
-    unsafe {
-        if let Some(ctx) = crate::vulkan_context::VulkanContext::new(window as _) {
-            let mutex = VULKAN_CONTEXT.get_or_init(|| Mutex::new(None));
-            let mut guard = mutex.lock().unwrap();
-            *guard = Some(ctx);
-            android_log(LogPriority::INFO, "nativeSetSurface: Vulkan Context initialized");
-        } else {
-            android_log(LogPriority::ERROR, "nativeSetSurface: Failed to initialize Vulkan Context");
+        unsafe {
+            if let Some(ctx) = crate::vulkan_context::VulkanContext::new(window as _) {
+                let mutex = VULKAN_CONTEXT.get_or_init(|| Mutex::new(None));
+                let mut guard = mutex.lock().unwrap();
+                *guard = Some(ctx);
+                android_log(LogPriority::INFO, "nativeSetSurface: Vulkan Context initialized");
+            } else {
+                android_log(LogPriority::ERROR, "nativeSetSurface: Failed to initialize Vulkan Context");
+            }
         }
     }
 }
