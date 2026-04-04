@@ -171,6 +171,9 @@ public final class TerminalSession extends TerminalOutput {
             mClient.setTerminalShellPid(this, mShellPid);
             android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 8. Emulator instance created");
 
+            // 触发初始绘制：emulator 准备好后通知 UI 刷新
+            mClient.onTextChanged(this);
+
             if (mTerminalFileDescriptor != -1) {
                 final FileDescriptor terminalFileDescriptorWrapped = wrapFileDescriptor(mTerminalFileDescriptor, mClient);
 
