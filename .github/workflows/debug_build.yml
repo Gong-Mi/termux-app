@@ -50,7 +50,7 @@ jobs:
       - name: Install Skia build dependencies (gn, ninja)
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build
+          sudo apt-get install -y ninja-build libfreetype6-dev libfontconfig1-dev
           
           # Build gn from source to avoid download URL issues
           git clone https://gn.googlesource.com/gn /tmp/gn-repo
