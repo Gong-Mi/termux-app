@@ -54,12 +54,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ninja-build libfreetype6-dev libfontconfig1-dev
           
-          # Build gn from source to avoid download URL issues
-          git clone https://gn.googlesource.com/gn /tmp/gn-repo
-          cd /tmp/gn-repo
-          python3 build/gen.py
-          ninja -C out
-          sudo mv out/gn /usr/local/bin/gn
+          # Use prebuilt gn binary from repository
+          unzip scripts/gn-linux-amd64.zip -d /tmp/gn-bin
+          sudo mv /tmp/gn-bin/gn /usr/local/bin/gn
+          sudo chmod +x /usr/local/bin/gn
           
           gn --version
           ninja --version
