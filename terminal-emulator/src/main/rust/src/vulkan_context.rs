@@ -27,7 +27,6 @@ impl VulkanContext {
     pub unsafe fn new(window: *mut std::ffi::c_void) -> Option<Self> {
         let entry = unsafe { Entry::load().ok()? };
         
-        // 1. Instance
         let app_info = ash_vk::ApplicationInfo {
             api_version: ash_vk::API_VERSION_1_1,
             ..Default::default()
@@ -158,15 +157,20 @@ impl VulkanContext {
     pub fn get_sk_surface(&mut self, index: u32) -> Option<SkSurface> {
         let image = self.swapchain_images.get(index as usize)?;
         
-        // 修复：在 0.81.0 中使用构造函数而不是字段初始化
-        let mut image_info = vk::ImageInfo::default();
-        image_info.image = image.as_raw() as _;
-        image_info.tiling = vk::ImageTiling::OPTIMAL;
-        image_info.layout = vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
-        image_info.format = vk::Format::R8G8B8A8_UNORM;
-        image_info.image_usage_flags = ash_vk::ImageUsageFlags::COLOR_ATTACHMENT.as_raw() as _;
-        image_info.sample_count = 1;
-        image_info.level_count = 1;
+        // 修复：在 0.81.0 中 ImageInfo 的所有字段都是私有的
+        // 必须使用构造函数或 unsafe 初始化
+        let image_info = unsafe {
+            let mut info: vk::ImageInfo = std::mem::zeroed();
+            info.image = image.as_raw() as _;
+            info.alloc = vk::Alloc::default();
+            info.tiling = vk::ImageTiling::OPTIMAL;
+            info.layout = vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
+            info.format = vk::Format::R8G8B8A8_UNORM;
+            info.image_usage_flags = ash_vk::ImageUsageFlags::COLOR_ATTACHMENT.as_raw() as _;
+            info.sample_count = 1;
+            info.level_count = 1;
+            info
+        };
 
         let render_target = skia_safe::gpu::backend_render_targets::make_vk(
             (self.extent.width as i32, self.extent.height as i32),
