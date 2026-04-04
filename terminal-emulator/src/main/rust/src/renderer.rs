@@ -1,8 +1,9 @@
 use skia_safe::{Canvas, Paint, Color, Font, Rect, PaintStyle, FontMgr, FontStyle};
 use crate::engine::TerminalEngine;
+use crate::terminal::style::*;
 
 pub struct TerminalRenderer {
-    font: Font,
+    base_font_size: f32,
     paint: Paint,
     bg_paint: Paint,
     pub font_width: f32,
@@ -23,11 +24,8 @@ impl TerminalRenderer {
         font.set_edging(skia_safe::font::Edging::SubpixelAntiAlias);
         font.set_subpixel(true);
 
-        // 精确计算字体度量
         let metrics = font.metrics().1;
         let font_height = metrics.descent - metrics.ascent + metrics.leading;
-        
-        // 测量字符宽度（以 'M' 或 'W' 为准）
         let (width, _) = font.measure_str("M", None);
         let font_width = width;
 
@@ -37,21 +35,15 @@ impl TerminalRenderer {
         let mut bg_paint = Paint::default();
         bg_paint.set_style(PaintStyle::Fill);
 
-        Self { font, paint, bg_paint, font_width, font_height }
+        Self { base_font_size: font_size, paint, bg_paint, font_width, font_height }
     }
 
-    pub fn draw_terminal(
-        &mut self,
-        canvas: &Canvas,
-        engine: &TerminalEngine,
-    ) {
+    pub fn draw_terminal(&mut self, canvas: &Canvas, engine: &TerminalEngine) {
         let state = &engine.state;
         let palette = &state.colors.current_colors;
         let screen = if state.use_alternate_buffer { &state.alt_screen } else { &state.main_screen };
         
-        // 背景清屏
-        let bg_default = Color::new(palette[257]);
-        canvas.clear(bg_default);
+        canvas.clear(Color::new(palette[257]));
 
         let rows = state.rows as usize;
         let cols = state.cols as usize;
@@ -59,51 +51,80 @@ impl TerminalRenderer {
         for r in 0..rows {
             if r >= screen.buffer.len() { break; }
             let row_data = &screen.buffer[r];
-            let y = (r as f32 + 1.0) * self.font_height;
+            let y_base = (r as f32 + 1.0) * self.font_height;
             
-            for c in 0..cols {
+            let mut c = 0;
+            while c < cols {
                 if c >= row_data.text.len() { break; }
-                let char_val = row_data.text[c];
+                
+                let start_c = c;
                 let style = row_data.styles[c];
+                let mut run_text = String::new();
                 
-                let x = c as f32 * self.font_width;
-                
-                // 1. 颜色解码
-                let fg_idx = crate::terminal::style::decode_fore_color(style) as usize;
-                let bg_idx = crate::terminal::style::decode_back_color(style) as usize;
-                let fg_color = Color::new(if fg_idx < 259 { palette[fg_idx] } else { palette[256] });
-                let bg_color = Color::new(if bg_idx < 259 { palette[bg_idx] } else { palette[257] });
-
-                // 2. 绘制背景 (如果是默认背景则跳过)
-                if bg_idx != 257 {
-                    self.bg_paint.set_color(bg_color);
-                    canvas.draw_rect(
-                        Rect::from_xywh(x, y - self.font_height, self.font_width, self.font_height),
-                        &self.bg_paint
-                    );
+                while c < cols && c < row_data.text.len() && row_data.styles[c] == style {
+                    let ch = row_data.text[c];
+                    if ch != '\0' {
+                        run_text.push(ch);
+                    }
+                    c += 1;
                 }
 
-                // 3. 绘制文字
-                if char_val != ' ' && char_val != '\0' {
-                    self.paint.set_color(fg_color);
-                    canvas.draw_str(&char_val.to_string(), (x, y - 4.0), &self.font, &self.paint);
+                if !run_text.is_empty() {
+                    self.draw_run(
+                        canvas,
+                        &run_text,
+                        start_c as f32 * self.font_width,
+                        y_base,
+                        (c - start_c) as f32 * self.font_width,
+                        style,
+                        palette,
+                    );
                 }
             }
         }
 
-        // 4. 绘制光标 (如果是反色块)
         if state.cursor_enabled {
             let cursor = &state.cursor;
             self.bg_paint.set_color(Color::WHITE);
             canvas.draw_rect(
-                Rect::from_xywh(
-                    cursor.x as f32 * self.font_width,
-                    cursor.y as f32 * self.font_height,
-                    self.font_width,
-                    self.font_height
-                ),
+                Rect::from_xywh(cursor.x as f32 * self.font_width, cursor.y as f32 * self.font_height, self.font_width, self.font_height),
                 &self.bg_paint
             );
+        }
+    }
+
+    fn draw_run(&mut self, canvas: &Canvas, text: &str, x: f32, y: f32, width: f32, style: u64, palette: &[u32; 259]) {
+        let fg_idx = decode_fore_color(style) as usize;
+        let bg_idx = decode_back_color(style) as usize;
+        let effect = decode_effect(style);
+
+        if bg_idx != 257 {
+            let bg_color = Color::new(if bg_idx < 259 { palette[bg_idx] } else { palette[257] });
+            self.bg_paint.set_color(bg_color);
+            canvas.draw_rect(Rect::from_xywh(x, y - self.font_height, width, self.font_height), &self.bg_paint);
+        }
+
+        let font_mgr = FontMgr::new();
+        let weight = if (effect & EFFECT_BOLD) != 0 { skia_safe::font_style::Weight::BOLD } else { skia_safe::font_style::Weight::NORMAL };
+        let slant = if (effect & EFFECT_ITALIC) != 0 { skia_safe::font_style::Slant::Italic } else { skia_safe::font_style::Slant::Upright };
+        let font_style = FontStyle::new(weight, skia_safe::font_style::Width::NORMAL, slant);
+        
+        let typeface = font_mgr.match_family_style("monospace", font_style)
+            .unwrap_or_else(|| font_mgr.match_family_style("monospace", FontStyle::normal()).unwrap());
+        
+        let mut font = Font::new(typeface, Some(self.base_font_size));
+        font.set_edging(skia_safe::font::Edging::SubpixelAntiAlias);
+
+        let fg_color = Color::new(if fg_idx < 259 { palette[fg_idx] } else { palette[256] });
+        self.paint.set_color(fg_color);
+        canvas.draw_str(text, (x, y - 4.0), &font, &self.paint);
+
+        if (effect & EFFECT_UNDERLINE) != 0 {
+            canvas.draw_line((x, y - 2.0), (x + width, y - 2.0), &self.paint);
+        }
+        if (effect & EFFECT_STRIKETHROUGH) != 0 {
+            let mid_y = y - self.font_height / 2.0;
+            canvas.draw_line((x, mid_y), (x + width, mid_y), &self.paint);
         }
     }
 }
@@ -114,12 +135,25 @@ mod tests {
 
     #[test]
     fn test_font_metrics_calculation() {
-        // 创建一个测试用的渲染器（不带字体数据，使用系统默认）
         let renderer = TerminalRenderer::new(&[], 12.0);
-        
-        println!("Font Width: {}, Height: {}", renderer.font_width, renderer.font_height);
-        
         assert!(renderer.font_width > 0.0);
         assert!(renderer.font_height > 0.0);
+    }
+
+    #[test]
+    fn test_run_grouping_logic() {
+        let mut row = crate::terminal::screen::TerminalRow::new(10);
+        row.text[0] = 'A';
+        row.text[1] = '\0';
+        row.text[2] = 'B';
+        
+        let mut run_text = String::new();
+        for ch in row.text.iter() {
+            if *ch != '\0' {
+                run_text.push(*ch);
+            }
+        }
+        // 期望结果应该是 "AB"，因为宽字符占位符被过滤了
+        assert_eq!(run_text.trim(), "AB");
     }
 }

@@ -25,18 +25,18 @@ unsafe impl Sync for VulkanContext {}
 
 impl VulkanContext {
     pub unsafe fn new(window: *mut std::ffi::c_void) -> Option<Self> {
-        let entry = Entry::load().ok()?;
+        let entry = unsafe { Entry::load().ok()? };
         
         let app_info = ash_vk::ApplicationInfo { api_version: ash_vk::API_VERSION_1_1, ..Default::default() };
         let extension_names = [ash::khr::surface::NAME.as_ptr(), ash::khr::android_surface::NAME.as_ptr()];
         let create_info = ash_vk::InstanceCreateInfo { p_application_info: &app_info, enabled_extension_count: extension_names.len() as u32, pp_enabled_extension_names: extension_names.as_ptr(), ..Default::default() };
         
-        let instance = entry.create_instance(&create_info, None).ok()?;
+        let instance = unsafe { entry.create_instance(&create_info, None).ok()? };
         let surface_loader = ash::khr::surface::Instance::new(&entry, &instance);
         let android_surface_loader = ash::khr::android_surface::Instance::new(&entry, &instance);
-        let surface = android_surface_loader.create_android_surface(&ash_vk::AndroidSurfaceCreateInfoKHR { window, ..Default::default() }, None).ok()?;
+        let surface = unsafe { android_surface_loader.create_android_surface(&ash_vk::AndroidSurfaceCreateInfoKHR { window, ..Default::default() }, None).ok()? };
         
-        let pdevices = instance.enumerate_physical_devices().ok()?;
+        let pdevices = unsafe { instance.enumerate_physical_devices().ok()? };
         if pdevices.is_empty() { return None; }
         let pdevice = pdevices[0];
         let queue_family_index = 0;
@@ -45,22 +45,19 @@ impl VulkanContext {
         let queue_info = ash_vk::DeviceQueueCreateInfo { queue_family_index, queue_count: 1, p_queue_priorities: [1.0].as_ptr(), ..Default::default() };
         let device_create_info = ash_vk::DeviceCreateInfo { queue_create_info_count: 1, p_queue_create_infos: &queue_info, enabled_extension_count: device_extensions.len() as u32, pp_enabled_extension_names: device_extensions.as_ptr(), ..Default::default() };
         
-        let device = instance.create_device(pdevice, &device_create_info, None).ok()?;
-        let queue = device.get_device_queue(queue_family_index, 0);
+        let device = unsafe { instance.create_device(pdevice, &device_create_info, None).ok()? };
+        let queue = unsafe { device.get_device_queue(queue_family_index, 0) };
         let swapchain_loader = swapchain::Device::new(&instance, &device);
         
-        let caps = surface_loader.get_physical_device_surface_capabilities(pdevice, surface).ok()?;
+        let caps = unsafe { surface_loader.get_physical_device_surface_capabilities(pdevice, surface).ok()? };
         let extent = caps.current_extent;
 
-        // 初始化同步原语
         let semaphore_info = ash_vk::SemaphoreCreateInfo::default();
-        let image_available_semaphore = device.create_semaphore(&semaphore_info, None).ok()?;
-        let render_finished_semaphore = device.create_semaphore(&semaphore_info, None).ok()?;
+        let image_available_semaphore = unsafe { device.create_semaphore(&semaphore_info, None).ok()? };
+        let render_finished_semaphore = unsafe { device.create_semaphore(&semaphore_info, None).ok()? };
 
-        // 初始化 Skia
         let entry_ptr = entry.clone();
         let instance_handle = instance.handle();
-        let device_handle = device.handle();
         let get_proc = move |of: vk::GetProcOf| {
             unsafe {
                 match of {
@@ -76,13 +73,15 @@ impl VulkanContext {
             }
         };
         
-        let backend_context = vk::BackendContext::new(
-            instance_handle.as_raw() as _, 
-            pdevice.as_raw() as _, 
-            device_handle.as_raw() as _, 
-            (queue.as_raw() as _, queue_family_index as usize), 
-            &get_proc
-        );
+        let backend_context = unsafe {
+            vk::BackendContext::new(
+                instance_handle.as_raw() as _, 
+                pdevice.as_raw() as _, 
+                device.handle().as_raw() as _, 
+                (queue.as_raw() as _, queue_family_index as usize), 
+                &get_proc
+            )
+        };
         let context = skia_safe::gpu::direct_contexts::make_vulkan(&backend_context, None)?;
 
         let mut ctx = Self {
