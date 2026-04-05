@@ -1150,6 +1150,24 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
         // SurfaceView 的 Surface 和 View 系统的 Canvas 是两个独立的 Surface
         // Vulkan 渲染到 ANativeWindow Surface，会自动通过 SurfaceFlinger 合成到屏幕
 
+        // 更新渲染参数到 Vulkan 渲染线程
+        if (mEmulator != null) {
+            boolean selActive = false;
+            int selX1 = 0, selY1 = 0, selX2 = 0, selY2 = 0;
+            if (isSelectingText() && mTextSelectionCursorController != null) {
+                mTextSelectionCursorController.getSelectors(mSelCoords);
+                // 将缓冲区坐标转换为可见屏幕坐标
+                selY1 = mSelCoords[0] + mTopRow;
+                selY2 = mSelCoords[1] + mTopRow;
+                selX1 = mSelCoords[2];
+                selX2 = mSelCoords[3];
+                selActive = true;
+            }
+
+            nativeUpdateRenderParams(mScaleFactor, mTopRow * mRenderer.getFontLineSpacing(),
+                         selX1, selY1, selX2, selY2, selActive);
+        }
+
         // 暂时保留 Sixel 图像在 Canvas 上的绘制（如果 Rust 侧尚未接管 Sixel）
         if (mSixelBitmap != null && !mSixelBitmap.isRecycled()) {
             float fontWidth = mRenderer.getFontWidth();
@@ -1773,7 +1791,7 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
 
     public native void nativeSetSurface(@Nullable android.view.Surface surface);
     public native void nativeSetEnginePointer(long enginePtr);
-    public native void nativeRender(long enginePtr, float scale, float scrollOffset,
+    public native void nativeUpdateRenderParams(float scale, float scrollOffset,
                                     int selX1, int selY1, int selX2, int selY2, boolean selActive);
     public native void nativeOnSizeChanged(int width, int height);
 

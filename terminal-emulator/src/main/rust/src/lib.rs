@@ -38,6 +38,37 @@ static RENDER_THREAD_RUNNING: AtomicBool = AtomicBool::new(false);
 static RENDER_THREAD_HANDLE: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
 static ENGINE_POINTER: Mutex<jlong> = Mutex::new(0);
 
+/// 渲染参数（由 Java 侧通过 JNI 设置）
+static RENDER_SCALE: Mutex<f32> = Mutex::new(1.0);
+static RENDER_SCROLL_OFFSET: Mutex<f32> = Mutex::new(0.0);
+static RENDER_SEL_X1: Mutex<jint> = Mutex::new(0);
+static RENDER_SEL_Y1: Mutex<jint> = Mutex::new(0);
+static RENDER_SEL_X2: Mutex<jint> = Mutex::new(0);
+static RENDER_SEL_Y2: Mutex<jint> = Mutex::new(0);
+static RENDER_SEL_ACTIVE: Mutex<bool> = Mutex::new(false);
+
+/// 设置渲染参数（由 Java onDraw 调用）
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_view_TerminalView_nativeUpdateRenderParams(
+    _env: JNIEnv,
+    _obj: JObject,
+    scale: jfloat,
+    scroll_offset: jfloat,
+    sel_x1: jint,
+    sel_y1: jint,
+    sel_x2: jint,
+    sel_y2: jint,
+    sel_active: jboolean,
+) {
+    *RENDER_SCALE.lock().unwrap() = scale;
+    *RENDER_SCROLL_OFFSET.lock().unwrap() = scroll_offset;
+    *RENDER_SEL_X1.lock().unwrap() = sel_x1;
+    *RENDER_SEL_Y1.lock().unwrap() = sel_y1;
+    *RENDER_SEL_X2.lock().unwrap() = sel_x2;
+    *RENDER_SEL_Y2.lock().unwrap() = sel_y2;
+    *RENDER_SEL_ACTIVE.lock().unwrap() = sel_active != 0;
+}
+
 /// 核心修复：在不持有锁的情况下将事件刷新到 Java，彻底杜绝双向死锁
 fn flush_events_to_java(env: &mut JNIEnv, callback_obj: &Option<jni::objects::GlobalRef>, events: Vec<TerminalEvent>) {
     if events.is_empty() { return; }
@@ -243,9 +274,24 @@ fn start_render_thread(engine_ptr: jlong) {
                 }
 
                 if let Some(renderer) = renderer_guard.as_mut() {
-                    renderer.clear_selection();
+                    // 从静态变量获取渲染参数
+                    let scale = *RENDER_SCALE.lock().unwrap();
+                    let scroll_offset = *RENDER_SCROLL_OFFSET.lock().unwrap();
+                    let sel_active = *RENDER_SEL_ACTIVE.lock().unwrap();
+                    let sel_x1 = *RENDER_SEL_X1.lock().unwrap();
+                    let sel_y1 = *RENDER_SEL_Y1.lock().unwrap();
+                    let sel_x2 = *RENDER_SEL_X2.lock().unwrap();
+                    let sel_y2 = *RENDER_SEL_Y2.lock().unwrap();
+
+                    // 更新选区
+                    if sel_active {
+                        renderer.set_selection(sel_x1, sel_y1, sel_x2, sel_y2);
+                    } else {
+                        renderer.clear_selection();
+                    }
+
                     // 使用异步渲染 - 不需要 engine 锁
-                    renderer.draw_frame(canvas, &frame, 1.0, 0.0);
+                    renderer.draw_frame(canvas, &frame, scale, scroll_offset);
                 }
 
                 ctx.context.flush_and_submit();
