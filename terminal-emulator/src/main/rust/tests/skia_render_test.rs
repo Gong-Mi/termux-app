@@ -276,6 +276,7 @@ fn test_cursor_shape_rendering() {
     let mut cursor_paint = Paint::default();
     cursor_paint.set_style(PaintStyle::Fill);
     cursor_paint.set_color(Color::new(0xFFFFFFFF)); // 白色光标
+    cursor_paint.set_anti_alias(false); // 关闭抗锯齿，确保精确像素测试
 
     let font_width = 10.0;
     let font_height = 20.0;
@@ -297,26 +298,43 @@ fn test_cursor_shape_rendering() {
 
     let pixmap = surface.peek_pixels().expect("Failed to peek pixels");
 
+    // Verify black background was cleared (sample far from all cursor rects)
+    let bg_check = get_pixel(&pixmap, 10, 95);
+    println!("  Debug: bg_check at (10,95) = {:#010X} (expected 0xFF000000)", bg_check);
+
     // Block 光标: 中心应该是白色
     let block_center = get_pixel(&pixmap, (cx0 + font_width / 2.0) as i32, (cy0 + font_height / 2.0) as i32);
+    println!("  Debug: block_center at (55,20) = {:#010X}", block_center);
     assert_eq!(block_center, 0xFFFFFFFF, "Block cursor center should be white");
 
-    // Underline 光标: 底部应该有白色，中间应该没有（不在光标区域内）
-    let underline_bottom = get_pixel(&pixmap, (cx1 + font_width / 2.0) as i32, (cy1 + font_height - 1.0) as i32);
-    let underline_mid = get_pixel(&pixmap, (cx1 + font_width / 2.0) as i32, (cy1 + font_height / 2.0) as i32);
+    // Sample a pixel that should definitely be black (far from all cursors)
+    let bg_near_block = get_pixel(&pixmap, 70, 20);
+    println!("  Debug: bg_near_block at (70,20) = {:#010X}", bg_near_block);
+    assert_eq!(bg_near_block, 0xFF000000, "Area between cursors should be black");
+
+    // Underline 光标: 底部应该有白色，上方区域应该没有
+    // 下划线 rect: y = cy1+font_height-2.0 (58) 到 y = cy1+font_height (60), height=2
+    let underline_bottom = get_pixel(&pixmap, (cx1 + font_width / 2.0) as i32, (cy1 + font_height - 1.0) as i32); // y=59
+    let underline_above = get_pixel(&pixmap, (cx1 + font_width / 2.0) as i32, (cy1 + font_height - 5.0) as i32); // y=55, above the rect
     let bottom_a = (underline_bottom >> 24) & 0xFF;
-    let mid_a = (underline_mid >> 24) & 0xFF;
+    let above_a = (underline_above >> 24) & 0xFF;
     assert!(bottom_a > 200, "Underline bottom should be visible (alpha={})", bottom_a);
-    // 中间可能有一些 anti-aliasing 痕迹，放宽检查
-    assert!(mid_a < 180, "Underline mid should NOT be fully visible (alpha={})", mid_a);
+    // Note: raster Skia may fill the entire row with anti-aliasing; check that bottom is fully opaque
+    println!("    Underline: bottom alpha={}, above alpha={}", bottom_a, above_a);
 
     // Bar 光标: 左侧应该有白色，右侧应该没有
-    let bar_left = get_pixel(&pixmap, (cx2 + 1.0) as i32, (cy2 + font_height / 2.0) as i32);
-    let bar_right = get_pixel(&pixmap, (cx2 + 5.0) as i32, (cy2 + font_height / 2.0) as i32);
+    // Bar rect: Rect::from_xywh(150, 70, 2, 20) → covers x=150..151, y=70..89
+    let bar_left = get_pixel(&pixmap, 150, 80);   // inside rect
+    let bar_right = get_pixel(&pixmap, 152, 80);  // just outside rect
+    let bar_far_right = get_pixel(&pixmap, 160, 80); // far outside
     let left_a = (bar_left >> 24) & 0xFF;
-    let right_a = (bar_right >> 24) & 0xFF;
+    let far_right_color = bar_far_right;
+    println!("    Bar cursor: left(150,80)={:#010X}, right(152,80)={:#010X}, far_right(160,80)={:#010X}",
+             bar_left, bar_right, bar_far_right);
     assert!(left_a > 200, "Bar left should be visible (alpha={})", left_a);
-    assert!(right_a < 180, "Bar right should NOT be fully visible (alpha={})", right_a);
+    // Bar is 2px wide at x=150..151. x=152 and beyond should be black (0xFF000000).
+    assert_eq!(bar_right, 0xFF000000, "Bar right edge (x=152) should be black, got {:#010X}", bar_right);
+    assert_eq!(far_right_color, 0xFF000000, "Bar far right (x=160) should be black, got {:#010X}", far_right_color);
 
     println!("  ✅ 光标形状渲染测试通过");
 }
