@@ -3,6 +3,17 @@ use crate::engine::TerminalEngine;
 use crate::terminal::style::*;
 use crate::terminal::colors::COLOR_INDEX_CURSOR;
 
+/// Unicode 字符终端单元格宽度计算 (与 Java WcWidth 一致)
+#[inline]
+fn char_wc_width(ucs: u32) -> usize {
+    if ucs == 0 || ucs == 32 { return 1; }
+    if ucs < 32 || (ucs >= 0x7F && ucs < 0xA0) { return 0; }
+    if (ucs >= 0x2E80 && ucs <= 0x9FFF) ||
+       (ucs >= 0xAC00 && ucs <= 0xD7A3) ||
+       (ucs >= 0xFF01 && ucs <= 0xFF60) { return 2; }
+    1
+}
+
 /// 预计算的字体和指标，避免每帧重建
 struct FontCache {
     font_mono: Font,
@@ -258,12 +269,14 @@ impl TerminalRenderer {
 
                 // 不可见文本跳过
                 if (effect & EFFECT_INVISIBLE) != 0 {
-                    c += 1;
+                    let ch = row_data.text[c];
+                    c += if ch == '\0' { 1 } else { char_wc_width(ch as u32) };
                     continue;
                 }
 
                 let mut run_text = String::new();
-                let mut run_width = 0.0f32;
+                let mut run_cells = 0usize;    // 终端单元格宽度
+                let mut run_measured = 0.0f32; // Skia 测量像素宽度
 
                 // 合并相同样式 + 相同选区状态的 run
                 let sel = self.is_cell_selected(c as i32, r);
@@ -273,7 +286,8 @@ impl TerminalRenderer {
 
                     // 不可见单元格跳过
                     if (cell_effect & EFFECT_INVISIBLE) != 0 {
-                        c += 1;
+                        let ch = row_data.text[c];
+                        c += if ch == '\0' { 1 } else { char_wc_width(ch as u32) };
                         continue;
                     }
 
@@ -285,33 +299,33 @@ impl TerminalRenderer {
                         let ch = row_data.text[c];
                         if ch != '\0' {
                             run_text.push(ch);
-                            // 宽度计算
+                            let wc_w = char_wc_width(ch as u32);
+                            run_cells += wc_w;
+                            // 像素宽度计算
                             if let Some(w) = self.ascii_cache.get(ch) {
-                                run_width += w;
+                                run_measured += w;
                             } else {
-                                let has_non_ascii = ch as u32 > 127;
-                                let font = self.font_cache.get_font(
-                                    (cell_effect & EFFECT_BOLD) != 0,
-                                    (cell_effect & EFFECT_ITALIC) != 0,
-                                    has_non_ascii,
-                                );
-                                let (w, _) = font.measure_str(&ch.to_string(), None);
-                                run_width += w;
+                                run_measured += self.measure_char(ch, cell_effect);
                             }
                         }
-                        c += 1;
+                        // \0 是宽字符占位符，跳过
+                        c += if ch == '\0' { 1 } else { char_wc_width(ch as u32) };
                     } else {
                         break;
                     }
                 }
 
                 if !run_text.is_empty() {
+                    // 期望像素宽度 = 单元格数 * 单格宽度 (与 Java canvas.scale 一致)
+                    let expected_width = run_cells as f32 * self.font_width;
+
                     self.draw_run(
                         canvas,
                         &run_text,
                         start_c as f32 * self.font_width,
                         y_base,
-                        run_width,
+                        expected_width,
+                        run_measured,
                         style,
                         palette,
                         global_reverse,
@@ -374,7 +388,8 @@ impl TerminalRenderer {
         text: &str,
         x: f32,
         y_base: f32,
-        width: f32,
+        expected_width: f32,
+        measured_width: f32,
         style: u64,
         palette: &[u32; 259],
         global_reverse: bool,
@@ -402,15 +417,15 @@ impl TerminalRenderer {
             fg_color_val = Self::apply_dim(fg_color_val);
         }
 
-        // 背景绘制
+        // 背景绘制 - 使用期望单元格宽度 (与 Java canvas.drawColor 对齐)
         let bg_color_val = if bg_idx < 259 { palette[bg_idx] } else { palette[257] };
         if is_selected {
             // 选区高亮：使用系统选择的蓝色调
             self.selection_bg_paint.set_color(Color::from_argb(128, 80, 120, 200));
-            canvas.draw_rect(Rect::from_xywh(x, y_base - self.font_height, width, self.font_height), &self.selection_bg_paint);
+            canvas.draw_rect(Rect::from_xywh(x, y_base - self.font_height, expected_width, self.font_height), &self.selection_bg_paint);
         } else if bg_idx != 257 {
             self.bg_paint.set_color(Color::new(bg_color_val));
-            canvas.draw_rect(Rect::from_xywh(x, y_base - self.font_height, width, self.font_height), &self.bg_paint);
+            canvas.draw_rect(Rect::from_xywh(x, y_base - self.font_height, expected_width, self.font_height), &self.bg_paint);
         }
 
         // 字体选择
@@ -422,23 +437,41 @@ impl TerminalRenderer {
         let fg_color = Color::new(fg_color_val);
         self.paint.set_color(fg_color);
 
-        // 文本绘制 (y 基线微调)
+        // 文本绘制 - 与 Java 一致：如果测量宽度与期望宽度不同，使用 canvas.scale 缩放
         let y_adjusted = y_base + self.font_cache.font_ascent * 0.15;
-        canvas.draw_str(text, (x, y_adjusted), font, &self.paint);
+        if measured_width > 0.0 && (expected_width - measured_width).abs() > 0.5 {
+            canvas.save();
+            canvas.scale((expected_width / measured_width, 1.0));
+            let x_scaled = x / (expected_width / measured_width);
+            canvas.draw_str(text, (x_scaled, y_adjusted), font, &self.paint);
+            canvas.restore();
+        } else {
+            canvas.draw_str(text, (x, y_adjusted), font, &self.paint);
+        }
 
         // 下划线
         if (effect & EFFECT_UNDERLINE) != 0 {
             let underline_y = y_base - 2.0;
             self.underline_paint.set_color(fg_color);
-            canvas.draw_line((x, underline_y), (x + width, underline_y), &self.underline_paint);
+            canvas.draw_line((x, underline_y), (x + expected_width, underline_y), &self.underline_paint);
         }
 
         // 删除线
         if (effect & EFFECT_STRIKETHROUGH) != 0 {
             let strike_y = y_base - self.font_height * 0.5;
             self.strikethrough_paint.set_color(fg_color);
-            canvas.draw_line((x, strike_y), (x + width, strike_y), &self.strikethrough_paint);
+            canvas.draw_line((x, strike_y), (x + expected_width, strike_y), &self.strikethrough_paint);
         }
+    }
+
+    /// 测量单个字符的像素宽度
+    fn measure_char(&self, ch: char, effect: u64) -> f32 {
+        let has_non_ascii = ch as u32 > 127;
+        let bold = (effect & EFFECT_BOLD) != 0;
+        let italic = (effect & EFFECT_ITALIC) != 0;
+        let font = self.font_cache.get_font(bold, italic, has_non_ascii);
+        let (w, _) = font.measure_str(&ch.to_string(), None);
+        w
     }
 }
 
