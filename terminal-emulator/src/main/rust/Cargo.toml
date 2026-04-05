@@ -71,3 +71,7 @@ path = "tests/key_event_handling.rs"
 [[test]]
 name = "skia_render_test"
 path = "tests/skia_render_test.rs"
+
+[[test]]
+name = "vulkan_render_benchmark"
+path = "tests/vulkan_render_benchmark.rs"
