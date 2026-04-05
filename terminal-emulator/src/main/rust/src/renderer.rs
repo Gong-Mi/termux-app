@@ -400,6 +400,13 @@ impl TerminalRenderer {
         let mut bg_idx = decode_back_color(style) as usize;
         let effect = decode_effect(style);
 
+        // Bold→Bright 颜色映射 (与 Java TerminalRenderer.java:230 一致)
+        // 前景色在 0-7 范围且加粗时，映射到 8-15 亮色
+        let bold = (effect & EFFECT_BOLD) != 0;
+        if bold && fg_idx < 8 {
+            fg_idx += 8;
+        }
+
         let mut do_reverse = global_reverse != ((effect & EFFECT_REVERSE) != 0);
         if is_selected {
             do_reverse = true; // 选区始终反色
@@ -430,7 +437,6 @@ impl TerminalRenderer {
 
         // 字体选择
         let has_non_ascii = text.chars().any(|c| c as u32 > 127);
-        let bold = (effect & EFFECT_BOLD) != 0;
         let italic = (effect & EFFECT_ITALIC) != 0;
         let font = self.font_cache.get_font(bold, italic, has_non_ascii);
 
