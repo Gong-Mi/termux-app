@@ -348,16 +348,27 @@ impl VulkanContext {
 
     pub fn get_sk_surface(&mut self, index: u32) -> Option<SkSurface> {
         let image = self.swapchain_images.get(index as usize)?;
-        let image_info: vk::ImageInfo = unsafe {
-            let mut info: vk::ImageInfo = std::mem::zeroed();
-            let ptr = &mut info as *mut vk::ImageInfo as *mut u8;
-            std::ptr::write(ptr as *mut *mut std::ffi::c_void, image.as_raw() as _);
-            info
+
+        // 关键修复：使用 skia_safe::gpu::vk::ImageInfo::new() 正确构造
+        // 这样 Skia 能正确识别这是 Vulkan swapchain image，不会回退到 ANativeWindow dequeue
+        let vk_image_info = unsafe {
+            skia_safe::gpu::vk::ImageInfo::new(
+                image.as_raw() as _,
+                skia_safe::gpu::vk::Alloc::default(),
+                skia_safe::gpu::vk::ImageTiling::OPTIMAL,
+                skia_safe::gpu::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                skia_safe::gpu::vk::Format::R8G8B8A8_UNORM,
+                1,
+                None,
+                None,
+                None,
+                None,
+            )
         };
 
         let render_target = skia_safe::gpu::backend_render_targets::make_vk(
             (self.extent.width as i32, self.extent.height as i32),
-            &image_info,
+            &vk_image_info,
         );
 
         skia_safe::gpu::surfaces::wrap_backend_render_target(
