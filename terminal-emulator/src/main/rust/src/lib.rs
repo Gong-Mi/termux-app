@@ -5,7 +5,7 @@ use once_cell::sync::OnceCell;
 use std::sync::Mutex;
 use std::io::Read;
 use std::os::unix::io::FromRawFd;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use libc;
 
 // 声明子模块
@@ -32,6 +32,11 @@ pub static JAVA_VM: OnceCell<jni::JavaVM> = OnceCell::new();
 
 static VULKAN_CONTEXT: OnceCell<Mutex<Option<crate::vulkan_context::VulkanContext>>> = OnceCell::new();
 static TERMINAL_RENDERER: OnceCell<Mutex<Option<crate::renderer::TerminalRenderer>>> = OnceCell::new();
+
+/// 渲染线程控制
+static RENDER_THREAD_RUNNING: AtomicBool = AtomicBool::new(false);
+static RENDER_THREAD_HANDLE: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
+static ENGINE_POINTER: Mutex<jlong> = Mutex::new(0);
 
 /// 核心修复：在不持有锁的情况下将事件刷新到 Java，彻底杜绝双向死锁
 fn flush_events_to_java(env: &mut JNIEnv, callback_obj: &Option<jni::objects::GlobalRef>, events: Vec<TerminalEvent>) {
@@ -97,10 +102,19 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
     {
         // Handle null surface: clean up Vulkan context if surface is destroyed
         if surface.is_null() {
-            android_log(LogPriority::INFO, "nativeSetSurface: Surface destroyed, cleaning up");
+            android_log(LogPriority::INFO, "nativeSetSurface: Surface destroyed, stopping render thread");
+
+            // 停止渲染线程
+            RENDER_THREAD_RUNNING.store(false, Ordering::SeqCst);
+            if let Some(handle) = RENDER_THREAD_HANDLE.lock().unwrap().take() {
+                let _ = handle.join();
+                android_log(LogPriority::INFO, "nativeSetSurface: Render thread stopped");
+            }
+
+            // 清理 Vulkan 上下文
             if let Some(mutex) = VULKAN_CONTEXT.get() {
                 let mut guard = mutex.lock().unwrap();
-                *guard = None; // Drop Vulkan context
+                *guard = None;
                 android_log(LogPriority::INFO, "nativeSetSurface: Vulkan context destroyed");
             }
             return;
@@ -121,11 +135,134 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
                 let mut guard = mutex.lock().unwrap();
                 *guard = Some(ctx);
                 android_log(LogPriority::INFO, "nativeSetSurface: Vulkan Context initialized");
+
+                // 启动渲染线程
+                let engine_ptr = *ENGINE_POINTER.lock().unwrap();
+                if engine_ptr != 0 {
+                    start_render_thread(engine_ptr);
+                } else {
+                    android_log(LogPriority::WARN, "nativeSetSurface: engine_ptr is 0, render thread will wait");
+                }
             } else {
                 android_log(LogPriority::ERROR, "nativeSetSurface: Failed to initialize Vulkan Context");
             }
         }
     }
+}
+
+/// 启动独立渲染线程
+fn start_render_thread(engine_ptr: jlong) {
+    // 更新 engine 指针
+    *ENGINE_POINTER.lock().unwrap() = engine_ptr;
+
+    // 如果已经在运行，不重复启动
+    if RENDER_THREAD_RUNNING.load(Ordering::SeqCst) {
+        android_log(LogPriority::INFO, "start_render_thread: already running");
+        return;
+    }
+
+    RENDER_THREAD_RUNNING.store(true, Ordering::SeqCst);
+    android_log(LogPriority::INFO, &format!("start_render_thread: engine={}", engine_ptr));
+
+    let handle = std::thread::Builder::new()
+        .name("VulkanRender".to_string())
+        .spawn(move || {
+            android_log(LogPriority::INFO, "Render thread started");
+            while RENDER_THREAD_RUNNING.load(Ordering::SeqCst) {
+                // 获取 Vulkan 上下文
+                let ctx_mutex = match VULKAN_CONTEXT.get() {
+                    Some(m) => m,
+                    None => {
+                        std::thread::sleep(std::time::Duration::from_millis(16));
+                        continue;
+                    }
+                };
+
+                let mut ctx_guard = match ctx_mutex.try_lock() {
+                    Ok(g) => g,
+                    Err(_) => {
+                        std::thread::sleep(std::time::Duration::from_millis(8));
+                        continue;
+                    }
+                };
+
+                let ctx = match ctx_guard.as_mut() {
+                    Some(c) => c,
+                    None => {
+                        std::thread::sleep(std::time::Duration::from_millis(16));
+                        continue;
+                    }
+                };
+
+                // 获取 Engine 实例
+                let current_engine_ptr = *ENGINE_POINTER.lock().unwrap();
+                if current_engine_ptr == 0 {
+                    std::thread::sleep(std::time::Duration::from_millis(16));
+                    continue;
+                }
+
+                let term_ctx = unsafe { &*(current_engine_ptr as *const crate::engine::TerminalContext) };
+                let engine = match term_ctx.lock.try_read() {
+                    Ok(e) => e,
+                    Err(_) => {
+                        std::thread::sleep(std::time::Duration::from_millis(4));
+                        continue;
+                    }
+                };
+
+                // 1. 获取下一个交换链图像索引
+                let image_index = match ctx.acquire_next_image() {
+                    Some(idx) => idx,
+                    None => {
+                        std::thread::sleep(std::time::Duration::from_millis(8));
+                        continue;
+                    }
+                };
+
+                // 2. 获取 Skia Surface
+                let mut sk_surface = match ctx.get_sk_surface(image_index) {
+                    Some(s) => s,
+                    None => continue,
+                };
+                let canvas = sk_surface.canvas();
+
+                // 3. 执行绘制
+                let renderer_mutex = TERMINAL_RENDERER.get_or_init(|| Mutex::new(None));
+                let mut renderer_guard = match renderer_mutex.try_lock() {
+                    Ok(g) => g,
+                    Err(_) => continue,
+                };
+
+                if renderer_guard.is_none() {
+                    *renderer_guard = Some(crate::renderer::TerminalRenderer::new(&[], 12.0));
+                }
+
+                if let Some(renderer) = renderer_guard.as_mut() {
+                    renderer.clear_selection();
+                    renderer.draw_terminal(canvas, &engine, 1.0, 0.0);
+                }
+
+                drop(engine);
+
+                ctx.context.flush_and_submit();
+
+                // 4. 呈现图像
+                let present_info = ash::vk::PresentInfoKHR {
+                    swapchain_count: 1,
+                    p_swapchains: &ctx.swapchain,
+                    p_image_indices: &image_index,
+                    ..Default::default()
+                };
+
+                let _ = unsafe {
+                    ctx.swapchain_loader.queue_present(ctx.queue, &present_info)
+                };
+            }
+            android_log(LogPriority::INFO, "Render thread stopped");
+        })
+        .expect("Failed to spawn render thread");
+
+    *RENDER_THREAD_HANDLE.lock().unwrap() = Some(handle);
 }
 
 #[unsafe(no_mangle)]
@@ -150,90 +287,46 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeOnSizeChanged(
     }
 }
 
+/// 设置引擎指针（emulator 初始化完成后调用）
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetEnginePointer(
+    _env: JNIEnv,
+    _obj: JObject,
+    engine_ptr: jlong,
+) {
+    *ENGINE_POINTER.lock().unwrap() = engine_ptr;
+    android_log(LogPriority::INFO, &format!("nativeSetEnginePointer: engine={}", engine_ptr));
+
+    // 如果 Surface 已经创建但渲染线程还没启动，现在启动它
+    if RENDER_THREAD_RUNNING.load(Ordering::SeqCst) {
+        android_log(LogPriority::INFO, "nativeSetEnginePointer: render thread already running");
+    } else if VULKAN_CONTEXT.get().is_some() {
+        android_log(LogPriority::INFO, "nativeSetEnginePointer: starting render thread now");
+        start_render_thread(engine_ptr);
+    }
+}
+
+/// nativeRender 不再用于每帧渲染（现在由独立渲染线程处理）
+/// 保留此方法以兼容旧代码调用
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeRender(
     _env: JNIEnv,
     _obj: JObject,
     engine_ptr: jlong,
-    scale: jfloat,
-    scroll_offset: jfloat,
-    sel_x1: jint,
-    sel_y1: jint,
-    sel_x2: jint,
-    sel_y2: jint,
-    sel_active: jboolean,
+    _scale: jfloat,
+    _scroll_offset: jfloat,
+    _sel_x1: jint,
+    _sel_y1: jint,
+    _sel_x2: jint,
+    _sel_y2: jint,
+    _sel_active: jboolean,
 ) {
-    if engine_ptr == 0 { android_log(LogPriority::WARN, "nativeRender: engine_ptr is 0"); return; }
+    // 更新引擎指针（渲染线程会使用）
+    *ENGINE_POINTER.lock().unwrap() = engine_ptr;
 
-    let ctx_mutex = match VULKAN_CONTEXT.get() {
-        Some(m) => m,
-        None => { android_log(LogPriority::ERROR, "nativeRender: VULKAN_CONTEXT not initialized"); return; },
-    };
-
-    let mut ctx_guard = ctx_mutex.lock().unwrap();
-    let ctx = match ctx_guard.as_mut() {
-        Some(c) => c,
-        None => { android_log(LogPriority::ERROR, "nativeRender: VulkanContext is None"); return; },
-    };
-
-    android_log(LogPriority::INFO, &format!("nativeRender: start scale={} scroll={}", scale, scroll_offset));
-
-    // 获取 Engine 实例
-    let term_ctx = unsafe { &*(engine_ptr as *const crate::engine::TerminalContext) };
-    let engine = term_ctx.lock.read().unwrap();
-
-    // 1. 获取下一个交换链图像索引
-    let image_index = match ctx.acquire_next_image() {
-        Some(idx) => idx,
-        None => { android_log(LogPriority::ERROR, "nativeRender: acquire_next_image failed"); return; },
-    };
-    android_log(LogPriority::INFO, &format!("nativeRender: acquired image index {}", image_index));
-
-    // 2. 获取 Skia Surface
-    let mut sk_surface = match ctx.get_sk_surface(image_index) {
-        Some(s) => s,
-        None => { android_log(LogPriority::ERROR, "nativeRender: get_sk_surface failed"); return; },
-    };
-    let canvas = sk_surface.canvas();
-
-    // 3. 执行绘制
-    let renderer_mutex = TERMINAL_RENDERER.get_or_init(|| Mutex::new(None));
-    let mut renderer_guard = renderer_mutex.lock().unwrap();
-
-    if renderer_guard.is_none() {
-        android_log(LogPriority::INFO, "nativeRender: creating TerminalRenderer");
-        *renderer_guard = Some(crate::renderer::TerminalRenderer::new(&[], 12.0));
-    }
-
-    if let Some(renderer) = renderer_guard.as_mut() {
-        // 设置选区
-        if sel_active != 0 {
-            renderer.set_selection(sel_x1, sel_y1, sel_x2, sel_y2);
-        } else {
-            renderer.clear_selection();
-        }
-        // 传入缩放和平移参数
-        renderer.draw_terminal(canvas, &engine, scale as f32, scroll_offset as f32);
-    }
-
-    ctx.context.flush_and_submit();
-    android_log(LogPriority::INFO, "nativeRender: flushed");
-
-    // 4. 呈现图像
-    let present_info = ash::vk::PresentInfoKHR {
-        swapchain_count: 1,
-        p_swapchains: &ctx.swapchain,
-        p_image_indices: &image_index,
-        ..Default::default()
-    };
-
-    let present_result = unsafe {
-        ctx.swapchain_loader.queue_present(ctx.queue, &present_info)
-    };
-    if let Err(e) = present_result {
-        android_log(LogPriority::ERROR, &format!("nativeRender: queue_present failed: {:?}", e));
-    } else {
-        android_log(LogPriority::INFO, "nativeRender: present OK");
+    // 如果渲染线程还没启动，启动它
+    if !RENDER_THREAD_RUNNING.load(Ordering::SeqCst) && VULKAN_CONTEXT.get().is_some() {
+        start_render_thread(engine_ptr);
     }
 }
 
