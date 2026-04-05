@@ -55,7 +55,8 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
             System.loadLibrary("termux_rust");
             Log.i("TerminalView", "libtermux_rust.so loaded successfully");
         } catch (UnsatisfiedLinkError e) {
-            Log.e("TerminalView", "Failed to load libtermux_rust.so: " + e.getMessage());
+            Log.e("TerminalView", "!!! FATAL: Failed to load libtermux_rust.so: " + e.getMessage() + " - Terminal will NOT render !!!");
+            throw e; // Re-throw to prevent silent failure
         }
     }
 
@@ -545,12 +546,20 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
     }
 
     public void onScreenUpdated(boolean skipScrolling) {
-        if (mEmulator == null) return;
+        if (mEmulator == null) {
+            android.util.Log.w("TerminalView-Engine", "onScreenUpdated called but mEmulator is null - ignoring");
+            return;
+        }
 
         // 首次更新时设置引擎指针，启动 Vulkan 渲染线程
         if (!mEnginePointerSet) {
             mEnginePointerSet = true;
-            nativeSetEnginePointer(mEmulator.getNativePointer());
+            long enginePtr = mEmulator.getNativePointer();
+            android.util.Log.i("TerminalView-Engine", ">>> FIRST onScreenUpdated - Calling nativeSetEnginePointer with ptr=" + enginePtr);
+            if (enginePtr == 0) {
+                android.util.Log.e("TerminalView-Engine", "!!! ERROR: Engine pointer is 0! Rust engine may not have been created.");
+            }
+            nativeSetEnginePointer(enginePtr);
         }
 
         int rowsInHistory = mEmulator.getActiveTranscriptRows();
@@ -1143,8 +1152,15 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
         }
     }
 
+    private boolean mOnDrawCalledAtLeastOnce = false;
+
     @Override
     protected void onDraw(Canvas canvas) {
+        if (!mOnDrawCalledAtLeastOnce) {
+            mOnDrawCalledAtLeastOnce = true;
+            android.util.Log.i("TerminalView-onDraw", ">>> FIRST onDraw call - emulator=" + (mEmulator != null) + ", renderer=" + (mRenderer != null));
+        }
+
         // 终端文本渲染已由独立 Vulkan 渲染线程处理（通过 SurfaceView 的 ANativeWindow Surface）
         // 这里只处理叠加层（Sixel 图像、选区手柄等）
         // SurfaceView 的 Surface 和 View 系统的 Canvas 是两个独立的 Surface
@@ -1166,6 +1182,8 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
 
             nativeUpdateRenderParams(mScaleFactor, mTopRow * mRenderer.getFontLineSpacing(),
                          selX1, selY1, selX2, selY2, selActive);
+        } else {
+            android.util.Log.w("TerminalView-onDraw", "mEmulator is NULL - cannot update render params");
         }
 
         // 暂时保留 Sixel 图像在 Canvas 上的绘制（如果 Rust 侧尚未接管 Sixel）
@@ -1770,19 +1788,35 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
 
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
-        android.util.Log.i("TerminalView", "surfaceCreated: " + holder.getSurface());
-        nativeSetSurface(holder.getSurface());
+        android.util.Log.i("TerminalView-Surface", ">>> surfaceCreated: holder=" + holder + ", surface=" + holder.getSurface());
+        try {
+            nativeSetSurface(holder.getSurface());
+            android.util.Log.i("TerminalView-Surface", ">>> surfaceCreated: nativeSetSurface() returned successfully");
+        } catch (Exception e) {
+            android.util.Log.e("TerminalView-Surface", "!!! surfaceCreated: nativeSetSurface() threw exception: " + e.getMessage(), e);
+        }
     }
 
     @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-        android.util.Log.i("TerminalView", "surfaceChanged: " + width + "x" + height);
-        nativeOnSizeChanged(width, height);
+        android.util.Log.i("TerminalView-Surface", ">>> surfaceChanged: " + width + "x" + height + ", format=" + format);
+        try {
+            nativeOnSizeChanged(width, height);
+            android.util.Log.i("TerminalView-Surface", ">>> surfaceChanged: nativeOnSizeChanged() returned successfully");
+        } catch (Exception e) {
+            android.util.Log.e("TerminalView-Surface", "!!! surfaceChanged: nativeOnSizeChanged() threw exception: " + e.getMessage(), e);
+        }
     }
 
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
-        nativeSetSurface(null);
+        android.util.Log.i("TerminalView-Surface", ">>> surfaceDestroyed: cleaning up Vulkan resources");
+        try {
+            nativeSetSurface(null);
+            android.util.Log.i("TerminalView-Surface", ">>> surfaceDestroyed: nativeSetSurface(null) completed");
+        } catch (Exception e) {
+            android.util.Log.e("TerminalView-Surface", "!!! surfaceDestroyed: nativeSetSurface(null) threw exception: " + e.getMessage(), e);
+        }
     }
 
     // ============================================================================

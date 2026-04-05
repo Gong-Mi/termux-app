@@ -38,6 +38,10 @@ static RENDER_THREAD_RUNNING: AtomicBool = AtomicBool::new(false);
 static RENDER_THREAD_HANDLE: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
 static ENGINE_POINTER: Mutex<jlong> = Mutex::new(0);
 
+/// 状态标志：用于跟踪 Surface 和 Engine 的就绪状态
+static SURFACE_READY: AtomicBool = AtomicBool::new(false);
+static ENGINE_READY: AtomicBool = AtomicBool::new(false);
+
 /// 渲染参数（由 Java 侧通过 JNI 设置）
 static RENDER_SCALE: Mutex<f32> = Mutex::new(1.0);
 static RENDER_SCROLL_OFFSET: Mutex<f32> = Mutex::new(0.0);
@@ -118,87 +122,54 @@ fn flush_events_to_java(env: &mut JNIEnv, callback_obj: &Option<jni::objects::Gl
 
 #[unsafe(no_mangle)]
 pub extern "system" fn JNI_OnLoad(vm: jni::JavaVM, _reserved: std::ffi::c_void) -> jint {
-    let _ = JAVA_VM.set(vm);
-    android_log(LogPriority::INFO, "JNI_OnLoad: Termux-Rust library loaded");
+    let result = JAVA_VM.set(vm);
+    match result {
+        Ok(()) => android_log(LogPriority::INFO, "JNI_OnLoad: Termux-Rust library loaded successfully, JAVA_VM set"),
+        Err(_) => android_log(LogPriority::WARN, "JNI_OnLoad: JAVA_VM was already set (library loaded before?)"),
+    }
     jni::sys::JNI_VERSION_1_6
 }
 
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
-    env: JNIEnv,
-    _obj: JObject,
-    surface: JObject,
-) {
-    #[cfg(target_os = "android")]
-    {
-        // Handle null surface: clean up Vulkan context if surface is destroyed
-        if surface.is_null() {
-            android_log(LogPriority::INFO, "nativeSetSurface: Surface destroyed, stopping render thread");
+/// 统一的渲染线程启动检查函数
+/// 只有在 Surface 和 Engine 都就绪后才会启动渲染线程
+fn try_start_render_thread() {
+    let surface_ready = SURFACE_READY.load(Ordering::SeqCst);
+    let engine_ready = ENGINE_READY.load(Ordering::SeqCst);
 
-            // 停止渲染线程
-            RENDER_THREAD_RUNNING.store(false, Ordering::SeqCst);
-            if let Some(handle) = RENDER_THREAD_HANDLE.lock().unwrap().take() {
-                let _ = handle.join();
-                android_log(LogPriority::INFO, "nativeSetSurface: Render thread stopped");
-            }
+    android_log(LogPriority::DEBUG, &format!(
+        "try_start_render_thread: surface_ready={}, engine_ready={}, already_running={}",
+        surface_ready, engine_ready, RENDER_THREAD_RUNNING.load(Ordering::SeqCst)
+    ));
 
-            // 清理 Vulkan 上下文
-            if let Some(mutex) = VULKAN_CONTEXT.get() {
-                let mut guard = mutex.lock().unwrap();
-                *guard = None;
-                android_log(LogPriority::INFO, "nativeSetSurface: Vulkan context destroyed");
-            }
-            return;
+    if surface_ready && engine_ready {
+        let engine_ptr = *ENGINE_POINTER.lock().unwrap();
+        if engine_ptr != 0 && !RENDER_THREAD_RUNNING.load(Ordering::SeqCst) {
+            android_log(LogPriority::INFO, &format!("try_start_render_thread: Both conditions met, starting render thread with engine={}", engine_ptr));
+            spawn_render_thread(engine_ptr);
+        } else if engine_ptr == 0 {
+            android_log(LogPriority::ERROR, "try_start_render_thread: engine_ptr is 0, cannot start render thread");
+        } else {
+            android_log(LogPriority::DEBUG, "try_start_render_thread: Render thread already running, skipping");
         }
-
-        let window = unsafe {
-            ndk_sys::ANativeWindow_fromSurface(env.get_native_interface(), surface.as_raw())
-        };
-
-        if window.is_null() {
-            android_log(LogPriority::ERROR, "nativeSetSurface: Failed to get ANativeWindow");
-            return;
-        }
-
-        unsafe {
-            if let Some(ctx) = crate::vulkan_context::VulkanContext::new(window as _) {
-                let mutex = VULKAN_CONTEXT.get_or_init(|| Mutex::new(None));
-                let mut guard = mutex.lock().unwrap();
-                *guard = Some(ctx);
-                android_log(LogPriority::INFO, "nativeSetSurface: Vulkan Context initialized");
-
-                // 启动渲染线程
-                let engine_ptr = *ENGINE_POINTER.lock().unwrap();
-                if engine_ptr != 0 {
-                    start_render_thread(engine_ptr);
-                } else {
-                    android_log(LogPriority::WARN, "nativeSetSurface: engine_ptr is 0, render thread will wait");
-                }
-            } else {
-                android_log(LogPriority::ERROR, "nativeSetSurface: Failed to initialize Vulkan Context");
-            }
-        }
+    } else {
+        android_log(LogPriority::DEBUG, "try_start_render_thread: Waiting for both surface and engine to be ready");
     }
 }
 
-/// 启动独立渲染线程
-fn start_render_thread(engine_ptr: jlong) {
-    // 更新 engine 指针
-    *ENGINE_POINTER.lock().unwrap() = engine_ptr;
-
-    // 如果已经在运行，不重复启动
-    if RENDER_THREAD_RUNNING.load(Ordering::SeqCst) {
-        android_log(LogPriority::INFO, "start_render_thread: already running");
-        return;
-    }
-
+/// 实际启动渲染线程的内部函数
+fn spawn_render_thread(engine_ptr: jlong) {
     RENDER_THREAD_RUNNING.store(true, Ordering::SeqCst);
-    android_log(LogPriority::INFO, &format!("start_render_thread: engine={}", engine_ptr));
+    android_log(LogPriority::INFO, &format!("spawn_render_thread: Starting Vulkan render thread (engine={})", engine_ptr));
 
     let handle = std::thread::Builder::new()
         .name("VulkanRender".to_string())
         .spawn(move || {
             android_log(LogPriority::INFO, "Render thread started");
+
+            // 统计变量，用于诊断日志节流
+            let mut frame_count: u64 = 0;
+            let mut last_log_time = std::time::Instant::now();
+
             while RENDER_THREAD_RUNNING.load(Ordering::SeqCst) {
                 // 获取 Vulkan 上下文
                 let ctx_mutex = match VULKAN_CONTEXT.get() {
@@ -225,7 +196,7 @@ fn start_render_thread(engine_ptr: jlong) {
                     }
                 };
 
-                // 获取 Engine 实例 - 只在极短时间内持有锁，创建 RenderFrame 快照
+                // 获取 Engine 实例 - 只在极短时间内持有锁
                 let current_engine_ptr = *ENGINE_POINTER.lock().unwrap();
                 if current_engine_ptr == 0 {
                     std::thread::sleep(std::time::Duration::from_millis(16));
@@ -241,10 +212,8 @@ fn start_render_thread(engine_ptr: jlong) {
                             continue;
                         }
                     };
-                    // 快速创建快照（<0.5ms），然后立即释放 engine 锁
                     crate::renderer::RenderFrame::from_engine(&engine, engine.state.rows as usize, engine.state.cols as usize)
                 };
-                // engine 锁在此释放 - 渲染线程不再持有它
 
                 // 1. 获取下一个交换链图像索引
                 let image_index = match ctx.acquire_next_image() {
@@ -258,11 +227,18 @@ fn start_render_thread(engine_ptr: jlong) {
                 // 2. 获取 Skia Surface
                 let mut sk_surface = match ctx.get_sk_surface(image_index) {
                     Some(s) => s,
-                    None => continue,
+                    None => {
+                        // 只在首次或每 60 帧打印一次
+                        if frame_count == 0 || last_log_time.elapsed().as_secs() >= 5 {
+                            android_log(LogPriority::WARN, &format!("Render: get_sk_surface returned None (frame {})", frame_count));
+                            last_log_time = std::time::Instant::now();
+                        }
+                        continue;
+                    }
                 };
                 let canvas = sk_surface.canvas();
 
-                // 3. 执行绘制 - 使用预计算的 RenderFrame，不需要 engine 锁
+                // 3. 执行绘制
                 let renderer_mutex = TERMINAL_RENDERER.get_or_init(|| Mutex::new(None));
                 let mut renderer_guard = match renderer_mutex.try_lock() {
                     Ok(g) => g,
@@ -274,7 +250,6 @@ fn start_render_thread(engine_ptr: jlong) {
                 }
 
                 if let Some(renderer) = renderer_guard.as_mut() {
-                    // 从静态变量获取渲染参数
                     let scale = *RENDER_SCALE.lock().unwrap();
                     let scroll_offset = *RENDER_SCROLL_OFFSET.lock().unwrap();
                     let sel_active = *RENDER_SEL_ACTIVE.lock().unwrap();
@@ -283,14 +258,20 @@ fn start_render_thread(engine_ptr: jlong) {
                     let sel_x2 = *RENDER_SEL_X2.lock().unwrap();
                     let sel_y2 = *RENDER_SEL_Y2.lock().unwrap();
 
-                    // 更新选区
                     if sel_active {
                         renderer.set_selection(sel_x1, sel_y1, sel_x2, sel_y2);
                     } else {
                         renderer.clear_selection();
                     }
 
-                    // 使用异步渲染 - 不需要 engine 锁
+                    // 诊断日志：首帧和尺寸变化时打印
+                    if frame_count == 0 {
+                        android_log(LogPriority::INFO, &format!(
+                            "Render: First frame - scale={}, scroll_offset={}, rows={}, cols={}",
+                            scale, scroll_offset, frame.rows, frame.cols
+                        ));
+                    }
+
                     renderer.draw_frame(canvas, &frame, scale, scroll_offset);
                 }
 
@@ -304,15 +285,89 @@ fn start_render_thread(engine_ptr: jlong) {
                     ..Default::default()
                 };
 
-                let _ = unsafe {
+                let present_result = unsafe {
                     ctx.swapchain_loader.queue_present(ctx.queue, &present_info)
                 };
+
+                // 首帧或偶尔记录呈现结果
+                if frame_count == 0 {
+                    android_log(LogPriority::INFO, &format!("Render: Present completed (result={:?})", present_result));
+                }
+
+                frame_count += 1;
             }
-            android_log(LogPriority::INFO, "Render thread stopped");
+            android_log(LogPriority::INFO, &format!("Render thread stopped after {} frames", frame_count));
         })
         .expect("Failed to spawn render thread");
 
     *RENDER_THREAD_HANDLE.lock().unwrap() = Some(handle);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
+    env: JNIEnv,
+    _obj: JObject,
+    surface: JObject,
+) {
+    #[cfg(target_os = "android")]
+    {
+        // Handle null surface: clean up Vulkan context if surface is destroyed
+        if surface.is_null() {
+            android_log(LogPriority::INFO, "nativeSetSurface: Surface destroyed, stopping render thread");
+            SURFACE_READY.store(false, Ordering::SeqCst);
+
+            // 停止渲染线程
+            RENDER_THREAD_RUNNING.store(false, Ordering::SeqCst);
+            if let Some(handle) = RENDER_THREAD_HANDLE.lock().unwrap().take() {
+                let _ = handle.join();
+                android_log(LogPriority::INFO, "nativeSetSurface: Render thread stopped");
+            }
+
+            // 清理 Vulkan 上下文
+            if let Some(mutex) = VULKAN_CONTEXT.get() {
+                let mut guard = mutex.lock().unwrap();
+                *guard = None;
+                android_log(LogPriority::INFO, "nativeSetSurface: Vulkan context destroyed");
+            }
+            return;
+        }
+
+        android_log(LogPriority::DEBUG, "nativeSetSurface: Non-null surface received");
+
+        let window = unsafe {
+            ndk_sys::ANativeWindow_fromSurface(env.get_native_interface(), surface.as_raw())
+        };
+
+        if window.is_null() {
+            android_log(LogPriority::ERROR, "nativeSetSurface: Failed to get ANativeWindow from Surface");
+            SURFACE_READY.store(false, Ordering::SeqCst);
+            return;
+        }
+
+        android_log(LogPriority::DEBUG, &format!("nativeSetSurface: ANativeWindow acquired: {:p}", window));
+
+        unsafe {
+            android_log(LogPriority::DEBUG, "nativeSetSurface: Attempting VulkanContext::new()");
+            if let Some(ctx) = crate::vulkan_context::VulkanContext::new(window as _) {
+                let mutex = VULKAN_CONTEXT.get_or_init(|| Mutex::new(None));
+                let mut guard = mutex.lock().unwrap();
+                *guard = Some(ctx);
+                android_log(LogPriority::INFO, "nativeSetSurface: Vulkan Context initialized successfully");
+
+                // 标记 Surface 就绪，并尝试启动渲染线程
+                SURFACE_READY.store(true, Ordering::SeqCst);
+                android_log(LogPriority::DEBUG, "nativeSetSurface: SURFACE_READY set to true, calling try_start_render_thread()");
+                try_start_render_thread();
+            } else {
+                android_log(LogPriority::ERROR, "nativeSetSurface: FAILED to initialize Vulkan Context - Vulkan not available or unsupported?");
+                SURFACE_READY.store(false, Ordering::SeqCst);
+            }
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        android_log(LogPriority::WARN, "nativeSetSurface: Called on non-Android platform");
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -323,15 +378,30 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeOnSizeChanged(
     height: jint,
 ) {
     android_log(LogPriority::INFO, &format!("nativeOnSizeChanged: {}x{}", width, height));
+
     let mutex = match VULKAN_CONTEXT.get() {
         Some(m) => m,
-        None => { android_log(LogPriority::ERROR, "nativeOnSizeChanged: VULKAN_CONTEXT not initialized"); return; },
+        None => {
+            android_log(LogPriority::WARN, "nativeOnSizeChanged: VULKAN_CONTEXT not initialized yet (Surface not created)");
+            return;
+        },
     };
 
-    let mut guard = mutex.lock().unwrap();
+    let mut guard = match mutex.try_lock() {
+        Ok(g) => g,
+        Err(_) => {
+            android_log(LogPriority::WARN, "nativeOnSizeChanged: Failed to lock VULKAN_CONTEXT mutex");
+            return;
+        }
+    };
+
     if let Some(ctx) = guard.as_mut() {
         let ok = ctx.recreate_swapchain(width as u32, height as u32);
-        android_log(LogPriority::INFO, &format!("nativeOnSizeChanged: Swapchain recreated ({}x{}) success={}", width, height, ok));
+        if ok {
+            android_log(LogPriority::INFO, &format!("nativeOnSizeChanged: Swapchain recreated successfully ({}x{})", width, height));
+        } else {
+            android_log(LogPriority::ERROR, &format!("nativeOnSizeChanged: FAILED to recreate swapchain ({}x{})", width, height));
+        }
     } else {
         android_log(LogPriority::ERROR, "nativeOnSizeChanged: VulkanContext is None");
     }
@@ -344,16 +414,19 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetEnginePointer(
     _obj: JObject,
     engine_ptr: jlong,
 ) {
-    *ENGINE_POINTER.lock().unwrap() = engine_ptr;
-    android_log(LogPriority::INFO, &format!("nativeSetEnginePointer: engine={}", engine_ptr));
+    android_log(LogPriority::INFO, &format!("nativeSetEnginePointer: engine_ptr={}", engine_ptr));
 
-    // 如果 Surface 已经创建但渲染线程还没启动，现在启动它
-    if RENDER_THREAD_RUNNING.load(Ordering::SeqCst) {
-        android_log(LogPriority::INFO, "nativeSetEnginePointer: render thread already running");
-    } else if VULKAN_CONTEXT.get().is_some() {
-        android_log(LogPriority::INFO, "nativeSetEnginePointer: starting render thread now");
-        start_render_thread(engine_ptr);
+    if engine_ptr == 0 {
+        android_log(LogPriority::ERROR, "nativeSetEnginePointer: Received null engine pointer!");
+        return;
     }
+
+    *ENGINE_POINTER.lock().unwrap() = engine_ptr;
+
+    // 标记 Engine 就绪，并尝试启动渲染线程
+    ENGINE_READY.store(true, Ordering::SeqCst);
+    android_log(LogPriority::DEBUG, "nativeSetEnginePointer: ENGINE_READY set to true, calling try_start_render_thread()");
+    try_start_render_thread();
 }
 
 /// nativeRender 不再用于每帧渲染（现在由独立渲染线程处理）
@@ -371,12 +444,17 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeRender(
     _sel_y2: jint,
     _sel_active: jboolean,
 ) {
-    // 更新引擎指针（渲染线程会使用）
-    *ENGINE_POINTER.lock().unwrap() = engine_ptr;
+    android_log(LogPriority::DEBUG, "nativeRender: Called (deprecated path, should not be used for per-frame rendering)");
 
-    // 如果渲染线程还没启动，启动它
-    if !RENDER_THREAD_RUNNING.load(Ordering::SeqCst) && VULKAN_CONTEXT.get().is_some() {
-        start_render_thread(engine_ptr);
+    // 更新引擎指针（渲染线程会使用）
+    if engine_ptr != 0 {
+        *ENGINE_POINTER.lock().unwrap() = engine_ptr;
+        ENGINE_READY.store(true, Ordering::SeqCst);
+    }
+
+    // 如果渲染线程还没启动，尝试启动它
+    if !RENDER_THREAD_RUNNING.load(Ordering::SeqCst) {
+        try_start_render_thread();
     }
 }
 

@@ -87,14 +87,52 @@ impl VulkanContext {
 
         let pdevices = unsafe { instance.enumerate_physical_devices() };
         if pdevices.is_err() || pdevices.as_ref().unwrap().is_empty() {
-            android_log(LogPriority::ERROR, "VulkanContext::new: enumerate_physical_devices failed or empty");
+            android_log(LogPriority::ERROR, "VulkanContext::new: enumerate_physical_devices failed or returned empty list");
             return None;
         }
         let pdevices = pdevices.unwrap();
-        let pdevice = pdevices[0];
-        android_log(LogPriority::INFO, "VulkanContext::new: Physical device found");
+        android_log(LogPriority::INFO, &format!("VulkanContext::new: Found {} physical device(s)", pdevices.len()));
 
-        let queue_family_index = 0;
+        // 选择支持图形/Present 队列的设备
+        let mut selected_pdevice = None;
+        let mut selected_queue_family = 0;
+
+        for (dev_idx, pdev) in pdevices.iter().enumerate() {
+            let props = unsafe { instance.get_physical_device_properties(*pdev) };
+            let device_name = unsafe { std::ffi::CStr::from_ptr(props.device_name.as_ptr()) };
+            android_log(LogPriority::DEBUG, &format!("VulkanContext::new: Device #{} - name='{}', type={:?}",
+                dev_idx, device_name.to_string_lossy(), props.device_type));
+
+            // 查找支持 present 的队列族
+            let queue_props = unsafe { instance.get_physical_device_queue_family_properties(*pdev) };
+            for (q_idx, q_prop) in queue_props.iter().enumerate() {
+                let supports_present = unsafe {
+                    surface_loader.get_physical_device_surface_support(*pdev, q_idx as u32, surface)
+                };
+                if supports_present.unwrap_or(false) && q_prop.queue_flags.contains(ash_vk::QueueFlags::GRAPHICS) {
+                    selected_pdevice = Some(*pdev);
+                    selected_queue_family = q_idx as u32;
+                    android_log(LogPriority::INFO, &format!("VulkanContext::new: Selected device #{} (queue_family={})", dev_idx, selected_queue_family));
+                    break;
+                }
+            }
+            if selected_pdevice.is_some() { break; }
+        }
+
+        let pdevice = match selected_pdevice {
+            Some(p) => p,
+            None => {
+                android_log(LogPriority::ERROR, "VulkanContext::new: No physical device found with GRAPHICS+PRESENT queue family");
+                // Fallback: try first device anyway
+                let pdev = pdevices[0];
+                let props = unsafe { instance.get_physical_device_properties(pdev) };
+                let device_name = unsafe { std::ffi::CStr::from_ptr(props.device_name.as_ptr()) };
+                android_log(LogPriority::WARN, &format!("VulkanContext::new: Fallback to device #0: '{}'", device_name.to_string_lossy()));
+                pdev
+            }
+        };
+
+        let queue_family_index = selected_queue_family;
 
         // 设备级扩展
         let mut device_exts = vec![swapchain::NAME.as_ptr()];
