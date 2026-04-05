@@ -175,7 +175,7 @@ impl TerminalRenderer {
 
         // 主文本绘制
         let mut paint = Paint::default();
-        paint.set_anti_alias(false); // 终端文本不需要抗锯齿，提升性能
+        paint.set_anti_alias(true); // 保持抗锯齿以确保文字边缘清晰
         paint.set_blend_mode(BlendMode::SrcOver);
 
         // 背景矩形填充
