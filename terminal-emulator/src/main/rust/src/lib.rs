@@ -194,7 +194,7 @@ fn start_render_thread(engine_ptr: jlong) {
                     }
                 };
 
-                // 获取 Engine 实例
+                // 获取 Engine 实例 - 只在极短时间内持有锁，创建 RenderFrame 快照
                 let current_engine_ptr = *ENGINE_POINTER.lock().unwrap();
                 if current_engine_ptr == 0 {
                     std::thread::sleep(std::time::Duration::from_millis(16));
@@ -202,13 +202,18 @@ fn start_render_thread(engine_ptr: jlong) {
                 }
 
                 let term_ctx = unsafe { &*(current_engine_ptr as *const crate::engine::TerminalContext) };
-                let engine = match term_ctx.lock.try_read() {
-                    Ok(e) => e,
-                    Err(_) => {
-                        std::thread::sleep(std::time::Duration::from_millis(4));
-                        continue;
-                    }
+                let frame = {
+                    let engine = match term_ctx.lock.try_read() {
+                        Ok(e) => e,
+                        Err(_) => {
+                            std::thread::sleep(std::time::Duration::from_millis(2));
+                            continue;
+                        }
+                    };
+                    // 快速创建快照（<0.5ms），然后立即释放 engine 锁
+                    crate::renderer::RenderFrame::from_engine(&engine, engine.state.rows as usize, engine.state.cols as usize)
                 };
+                // engine 锁在此释放 - 渲染线程不再持有它
 
                 // 1. 获取下一个交换链图像索引
                 let image_index = match ctx.acquire_next_image() {
@@ -226,7 +231,7 @@ fn start_render_thread(engine_ptr: jlong) {
                 };
                 let canvas = sk_surface.canvas();
 
-                // 3. 执行绘制
+                // 3. 执行绘制 - 使用预计算的 RenderFrame，不需要 engine 锁
                 let renderer_mutex = TERMINAL_RENDERER.get_or_init(|| Mutex::new(None));
                 let mut renderer_guard = match renderer_mutex.try_lock() {
                     Ok(g) => g,
@@ -239,10 +244,9 @@ fn start_render_thread(engine_ptr: jlong) {
 
                 if let Some(renderer) = renderer_guard.as_mut() {
                     renderer.clear_selection();
-                    renderer.draw_terminal(canvas, &engine, 1.0, 0.0);
+                    // 使用异步渲染 - 不需要 engine 锁
+                    renderer.draw_frame(canvas, &frame, 1.0, 0.0);
                 }
-
-                drop(engine);
 
                 ctx.context.flush_and_submit();
 

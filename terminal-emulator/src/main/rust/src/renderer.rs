@@ -3,6 +3,53 @@ use crate::engine::TerminalEngine;
 use crate::terminal::style::*;
 use crate::terminal::colors::COLOR_INDEX_CURSOR;
 
+/// 预计算的渲染帧数据 - 用于异步渲染（不需要持有 engine 锁）
+#[derive(Clone)]
+pub struct RenderFrame {
+    pub rows: usize,
+    pub cols: usize,
+    pub palette: [u32; 259],
+    pub use_alternate_buffer: bool,
+    pub cursor_x: i32,
+    pub cursor_y: i32,
+    pub cursor_style: i32,
+    pub cursor_enabled: bool,
+    pub reverse_video: bool,
+    /// 预计算的行数据: (text: String, styles: Vec<u64>)
+    pub row_data: Vec<(Vec<char>, Vec<u64>)>,
+}
+
+impl RenderFrame {
+    /// 从 engine 快照创建 RenderFrame（快速复制，<1ms）
+    pub fn from_engine(
+        engine: &crate::engine::TerminalEngine,
+        rows: usize,
+        cols: usize,
+    ) -> Self {
+        let state = &engine.state;
+        let screen = if state.use_alternate_buffer { &state.alt_screen } else { &state.main_screen };
+
+        let mut row_data = Vec::with_capacity(rows);
+        for r in 0..rows as i32 {
+            let row = screen.get_row(r);
+            row_data.push((row.text.clone(), row.styles.clone()));
+        }
+
+        Self {
+            rows,
+            cols,
+            palette: state.colors.current_colors,
+            use_alternate_buffer: state.use_alternate_buffer,
+            cursor_x: state.cursor.x,
+            cursor_y: state.cursor.y,
+            cursor_style: state.cursor.style,
+            cursor_enabled: state.cursor_enabled,
+            reverse_video: state.modes.is_enabled(crate::terminal::modes::DECSET_BIT_REVERSE_VIDEO),
+            row_data,
+        }
+    }
+}
+
 /// Unicode 字符终端单元格宽度计算 (与 Java WcWidth 一致)
 #[inline]
 fn char_wc_width(ucs: u32) -> usize {
@@ -416,6 +463,156 @@ impl TerminalRenderer {
                             &self.cursor_paint
                         );
                     }
+                }
+            }
+        }
+
+        canvas.restore();
+    }
+
+    /// 异步渲染 - 使用预计算的 RenderFrame，完全不需要 engine 锁
+    pub fn draw_frame(
+        &mut self,
+        canvas: &Canvas,
+        frame: &RenderFrame,
+        scale: f32,
+        scroll_offset: f32,
+    ) {
+        let palette = &frame.palette;
+
+        canvas.save();
+        canvas.scale((scale, scale));
+
+        // 背景清屏
+        let bg_color = palette[257];
+        canvas.clear(Color::new(bg_color));
+
+        canvas.translate((0.0, -scroll_offset));
+
+        let rows = frame.rows;
+        let cols = frame.cols;
+        let global_reverse = frame.reverse_video;
+
+        // 先绘制文本行 - 使用预计算的数据，不需要任何锁
+        for r in 0..rows as i32 {
+            let row = &frame.row_data[r as usize];
+            let row_text = &row.0;
+            let row_styles = &row.1;
+            let y_base = (r as f32 + 1.0) * self.font_height;
+
+            let mut c = 0;
+            while c < cols {
+                if c >= row_text.len() { break; }
+                let start_c = c;
+                let style = row_styles[c];
+                let effect = decode_effect(style);
+
+                // 不可见文本跳过
+                if (effect & EFFECT_INVISIBLE) != 0 {
+                    let ch = row_text[c];
+                    c += if ch == '\0' { 1 } else { char_wc_width(ch as u32) };
+                    continue;
+                }
+
+                // 复用 run 缓冲区
+                self.run_buf.clear();
+                let mut run_cells = 0usize;
+                let mut run_measured = 0.0f32;
+                let mut run_has_non_ascii = false;
+
+                // 合并相同样式 + 相同选区状态的 run
+                let sel = self.is_cell_selected(c as i32, r);
+                while c < cols && c < row_text.len() {
+                    let cell_style = row_styles[c];
+                    let cell_effect = decode_effect(cell_style);
+
+                    if (cell_effect & EFFECT_INVISIBLE) != 0 {
+                        let ch = row_text[c];
+                        c += if ch == '\0' { 1 } else { char_wc_width(ch as u32) };
+                        continue;
+                    }
+
+                    let cell_sel = self.is_cell_selected(c as i32, r);
+                    let style_match = cell_style == style;
+                    let sel_match = cell_sel == sel;
+
+                    if style_match && sel_match {
+                        let ch = row_text[c];
+                        if ch != '\0' {
+                            self.run_buf.push(ch);
+                            let wc_w = char_wc_width(ch as u32);
+                            run_cells += wc_w;
+                            if ch as u32 > 127 { run_has_non_ascii = true; }
+                            if let Some(w) = self.ascii_cache.get(ch) {
+                                run_measured += w;
+                            } else if let Some(w) = self.non_ascii_cache.get(ch as u32) {
+                                run_measured += w;
+                            } else {
+                                let w = self.measure_char(ch, cell_effect);
+                                self.non_ascii_cache.insert(ch as u32, w);
+                                run_measured += w;
+                            }
+                        }
+                        c += if ch == '\0' { 1 } else { char_wc_width(ch as u32) };
+                    } else {
+                        break;
+                    }
+                }
+
+                if !self.run_buf.is_empty() {
+                    let expected_width = run_cells as f32 * self.font_width;
+                    let run_text = self.run_buf.clone();
+
+                    self.draw_run_opt(
+                        canvas,
+                        &run_text,
+                        start_c as f32 * self.font_width,
+                        y_base,
+                        expected_width,
+                        run_measured,
+                        run_has_non_ascii,
+                        style,
+                        palette,
+                        global_reverse,
+                        sel,
+                        r as i32,
+                    );
+                }
+            }
+        }
+
+        // 绘制光标
+        if frame.cursor_enabled {
+            let cursor_color = palette[COLOR_INDEX_CURSOR];
+            self.cursor_paint.set_color(Color::new(cursor_color));
+
+            let cx = frame.cursor_x as f32 * self.font_width;
+            let cy = frame.cursor_y as f32 * self.font_height;
+
+            match frame.cursor_style {
+                0 => {
+                    canvas.draw_rect(
+                        Rect::from_xywh(cx, cy, self.font_width, self.font_height),
+                        &self.cursor_paint
+                    );
+                }
+                1 => {
+                    canvas.draw_rect(
+                        Rect::from_xywh(cx, cy + self.font_height - 2.0, self.font_width, 2.0),
+                        &self.cursor_paint
+                    );
+                }
+                2 => {
+                    canvas.draw_rect(
+                        Rect::from_xywh(cx, cy, 2.0, self.font_height),
+                        &self.cursor_paint
+                    );
+                }
+                _ => {
+                    canvas.draw_rect(
+                        Rect::from_xywh(cx, cy, self.font_width, self.font_height),
+                        &self.cursor_paint
+                    );
                 }
             }
         }
