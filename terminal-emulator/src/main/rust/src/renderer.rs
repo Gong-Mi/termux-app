@@ -122,16 +122,45 @@ pub struct SelectionBounds {
     pub active: bool,
 }
 
+/// 非 ASCII 字符宽度缓存 (LRU 风格，常用 CJK/Emoji 字符)
+struct NonAsciiWidthCache {
+    entries: [(u32, f32); 64],
+    mask: usize,
+}
+
+impl NonAsciiWidthCache {
+    fn new() -> Self {
+        Self {
+            entries: [(0, 0.0); 64],
+            mask: 63,
+        }
+    }
+
+    fn get(&self, ch: u32) -> Option<f32> {
+        let idx = (ch as usize) & self.mask;
+        let (key, val) = self.entries[idx];
+        if key == ch { Some(val) } else { None }
+    }
+
+    fn insert(&mut self, ch: u32, w: f32) {
+        let idx = (ch as usize) & self.mask;
+        self.entries[idx] = (ch, w);
+    }
+}
+
 pub struct TerminalRenderer {
     font_size: f32,
     font_cache: FontCache,
     ascii_cache: AsciiWidthCache,
+    non_ascii_cache: NonAsciiWidthCache,
     paint: Paint,
     bg_paint: Paint,
     underline_paint: Paint,
     strikethrough_paint: Paint,
     selection_bg_paint: Paint,
     cursor_paint: Paint,
+    /// 复用 run 缓冲区，避免每帧分配
+    run_buf: String,
     pub font_width: f32,
     pub font_height: f32,
     selection: SelectionBounds,
@@ -146,7 +175,7 @@ impl TerminalRenderer {
 
         // 主文本绘制
         let mut paint = Paint::default();
-        paint.set_anti_alias(true);
+        paint.set_anti_alias(false); // 终端文本不需要抗锯齿，提升性能
         paint.set_blend_mode(BlendMode::SrcOver);
 
         // 背景矩形填充
@@ -176,6 +205,7 @@ impl TerminalRenderer {
             font_size,
             font_cache,
             ascii_cache,
+            non_ascii_cache: NonAsciiWidthCache::new(),
             paint,
             bg_paint,
             underline_paint,
@@ -184,6 +214,7 @@ impl TerminalRenderer {
             cursor_paint,
             font_width,
             font_height,
+            run_buf: String::with_capacity(256),
             selection: SelectionBounds::default(),
         }
     }
@@ -274,9 +305,11 @@ impl TerminalRenderer {
                     continue;
                 }
 
-                let mut run_text = String::new();
-                let mut run_cells = 0usize;    // 终端单元格宽度
-                let mut run_measured = 0.0f32; // Skia 测量像素宽度
+                // 复用 run 缓冲区 (clear 但保留容量)
+                self.run_buf.clear();
+                let mut run_cells = 0usize;
+                let mut run_measured = 0.0f32;
+                let mut run_has_non_ascii = false;
 
                 // 合并相同样式 + 相同选区状态的 run
                 let sel = self.is_cell_selected(c as i32, r);
@@ -298,14 +331,19 @@ impl TerminalRenderer {
                     if style_match && sel_match {
                         let ch = row_data.text[c];
                         if ch != '\0' {
-                            run_text.push(ch);
+                            self.run_buf.push(ch);
                             let wc_w = char_wc_width(ch as u32);
                             run_cells += wc_w;
-                            // 像素宽度计算
+                            if ch as u32 > 127 { run_has_non_ascii = true; }
+                            // 像素宽度计算 - 优先缓存
                             if let Some(w) = self.ascii_cache.get(ch) {
                                 run_measured += w;
+                            } else if let Some(w) = self.non_ascii_cache.get(ch as u32) {
+                                run_measured += w;
                             } else {
-                                run_measured += self.measure_char(ch, cell_effect);
+                                let w = self.measure_char(ch, cell_effect);
+                                self.non_ascii_cache.insert(ch as u32, w);
+                                run_measured += w;
                             }
                         }
                         // \0 是宽字符占位符，跳过
@@ -315,17 +353,20 @@ impl TerminalRenderer {
                     }
                 }
 
-                if !run_text.is_empty() {
+                if !self.run_buf.is_empty() {
                     // 期望像素宽度 = 单元格数 * 单格宽度 (与 Java canvas.scale 一致)
                     let expected_width = run_cells as f32 * self.font_width;
+                    // Clone to avoid borrow conflict with &mut self
+                    let run_text = self.run_buf.clone();
 
-                    self.draw_run(
+                    self.draw_run_opt(
                         canvas,
                         &run_text,
                         start_c as f32 * self.font_width,
                         y_base,
                         expected_width,
                         run_measured,
+                        run_has_non_ascii,
                         style,
                         palette,
                         global_reverse,
@@ -382,7 +423,7 @@ impl TerminalRenderer {
         canvas.restore();
     }
 
-    fn draw_run(
+    fn draw_run_opt(
         &mut self,
         canvas: &Canvas,
         text: &str,
@@ -390,6 +431,7 @@ impl TerminalRenderer {
         y_base: f32,
         expected_width: f32,
         measured_width: f32,
+        has_non_ascii: bool,
         style: u64,
         palette: &[u32; 259],
         global_reverse: bool,
@@ -435,8 +477,7 @@ impl TerminalRenderer {
             canvas.draw_rect(Rect::from_xywh(x, y_base - self.font_height, expected_width, self.font_height), &self.bg_paint);
         }
 
-        // 字体选择
-        let has_non_ascii = text.chars().any(|c| c as u32 > 127);
+        // 字体选择 - has_non_ascii 已由调用方预计算
         let italic = (effect & EFFECT_ITALIC) != 0;
         let font = self.font_cache.get_font(bold, italic, has_non_ascii);
 
@@ -470,12 +511,14 @@ impl TerminalRenderer {
         }
     }
 
-    /// 测量单个字符的像素宽度
+    /// 测量单个字符的像素宽度（使用缓存字体，避免重复创建 Font）
+    #[inline]
     fn measure_char(&self, ch: char, effect: u64) -> f32 {
         let has_non_ascii = ch as u32 > 127;
         let bold = (effect & EFFECT_BOLD) != 0;
         let italic = (effect & EFFECT_ITALIC) != 0;
         let font = self.font_cache.get_font(bold, italic, has_non_ascii);
+        // 直接使用预创建的 Font，避免临时分配
         let (w, _) = font.measure_str(&ch.to_string(), None);
         w
     }
