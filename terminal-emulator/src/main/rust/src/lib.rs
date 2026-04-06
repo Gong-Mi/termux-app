@@ -51,6 +51,14 @@ static RENDER_SEL_X2: Mutex<jint> = Mutex::new(0);
 static RENDER_SEL_Y2: Mutex<jint> = Mutex::new(0);
 static RENDER_SEL_ACTIVE: Mutex<bool> = Mutex::new(false);
 
+/// 字体尺寸（由 Java 侧设置）
+static RENDER_FONT_SIZE: Mutex<f32> = Mutex::new(12.0);
+
+/// 通知渲染线程重建 swapchain
+static SURFACE_SIZE_CHANGED: AtomicBool = AtomicBool::new(false);
+static SURFACE_NEW_WIDTH: Mutex<u32> = Mutex::new(0);
+static SURFACE_NEW_HEIGHT: Mutex<u32> = Mutex::new(0);
+
 /// 设置渲染参数（由 Java onDraw 调用）
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeUpdateRenderParams(
@@ -71,6 +79,18 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeUpdateRenderParam
     *RENDER_SEL_X2.lock().unwrap() = sel_x2;
     *RENDER_SEL_Y2.lock().unwrap() = sel_y2;
     *RENDER_SEL_ACTIVE.lock().unwrap() = sel_active != 0;
+}
+
+/// 设置字体尺寸（由 Java setTextSize 调用）
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetFontSize(
+    _env: JNIEnv,
+    _obj: JObject,
+    font_size: jfloat,
+) {
+    let old_size = *RENDER_FONT_SIZE.lock().unwrap();
+    *RENDER_FONT_SIZE.lock().unwrap() = font_size;
+    android_log(LogPriority::DEBUG, &format!("nativeSetFontSize: {} -> {}", old_size, font_size));
 }
 
 /// 核心修复：在不持有锁的情况下将事件刷新到 Java，彻底杜绝双向死锁
@@ -171,6 +191,24 @@ fn spawn_render_thread(engine_ptr: jlong) {
             let mut last_log_time = std::time::Instant::now();
 
             while RENDER_THREAD_RUNNING.load(Ordering::SeqCst) {
+                // 检查是否需要重建 swapchain
+                if SURFACE_SIZE_CHANGED.load(Ordering::SeqCst) {
+                    let new_width = *SURFACE_NEW_WIDTH.lock().unwrap();
+                    let new_height = *SURFACE_NEW_HEIGHT.lock().unwrap();
+
+                    if let Some(ctx_mutex) = VULKAN_CONTEXT.get() {
+                        if let Ok(mut ctx_guard) = ctx_mutex.try_lock() {
+                            if let Some(ctx) = ctx_guard.as_mut() {
+                                let ok = ctx.recreate_swapchain(new_width, new_height);
+                                android_log(LogPriority::INFO, &format!(
+                                    "Render: Swapchain recreated {}x{} success={}", new_width, new_height, ok
+                                ));
+                                SURFACE_SIZE_CHANGED.store(false, Ordering::SeqCst);
+                            }
+                        }
+                    }
+                }
+
                 // 获取 Vulkan 上下文
                 let ctx_mutex = match VULKAN_CONTEXT.get() {
                     Some(m) => m,
@@ -245,8 +283,9 @@ fn spawn_render_thread(engine_ptr: jlong) {
                     Err(_) => continue,
                 };
 
+                let font_size = *RENDER_FONT_SIZE.lock().unwrap();
                 if renderer_guard.is_none() {
-                    *renderer_guard = Some(crate::renderer::TerminalRenderer::new(&[], 12.0));
+                    *renderer_guard = Some(crate::renderer::TerminalRenderer::new(&[], font_size));
                 }
 
                 if let Some(renderer) = renderer_guard.as_mut() {
@@ -267,8 +306,8 @@ fn spawn_render_thread(engine_ptr: jlong) {
                     // 诊断日志：首帧和尺寸变化时打印
                     if frame_count == 0 {
                         android_log(LogPriority::INFO, &format!(
-                            "Render: First frame - scale={}, scroll_offset={}, rows={}, cols={}",
-                            scale, scroll_offset, frame.rows, frame.cols
+                            "Render: First frame - scale={}, scroll_offset={}, font_size={}, rows={}, cols={}",
+                            scale, scroll_offset, font_size, frame.rows, frame.cols
                         ));
                     }
 
@@ -379,32 +418,11 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeOnSizeChanged(
 ) {
     android_log(LogPriority::INFO, &format!("nativeOnSizeChanged: {}x{}", width, height));
 
-    let mutex = match VULKAN_CONTEXT.get() {
-        Some(m) => m,
-        None => {
-            android_log(LogPriority::WARN, "nativeOnSizeChanged: VULKAN_CONTEXT not initialized yet (Surface not created)");
-            return;
-        },
-    };
-
-    let mut guard = match mutex.try_lock() {
-        Ok(g) => g,
-        Err(_) => {
-            android_log(LogPriority::WARN, "nativeOnSizeChanged: Failed to lock VULKAN_CONTEXT mutex");
-            return;
-        }
-    };
-
-    if let Some(ctx) = guard.as_mut() {
-        let ok = ctx.recreate_swapchain(width as u32, height as u32);
-        if ok {
-            android_log(LogPriority::INFO, &format!("nativeOnSizeChanged: Swapchain recreated successfully ({}x{})", width, height));
-        } else {
-            android_log(LogPriority::ERROR, &format!("nativeOnSizeChanged: FAILED to recreate swapchain ({}x{})", width, height));
-        }
-    } else {
-        android_log(LogPriority::ERROR, "nativeOnSizeChanged: VulkanContext is None");
-    }
+    // 设置标志通知渲染线程重建 swapchain
+    *SURFACE_NEW_WIDTH.lock().unwrap() = width as u32;
+    *SURFACE_NEW_HEIGHT.lock().unwrap() = height as u32;
+    SURFACE_SIZE_CHANGED.store(true, Ordering::SeqCst);
+    android_log(LogPriority::DEBUG, "nativeOnSizeChanged: Set SURFACE_SIZE_CHANGED=true, render thread will handle swapchain recreation");
 }
 
 /// 设置引擎指针（emulator 初始化完成后调用）

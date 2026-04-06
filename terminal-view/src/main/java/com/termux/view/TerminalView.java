@@ -619,6 +619,7 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
     public void setTextSize(int textSize) {
         mRenderer = new TerminalRenderer(textSize, mRenderer == null ? Typeface.MONOSPACE : mRenderer.mTypeface);
         updateSize();
+        nativeSetFontSize(textSize);
     }
 
     public void setTypeface(Typeface newTypeface) {
@@ -1828,6 +1829,7 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
     public native void nativeUpdateRenderParams(float scale, float scrollOffset,
                                     int selX1, int selY1, int selX2, int selY2, boolean selActive);
     public native void nativeOnSizeChanged(int width, int height);
+    public native void nativeSetFontSize(float fontSize);
 
     /** 获取选区坐标传递给 nativeRender */
     private final int[] mSelCoords = new int[4];
