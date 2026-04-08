@@ -97,6 +97,36 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetFontSize(
     android_log(LogPriority::DEBUG, &format!("nativeSetFontSize: {} -> {}", old_size, font_size));
 }
 
+/// 获取字体指标（供 Java TerminalView 替代 mRenderer 使用）
+/// 返回值通过 float[] 参数传出：[fontWidth, fontHeight, fontAscent]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
+    mut env: JNIEnv,
+    _obj: JObject,
+    metrics_array: jni::sys::jfloatArray,
+) {
+    let font_size = *RENDER_FONT_SIZE.lock().unwrap();
+    // 使用 skia 测量字体指标（与 renderer.rs 中 FontCache 一致）
+    use skia_safe::{Font, FontMgr, FontStyle};
+    let font_mgr = FontMgr::new();
+    let tf = match font_mgr.match_family_style("monospace", FontStyle::normal()) {
+        Some(t) => t,
+        None => return,
+    };
+    let mut font = Font::new(tf, Some(font_size));
+    let metrics = font.metrics();
+    let font_height = (metrics.1.descent - metrics.1.ascent + metrics.1.leading).ceil();
+    let (w, _) = font.measure_str("M", None);
+    let font_width = w;
+    let font_ascent = metrics.1.ascent;
+
+    let values = [font_width, font_height, font_ascent];
+    unsafe {
+        let j_array = jni::objects::JFloatArray::from_raw(metrics_array);
+        let _ = env.set_float_array_region(&j_array, 0, &values);
+    }
+}
+
 /// 核心修复：在不持有锁的情况下将事件刷新到 Java，彻底杜绝双向死锁
 fn flush_events_to_java(env: &mut JNIEnv, callback_obj: &Option<jni::objects::GlobalRef>, events: Vec<TerminalEvent>) {
     if events.is_empty() { return; }

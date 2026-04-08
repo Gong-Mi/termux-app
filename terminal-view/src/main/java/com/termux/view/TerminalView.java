@@ -68,7 +68,24 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
     /** Our terminal emulator whose session is {@link #mTermSession}. */
     public TerminalEmulator mEmulator;
 
-    public TerminalRenderer mRenderer;
+    /** Native font metrics (populated via JNI nativeGetFontMetrics) */
+    private float mNativeFontWidth;
+    private float mNativeFontHeight;
+    private float mNativeFontAscent;
+    private final float[] mNativeFontMetricsBuffer = new float[3];
+
+    // mRenderer 已移除 — 文本渲染由 Vulkan 线程处理，字体指标从 Rust JNI 获取
+
+    private float getFontWidth() { return mNativeFontWidth; }
+    private float getFontLineSpacing() { return mNativeFontHeight; }
+    private float getFontLineSpacingAndAscent() { return mNativeFontHeight + mNativeFontAscent; }
+
+    private void refreshFontMetrics() {
+        nativeGetFontMetrics(mNativeFontMetricsBuffer);
+        mNativeFontWidth = mNativeFontMetricsBuffer[0];
+        mNativeFontHeight = mNativeFontMetricsBuffer[1];
+        mNativeFontAscent = mNativeFontMetricsBuffer[2];
+    }
 
     public TerminalViewClient mClient;
 
@@ -255,8 +272,8 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
                 } else {
                     scrolledWithFinger = true;
                     distanceY += mScrollRemainder;
-                    int deltaRows = (int) (distanceY / mRenderer.getFontLineSpacing());
-                    mScrollRemainder = distanceY - deltaRows * mRenderer.getFontLineSpacing();
+                    int deltaRows = (int) (distanceY / getFontLineSpacing());
+                    mScrollRemainder = distanceY - deltaRows * getFontLineSpacing();
                     doScroll(e, deltaRows);
                 }
                 return true;
@@ -617,13 +634,13 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
      * @param textSize the new font size, in density-independent pixels.
      */
     public void setTextSize(int textSize) {
-        mRenderer = new TerminalRenderer(textSize, mRenderer == null ? Typeface.MONOSPACE : mRenderer.mTypeface);
-        updateSize();
         nativeSetFontSize(textSize);
+        refreshFontMetrics();
+        updateSize();
     }
 
     public void setTypeface(Typeface newTypeface) {
-        mRenderer = new TerminalRenderer(mRenderer.mTextSize, newTypeface);
+        refreshFontMetrics();
         updateSize();
         invalidate();
     }
@@ -650,8 +667,8 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
      * @return Array with the column and row.
      */
     public int[] getColumnAndRow(MotionEvent event, boolean relativeToScroll) {
-        int column = (int) (event.getX() / mRenderer.getFontWidth());
-        int row = (int) ((event.getY() - mRenderer.getFontLineSpacingAndAscent()) / mRenderer.getFontLineSpacing());
+        int column = (int) (event.getX() / getFontWidth());
+        int row = (int) ((event.getY() - getFontLineSpacingAndAscent()) / getFontLineSpacing());
         if (relativeToScroll) {
             row += mTopRow;
         }
@@ -1116,19 +1133,19 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
         if (viewWidth == 0 || viewHeight == 0 || mTermSession == null) return;
 
         // Set to 80 and 24 if you want to enable vttest.
-        int newColumns = Math.max(4, (int) (viewWidth / mRenderer.getFontWidth()));
-        int newRows = Math.max(4, (viewHeight - mRenderer.getFontLineSpacingAndAscent()) / mRenderer.getFontLineSpacing());
+        int newColumns = Math.max(4, (int) (viewWidth / getFontWidth()));
+        int newRows = Math.max(4, (viewHeight - getFontLineSpacingAndAscent()) / getFontLineSpacing());
 
         // 如果引擎尚未完全初始化，我们只发起一次初始化请求，然后等待回调。
         // 防止由于 mEmulator 为空而在每一帧都重复触发 initializeEmulator。
         if (!mTermSession.isEngineInitialized()) {
-            mTermSession.updateSize(newColumns, newRows, (int) mRenderer.getFontWidth(), mRenderer.getFontLineSpacing());
+            mTermSession.updateSize(newColumns, newRows, (int) getFontWidth(), getFontLineSpacing());
             return;
         }
 
         // 引擎已就绪，仅在尺寸变化时执行 resize
         if (mEmulator == null || (newColumns != mEmulator.getCols() || newRows != mEmulator.getRows())) {
-            mTermSession.updateSize(newColumns, newRows, (int) mRenderer.getFontWidth(), mRenderer.getFontLineSpacing());
+            mTermSession.updateSize(newColumns, newRows, (int) getFontWidth(), getFontLineSpacing());
             mEmulator = mTermSession.getEmulator();
             mClient.onEmulatorSet();
 
@@ -1181,7 +1198,7 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
                 selActive = true;
             }
 
-            nativeUpdateRenderParams(mScaleFactor, mTopRow * mRenderer.getFontLineSpacing(),
+            nativeUpdateRenderParams(mScaleFactor, mTopRow * getFontLineSpacing(),
                          selX1, selY1, selX2, selY2, selActive);
         } else {
             android.util.Log.w("TerminalView-onDraw", "mEmulator is NULL - cannot update render params");
@@ -1189,9 +1206,9 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
 
         // 暂时保留 Sixel 图像在 Canvas 上的绘制（如果 Rust 侧尚未接管 Sixel）
         if (mSixelBitmap != null && !mSixelBitmap.isRecycled()) {
-            float fontWidth = mRenderer.getFontWidth();
-            float fontLineSpacing = mRenderer.getFontLineSpacing();
-            float fontAscent = mRenderer.getFontLineSpacingAndAscent();
+            float fontWidth = getFontWidth();
+            float fontLineSpacing = getFontLineSpacing();
+            float fontAscent = getFontLineSpacingAndAscent();
 
             int pixelX = (int) (mSixelStartX * fontWidth);
             int pixelY = (int) ((mSixelStartY - mTopRow) * fontLineSpacing + fontAscent);
@@ -1213,11 +1230,11 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
     }
 
     public int getCursorX(float x) {
-        return (int) (x / mRenderer.getFontWidth());
+        return (int) (x / getFontWidth());
     }
 
     public int getCursorY(float y) {
-        return (int) (((y - mRenderer.getFontLineSpacingAndAscent()) / mRenderer.getFontLineSpacing()) + mTopRow);
+        return (int) (((y - getFontLineSpacingAndAscent()) / getFontLineSpacing()) + mTopRow);
     }
 
     public int getPointX(int cx) {
@@ -1226,11 +1243,11 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
                 cx = mEmulator.getCols();
             }
         }
-        return Math.round(cx * mRenderer.getFontWidth());
+        return Math.round(cx * getFontWidth());
     }
 
     public int getPointY(int cy) {
-        return Math.round((cy - mTopRow) * mRenderer.getFontLineSpacing() + mRenderer.getFontLineSpacingAndAscent());
+        return Math.round((cy - mTopRow) * getFontLineSpacing() + getFontLineSpacingAndAscent());
     }
 
     public int getTopRow() {
@@ -1514,10 +1531,10 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
                     int cursorX = mEmulator.getCursorCol();
                     int cursorY = mEmulator.getCursorRow();
                     if (cursorY >= mTopRow && cursorY < mTopRow + mEmulator.getRows()) {
-                        float left = cursorX * mRenderer.getFontWidth();
-                        float top = (cursorY - mTopRow) * mRenderer.getFontLineSpacing();
-                        float right = left + mRenderer.getFontWidth() * 2; // Support double-width chars
-                        float bottom = top + mRenderer.getFontLineSpacing();
+                        float left = cursorX * getFontWidth();
+                        float top = (cursorY - mTopRow) * getFontLineSpacing();
+                        float right = left + getFontWidth() * 2; // Support double-width chars
+                        float bottom = top + getFontLineSpacing();
                         invalidate((int) left, (int) top, (int) right, (int) bottom);
                     } else {
                         invalidate(); // Fallback
@@ -1792,7 +1809,8 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
         android.util.Log.i("TerminalView-Surface", ">>> surfaceCreated: holder=" + holder + ", surface=" + holder.getSurface());
         try {
             nativeSetSurface(holder.getSurface());
-            android.util.Log.i("TerminalView-Surface", ">>> surfaceCreated: nativeSetSurface() returned successfully");
+            refreshFontMetrics();
+            android.util.Log.i("TerminalView-Surface", ">>> surfaceCreated: nativeSetSurface() returned successfully, font metrics refreshed");
         } catch (Exception e) {
             android.util.Log.e("TerminalView-Surface", "!!! surfaceCreated: nativeSetSurface() threw exception: " + e.getMessage(), e);
         }
@@ -1830,6 +1848,7 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
                                     int selX1, int selY1, int selX2, int selY2, boolean selActive);
     public native void nativeOnSizeChanged(int width, int height);
     public native void nativeSetFontSize(float fontSize);
+    public native void nativeGetFontMetrics(float[] metrics);
 
     /** 获取选区坐标传递给 nativeRender */
     private final int[] mSelCoords = new int[4];
