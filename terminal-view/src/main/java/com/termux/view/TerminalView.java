@@ -1134,7 +1134,7 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
 
         // Set to 80 and 24 if you want to enable vttest.
         int newColumns = Math.max(4, (int) (viewWidth / getFontWidth()));
-        int newRows = Math.max(4, (viewHeight - getFontLineSpacingAndAscent()) / getFontLineSpacing());
+        int newRows = Math.max(4, (int) ((viewHeight - getFontLineSpacingAndAscent()) / getFontLineSpacing()));
 
         // 如果引擎尚未完全初始化，我们只发起一次初始化请求，然后等待回调。
         // 防止由于 mEmulator 为空而在每一帧都重复触发 initializeEmulator。
