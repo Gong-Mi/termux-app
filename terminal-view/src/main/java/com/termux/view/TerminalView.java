@@ -1139,13 +1139,13 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
         // 如果引擎尚未完全初始化，我们只发起一次初始化请求，然后等待回调。
         // 防止由于 mEmulator 为空而在每一帧都重复触发 initializeEmulator。
         if (!mTermSession.isEngineInitialized()) {
-            mTermSession.updateSize(newColumns, newRows, (int) getFontWidth(), getFontLineSpacing());
+            mTermSession.updateSize(newColumns, newRows, (int) getFontWidth(), (int) getFontLineSpacing());
             return;
         }
 
         // 引擎已就绪，仅在尺寸变化时执行 resize
         if (mEmulator == null || (newColumns != mEmulator.getCols() || newRows != mEmulator.getRows())) {
-            mTermSession.updateSize(newColumns, newRows, (int) getFontWidth(), getFontLineSpacing());
+            mTermSession.updateSize(newColumns, newRows, (int) getFontWidth(), (int) getFontLineSpacing());
             mEmulator = mTermSession.getEmulator();
             mClient.onEmulatorSet();
 
@@ -1176,7 +1176,7 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
     protected void onDraw(Canvas canvas) {
         if (!mOnDrawCalledAtLeastOnce) {
             mOnDrawCalledAtLeastOnce = true;
-            android.util.Log.i("TerminalView-onDraw", ">>> FIRST onDraw call - emulator=" + (mEmulator != null) + ", renderer=" + (mRenderer != null));
+            android.util.Log.i("TerminalView-onDraw", ">>> FIRST onDraw call - emulator=" + (mEmulator != null) + ", font metrics ok=" + (mNativeFontWidth > 0));
         }
 
         // 终端文本渲染已由独立 Vulkan 渲染线程处理（通过 SurfaceView 的 ANativeWindow Surface）
@@ -1712,23 +1712,21 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
      * @param startY 起始 Y 坐标（字符位置）
      */
     public void onSixelImage(byte[] rgbaData, int width, int height, int startX, int startY) {
-        if (mRenderer != null) {
-            // 存储图像数据
-            mSixelImageData = rgbaData;
-            mSixelWidth = width;
-            mSixelHeight = height;
-            mSixelStartX = startX;
-            mSixelStartY = startY;
-            
-            // 创建位图
-            createSixelBitmap();
-            
-            // 触发重绘
-            invalidate();
-            
-            mClient.logDebug("SixelImage", String.format("Sixel image received: %dx%d at (%d,%d), data size: %d",
-                width, height, startX, startY, rgbaData != null ? rgbaData.length : 0));
-        }
+        // Vulkan 渲染线程已接管 Sixel 渲染，此方法仅保留向后兼容
+        mSixelImageData = rgbaData;
+        mSixelWidth = width;
+        mSixelHeight = height;
+        mSixelStartX = startX;
+        mSixelStartY = startY;
+
+        // 创建位图
+        createSixelBitmap();
+
+        // 触发重绘
+        invalidate();
+
+        mClient.logDebug("SixelImage", String.format("Sixel image received: %dx%d at (%d,%d), data size: %d",
+            width, height, startX, startY, rgbaData != null ? rgbaData.length : 0));
     }
     
     /**
