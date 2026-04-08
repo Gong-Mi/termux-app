@@ -47,6 +47,8 @@ pub const DEFAULT_COLORSCHEME: [u32; 259] = [
 pub const COLOR_INDEX_FOREGROUND: usize = 256;
 pub const COLOR_INDEX_BACKGROUND: usize = 257;
 pub const COLOR_INDEX_CURSOR: usize = 258;
+/// 标准颜色索引总数（256 色 + 3 特殊 = 259）
+pub const NUM_INDEXED_COLORS: usize = 259;
 
 /// 感知亮度计算的系数（来自 Java TerminalColors.getPerceivedBrightnessOfColor）
 /// https://www.nbdtech.com/Blog/archive/2008/04/27/Calculating-the-Perceived-Brightness-of-a-Color.aspx

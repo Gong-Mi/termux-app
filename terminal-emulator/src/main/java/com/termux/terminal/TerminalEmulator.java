@@ -100,8 +100,6 @@ public final class TerminalEmulator {
     public int getTotalRows() { return getActiveTranscriptRows() + getRows(); }
     /** @deprecated 使用 getActiveTranscriptRows() + getRows() 替代 */
     @Deprecated public int getActiveRows() { return getTotalRows(); }
-    /** @deprecated 使用 readRow() 直接访问屏幕数据 */
-    @Deprecated public TerminalBufferCompat getScreen() { return new TerminalBufferCompat(this, getCols(), getRows(), getTotalRows()); }
 
     // --- 滚动 ---
     public int getScrollCounter() { return mEnginePtr != 0 ? getScrollCounterFromRust(mEnginePtr) : 0; }
