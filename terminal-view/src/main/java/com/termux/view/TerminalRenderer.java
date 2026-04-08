@@ -5,6 +5,12 @@ import android.graphics.Paint;
 import android.graphics.PorterDuff;
 import android.graphics.Typeface;
 
+import com.termux.terminal.TerminalBuffer;
+import com.termux.terminal.TerminalEmulator;
+import com.termux.terminal.TerminalRow;
+import com.termux.terminal.TextStyle;
+import com.termux.terminal.WcWidth;
+
 /**
  * @deprecated This class is no longer used for rendering.
  * All terminal text is now rendered by the Vulkan render thread (Rust).
