@@ -672,8 +672,8 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
      * @return Array with the column and row.
      */
     public int[] getColumnAndRow(MotionEvent event, boolean relativeToScroll) {
-        int column = (int) (event.getX() / (getFontWidth() * mScaleFactor));
-        int row = (int) ((event.getY() / mScaleFactor - getFontLineSpacingAndAscent()) / getFontLineSpacing());
+        int column = (int) (event.getX() / getFontWidth());
+        int row = (int) ((event.getY() - getFontLineSpacingAndAscent()) / getFontLineSpacing());
         if (relativeToScroll) {
             row += mTopRow;
         }
@@ -1195,9 +1195,10 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
             int selX1 = 0, selY1 = 0, selX2 = 0, selY2 = 0;
             if (isSelectingText() && mTextSelectionCursorController != null) {
                 mTextSelectionCursorController.getSelectors(mSelCoords);
-                // 将缓冲区坐标转换为可见屏幕坐标
-                selY1 = mSelCoords[0] + mTopRow;
-                selY2 = mSelCoords[1] + mTopRow;
+                // 修正：mSelCoords[0] 和 [1] (Y 坐标) 已经是相对于缓冲区头部的绝对坐标，
+                // 包含了滚动偏移。渲染器也期望绝对坐标。不再需要加 mTopRow。
+                selY1 = mSelCoords[0];
+                selY2 = mSelCoords[1];
                 selX1 = mSelCoords[2];
                 selX2 = mSelCoords[3];
                 selActive = true;
