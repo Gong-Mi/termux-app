@@ -196,7 +196,7 @@ impl NonAsciiWidthCache {
 }
 
 pub struct TerminalRenderer {
-    font_size: f32,
+    pub font_size: f32,
     font_cache: FontCache,
     ascii_cache: AsciiWidthCache,
     non_ascii_cache: NonAsciiWidthCache,

@@ -350,7 +350,8 @@ fn spawn_render_thread(engine_ptr: jlong) {
                 };
 
                 let font_size = *RENDER_FONT_SIZE.lock().unwrap();
-                if renderer_guard.is_none() {
+                let needs_recreate = renderer_guard.as_ref().map_or(true, |r| (r.font_size - font_size).abs() > 0.1);
+                if needs_recreate {
                     *renderer_guard = Some(crate::renderer::TerminalRenderer::new(&[], font_size));
                 }
 
