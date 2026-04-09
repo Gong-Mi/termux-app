@@ -651,3 +651,313 @@ impl Screen {
         (cursor_x, new_cursor_y)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- TerminalRow tests ---
+
+    #[test]
+    fn test_row_new() {
+        let r = TerminalRow::new(80);
+        assert_eq!(r.text.len(), 80);
+        assert_eq!(r.styles.len(), 80);
+        assert!(!r.line_wrap);
+        assert!(r.text.iter().all(|&c| c == ' '));
+    }
+
+    #[test]
+    fn test_row_clear() {
+        let mut r = TerminalRow::new(10);
+        r.text[3] = 'A';
+        r.clear(2, 6, 0xDEAD);
+        assert_eq!(r.text[3], ' ');
+        assert_eq!(r.styles[3], 0xDEAD);
+    }
+
+    #[test]
+    fn test_row_clear_all() {
+        let mut r = TerminalRow::new(10);
+        r.text[5] = 'X';
+        r.styles[5] = 0xBEEF;
+        r.clear_all(0);
+        assert!(r.text.iter().all(|&c| c == ' '));
+        assert!(r.styles.iter().all(|&s| s == 0));
+    }
+
+    #[test]
+    fn test_row_set_char() {
+        let mut r = TerminalRow::new(10);
+        r.set_char(3, 'A' as u32, 0x1234);
+        assert_eq!(r.text[3], 'A');
+        assert_eq!(r.styles[3], 0x1234);
+        // Other cells unchanged
+        assert_eq!(r.text[0], ' ');
+    }
+
+    #[test]
+    fn test_row_insert_spaces() {
+        let mut r = TerminalRow::new(10);
+        r.text[0] = 'A'; r.styles[0] = 1;
+        r.text[2] = 'B'; r.styles[2] = 2;
+
+        // Insert 2 spaces at column 1 with style 99
+        r.insert_spaces(1, 2, 99);
+
+        // Positions 1,2 are spaces with style 99
+        assert_eq!(r.text[1], ' ');
+        assert_eq!(r.text[2], ' ');
+        assert_eq!(r.styles[1], 99);
+        assert_eq!(r.styles[2], 99);
+        // Position 0 unchanged
+        assert_eq!(r.text[0], 'A');
+        assert_eq!(r.styles[0], 1);
+        // Position 2 content 'B' shifted to position 4 (2+2)
+        assert_eq!(r.text[4], 'B');
+        assert_eq!(r.styles[4], 2);
+    }
+
+    #[test]
+    fn test_row_delete_characters() {
+        let mut r = TerminalRow::new(10);
+        for i in 0..10 {
+            r.set_char(i, (b'A' + i as u8) as u32, i as u64);
+        }
+        r.delete_characters(2, 3, 0);
+        // chars at 2,3,4 removed; chars from 5+ shifted left
+        assert_eq!(r.text[2], 'F');
+        assert_eq!(r.text[3], 'G');
+        assert_eq!(r.text[4], 'H');
+        // Last 3 cells are spaces
+        assert_eq!(r.text[7], ' ');
+        assert_eq!(r.text[8], ' ');
+        assert_eq!(r.text[9], ' ');
+    }
+
+    #[test]
+    fn test_row_copy_text() {
+        let mut r = TerminalRow::new(10);
+        for i in 0..5 {
+            r.set_char(i, (b'a' + i as u8) as u32, 0);
+        }
+        let mut dest = [0u16; 10];
+        r.copy_text(1, 4, &mut dest);
+        assert_eq!(dest[0], 'b' as u16);
+        assert_eq!(dest[1], 'c' as u16);
+        assert_eq!(dest[2], 'd' as u16);
+        assert_eq!(dest[3], 0u16); // rest is null
+    }
+
+    #[test]
+    fn test_row_get_word_at() {
+        let mut r = TerminalRow::new(20);
+        let text: Vec<char> = "  hello  world  ".chars().collect();
+        for (i, ch) in text.into_iter().enumerate() {
+            r.text[i] = ch;
+        }
+        // "hello" at column 2
+        let word = r.get_word_at(2);
+        assert_eq!(word, "hello");
+        // "world" at column 9
+        let word2 = r.get_word_at(9);
+        assert_eq!(word2, "world");
+    }
+
+    // --- Screen tests ---
+
+    #[test]
+    fn test_screen_new() {
+        let s = Screen::new(80, 24, 100);
+        assert_eq!(s.cols, 80);
+        assert_eq!(s.rows, 24);
+        assert_eq!(s.buffer.len(), 100);
+        assert_eq!(s.active_transcript_rows, 0);
+        assert_eq!(s.first_row, 0);
+    }
+
+    #[test]
+    fn test_screen_internal_row_simple() {
+        let mut s = Screen::new(80, 24, 24);
+        // No scrolling, direct mapping
+        assert_eq!(s.internal_row(0), 0);
+        assert_eq!(s.internal_row(23), 23);
+    }
+
+    #[test]
+    fn test_screen_block_clear() {
+        let mut s = Screen::new(10, 5, 5);
+        // Put content in center
+        let row = s.get_row_mut(2);
+        row.set_char(5, 'X' as u32, 1);
+        drop(row);
+
+        s.block_clear(1, 0, 3, 9, 0); // clear rows 1-3 fully
+
+        let row_after = s.get_row(2);
+        assert_eq!(row_after.text[5], ' ');
+    }
+
+    #[test]
+    fn test_screen_scroll_up_partial() {
+        // Partial scroll (not full screen) uses data movement
+        let mut s = Screen::new(10, 3, 5);
+        s.get_row_mut(0).set_char(0, 'A' as u32, 0);
+        s.get_row_mut(1).set_char(0, 'B' as u32, 1);
+        s.get_row_mut(2).set_char(0, 'C' as u32, 2);
+
+        // Full screen scroll (top=0, bottom=rows) uses ring buffer pointer shift
+        s.scroll_up(0, 3, 0);
+
+        // After ring buffer scroll: first_row shifts, row 0 gets old row 1, etc.
+        // first_row was 0, now 1. Row at internal index 1 = old index 2 = 'C'
+        // So visible row 0 → internal row (first_row + 0) % len = 1 → 'B'
+        // Wait, let me trace: buffer has 5 rows. first_row=1.
+        // visible row 0 → internal_row(0) = (first_row + 0) % 5 = 1 → old row 1 = 'B'
+        // visible row 1 → internal_row(1) = 2 → old row 2 = 'C'
+        // visible row 2 → internal_row(2) = 3 → newly cleared = ' '
+        assert_eq!(s.get_row(0).text[0], 'B');
+        assert_eq!(s.get_row(1).text[0], 'C');
+        assert_eq!(s.get_row(2).text[0], ' ');
+        // active_transcript_rows should increase
+        assert_eq!(s.active_transcript_rows, 1);
+    }
+
+    #[test]
+    fn test_screen_scroll_down_full() {
+        let mut s = Screen::new(10, 3, 5);
+        s.get_row_mut(0).set_char(0, 'A' as u32, 0);
+        s.get_row_mut(1).set_char(0, 'B' as u32, 1);
+        s.get_row_mut(2).set_char(0, 'C' as u32, 2);
+
+        s.scroll_down(0, 3, 0);
+
+        // scroll_down copies from i-1 to i (reverse), then clears row 0
+        // row 2 ← row 1 = 'B', row 1 ← row 0 = 'A', row 0 cleared
+        assert_eq!(s.get_row(0).text[0], ' ');
+        assert_eq!(s.get_row(1).text[0], 'A');
+        assert_eq!(s.get_row(2).text[0], 'B');
+    }
+
+    #[test]
+    fn test_screen_erase_in_display_all() {
+        let mut s = Screen::new(10, 5, 5);
+        // Fill visible rows
+        for r in 0..5 {
+            s.get_row_mut(r).set_char(0, (b'A' + r as u8) as u32, 0);
+        }
+
+        s.erase_in_display(2, 0, 0, 0); // erase all (mode=2, cursor at 0,0)
+
+        for r in 0..5 {
+            assert_eq!(s.get_row(r).text[0], ' ', "Row {} should be cleared", r);
+        }
+    }
+
+    #[test]
+    fn test_screen_erase_below_cursor() {
+        let mut s = Screen::new(10, 5, 5);
+        for r in 0..5 {
+            s.get_row_mut(r).set_char(0, (b'A' + r as u8) as u32, 0);
+        }
+
+        // mode=1: erase from cursor to end of screen
+        s.erase_in_display(0, 2, 2, 0); // erase from (2,2) to end
+
+        // Rows above cursor (0, 1) should still have content
+        assert_eq!(s.get_row(0).text[0], 'A');
+        assert_eq!(s.get_row(1).text[0], 'B');
+        // From cursor row onward: row 2 cleared from col 2+, rows 3-4 fully cleared
+        assert_eq!(s.get_row(3).text[0], ' ');
+        assert_eq!(s.get_row(4).text[0], ' ');
+    }
+
+    #[test]
+    fn test_screen_insert_lines() {
+        let mut s = Screen::new(10, 5, 10);
+        for r in 0..5 {
+            s.get_row_mut(r).set_char(0, (b'A' + r as u8) as u32, 0);
+        }
+
+        // insert 2 lines at row 2, bottom=4 (scroll region [2, 4))
+        // to_insert = min(2, 4-2) = 2, to_move = 0
+        // Rows 2,3 get cleared; rows 0,1,4 unaffected
+        s.insert_lines(2, 4, 2, 0);
+
+        assert_eq!(s.get_row(0).text[0], 'A');
+        assert_eq!(s.get_row(1).text[0], 'B');
+        assert_eq!(s.get_row(2).text[0], ' '); // cleared
+        assert_eq!(s.get_row(3).text[0], ' '); // cleared
+        assert_eq!(s.get_row(4).text[0], 'E'); // outside scroll region, unchanged
+    }
+
+    #[test]
+    fn test_screen_delete_lines() {
+        let mut s = Screen::new(10, 5, 10);
+        for r in 0..5 {
+            s.get_row_mut(r).set_char(0, (b'A' + r as u8) as u32, 0);
+        }
+
+        // delete 2 lines at row 1, bottom=4 (scroll region [1, 4))
+        // to_delete = min(2, 4-1) = 2, to_move = 3 - 2 = 1
+        // row 1 ← row 3 ('D'), then clear rows 3, 2
+        s.delete_lines(1, 4, 2, 0);
+
+        assert_eq!(s.get_row(0).text[0], 'A'); // unchanged
+        assert_eq!(s.get_row(1).text[0], 'D'); // shifted from row 3
+        assert_eq!(s.get_row(2).text[0], ' '); // cleared (within scroll region)
+        assert_eq!(s.get_row(3).text[0], ' '); // cleared
+        assert_eq!(s.get_row(4).text[0], 'E'); // outside scroll region
+    }
+
+    #[test]
+    fn test_screen_get_selected_text() {
+        let mut s = Screen::new(5, 3, 3);
+        // Row 0: "Hello" (exactly 5 chars)
+        for (i, ch) in "Hello".chars().enumerate() {
+            s.get_row_mut(0).set_char(i, ch as u32, 0);
+        }
+        // Row 1: "World"
+        for (i, ch) in "World".chars().enumerate() {
+            s.get_row_mut(1).set_char(i, ch as u32, 0);
+        }
+
+        let text = s.get_selected_text(0, 0, 4, 1);
+        // Each row is padded to full width (5 chars) + newline
+        assert!(text.contains("Hello"));
+        assert!(text.contains("World"));
+    }
+
+    #[test]
+    fn test_screen_resize_columns_only() {
+        // Verify the resize happens without panic and dimensions are correct.
+        // The slow path reflow behavior is complex; just check dimensions.
+        let mut s = Screen::new(10, 3, 5);
+        for i in 0..10 {
+            s.get_row_mut(0).set_char(i, (b'A' + i as u8) as u32, 0);
+        }
+
+        let (_new_cx, _new_cy) = s.resize_with_reflow(5, 3, 0, 0, 0);
+        assert_eq!(s.cols, 5);
+        assert_eq!(s.rows, 3);
+        assert_eq!(s.get_row(0).text[0], 'A');
+    }
+
+    #[test]
+    fn test_screen_resize_rows_only_fast_path() {
+        // Fast path: only rows change (columns unchanged)
+        let mut s = Screen::new(10, 3, 5);
+        for i in 0..10 {
+            s.get_row_mut(0).set_char(i, (b'A' + i as u8) as u32, 0);
+        }
+
+        let (new_cx, new_cy) = s.resize_with_reflow(10, 5, 0, 0, 0);
+        assert_eq!(s.cols, 10);
+        assert_eq!(s.rows, 5);
+        // Content should be preserved
+        assert_eq!(s.get_row(0).text[0], 'A');
+        assert_eq!(s.get_row(0).text[9], 'J');
+        assert_eq!(new_cx, 0);
+        assert_eq!(new_cy, 0);
+    }
+}

@@ -97,3 +97,130 @@ impl Cursor {
         if self.blinking_enabled { self.blink_state } else { true }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cursor_new_defaults() {
+        let c = Cursor::new();
+        assert_eq!(c.x, 0);
+        assert_eq!(c.y, 0);
+        assert_eq!(c.style, 0); // block
+        assert!(!c.about_to_wrap);
+        assert!(!c.blinking_enabled);
+        assert!(c.blink_state); // starts visible
+        assert_eq!(c.saved_state.fore_color, 256);
+        assert_eq!(c.saved_state.back_color, 257);
+    }
+
+    #[test]
+    fn test_set_position() {
+        let mut c = Cursor::new();
+        c.set_position(10, 5);
+        assert_eq!(c.x, 10);
+        assert_eq!(c.y, 5);
+        assert!(!c.about_to_wrap);
+    }
+
+    #[test]
+    fn test_clamp_within_bounds() {
+        let mut c = Cursor::new();
+        c.x = 5; c.y = 3;
+        c.clamp(80, 24);
+        assert_eq!(c.x, 5);
+        assert_eq!(c.y, 3);
+    }
+
+    #[test]
+    fn test_clamp_out_of_bounds() {
+        let mut c = Cursor::new();
+        c.x = 100; c.y = 50;
+        c.clamp(80, 24);
+        assert_eq!(c.x, 79);
+        assert_eq!(c.y, 23);
+    }
+
+    #[test]
+    fn test_clamp_negative() {
+        let mut c = Cursor::new();
+        c.x = -5; c.y = -3;
+        c.clamp(80, 24);
+        assert_eq!(c.x, 0);
+        assert_eq!(c.y, 0);
+    }
+
+    #[test]
+    fn test_move_relative() {
+        let mut c = Cursor::new();
+        c.x = 10; c.y = 5;
+        c.move_relative(3, 2, 80, 24);
+        assert_eq!(c.x, 13);
+        assert_eq!(c.y, 7);
+        assert!(!c.about_to_wrap);
+    }
+
+    #[test]
+    fn test_move_relative_clamped() {
+        let mut c = Cursor::new();
+        c.x = 78; c.y = 23;
+        c.move_relative(10, 10, 80, 24);
+        assert_eq!(c.x, 79);
+        assert_eq!(c.y, 23);
+    }
+
+    #[test]
+    fn test_save_restore_state() {
+        let mut c = Cursor::new();
+        c.x = 20; c.y = 10; c.about_to_wrap = true;
+
+        c.save_state(0x1234, 0xFF, true, false, true, 100, 200);
+
+        c.x = 0; c.y = 0; c.about_to_wrap = false;
+
+        let restored = c.restore_state();
+        assert_eq!(c.x, 20);
+        assert_eq!(c.y, 10);
+        assert!(c.about_to_wrap);
+        assert_eq!(restored.x, 20);
+        assert_eq!(restored.y, 10);
+        assert_eq!(restored.style, 0x1234);
+        assert_eq!(restored.decset_flags, 0xFF);
+        assert!(restored.use_line_drawing_g0);
+        assert!(!restored.use_line_drawing_g1);
+        assert!(restored.use_line_drawing_uses_g0);
+        assert_eq!(restored.fore_color, 100);
+        assert_eq!(restored.back_color, 200);
+    }
+
+    #[test]
+    fn test_should_be_visible() {
+        let c = Cursor::new();
+
+        // 无闪烁：始终可见
+        assert!(c.should_be_visible(true));
+        assert!(!c.should_be_visible(false));
+
+        // 闪烁启用
+        let mut c2 = c;
+        c2.blinking_enabled = true;
+        c2.blink_state = true;
+        assert!(c2.should_be_visible(true));
+
+        c2.blink_state = false;
+        assert!(!c2.should_be_visible(true));
+    }
+
+    #[test]
+    fn test_cursor_styles() {
+        let mut c = Cursor::new();
+        assert_eq!(c.style, 0); // block
+
+        c.style = 1; // underline
+        assert_eq!(c.style, 1);
+
+        c.style = 2; // bar
+        assert_eq!(c.style, 2);
+    }
+}
