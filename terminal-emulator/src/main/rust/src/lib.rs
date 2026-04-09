@@ -63,6 +63,16 @@ static SURFACE_NEW_HEIGHT: Mutex<u32> = Mutex::new(0);
 /// 使渲染线程只在有变化时工作，避免空转耗电
 static SCREEN_DIRTY: AtomicBool = AtomicBool::new(false);
 
+/// 触发重绘并唤醒渲染线程
+pub fn request_render() {
+    SCREEN_DIRTY.store(true, Ordering::SeqCst);
+    if let Ok(guard) = RENDER_THREAD_HANDLE.lock() {
+        if let Some(handle) = guard.as_ref() {
+            handle.thread().unpark();
+        }
+    }
+}
+
 /// 设置渲染参数（由 Java onDraw 调用）
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeUpdateRenderParams(
@@ -84,7 +94,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeUpdateRenderParam
     *RENDER_SEL_Y2.lock().unwrap() = sel_y2;
     *RENDER_SEL_ACTIVE.lock().unwrap() = sel_active != 0;
     // 渲染参数改变（如滚动）需要触发重绘
-    SCREEN_DIRTY.store(true, Ordering::SeqCst);
+    request_render();
 }
 
 /// 设置字体尺寸（由 Java setTextSize 调用）
@@ -98,7 +108,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetFontSize(
     *RENDER_FONT_SIZE.lock().unwrap() = font_size;
     android_log(LogPriority::DEBUG, &format!("nativeSetFontSize: {} -> {}", old_size, font_size));
     // 字体大小改变需要触发重绘
-    SCREEN_DIRTY.store(true, Ordering::SeqCst);
+    request_render();
 }
 
 /// 获取字体指标（供 Java TerminalView 替代 mRenderer 使用）
@@ -250,21 +260,20 @@ fn spawn_render_thread(engine_ptr: jlong) {
                                 ));
                                 SURFACE_SIZE_CHANGED.store(false, Ordering::SeqCst);
                                 // Resize 后应当强制刷新一帧
-                                SCREEN_DIRTY.store(true, Ordering::SeqCst);
+                                request_render();
                             }
                         }
                     }
                 }
 
-                // 2. 脏标记节流：没有变化时休眠等待，避免空转
-                if !SCREEN_DIRTY.load(Ordering::SeqCst) {
-                    // 16ms 约 60fps 上限检查一次脏标记
-                    std::thread::sleep(std::time::Duration::from_millis(16));
-                    continue;
+                // 2. 事件驱动与轮询结合的节流：
+                // 如果没有脏标记，则挂起线程直到被唤醒（如新字符输入、滚动），
+                // 或 500ms 超时（用于处理无输入时的光标闪烁刷新）。
+                if !SCREEN_DIRTY.swap(false, Ordering::SeqCst) {
+                    std::thread::park_timeout(std::time::Duration::from_millis(500));
+                    // 无论是因为超时还是被事件唤醒，醒来后都清除可能的脏标记准备重新渲染。
+                    SCREEN_DIRTY.store(false, Ordering::SeqCst);
                 }
-                
-                // 3. 消费脏标记 — 在渲染前清零，允许后续变化被捕获
-                SCREEN_DIRTY.store(false, Ordering::SeqCst);
 
                 // 获取 Vulkan 上下文
                 let ctx_mutex = match VULKAN_CONTEXT.get() {
@@ -480,7 +489,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeOnSizeChanged(
     *SURFACE_NEW_HEIGHT.lock().unwrap() = height as u32;
     SURFACE_SIZE_CHANGED.store(true, Ordering::SeqCst);
     // 尺寸变化需要触发重绘以刷新渲染目标
-    SCREEN_DIRTY.store(true, Ordering::SeqCst);
+    request_render();
     android_log(LogPriority::DEBUG, "nativeOnSizeChanged: Set SURFACE_SIZE_CHANGED=true, render thread will handle swapchain recreation");
 }
 
@@ -583,7 +592,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeProcess(
             (engine.take_events(), engine.state.java_callback_obj.clone())
         };
         flush_events_to_java(&mut env, &cb, events);
-        SCREEN_DIRTY.store(true, Ordering::SeqCst);
+        request_render();
     }));
     let _ = Arc::into_raw(context);
 }
@@ -610,7 +619,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_processBatchRus
             (engine.take_events(), engine.state.java_callback_obj.clone())
         };
         flush_events_to_java(&mut env, &cb, events);
-        SCREEN_DIRTY.store(true, Ordering::SeqCst);
+        request_render();
     }));
     let _ = Arc::into_raw(context);
 }
@@ -631,7 +640,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeResize(
         engine.events.push(TerminalEvent::ScreenUpdated);
         (engine.take_events(), engine.state.java_callback_obj.clone())
     };
-    SCREEN_DIRTY.store(true, Ordering::SeqCst);
+    request_render();
     flush_events_to_java(&mut env, &cb, events);
     let _ = Arc::into_raw(context);
 }
@@ -652,7 +661,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_processCodePoin
             (engine.take_events(), engine.state.java_callback_obj.clone())
         };
         flush_events_to_java(&mut env, &cb, events);
-        SCREEN_DIRTY.store(true, Ordering::SeqCst);
+        request_render();
     }));
     let _ = Arc::into_raw(context);
 }
@@ -675,7 +684,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_resizeEngineRus
         engine.events.push(TerminalEvent::ScreenUpdated);
         (engine.take_events(), engine.state.java_callback_obj.clone())
     };
-    SCREEN_DIRTY.store(true, Ordering::SeqCst);
+    request_render();
     flush_events_to_java(&mut env, &cb, events);
     let _ = Arc::into_raw(context);
 }
@@ -745,7 +754,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeStartIoTh
                             engine.process_bytes(&buffer[..n]);
                             (engine.take_events(), engine.state.java_callback_obj.clone())
                         };
-                        SCREEN_DIRTY.store(true, Ordering::SeqCst);
+                        request_render();
                         if let Some(ref mut env) = attached_env {
                             flush_events_to_java(env, &cb, events);
                         }
@@ -822,7 +831,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorStyleF
         engine.state.cursor.style = cursor_style as i32;
         (engine.take_events(), engine.state.java_callback_obj.clone())
     };
-    SCREEN_DIRTY.store(true, Ordering::SeqCst);
+    request_render();
     flush_events_to_java(&mut env, &cb, events);
     let _ = Arc::into_raw(context);
 }
@@ -837,7 +846,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_doDecSetOrReset
             engine.state.do_decset_or_reset(setting != 0, mode as u32);
             (engine.take_events(), engine.state.java_callback_obj.clone())
         };
-        SCREEN_DIRTY.store(true, Ordering::SeqCst);
+        request_render();
         flush_events_to_java(&mut env, &cb, events);
     }));
     let _ = Arc::into_raw(context);
@@ -1334,7 +1343,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorBlinkS
         engine.state.cursor.blink_state = state != 0;
         (engine.take_events(), engine.state.java_callback_obj.clone())
     };
-    SCREEN_DIRTY.store(true, Ordering::SeqCst);
+    request_render();
     flush_events_to_java(&mut env, &cb, events);
     let _ = Arc::into_raw(context);
 }
@@ -1348,7 +1357,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorBlinki
         engine.state.cursor.blinking_enabled = enabled != 0;
         (engine.take_events(), engine.state.java_callback_obj.clone())
     };
-    SCREEN_DIRTY.store(true, Ordering::SeqCst);
+    request_render();
     flush_events_to_java(&mut env, &cb, events);
     let _ = Arc::into_raw(context);
 }
