@@ -83,6 +83,8 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeUpdateRenderParam
     *RENDER_SEL_X2.lock().unwrap() = sel_x2;
     *RENDER_SEL_Y2.lock().unwrap() = sel_y2;
     *RENDER_SEL_ACTIVE.lock().unwrap() = sel_active != 0;
+    // 渲染参数改变（如滚动）需要触发重绘
+    SCREEN_DIRTY.store(true, Ordering::SeqCst);
 }
 
 /// 设置字体尺寸（由 Java setTextSize 调用）
@@ -95,6 +97,8 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetFontSize(
     let old_size = *RENDER_FONT_SIZE.lock().unwrap();
     *RENDER_FONT_SIZE.lock().unwrap() = font_size;
     android_log(LogPriority::DEBUG, &format!("nativeSetFontSize: {} -> {}", old_size, font_size));
+    // 字体大小改变需要触发重绘
+    SCREEN_DIRTY.store(true, Ordering::SeqCst);
 }
 
 /// 获取字体指标（供 Java TerminalView 替代 mRenderer 使用）
@@ -106,19 +110,26 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
     metrics_array: jni::sys::jfloatArray,
 ) {
     let font_size = *RENDER_FONT_SIZE.lock().unwrap();
+
+    // 防御性检查：font_size 无效时使用默认值
+    let safe_font_size = if font_size > 0.0 && font_size.is_finite() { font_size } else { 12.0 };
+
     // 使用 skia 测量字体指标（与 renderer.rs 中 FontCache 一致）
     use skia_safe::{Font, FontMgr, FontStyle};
-    let font_mgr = FontMgr::new();
-    let tf = match font_mgr.match_family_style("monospace", FontStyle::normal()) {
-        Some(t) => t,
-        None => return,
+
+    let (font_width, font_height, font_ascent) = match FontMgr::new().match_family_style("monospace", FontStyle::normal()) {
+        Some(tf) => {
+            let mut font = Font::new(tf, Some(safe_font_size));
+            let metrics = font.metrics();
+            let h = (metrics.1.descent - metrics.1.ascent + metrics.1.leading).ceil();
+            let (w, _) = font.measure_str("M", None);
+            (w, h, metrics.1.ascent)
+        }
+        None => {
+            // Fallback：基于 font_size 的简单估算
+            (safe_font_size * 0.6, safe_font_size * 1.2, -safe_font_size * 0.8)
+        }
     };
-    let mut font = Font::new(tf, Some(font_size));
-    let metrics = font.metrics();
-    let font_height = (metrics.1.descent - metrics.1.ascent + metrics.1.leading).ceil();
-    let (w, _) = font.measure_str("M", None);
-    let font_width = w;
-    let font_ascent = metrics.1.ascent;
 
     let values = [font_width, font_height, font_ascent];
     unsafe {
@@ -225,16 +236,7 @@ fn spawn_render_thread(engine_ptr: jlong) {
             let mut last_log_time = std::time::Instant::now();
 
             while RENDER_THREAD_RUNNING.load(Ordering::SeqCst) {
-                // 脏标记节流：没有变化时休眠等待，避免空转
-                if !SCREEN_DIRTY.load(Ordering::SeqCst) {
-                    // 16ms 约 60fps 上限检查一次脏标记
-                    // 同时处理光标闪烁等被动渲染需求（每秒至少渲染一次）
-                    std::thread::sleep(std::time::Duration::from_millis(16));
-                    continue;
-                }
-                // 消费脏标记 — 在渲染前清零，允许后续变化被捕获
-                SCREEN_DIRTY.store(false, Ordering::SeqCst);
-                // 检查是否需要重建 swapchain
+                // 1. 首先检查是否需要重建 swapchain (不受 SCREEN_DIRTY 影响)
                 if SURFACE_SIZE_CHANGED.load(Ordering::SeqCst) {
                     let new_width = *SURFACE_NEW_WIDTH.lock().unwrap();
                     let new_height = *SURFACE_NEW_HEIGHT.lock().unwrap();
@@ -247,10 +249,22 @@ fn spawn_render_thread(engine_ptr: jlong) {
                                     "Render: Swapchain recreated {}x{} success={}", new_width, new_height, ok
                                 ));
                                 SURFACE_SIZE_CHANGED.store(false, Ordering::SeqCst);
+                                // Resize 后应当强制刷新一帧
+                                SCREEN_DIRTY.store(true, Ordering::SeqCst);
                             }
                         }
                     }
                 }
+
+                // 2. 脏标记节流：没有变化时休眠等待，避免空转
+                if !SCREEN_DIRTY.load(Ordering::SeqCst) {
+                    // 16ms 约 60fps 上限检查一次脏标记
+                    std::thread::sleep(std::time::Duration::from_millis(16));
+                    continue;
+                }
+                
+                // 3. 消费脏标记 — 在渲染前清零，允许后续变化被捕获
+                SCREEN_DIRTY.store(false, Ordering::SeqCst);
 
                 // 获取 Vulkan 上下文
                 let ctx_mutex = match VULKAN_CONTEXT.get() {
@@ -465,6 +479,8 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeOnSizeChanged(
     *SURFACE_NEW_WIDTH.lock().unwrap() = width as u32;
     *SURFACE_NEW_HEIGHT.lock().unwrap() = height as u32;
     SURFACE_SIZE_CHANGED.store(true, Ordering::SeqCst);
+    // 尺寸变化需要触发重绘以刷新渲染目标
+    SCREEN_DIRTY.store(true, Ordering::SeqCst);
     android_log(LogPriority::DEBUG, "nativeOnSizeChanged: Set SURFACE_SIZE_CHANGED=true, render thread will handle swapchain recreation");
 }
 
@@ -806,6 +822,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorStyleF
         engine.state.cursor.style = cursor_style as i32;
         (engine.take_events(), engine.state.java_callback_obj.clone())
     };
+    SCREEN_DIRTY.store(true, Ordering::SeqCst);
     flush_events_to_java(&mut env, &cb, events);
     let _ = Arc::into_raw(context);
 }
@@ -820,6 +837,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_doDecSetOrReset
             engine.state.do_decset_or_reset(setting != 0, mode as u32);
             (engine.take_events(), engine.state.java_callback_obj.clone())
         };
+        SCREEN_DIRTY.store(true, Ordering::SeqCst);
         flush_events_to_java(&mut env, &cb, events);
     }));
     let _ = Arc::into_raw(context);
@@ -1316,6 +1334,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorBlinkS
         engine.state.cursor.blink_state = state != 0;
         (engine.take_events(), engine.state.java_callback_obj.clone())
     };
+    SCREEN_DIRTY.store(true, Ordering::SeqCst);
     flush_events_to_java(&mut env, &cb, events);
     let _ = Arc::into_raw(context);
 }
@@ -1329,6 +1348,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorBlinki
         engine.state.cursor.blinking_enabled = enabled != 0;
         (engine.take_events(), engine.state.java_callback_obj.clone())
     };
+    SCREEN_DIRTY.store(true, Ordering::SeqCst);
     flush_events_to_java(&mut env, &cb, events);
     let _ = Arc::into_raw(context);
 }

@@ -75,3 +75,7 @@ path = "tests/skia_render_test.rs"
 [[test]]
 name = "vulkan_render_benchmark"
 path = "tests/vulkan_render_benchmark.rs"
+
+[[test]]
+name = "render_deadlock_test"
+path = "tests/render_deadlock_test.rs"

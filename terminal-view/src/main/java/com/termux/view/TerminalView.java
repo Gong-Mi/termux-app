@@ -69,15 +69,18 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
     public TerminalEmulator mEmulator;
 
     /** Native font metrics (populated via JNI nativeGetFontMetrics) */
-    private float mNativeFontWidth;
-    private float mNativeFontHeight;
+    private float mNativeFontWidth = 1.0f;   // 1.0 防止除零（refreshFontMetrics 会更新为真实值）
+    private float mNativeFontHeight = 1.0f;
     private float mNativeFontAscent;
     private final float[] mNativeFontMetricsBuffer = new float[3];
 
     // mRenderer 已移除 — 文本渲染由 Vulkan 线程处理，字体指标从 Rust JNI 获取
 
-    private float getFontWidth() { return mNativeFontWidth; }
-    private float getFontLineSpacing() { return mNativeFontHeight; }
+    /** 获取字体宽度，保证非零 */
+    private float getFontWidth() { return mNativeFontWidth > 0 ? mNativeFontWidth : 1.0f; }
+    /** 获取行间距，保证非零 */
+    private float getFontLineSpacing() { return mNativeFontHeight > 0 ? mNativeFontHeight : 1.0f; }
+    /** 获取行间距 + 上升量 */
     private float getFontLineSpacingAndAscent() { return mNativeFontHeight + mNativeFontAscent; }
 
     private void refreshFontMetrics() {
