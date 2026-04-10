@@ -1051,14 +1051,14 @@ impl TerminalEngine {
             },
             KEYCODE_DPAD_LEFT => {
                 if key_mode == 0 {
-                    Some(if cursor_app { "\x1bOC".to_string() } else { "\x1b[C".to_string() })
+                    Some(if cursor_app { "\x1bOD".to_string() } else { "\x1b[D".to_string() })
                 } else {
                     Some(self.transform_for_modifiers("\x1b[1", key_mode, 'D'))
                 }
             },
             KEYCODE_DPAD_RIGHT => {
                 if key_mode == 0 {
-                    Some(if cursor_app { "\x1bOD".to_string() } else { "\x1b[D".to_string() })
+                    Some(if cursor_app { "\x1bOC".to_string() } else { "\x1b[C".to_string() })
                 } else {
                     Some(self.transform_for_modifiers("\x1b[1", key_mode, 'C'))
                 }

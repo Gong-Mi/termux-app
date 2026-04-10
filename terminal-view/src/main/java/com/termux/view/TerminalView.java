@@ -1053,8 +1053,10 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
 
         if (mEmulator != null) {
             String seq = mEmulator.sendKeyEvent(keyCode, keyMod);
-            if (seq != null) mTermSession.write(seq);
-            return true;
+            if (seq != null) {
+                mTermSession.write(seq);
+                return true;
+            }
         }
         return false;
     }
