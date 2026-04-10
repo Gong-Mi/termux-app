@@ -1,14 +1,14 @@
 use skia_safe::{Canvas, Paint, Color, Font, Rect, PaintStyle, FontMgr, FontStyle, BlendMode};
 use crate::engine::TerminalEngine;
 use crate::terminal::style::*;
-use crate::terminal::colors::COLOR_INDEX_CURSOR;
+use crate::terminal::colors::{COLOR_INDEX_CURSOR, NUM_INDEXED_COLORS};
 
 /// 预计算的渲染帧数据 - 用于异步渲染（不需要持有 engine 锁）
 #[derive(Clone)]
 pub struct RenderFrame {
     pub rows: usize,
     pub cols: usize,
-    pub palette: [u32; 259],
+    pub palette: [u32; NUM_INDEXED_COLORS],
     pub use_alternate_buffer: bool,
     pub cursor_x: i32,
     pub cursor_y: i32,

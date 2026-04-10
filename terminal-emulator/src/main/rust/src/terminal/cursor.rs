@@ -1,4 +1,5 @@
 use crate::terminal::style::STYLE_NORMAL;
+use crate::terminal::colors::{COLOR_INDEX_FOREGROUND, COLOR_INDEX_BACKGROUND};
 use std::cmp::{max, min};
 
 #[derive(Clone, Copy)]
@@ -37,8 +38,8 @@ impl Cursor {
             use_line_drawing_g0: false,
             use_line_drawing_g1: false,
             use_line_drawing_uses_g0: true,
-            fore_color: 256,
-            back_color: 257,
+            fore_color: COLOR_INDEX_FOREGROUND as u64,
+            back_color: COLOR_INDEX_BACKGROUND as u64,
         };
 
         Self {
@@ -111,8 +112,8 @@ mod tests {
         assert!(!c.about_to_wrap);
         assert!(!c.blinking_enabled);
         assert!(c.blink_state); // starts visible
-        assert_eq!(c.saved_state.fore_color, 256);
-        assert_eq!(c.saved_state.back_color, 257);
+        assert_eq!(c.saved_state.fore_color, COLOR_INDEX_FOREGROUND as u64);
+        assert_eq!(c.saved_state.back_color, COLOR_INDEX_BACKGROUND as u64);
     }
 
     #[test]
