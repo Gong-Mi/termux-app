@@ -4,7 +4,14 @@ import java.util.Arrays;
 
 /**
  * A row in a terminal, composed of a fixed number of cells.
+ *
+ * @deprecated All row storage and rendering is now managed by Rust's {@code TerminalRow} struct (screen.rs).
+ * This class is only used by {@link TerminalBuffer} (also deprecated) and is not populated at runtime
+ * when the Rust engine is active. Row data is accessed via
+ * {@link TerminalEmulator#readRow(int, int[], long[])} which reads directly from Rust.
+ * This class will be removed once {@link TerminalBuffer} is removed.
  */
+@Deprecated
 public final class TerminalRow {
 
     private static final float SPARE_CAPACITY_FACTOR = 1.5f;

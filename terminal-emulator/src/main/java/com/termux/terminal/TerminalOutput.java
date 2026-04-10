@@ -2,7 +2,16 @@ package com.termux.terminal;
 
 import java.nio.charset.StandardCharsets;
 
-/** A client which receives callbacks from events triggered by feeding input to a {@link TerminalEmulator}. */
+/**
+ * A client which receives callbacks from events triggered by feeding input to a {@link TerminalEmulator}.
+ *
+ * @deprecated Callbacks are now dispatched via Rust's {@code RustEngineCallback} interface through JNI.
+ * This class is kept for backward compatibility only — {@link TerminalSession} still extends it,
+ * but the Rust engine never calls these methods. All real callbacks go through JNI reflection
+ * to {@code RustEngineCallback.onScreenUpdated()}, {@code onBell()}, {@code onColorsChanged()}, etc.
+ * This class will be removed once TerminalSession is migrated to Kotlin.
+ */
+@Deprecated
 public abstract class TerminalOutput {
 
     /** Write a string using the UTF-8 encoding to the terminal client. */

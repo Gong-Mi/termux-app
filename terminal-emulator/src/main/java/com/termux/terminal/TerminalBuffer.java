@@ -7,7 +7,13 @@ import java.util.Arrays;
  * history.
  * <p>
  * See {@link #externalToInternalRow(int)} for how to map from logical screen rows to array indices.
+ *
+ * @deprecated All terminal state is now managed by Rust's {@code Screen} struct (screen.rs).
+ * This class is only used by unit tests and is not populated at runtime when the Rust engine is active.
+ * All real terminal state lives in Rust and is accessed via JNI methods in {@link TerminalEmulator}.
+ * This class will be removed once all test references are migrated to Rust tests.
  */
+@Deprecated
 public final class TerminalBuffer {
 
     TerminalRow[] mLines;
