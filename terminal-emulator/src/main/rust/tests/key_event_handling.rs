@@ -38,7 +38,7 @@ fn test_up_arrow_key() {
     
     // 按 UP 键（无修饰符，正常模式）
     // KeyEvent.KEYCODE_DPAD_UP = 19, meta_state = 0
-    engine.send_key_event(19, None, 0);
+    engine.state.send_key_event(19, None, 0);
     
     // 验证 UP 键序列 ^[[A 被发送
     // 在正常模式下应该是 ^[[A，在光标应用模式下是 ^[[OA
@@ -55,7 +55,7 @@ fn test_down_arrow_key() {
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
     // 按 DOWN 键
-    engine.send_key_event(20, None, 0); // KEYCODE_DPAD_DOWN = 20
+    engine.state.send_key_event(20, None, 0); // KEYCODE_DPAD_DOWN = 20
     
     println!("✅ DOWN arrow key test passed");
 }
@@ -66,9 +66,9 @@ fn test_left_right_arrow_keys() {
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
     // 按 LEFT 键
-    engine.send_key_event(21, None, 0); // KEYCODE_DPAD_LEFT = 21
+    engine.state.send_key_event(21, None, 0); // KEYCODE_DPAD_LEFT = 21
     // 按 RIGHT 键
-    engine.send_key_event(22, None, 0); // KEYCODE_DPAD_RIGHT = 22
+    engine.state.send_key_event(22, None, 0); // KEYCODE_DPAD_RIGHT = 22
     
     println!("✅ LEFT/RIGHT arrow keys test passed");
 }
@@ -106,7 +106,7 @@ fn test_continuous_up_arrow_history_navigation() {
     // 每次都会发送 ^[[A 到 PTY
     // 在真实 shell 中，shell 会接收 ^[[A 并返回历史命令
     for i in 1..=3 {
-        engine.send_key_event(19, None, 0); // UP arrow
+        engine.state.send_key_event(19, None, 0); // UP arrow
         // 光标位置不变，因为 ^[[A 已发送到 PTY，等待 shell 响应
         println!("  After UP press {}: cursor={:?}", i, get_cursor_position(&engine));
     }
@@ -135,10 +135,10 @@ fn test_up_down_alternating() {
     engine.process_bytes(b"$ cmd1\r\n$ cmd2\r\n$ ");
     
     // UP, UP, DOWN, DOWN 序列
-    engine.send_key_event(19, None, 0); // UP
-    engine.send_key_event(19, None, 0); // UP
-    engine.send_key_event(20, None, 0); // DOWN
-    engine.send_key_event(20, None, 0); // DOWN
+    engine.state.send_key_event(19, None, 0); // UP
+    engine.state.send_key_event(19, None, 0); // UP
+    engine.state.send_key_event(20, None, 0); // DOWN
+    engine.state.send_key_event(20, None, 0); // DOWN
     
     println!("✅ UP/DOWN alternating test passed");
 }
@@ -154,7 +154,7 @@ fn test_shift_up_arrow() {
 
     // Shift+UP: meta_state = 1 (KEYMOD_SHIFT)
     // 应该生成 ^[[1;2A
-    engine.send_key_event(19, None, 1);
+    engine.state.send_key_event(19, None, 1);
     
     println!("✅ Shift+UP arrow test passed");
 }
@@ -166,7 +166,7 @@ fn test_alt_up_arrow() {
 
     // Alt+UP: meta_state = 2 (KEYMOD_ALT)
     // 应该生成 ^[[1;3A
-    engine.send_key_event(19, None, 2);
+    engine.state.send_key_event(19, None, 2);
     
     println!("✅ Alt+UP arrow test passed");
 }
@@ -178,7 +178,7 @@ fn test_ctrl_up_arrow() {
 
     // Ctrl+UP: meta_state = 4 (KEYMOD_CTRL)
     // 应该生成 ^[[1;5A
-    engine.send_key_event(19, None, 4);
+    engine.state.send_key_event(19, None, 4);
     
     println!("✅ Ctrl+UP arrow test passed");
 }
@@ -189,7 +189,7 @@ fn test_combined_modifier_keys() {
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
     // Ctrl+Alt+Shift: meta_state = 7 (1+2+4)
-    engine.send_key_event(19, None, 7);
+    engine.state.send_key_event(19, None, 7);
     
     println!("✅ Combined modifier keys test passed");
 }
@@ -204,13 +204,13 @@ fn test_f1_to_f4_keys() {
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
     // F1: ^[[OP (正常模式) 或 ^[[1;1P (修饰模式)
-    engine.send_key_event(131, None, 0); // KEYCODE_F1 = 131
+    engine.state.send_key_event(131, None, 0); // KEYCODE_F1 = 131
     // F2: ^[[OQ
-    engine.send_key_event(132, None, 0); // KEYCODE_F2 = 132
+    engine.state.send_key_event(132, None, 0); // KEYCODE_F2 = 132
     // F3: ^[[OR
-    engine.send_key_event(133, None, 0); // KEYCODE_F3 = 133
+    engine.state.send_key_event(133, None, 0); // KEYCODE_F3 = 133
     // F4: ^[[OS
-    engine.send_key_event(134, None, 0); // KEYCODE_F4 = 134
+    engine.state.send_key_event(134, None, 0); // KEYCODE_F4 = 134
     
     println!("✅ F1-F4 keys test passed");
 }
@@ -221,14 +221,14 @@ fn test_f5_to_f12_keys() {
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
     // F5-F12 使用 ^[[NN~ 格式
-    engine.send_key_event(135, None, 0); // F5: ^[[15~
-    engine.send_key_event(136, None, 0); // F6: ^[[17~
-    engine.send_key_event(137, None, 0); // F7: ^[[18~
-    engine.send_key_event(138, None, 0); // F8: ^[[19~
-    engine.send_key_event(139, None, 0); // F9: ^[[20~
-    engine.send_key_event(140, None, 0); // F10: ^[[21~
-    engine.send_key_event(141, None, 0); // F11: ^[[23~
-    engine.send_key_event(142, None, 0); // F12: ^[[24~
+    engine.state.send_key_event(135, None, 0); // F5: ^[[15~
+    engine.state.send_key_event(136, None, 0); // F6: ^[[17~
+    engine.state.send_key_event(137, None, 0); // F7: ^[[18~
+    engine.state.send_key_event(138, None, 0); // F8: ^[[19~
+    engine.state.send_key_event(139, None, 0); // F9: ^[[20~
+    engine.state.send_key_event(140, None, 0); // F10: ^[[21~
+    engine.state.send_key_event(141, None, 0); // F11: ^[[23~
+    engine.state.send_key_event(142, None, 0); // F12: ^[[24~
     
     println!("✅ F5-F12 keys test passed");
 }
@@ -243,9 +243,9 @@ fn test_home_end_keys() {
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
     // HOME: ^[[H (正常) 或 ^[[OH (光标应用模式)
-    engine.send_key_event(122, None, 0); // KEYCODE_MOVE_HOME = 122
+    engine.state.send_key_event(122, None, 0); // KEYCODE_MOVE_HOME = 122
     // END: ^[[F (正常) 或 ^[[OF (光标应用模式)
-    engine.send_key_event(123, None, 0); // KEYCODE_MOVE_END = 123
+    engine.state.send_key_event(123, None, 0); // KEYCODE_MOVE_END = 123
     
     println!("✅ HOME/END keys test passed");
 }
@@ -256,9 +256,9 @@ fn test_page_up_down_keys() {
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
     // PGUP: ^[[5~
-    engine.send_key_event(92, None, 0); // KEYCODE_PAGE_UP = 92
+    engine.state.send_key_event(92, None, 0); // KEYCODE_PAGE_UP = 92
     // PGDN: ^[[6~
-    engine.send_key_event(93, None, 0); // KEYCODE_PAGE_DOWN = 93
+    engine.state.send_key_event(93, None, 0); // KEYCODE_PAGE_DOWN = 93
     
     println!("✅ PGUP/PGDN keys test passed");
 }
@@ -269,9 +269,9 @@ fn test_delete_insert_keys() {
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
     // DEL: ^[[3~
-    engine.send_key_event(112, None, 0); // KEYCODE_FORWARD_DEL = 112
+    engine.state.send_key_event(112, None, 0); // KEYCODE_FORWARD_DEL = 112
     // INS: ^[[2~
-    engine.send_key_event(124, None, 0); // KEYCODE_INSERT = 124
+    engine.state.send_key_event(124, None, 0); // KEYCODE_INSERT = 124
     
     println!("✅ DEL/INS keys test passed");
 }
@@ -282,11 +282,11 @@ fn test_enter_tab_escape_keys() {
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
     // ENTER: ^[[\r
-    engine.send_key_event(66, None, 0); // KEYCODE_ENTER = 66
+    engine.state.send_key_event(66, None, 0); // KEYCODE_ENTER = 66
     // TAB: ^[[\t
-    engine.send_key_event(61, None, 0); // KEYCODE_TAB = 61
+    engine.state.send_key_event(61, None, 0); // KEYCODE_TAB = 61
     // ESC: ^[[
-    engine.send_key_event(111, None, 0); // KEYCODE_ESCAPE = 111
+    engine.state.send_key_event(111, None, 0); // KEYCODE_ESCAPE = 111
     
     println!("✅ ENTER/TAB/ESC keys test passed");
 }
@@ -304,7 +304,7 @@ fn test_cursor_application_mode_arrows() {
     engine.process_bytes(b"\x1b[?1h");
     
     // 现在按 UP 键应该生成 ^[[OA 而不是 ^[[A
-    engine.send_key_event(19, None, 0);
+    engine.state.send_key_event(19, None, 0);
     
     // 验证模式已启用
     assert!(engine.state.application_cursor_keys, "Cursor application mode should be enabled");
@@ -323,7 +323,7 @@ fn test_rapid_key_presses_stress() {
 
     // 快速连续按 100 次 UP 键
     for _ in 0..100 {
-        engine.send_key_event(19, None, 0);
+        engine.state.send_key_event(19, None, 0);
     }
     
     // 验证引擎没有崩溃
@@ -356,7 +356,7 @@ fn test_mixed_key_sequence() {
     ];
     
     for (key_code, meta_state) in key_sequence {
-        engine.send_key_event(key_code, None, meta_state);
+        engine.state.send_key_event(key_code, None, meta_state);
     }
     
     println!("✅ Mixed key sequence test passed");

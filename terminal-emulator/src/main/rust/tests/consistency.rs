@@ -1321,11 +1321,11 @@ fn test_key_event_function_keys() {
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
     // F1 无修饰
-    engine.send_key_event(131, None, 0);
+    engine.state.send_key_event(131, None, 0);
     // F1 应该发送 \x1bOP
 
     // F5 有修饰键 (shift)
-    engine.send_key_event(135, None, 0x20000000);
+    engine.state.send_key_event(135, None, 0x20000000);
     // F5+Shift 应该发送 \x1b[15;2~
 }
 
@@ -1335,12 +1335,12 @@ fn test_key_event_arrow键() {
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
     // 上箭头 (无修饰)
-    engine.send_key_event(19, None, 0);
+    engine.state.send_key_event(19, None, 0);
     // 应该发送 \x1b[A 或 \x1bOA (应用模式)
 
     // 启用应用光标键模式
     engine.process_bytes(b"\x1b[?1h");
-    engine.send_key_event(19, None, 0);
+    engine.state.send_key_event(19, None, 0);
     // 应该发送 \x1bOA
 }
 
@@ -1350,11 +1350,11 @@ fn test_key_event_ctrl_combinations() {
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
     // Ctrl+A
-    engine.send_key_event(0, Some("a".to_string()), 0x40000000);
+    engine.state.send_key_event(0, Some("a".to_string()), 0x40000000);
     // 应该发送 \x01
 
     // Ctrl+Space
-    engine.send_key_event(62, Some(" ".to_string()), 0x40000000);
+    engine.state.send_key_event(62, Some(" ".to_string()), 0x40000000);
     // 应该发送 \x00
 }
 
@@ -1364,7 +1364,7 @@ fn test_key_event_alt_prefix() {
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
     // Alt+D
-    engine.send_key_event(0, Some("d".to_string()), 0x80000000u32 as i32);
+    engine.state.send_key_event(0, Some("d".to_string()), 0x80000000u32 as i32);
     // 应该发送 \x1bd
 }
 
@@ -1374,12 +1374,12 @@ fn test_key_event_keypad() {
     let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
 
     // 应用键盘模式禁用
-    engine.send_key_event(149, None, 0);
+    engine.state.send_key_event(149, None, 0);
     // KP Enter 应该发送 \r
 
     // 启用应用键盘模式
     engine.process_bytes(b"\x1b=");
-    engine.send_key_event(149, None, 0);
+    engine.state.send_key_event(149, None, 0);
     // KP Enter 应该发送 \x1bOM
 }
 

@@ -79,3 +79,11 @@ path = "tests/vulkan_render_benchmark.rs"
 [[test]]
 name = "render_deadlock_test"
 path = "tests/render_deadlock_test.rs"
+
+[[test]]
+name = "selection_test"
+path = "tests/selection_test.rs"
+
+[[test]]
+name = "selection_pipeline_test"
+path = "tests/selection_pipeline_test.rs"

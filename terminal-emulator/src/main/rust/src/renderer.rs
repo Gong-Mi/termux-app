@@ -213,7 +213,7 @@ pub struct TerminalRenderer {
     run_buf: String,
     pub font_width: f32,
     pub font_height: f32,
-    selection: SelectionBounds,
+    pub selection: SelectionBounds,
 }
 
 impl TerminalRenderer {
@@ -280,7 +280,7 @@ impl TerminalRenderer {
 
     /// 判断给定的可见屏幕行列是否在选区内
     #[inline]
-    fn is_cell_selected(&self, col: i32, row: i32) -> bool {
+    pub fn is_cell_selected(&self, col: i32, row: i32) -> bool {
         if !self.selection.active { return false; }
         let s = &self.selection;
         // 规范化坐标
