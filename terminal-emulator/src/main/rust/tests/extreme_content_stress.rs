@@ -50,7 +50,7 @@ fn test_massive_50000_rows_stress() {
 
     // 3. 测试备用屏幕切换 (Alternate Buffer)
     println!("--- Step 2: Testing Alternate Buffer with Data ---");
-    engine.process_bytes(b"\x1b[?1049h"); // 进入备用屏幕
+    engine.process_bytes(b"\x1b[?1049h\x1b[H"); // 进入备用屏幕并移动光标到 0,0
     engine.process_bytes(b"This is Alternate Screen Content\r\n");
     assert!(get_row_text(&engine, 0).contains("Alternate"));
     

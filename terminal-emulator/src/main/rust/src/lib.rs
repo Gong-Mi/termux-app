@@ -170,6 +170,11 @@ fn flush_events_to_java(env: &mut JNIEnv, callback_obj: &Option<jni::objects::Gl
             TerminalEvent::ColorsChanged => {
                 let _ = env.call_method(obj, "onColorsChanged", "()V", &[]);
             }
+            TerminalEvent::CopytoClipboard(text) => {
+                if let Ok(j_text) = env.new_string(text) {
+                    let _ = env.call_method(obj, "onCopyTextToClipboard", "(Ljava/lang/String;)V", &[(&j_text).into()]);
+                }
+            }
             TerminalEvent::TitleChanged(title) => {
                 if let Ok(j_title) = env.new_string(title) {
                     let _ = env.call_method(obj, "reportTitleChange", "(Ljava/lang/String;)V", &[(&j_title).into()]);

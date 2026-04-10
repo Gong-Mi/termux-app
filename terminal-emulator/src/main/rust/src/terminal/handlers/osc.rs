@@ -1,7 +1,7 @@
-use crate::engine::ScreenState;
+use crate::engine::{ScreenState, TerminalEvent};
 use crate::terminal::colors::{TerminalColors, COLOR_INDEX_FOREGROUND, COLOR_INDEX_BACKGROUND, COLOR_INDEX_CURSOR};
 
-pub fn handle_osc(state: &mut ScreenState, opcode: &str, params: &[&[u8]]) {
+pub fn handle_osc(state: &mut ScreenState, events: &mut Vec<TerminalEvent>, opcode: &str, params: &[&[u8]]) {
     // 将除 opcode 外的所有参数拼接成字符串
     let param_text = params[1..]
         .iter()
@@ -41,7 +41,7 @@ pub fn handle_osc(state: &mut ScreenState, opcode: &str, params: &[&[u8]]) {
         "52" => {
             if params.len() > 2 {
                 if let Ok(base64_data) = std::str::from_utf8(params[2]) {
-                    state.handle_osc52(base64_data);
+                    state.handle_osc52(events, base64_data);
                 }
             }
         }

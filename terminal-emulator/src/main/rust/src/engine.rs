@@ -181,8 +181,12 @@ impl TerminalContext {
                                             TerminalEvent::ScreenUpdated => { let _ = env.call_method(obj.as_obj(), "onScreenUpdated", "()V", &[]); }
                                             TerminalEvent::Bell => { let _ = env.call_method(obj.as_obj(), "onBell", "()V", &[]); }
                                             TerminalEvent::ColorsChanged => { let _ = env.call_method(obj.as_obj(), "onColorsChanged", "()V", &[]); }
-                                            TerminalEvent::TitleChanged(title) => {
-                                                if let Ok(j_title) = env.new_string(title) {
+                                            TerminalEvent::CopytoClipboard(text) => {
+                                                if let Ok(j_text) = env.new_string(text) {
+                                                    let _ = env.call_method(obj.as_obj(), "onCopyTextToClipboard", "(Ljava/lang/String;)V", &[(&j_text).into()]);
+                                                }
+                                            }
+                                            TerminalEvent::TitleChanged(title) => {                                                if let Ok(j_title) = env.new_string(title) {
                                                     let _ = env.call_method(obj.as_obj(), "reportTitleChange", "(Ljava/lang/String;)V", &[(&j_title).into()]);
                                                 }
                                             }
@@ -851,7 +855,16 @@ impl ScreenState {
         }
     }
     
-    pub fn paste(&mut self, text: &str) { self.report_terminal_response(text); }
+    pub fn paste(&mut self, text: &str) {
+        // 核心逻辑移至 Rust：统一换行符并清洗
+        let sanitized = text.replace("\r\n", "\r").replace('\n', "\r");
+        
+        if self.bracketed_paste {
+            self.report_terminal_response(&format!("\x1b[200~{}\x1b[201~", sanitized));
+        } else {
+            self.report_terminal_response(&sanitized);
+        }
+    }
 
     pub fn copy_row_text(&self, row: i32, dest: &mut [u16]) {
         let r = self.get_current_screen().get_row(row);
@@ -883,7 +896,14 @@ impl ScreenState {
     pub fn handle_osc14(&mut self) { /* Placeholder */ }
     pub fn handle_osc19(&mut self) { /* Placeholder */ }
     
-    pub fn handle_osc52(&mut self, _base64_data: &str) { /* Placeholder */ }
+    pub fn handle_osc52(&mut self, events: &mut Vec<TerminalEvent>, base64_data: &str) {
+        use base64::{Engine as _, engine::general_purpose};
+        if let Ok(decoded) = general_purpose::STANDARD.decode(base64_data) {
+            if let Ok(text) = String::from_utf8(decoded) {
+                events.push(TerminalEvent::CopytoClipboard(text));
+            }
+        }
+    }
 
     pub fn cursor_backward_tab(&mut self, n: i32) {
         for _ in 0..n {
@@ -946,6 +966,7 @@ pub enum TerminalEvent {
     ScreenUpdated,
     Bell,
     ColorsChanged,
+    CopytoClipboard(String),
     TitleChanged(String),
     TerminalResponse(String),
     SixelImage {
@@ -1202,7 +1223,7 @@ impl<'a> Perform for PerformHandler<'a> {
         crate::terminal::handlers::csi::handle_csi(self.state, params, intermediates, action);
     }
     fn osc_dispatch(&mut self, params: &[&[u8]], _bell_terminated: bool) {
-        if params.len() > 0 { if let Ok(opcode) = std::str::from_utf8(params[0]) { crate::terminal::handlers::osc::handle_osc(self.state, opcode, params); } }
+        if params.len() > 0 { if let Ok(opcode) = std::str::from_utf8(params[0]) { crate::terminal::handlers::osc::handle_osc(self.state, self.events, opcode, params); } }
     }
     fn esc_dispatch(&mut self, intermediates: &[u8], _ignore: bool, byte: u8) { crate::terminal::handlers::esc::handle_esc(self.state, intermediates, byte); }
     fn hook(&mut self, params: &Params, intermediates: &[u8], _ignore: bool, action: char) { if action == 'q' && intermediates.is_empty() { self.state.sixel_decoder.start(params); } }

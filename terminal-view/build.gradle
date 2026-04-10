@@ -1,11 +1,13 @@
 apply plugin: 'com.android.library'
 apply plugin: 'maven-publish'
+apply plugin: 'org.jetbrains.kotlin.android'
 
 android {
     namespace "com.termux.view"
     compileSdk project.properties.compileSdkVersion.toInteger()
 
     dependencies {
+        implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.24"
         implementation "androidx.annotation:annotation:1.9.0"
         api project(":terminal-emulator")
     }

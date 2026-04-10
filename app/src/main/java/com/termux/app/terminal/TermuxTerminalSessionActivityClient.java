@@ -203,14 +203,14 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     public void onCopyTextToClipboard(@NonNull TerminalSession session, String text) {
         if (!mActivity.isVisible()) return;
 
-        ShareUtils.copyTextToClipboard(mActivity, text);
+        com.termux.view.TermuxClipboard.setText(mActivity, text);
     }
 
     @Override
     public void onPasteTextFromClipboard(@Nullable TerminalSession session) {
         if (!mActivity.isVisible()) return;
 
-        String text = ShareUtils.getTextStringFromClipboardIfSet(mActivity, true);
+        String text = com.termux.view.TermuxClipboard.getText(mActivity);
         if (text != null)
             mActivity.getTerminalView().mEmulator.paste(text);
     }
