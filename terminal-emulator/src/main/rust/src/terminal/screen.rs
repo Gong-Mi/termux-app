@@ -261,58 +261,69 @@ impl Screen {
     }
 
     pub fn insert_lines(&mut self, cursor_y: i32, bottom: i32, n: i32, style: u64) {
-        let c = self.cols as usize;
         let to_insert = min(n, bottom - cursor_y);
         let to_move = (bottom - cursor_y) - to_insert;
-        for i in (0..to_move).rev() {
-            let s = self.internal_row(cursor_y + i);
-            let d = self.internal_row(cursor_y + i + to_insert);
-            self.buffer[d] = self.buffer[s].clone();
+        
+        if to_move > 0 {
+            for i in (0..to_move).rev() {
+                let s = self.internal_row(cursor_y + i);
+                let d = self.internal_row(cursor_y + i + to_insert);
+                // 使用 swap 避免 clone，并复用对象
+                let (low, high) = if s < d { (s, d) } else { (d, s) };
+                let (left, right) = self.buffer.split_at_mut(high);
+                std::mem::swap(&mut left[low], &mut right[0]);
+            }
         }
-        for i in 0..to_insert { self.get_row_mut(cursor_y + i).clear(0, c, style); }
+        for i in 0..to_insert { self.get_row_mut(cursor_y + i).clear_all(style); }
     }
 
     pub fn delete_lines(&mut self, cursor_y: i32, bottom: i32, n: i32, style: u64) {
-        let c = self.cols as usize;
         let to_delete = min(n, bottom - cursor_y);
         let to_move = (bottom - cursor_y) - to_delete;
-        for i in 0..to_move {
-            let s = self.internal_row(cursor_y + i + to_delete);
-            let d = self.internal_row(cursor_y + i);
-            self.buffer[d] = self.buffer[s].clone();
+        
+        if to_move > 0 {
+            for i in 0..to_move {
+                let s = self.internal_row(cursor_y + i + to_delete);
+                let d = self.internal_row(cursor_y + i);
+                let (low, high) = if s < d { (s, d) } else { (d, s) };
+                let (left, right) = self.buffer.split_at_mut(high);
+                std::mem::swap(&mut left[low], &mut right[0]);
+            }
         }
-        for i in 0..to_delete { self.get_row_mut(bottom - i - 1).clear(0, c, style); }
+        for i in 0..to_delete { self.get_row_mut(bottom - i - 1).clear_all(style); }
     }
 
     pub fn scroll_up(&mut self, top: i32, bottom: i32, style: u64) {
-        let c = self.cols as usize;
         if top == 0 && bottom == self.rows {
             // Full screen scroll - use ring buffer pointer adjustment (O(1))
             self.first_row = (self.first_row + 1) % self.buffer.len();
-            // Incrementally maintain active_transcript_rows (matches Java logic)
-            // Java: if (mActiveTranscriptRows < mTotalRows - mScreenRows) mActiveTranscriptRows++
             let max_transcript_rows = self.buffer.len() - self.rows as usize;
             if self.active_transcript_rows < max_transcript_rows {
                 self.active_transcript_rows += 1;
             }
-            self.get_row_mut(self.rows - 1).clear(0, c, style);
+            self.get_row_mut(self.rows - 1).clear_all(style);
         } else {
             // Partial scroll - move data
-            for i in top..(bottom - 1) {
-                let s = self.internal_row(i + 1);
-                let d = self.internal_row(i);
-                self.buffer[d] = self.buffer[s].clone();
+            let to_move = (bottom - top) - 1;
+            for i in 0..to_move {
+                let s = self.internal_row(top + i + 1);
+                let d = self.internal_row(top + i);
+                let (low, high) = if s < d { (s, d) } else { (d, s) };
+                let (left, right) = self.buffer.split_at_mut(high);
+                std::mem::swap(&mut left[low], &mut right[0]);
             }
-            self.get_row_mut(bottom - 1).clear(0, c, style);
+            self.get_row_mut(bottom - 1).clear_all(style);
         }
     }
 
     pub fn scroll_down(&mut self, top: i32, bottom: i32, style: u64) {
-        let _c = self.cols as usize;
-        for i in (top + 1..bottom).rev() {
-            let s = self.internal_row(i - 1);
-            let d = self.internal_row(i);
-            self.buffer[d] = self.buffer[s].clone();
+        let to_move = (bottom - top) - 1;
+        for i in (0..to_move).rev() {
+            let s = self.internal_row(top + i);
+            let d = self.internal_row(top + i + 1);
+            let (low, high) = if s < d { (s, d) } else { (d, s) };
+            let (left, right) = self.buffer.split_at_mut(high);
+            std::mem::swap(&mut left[low], &mut right[0]);
         }
         self.get_row_mut(top).clear_all(style);
     }
@@ -778,7 +789,7 @@ mod tests {
 
     #[test]
     fn test_screen_internal_row_simple() {
-        let mut s = Screen::new(80, 24, 24);
+        let s = Screen::new(80, 24, 24);
         // No scrolling, direct mapping
         assert_eq!(s.internal_row(0), 0);
         assert_eq!(s.internal_row(23), 23);
@@ -790,8 +801,7 @@ mod tests {
         // Put content in center
         let row = s.get_row_mut(2);
         row.set_char(5, 'X' as u32, 1);
-        drop(row);
-
+        // Removed drop(row) call as it was a reference and did nothing
         s.block_clear(1, 0, 3, 9, 0); // clear rows 1-3 fully
 
         let row_after = s.get_row(2);
