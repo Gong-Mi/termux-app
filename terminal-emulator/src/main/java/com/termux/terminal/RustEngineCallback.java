@@ -151,11 +151,6 @@ public class RustEngineCallback implements TerminalSessionClient {
         if (mClient != null) mClient.onCopyTextToClipboard(session, text);
     }
 
-    /** Called from JNI without session object */
-    public void onCopyTextToClipboard(String text) {
-        if (mClient != null) mClient.onCopyTextToClipboard(null, text);
-    }
-
     @Override
     public void onPasteTextFromClipboard(@Nullable TerminalSession session) {
         if (mClient != null) mClient.onPasteTextFromClipboard(session);
