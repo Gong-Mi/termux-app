@@ -1206,7 +1206,7 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
                 selActive = true;
             }
 
-            nativeUpdateRenderParams(mScaleFactor, mTopRow * getFontLineSpacing(),
+            nativeUpdateRenderParams(mScaleFactor, mTopRow * getFontLineSpacing(), mTopRow,
                          selX1, selY1, selX2, selY2, selActive);
         } else {
             android.util.Log.w("TerminalView-onDraw", "mEmulator is NULL - cannot update render params");
