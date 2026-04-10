@@ -1852,7 +1852,7 @@ public final class TerminalView extends SurfaceView implements SurfaceHolder.Cal
 
     public native void nativeSetSurface(@Nullable android.view.Surface surface);
     public native void nativeSetEnginePointer(long enginePtr);
-    public native void nativeUpdateRenderParams(float scale, float scrollOffset,
+    public native void nativeUpdateRenderParams(float scale, float scrollOffset, int topRow,
                                     int selX1, int selY1, int selX2, int selY2, boolean selActive);
     public native void nativeOnSizeChanged(int width, int height);
     public native void nativeSetFontSize(float fontSize);

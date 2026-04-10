@@ -15,6 +15,7 @@ pub struct RenderFrame {
     pub cursor_style: i32,
     pub cursor_enabled: bool,
     pub reverse_video: bool,
+    pub top_row: i32,
     /// 预计算的行数据: (text: String, styles: Vec<u64>)
     pub row_data: Vec<(Vec<char>, Vec<u64>)>,
 }
@@ -25,12 +26,13 @@ impl RenderFrame {
         engine: &crate::engine::TerminalEngine,
         rows: usize,
         cols: usize,
+        top_row: i32,
     ) -> Self {
         let state = &engine.state;
         let screen = if state.use_alternate_buffer { &state.alt_screen } else { &state.main_screen };
 
         let mut row_data = Vec::with_capacity(rows);
-        for r in 0..rows as i32 {
+        for r in top_row..(top_row + rows as i32) {
             let row = screen.get_row(r);
             row_data.push((row.text.clone(), row.styles.clone()));
         }
@@ -45,6 +47,7 @@ impl RenderFrame {
             cursor_style: state.cursor.style,
             cursor_enabled: state.cursor_enabled,
             reverse_video: state.modes.is_enabled(crate::terminal::modes::DECSET_BIT_REVERSE_VIDEO),
+            top_row,
             row_data,
         }
     }
@@ -476,7 +479,7 @@ impl TerminalRenderer {
         canvas: &Canvas,
         frame: &RenderFrame,
         scale: f32,
-        scroll_offset: f32,
+        _scroll_offset: f32,
     ) {
         let palette = &frame.palette;
 
@@ -487,14 +490,16 @@ impl TerminalRenderer {
         let bg_color = palette[257];
         canvas.clear(Color::new(bg_color));
 
-        canvas.translate((0.0, -scroll_offset));
+        // canvas.translate((0.0, -scroll_offset)); // 不再使用 translate，因为我们已经截取了正确的可见行
 
         let rows = frame.rows;
         let cols = frame.cols;
         let global_reverse = frame.reverse_video;
+        let top_row = frame.top_row;
 
         // 先绘制文本行 - 使用预计算的数据，不需要任何锁
         for r in 0..rows as i32 {
+            let absolute_row = top_row + r;
             let row = &frame.row_data[r as usize];
             let row_text = &row.0;
             let row_styles = &row.1;
@@ -521,7 +526,7 @@ impl TerminalRenderer {
                 let mut run_has_non_ascii = false;
 
                 // 合并相同样式 + 相同选区状态的 run
-                let sel = self.is_cell_selected(c as i32, r);
+                let sel = self.is_cell_selected(c as i32, absolute_row);
                 while c < cols && c < row_text.len() {
                     let cell_style = row_styles[c];
                     let cell_effect = decode_effect(cell_style);
@@ -532,7 +537,7 @@ impl TerminalRenderer {
                         continue;
                     }
 
-                    let cell_sel = self.is_cell_selected(c as i32, r);
+                    let cell_sel = self.is_cell_selected(c as i32, absolute_row);
                     let style_match = cell_style == style;
                     let sel_match = cell_sel == sel;
 

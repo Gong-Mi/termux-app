@@ -45,6 +45,7 @@ static ENGINE_READY: AtomicBool = AtomicBool::new(false);
 /// 渲染参数（由 Java 侧通过 JNI 设置）
 static RENDER_SCALE: Mutex<f32> = Mutex::new(1.0);
 static RENDER_SCROLL_OFFSET: Mutex<f32> = Mutex::new(0.0);
+static RENDER_TOP_ROW: Mutex<jint> = Mutex::new(0);
 static RENDER_SEL_X1: Mutex<jint> = Mutex::new(0);
 static RENDER_SEL_Y1: Mutex<jint> = Mutex::new(0);
 static RENDER_SEL_X2: Mutex<jint> = Mutex::new(0);
@@ -80,6 +81,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeUpdateRenderParam
     _obj: JObject,
     scale: jfloat,
     scroll_offset: jfloat,
+    top_row: jint,
     sel_x1: jint,
     sel_y1: jint,
     sel_x2: jint,
@@ -88,6 +90,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeUpdateRenderParam
 ) {
     *RENDER_SCALE.lock().unwrap() = scale;
     *RENDER_SCROLL_OFFSET.lock().unwrap() = scroll_offset;
+    *RENDER_TOP_ROW.lock().unwrap() = top_row;
     *RENDER_SEL_X1.lock().unwrap() = sel_x1;
     *RENDER_SEL_Y1.lock().unwrap() = sel_y1;
     *RENDER_SEL_X2.lock().unwrap() = sel_x2;
@@ -308,6 +311,8 @@ fn spawn_render_thread(engine_ptr: jlong) {
                 }
 
                 let term_ctx = unsafe { &*(current_engine_ptr as *const crate::engine::TerminalContext) };
+                let top_row = *RENDER_TOP_ROW.lock().unwrap();
+
                 let frame = {
                     let engine = match term_ctx.lock.try_read() {
                         Ok(e) => e,
@@ -316,7 +321,7 @@ fn spawn_render_thread(engine_ptr: jlong) {
                             continue;
                         }
                     };
-                    crate::renderer::RenderFrame::from_engine(&engine, engine.state.rows as usize, engine.state.cols as usize)
+                    crate::renderer::RenderFrame::from_engine(&engine, engine.state.rows as usize, engine.state.cols as usize, top_row)
                 };
 
                 // 1. 获取下一个交换链图像索引
