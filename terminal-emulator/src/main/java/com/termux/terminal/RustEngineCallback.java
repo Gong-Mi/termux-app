@@ -3,6 +3,8 @@ package com.termux.terminal;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import java.nio.charset.StandardCharsets;
+
 /**
  * 回调接口：由 Rust 引擎直接通过 JNI 调用
  * 注意：此类必须是顶层公共类，以便 JNI 反射能够轻松找到方法
@@ -73,15 +75,20 @@ public class RustEngineCallback implements TerminalSessionClient {
     }
 
     public void onWriteToSession(String data) {
-        // Rust 终端响应数据写入 - 通过 PTY 文件描述符处理
-        if (mClient != null) {
+        // 将终端响应（DSR、光标位置、颜色查询等）写回 PTY
+        // 否则嵌套 shell 会在等待响应时无限期挂起
+        if (data != null && !data.isEmpty() && mSession != null) {
+            mSession.write(data.getBytes(StandardCharsets.UTF_8));
+        } else if (mClient != null) {
             mClient.logVerbose("RustEngineCallback", "Write to session: " + data);
         }
     }
 
     public void onWriteToSessionBytes(byte[] data) {
-        // 二进制数据写入
-        if (mClient != null) {
+        // 二进制数据写入 PTY
+        if (data != null && data.length > 0 && mSession != null) {
+            mSession.write(data, 0, data.length);
+        } else if (mClient != null) {
             mClient.logVerbose("RustEngineCallback", "Write " + data.length + " bytes to session");
         }
     }
