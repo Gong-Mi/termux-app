@@ -23,7 +23,7 @@ zip = "8.2.0"
 once_cell = "1.19.0"
 crossterm = "0.28.1"
 log = "0.4"
-skia-safe = { version = "0.81.0", features = ["vulkan"] }
+skia-safe = { version = "0.93.1", features = ["vulkan"] }
 raw-window-handle = "0.6.2"
 ash = "0.38.0"
 ash-window = "0.13.0"

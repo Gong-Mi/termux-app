@@ -70,8 +70,8 @@ fn handle_print_internal(state: &mut ScreenState, c: char) {
 
     // 3. 处理插入模式 (Insert Mode - CSI 4 h)
     // 如果开启了插入模式，新字符会把当前行后面的内容往右推
-    if state.modes.is_enabled(modes::DECSET_BIT_APPLICATION_CURSOR_KEYS) { // 此处应使用对应的插入模式标志位
-        // 暂时假设此处为插入模式逻辑，我们在 ScreenState 中增加专用标志
+    if state.modes.is_enabled(modes::MODE_INSERT) {
+        state.insert_characters(char_width);
     }
 
     // 4. 写入缓冲区

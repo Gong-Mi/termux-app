@@ -895,7 +895,18 @@ impl ScreenState {
         }
     }
 
-    pub fn handle_set_mode(&mut self, _params: &Params, _set: bool) { /* Placeholder */ }
+    pub fn handle_set_mode(&mut self, params: &Params, set: bool) {
+        for param in params.iter() {
+            for &p in param.iter() {
+                match p {
+                    4 => { // IRM - Insert/Replace Mode
+                        if set { self.modes.set(MODE_INSERT); } else { self.modes.reset(MODE_INSERT); }
+                    },
+                    _ => {}
+                }
+            }
+        }
+    }
 
     pub fn set_left_right_margins(&mut self, left: i32, right: i32) {
         self.left_margin = max(0, min(left - 1, self.cols - 1));
