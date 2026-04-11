@@ -294,32 +294,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_createEngine(
     Arc::into_raw(context) as jlong
 }
 
-/// 处理字节数据
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_RustTerminal_nativeProcess(
-    mut env: JNIEnv,
-    _class: JClass,
-    ptr: jlong,
-    data: jbyteArray,
-    _callback: JObject,
-) {
-    if ptr == 0 || data.is_null() { return; }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
-    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let (events, cb) = {
-            let mut engine = context.lock.write().unwrap();
-            let j_array = unsafe { jni::objects::JByteArray::from_raw(data) };
-            if let Ok(bytes) = env.convert_byte_array(&j_array) {
-                engine.process_bytes(&bytes);
-            }
-            (engine.take_events(), engine.state.java_callback_obj.clone())
-        };
-        flush_events_to_java(&mut env, &cb, events);
-        render_thread::request_render();
-    }));
-    let _ = Arc::into_raw(context);
-}
-
 /// 批量处理
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatch(
@@ -915,7 +889,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_resetColors(mut env
 
 /// 更新颜色
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_RustTerminal_updateColorsFromProperties(
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_updateColors(
     mut env: JNIEnv,
     _class: JClass,
     ptr: jlong,
@@ -1072,38 +1046,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorBlinkingEn
     render_thread::request_render();
     flush_events_to_java(&mut env, &cb, events);
     let _ = Arc::into_raw(context);
-}
-
-/// 释放
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_RustTerminal_nativeRelease(_env: JNIEnv, _class: JClass, ptr: jlong) {
-    if ptr != 0 {
-        let _context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_RustTerminal_nativeGetCursorCol(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
-    if ptr == 0 { return 0; }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
-    let result = {
-        let engine = context.lock.read().unwrap();
-        engine.state.cursor.x as jint
-    };
-    let _ = Arc::into_raw(context);
-    result
-}
-
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_RustTerminal_nativeGetCursorRow(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
-    if ptr == 0 { return 0; }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
-    let result = {
-        let engine = context.lock.read().unwrap();
-        engine.state.cursor.y as jint
-    };
-    let _ = Arc::into_raw(context);
-    result
 }
 
 /// 获取调试信息
