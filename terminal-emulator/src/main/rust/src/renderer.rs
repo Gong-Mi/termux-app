@@ -3,6 +3,8 @@ use crate::engine::TerminalEngine;
 use crate::terminal::style::*;
 use crate::terminal::colors::{COLOR_INDEX_CURSOR, NUM_INDEXED_COLORS};
 
+use crate::render_thread;
+
 /// 预计算的渲染帧数据 - 用于异步渲染（不需要持有 engine 锁）
 #[derive(Clone)]
 pub struct RenderFrame {
@@ -696,8 +698,7 @@ impl TerminalRenderer {
             canvas.draw_rect(Rect::from_xywh(x, y_base - self.font_height, expected_width, self.font_height), &self.bg_paint);
         }
 
-        // 字体选择
- - has_non_ascii 已由调用方预计算
+        // 字体选择 - has_non_ascii 已由调用方预计算
         let italic = (effect & EFFECT_ITALIC) != 0;
         let font = self.font_cache.get_font(bold, italic, has_non_ascii);
 
@@ -780,5 +781,38 @@ mod tests {
         renderer.set_selection(5, 3, 2, 1); // 反向设置
         assert!(renderer.is_cell_selected(3, 2));
         assert!(renderer.is_cell_selected(2, 1));
+    }
+
+    #[test]
+    fn test_selection_with_7_colors() {
+        // 定义 7 种不同的随机颜色索引 (模拟 ANSI 颜色 1-7)
+        let colors = [1, 2, 3, 4, 5, 6, 7];
+        let global_reverse = false;
+        let is_selected = true;
+
+        for bg_idx in colors {
+            let fg_idx = 0; // 默认前景黑色
+            let effect = 0u64; // 无特效
+
+            // 模拟 draw_run_opt 中的反色逻辑
+            let mut current_fg = fg_idx;
+            let mut current_bg = bg_idx;
+            
+            // 最终是否反色 = (全局反色 ^ 字符反色 ^ 是否被选中)
+            let mut do_reverse = global_reverse != ((effect & crate::terminal::style::EFFECT_REVERSE) != 0);
+            if is_selected {
+                do_reverse = !do_reverse;
+            }
+
+            if do_reverse {
+                let (new_fg, new_bg) = TerminalRenderer::reverse_colors(current_fg, current_bg);
+                current_fg = new_fg;
+                current_bg = new_bg;
+            }
+
+            // 验证：在选中状态下且无其他反色标记时，颜色应该被反转
+            assert_eq!(current_fg, bg_idx, "Foreground should be reversed to background color for index {}", bg_idx);
+            assert_eq!(current_bg, fg_idx, "Background should be reversed to foreground color for index {}", bg_idx);
+        }
     }
 }
