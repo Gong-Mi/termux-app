@@ -33,8 +33,8 @@ class GestureAndScaleRecognizer(
             }
 
             @Suppress("DEPRECATION")
-            override fun onFling(e1: MotionEvent?, e2: MotionEvent?, velocityX: Float, velocityY: Float): Boolean {
-                return mListener.onFling(e2 ?: MotionEvent.obtain(0, 0, MotionEvent.ACTION_DOWN, 0f, 0f, 0), velocityX, velocityY)
+            override fun onFling(e1: MotionEvent, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+                return mListener.onFling(e2, velocityX, velocityY)
             }
 
             override fun onDown(e: MotionEvent): Boolean {
