@@ -113,7 +113,6 @@ fn spawn_render_thread(engine_ptr: jlong) {
                 // 2. 事件驱动与轮询结合的节流
                 if !SCREEN_DIRTY.swap(false, Ordering::SeqCst) {
                     std::thread::park_timeout(std::time::Duration::from_millis(500));
-                    SCREEN_DIRTY.store(false, Ordering::SeqCst);
                 }
 
                 // 获取 Vulkan 上下文

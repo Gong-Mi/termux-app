@@ -278,24 +278,34 @@ impl TerminalRenderer {
         self.selection.active = false;
     }
 
-    /// 判断给定的可见屏幕行列是否在选区内
+    /// 判断给定的可见屏幕行列是否在选区内 (对齐 Upstream 逻辑)
     #[inline]
     pub fn is_cell_selected(&self, col: i32, row: i32) -> bool {
         if !self.selection.active { return false; }
         let s = &self.selection;
-        // 规范化坐标
+        
+        // 确保 (sy, sx) 是起点，(ey, ex) 是终点
         let (sy, sx, ey, ex) = if s.y1 < s.y2 || (s.y1 == s.y2 && s.x1 <= s.x2) {
             (s.y1, s.x1, s.y2, s.x2)
         } else {
             (s.y2, s.x2, s.y1, s.x1)
         };
-        // 行必须在选区范围内
+
         if row < sy || row > ey { return false; }
-        // 起始行：列必须 >= sx
-        if row == sy && col < sx { return false; }
-        // 结束行：列必须 <= ex
-        if row == ey && col > ex { return false; }
-        true
+        
+        if row == sy && row == ey {
+            return col >= sx && col <= ex;
+        }
+        
+        if row == sy {
+            return col >= sx;
+        }
+        
+        if row == ey {
+            return col <= ex;
+        }
+        
+        true // 中间行全选
     }
 
     #[inline]
@@ -335,9 +345,11 @@ impl TerminalRenderer {
         let rows = state.rows as usize;
         let cols = state.cols as usize;
         let global_reverse = state.modes.is_enabled(crate::terminal::modes::DECSET_BIT_REVERSE_VIDEO);
+        let top_row = *render_thread::get_render_top_row().lock().unwrap();
 
         // 先绘制文本行 - 使用 get_row() 处理环形缓冲区映射
         for r in 0..rows as i32 {
+            let absolute_row = top_row + r;
             let row_data = screen.get_row(r);
             let y_base = (r as f32 + 1.0) * self.font_height;
 
@@ -362,7 +374,7 @@ impl TerminalRenderer {
                 let mut run_has_non_ascii = false;
 
                 // 合并相同样式 + 相同选区状态的 run
-                let sel = self.is_cell_selected(c as i32, r);
+                let sel = self.is_cell_selected(c as i32, absolute_row);
                 while c < cols && c < row_data.text.len() {
                     let cell_style = row_data.styles[c];
                     let cell_effect = decode_effect(cell_style);
@@ -374,7 +386,7 @@ impl TerminalRenderer {
                         continue;
                     }
 
-                    let cell_sel = self.is_cell_selected(c as i32, r);
+                    let cell_sel = self.is_cell_selected(c as i32, absolute_row);
                     let style_match = cell_style == style;
                     let sel_match = cell_sel == sel;
 
@@ -658,9 +670,11 @@ impl TerminalRenderer {
             fg_idx += 8;
         }
 
+        // 选区特效标准化 (对齐 Upstream): 选区通过反色实现
+        // 最终是否反色 = (全局反色 ^ 字符反色 ^ 是否被选中)
         let mut do_reverse = global_reverse != ((effect & EFFECT_REVERSE) != 0);
         if is_selected {
-            do_reverse = true; // 选区始终反色
+            do_reverse = !do_reverse;
         }
 
         if do_reverse {
@@ -675,18 +689,15 @@ impl TerminalRenderer {
             fg_color_val = Self::apply_dim(fg_color_val);
         }
 
-        // 背景绘制 - 使用期望单元格宽度 (与 Java canvas.drawColor 对齐)
+        // 背景绘制 - 标准化后移除蓝色背景，完全依赖反色
         let bg_color_val = if bg_idx < 259 { palette[bg_idx] } else { palette[257] };
-        if is_selected {
-            // 选区高亮：使用系统选择的蓝色调
-            self.selection_bg_paint.set_color(Color::from_argb(128, 80, 120, 200));
-            canvas.draw_rect(Rect::from_xywh(x, y_base - self.font_height, expected_width, self.font_height), &self.selection_bg_paint);
-        } else if bg_idx != 257 {
+        if bg_idx != 257 {
             self.bg_paint.set_color(Color::new(bg_color_val));
             canvas.draw_rect(Rect::from_xywh(x, y_base - self.font_height, expected_width, self.font_height), &self.bg_paint);
         }
 
-        // 字体选择 - has_non_ascii 已由调用方预计算
+        // 字体选择
+ - has_non_ascii 已由调用方预计算
         let italic = (effect & EFFECT_ITALIC) != 0;
         let font = self.font_cache.get_font(bold, italic, has_non_ascii);
 
