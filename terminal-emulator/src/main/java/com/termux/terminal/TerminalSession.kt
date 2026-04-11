@@ -44,6 +44,7 @@ class TerminalSession(
 
     val mHandle: String = UUID.randomUUID().toString()
     var mEmulator: TerminalEmulator? = null
+    @JvmField
     var mSessionName: String? = null
 
     /** A queue written to from a separate thread when the process outputs, and read by main thread. */

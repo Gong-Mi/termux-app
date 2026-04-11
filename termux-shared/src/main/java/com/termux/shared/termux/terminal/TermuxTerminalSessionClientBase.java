@@ -26,7 +26,7 @@ public class TermuxTerminalSessionClientBase implements TerminalSessionClient {
     }
 
     @Override
-    public void onCopyTextToClipboard(@NonNull TerminalSession session, String text) {
+    public void onCopyTextToClipboard(@NonNull TerminalSession session, @NonNull String text) {
     }
 
     @Override
@@ -38,25 +38,19 @@ public class TermuxTerminalSessionClientBase implements TerminalSessionClient {
     }
 
     @Override
-    public void onBell() {
-    }
-
-    @Override
     public void onColorsChanged(@NonNull TerminalSession changedSession) {
     }
 
     @Override
-    public void onColorsChanged() {
-    }
-
-    @Override
-    public void write(String data) {
-        // Rust JNI terminal response - write data to session
-        // Default implementation does nothing, subclasses can override
-    }
-
-    @Override
     public void onTerminalCursorStateChange(boolean state) {
+    }
+
+    @Override
+    public void onClearScreen() {
+    }
+
+    @Override
+    public void onSixelImage(byte[] rgbaData, int width, int height, int startX, int startY) {
     }
 
     @Override
