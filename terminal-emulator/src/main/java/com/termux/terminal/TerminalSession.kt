@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class TerminalSession(
     val shellPath: String,
-    val cwd: String?,
+    private val cwd: String?,
     val args: Array<String?>?,
     val env: Array<String?>?,
     val transcriptRows: Int?,
