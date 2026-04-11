@@ -315,9 +315,11 @@ class TerminalView @JvmOverloads constructor(
                 }
                 super.commitText(text, newCursorPosition)
                 if (mEmulator == null) return true
-                val content = editable ?: ""
-                sendTextToTerminal(content)
-                if (editable != null) content.clear()
+                val content = editable
+                if (content != null) {
+                    sendTextToTerminal(content)
+                    content.clear()
+                }
                 return true
             }
 
@@ -554,16 +556,16 @@ class TerminalView @JvmOverloads constructor(
         if (keyCode == KeyEvent.KEYCODE_LANGUAGE_SWITCH) return super.onKeyDown(keyCode, event)
 
         val metaState = event.metaState
-        val controlDown = event.isCtrlPressed || mClient.readControlKey()
-        val leftAltDown = (metaState and KeyEvent.META_ALT_LEFT_ON) != 0 || mClient.readAltKey()
-        val shiftDown = event.isShiftPressed || mClient.readShiftKey()
+        val controlDown = event.isCtrlPressed || (mClient?.readControlKey() == true)
+        val leftAltDown = (metaState and KeyEvent.META_ALT_LEFT_ON) != 0 || (mClient?.readAltKey() == true)
+        val shiftDown = event.isShiftPressed || (mClient?.readShiftKey() == true)
         val rightAltDownFromEvent = (metaState and KeyEvent.META_ALT_RIGHT_ON) != 0
 
         var keyMod = 0
-        if (controlDown) keyMod = keyMod or 0x40000000
-        if (event.isAltPressed || leftAltDown) keyMod = keyMod or 0x80000000
-        if (shiftDown) keyMod = keyMod or 0x20000000
-        if (event.isNumLockOn) keyMod = keyMod or 0x10000000
+        if (controlDown) keyMod = keyMod or 0x40000000.toInt()
+        if (event.isAltPressed || leftAltDown) keyMod = keyMod or 0x80000000.toInt()
+        if (shiftDown) keyMod = keyMod or 0x20000000.toInt()
+        if (event.isNumLockOn) keyMod = keyMod or 0x10000000.toInt()
 
         if (!event.isFunctionPressed && handleKeyCode(keyCode, keyMod)) {
             if (TERMINAL_VIEW_KEY_LOGGING_ENABLED) mClient?.logInfo(LOG_TAG, "handleKeyCode() took key event")
@@ -574,7 +576,7 @@ class TerminalView @JvmOverloads constructor(
         if (!rightAltDownFromEvent) bitsToClear = bitsToClear or KeyEvent.META_ALT_ON or KeyEvent.META_ALT_LEFT_ON
         var effectiveMetaState = event.metaState and bitsToClear.inv()
         if (shiftDown) effectiveMetaState = effectiveMetaState or KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON
-        if (mClient.readFnKey()) effectiveMetaState = effectiveMetaState or KeyEvent.META_FUNCTION_ON
+        if (mClient?.readFnKey() == true) effectiveMetaState = effectiveMetaState or KeyEvent.META_FUNCTION_ON
 
         val result = event.getUnicodeChar(effectiveMetaState)
         if (TERMINAL_VIEW_KEY_LOGGING_ENABLED) mClient?.logInfo(LOG_TAG, "KeyEvent#getUnicodeChar($effectiveMetaState) returned: $result")
@@ -602,8 +604,8 @@ class TerminalView @JvmOverloads constructor(
         }
         val session = mTermSession ?: return
         mEmulator?.setCursorBlinkState(true)
-        val controlDown = controlDownFromEvent || mClient.readControlKey()
-        val altDown = leftAltDownFromEvent || mClient.readAltKey()
+        val controlDown = controlDownFromEvent || (mClient?.readControlKey() == true)
+        val altDown = leftAltDownFromEvent || (mClient?.readAltKey() == true)
         if (mClient?.onCodePoint(codePoint, controlDown, session) == true) return
 
         var cp = codePoint
@@ -646,11 +648,12 @@ class TerminalView @JvmOverloads constructor(
     }
 
     fun handleKeyCodeAction(keyCode: Int, keyMod: Int): Boolean {
-        val shiftDown = (keyMod and 0x20000000) != 0
+        val shiftDown = (keyMod and 0x20000000.toInt()) != 0
         if ((keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_PAGE_DOWN) && shiftDown) {
             val time = SystemClock.uptimeMillis()
             val motionEvent = MotionEvent.obtain(time, time, MotionEvent.ACTION_DOWN, 0f, 0f, 0)
-            doScroll(motionEvent, if (keyCode == KeyEvent.KEYCODE_PAGE_UP) -mEmulator.getRows() else mEmulator.getRows())
+            val rows = mEmulator?.getRows() ?: 24
+            doScroll(motionEvent, if (keyCode == KeyEvent.KEYCODE_PAGE_UP) -rows else rows)
             motionEvent.recycle()
             return true
         }
@@ -696,7 +699,7 @@ class TerminalView @JvmOverloads constructor(
         val emu = mEmulator
         if (emu == null || newColumns != emu.getCols() || newRows != emu.getRows()) {
             session.updateSize(newColumns, newRows, (getFontWidth() * mScaleFactor).toInt(), (getFontLineSpacing() * mScaleFactor).toInt())
-            mEmulator = session.emulator
+            mEmulator = session.mEmulator
             mClient?.onEmulatorSet()
             mTerminalCursorBlinkerRunnable?.setEmulator(mEmulator)
             mTopRow = 0

@@ -110,7 +110,7 @@ class TextSelectionCursorController(
             override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean = false
 
             override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
-                if (!isActive) return true
+                if (!isActive()) return true
                 when (item.itemId) {
                     ACTION_COPY -> {
                         terminalView.mTermSession?.onCopyTextToClipboard(selectedText)
@@ -244,7 +244,7 @@ class TextSelectionCursorController(
         mSelY2 -= decrement
     }
 
-    override fun onTouchEvent(event: MotionEvent): Boolean = false
+    fun onTouchEvent(event: MotionEvent): Boolean = false
 
     override fun onTouchModeChanged(isInTouchMode: Boolean) {
         if (!isInTouchMode) terminalView.stopTextSelectionMode()
