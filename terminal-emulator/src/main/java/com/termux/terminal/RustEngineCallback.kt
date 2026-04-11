@@ -36,34 +36,38 @@ class RustEngineCallback(private val mClient: TerminalSessionClient?) : Terminal
         mSession?.onEngineInitialized(enginePtr, ptyFd, pid)
     }
 
-    fun reportTitleChange(title: String?) {
+    override fun reportTitleChange(title: String?) {
         mClient?.reportTitleChange(title)
     }
 
+    /** Convenience method (no session) - delegates to interface method with session if available. */
     fun onColorsChanged() {
-        mClient?.onColorsChanged()
+        mSession?.let { mClient?.onColorsChanged(it) }
+            ?: mClient?.logVerbose("RustEngineCallback", "Colors changed but no session available")
     }
 
     fun reportCursorVisibility(visible: Boolean) {
         mClient?.onTerminalCursorStateChange(visible)
     }
 
+    /** Convenience method (no session). */
     fun onBell() {
-        mClient?.onBell()
+        mSession?.let { mClient?.onBell(it) }
+            ?: mClient?.logVerbose("RustEngineCallback", "Bell but no session available")
     }
 
     fun onCopyTextToClipboard(text: String) {
-        mClient?.onCopyTextToClipboard(null, text)
+        mSession?.let { mClient?.onCopyTextToClipboard(it, text) }
     }
 
     fun onPasteTextFromClipboard() {
-        mClient?.onPasteTextFromClipboard(null)
+        mSession?.let { mClient?.onPasteTextFromClipboard(it) }
     }
 
     fun onWriteToSession(data: String) {
         // 将终端响应（DSR、光标位置、颜色查询等）写回 PTY
         // 否则嵌套 shell 会在等待响应时无限期挂起
-        if (!data.isNullOrEmpty() && mSession != null) {
+        if (data.isNotEmpty() && mSession != null) {
             mSession!!.write(data.toByteArray(Charsets.UTF_8))
         } else if (mClient != null) {
             mClient.logVerbose("RustEngineCallback", "Write to session: $data")
@@ -72,7 +76,7 @@ class RustEngineCallback(private val mClient: TerminalSessionClient?) : Terminal
 
     fun onWriteToSessionBytes(data: ByteArray) {
         // 二进制数据写入 PTY
-        if (!data.isNullOrEmpty() && mSession != null) {
+        if (data.isNotEmpty() && mSession != null) {
             mSession!!.write(data, 0, data.size)
         } else if (mClient != null) {
             mClient.logVerbose("RustEngineCallback", "Write ${data.size} bytes to session")
@@ -101,9 +105,9 @@ class RustEngineCallback(private val mClient: TerminalSessionClient?) : Terminal
     /**
      * 清屏回调 - 由 Rust 引擎通过 JNI 调用
      */
-    fun onClearScreen() {
+    override fun onClearScreen() {
         if (mClient != null) {
-            mClient.logDebug("SixelImage", "Clear screen event received")
+            mClient.logDebug("TerminalScreen", "Clear screen event received")
             mClient.onClearScreen()
         }
     }

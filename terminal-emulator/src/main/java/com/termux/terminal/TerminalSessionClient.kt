@@ -38,6 +38,9 @@ interface TerminalSessionClient {
     /** Called when clear screen is requested. */
     fun onClearScreen() {}
 
+    /** Called about a Sixel image. */
+    fun onSixelImage(rgbaData: ByteArray?, width: Int, height: Int, startX: Int, startY: Int) {}
+
     /** Called to set the terminal shell PID. */
     fun setTerminalShellPid(@NonNull session: TerminalSession, pid: Int)
 

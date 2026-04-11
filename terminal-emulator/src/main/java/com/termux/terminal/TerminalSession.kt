@@ -96,7 +96,7 @@ class TerminalSession(
     }
 
     /** The terminal title as set through escape sequences or null if none set. */
-    override fun getTitle(): String? {
+    fun getTitle(): String? {
         if (mSessionState != SessionState.READY || mEmulator == null || !mEmulator!!.isAlive()) return null
         return mEmulator!!.getTitle()
     }
@@ -108,7 +108,7 @@ class TerminalSession(
         if (JNI.sNativeLibrariesLoaded) {
             android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 5. Calling JNI.createSessionAsync")
             JNI.createSessionAsync(
-                shellPath, cwd, args, env, rows, columns, cellWidthPixels, cellHeightPixels,
+                shellPath, cwd ?: "", args, env, rows, columns, cellWidthPixels, cellHeightPixels,
                 transcriptRows ?: TerminalEmulator.DEFAULT_TERMINAL_TRANSCRIPT_ROWS, mRustCallback
             )
         } else {
@@ -265,12 +265,12 @@ class TerminalSession(
             val outputPath = File(cwdSymlink).canonicalPath
             val outputPathWithSlash = if (!outputPath.endsWith("/")) "$outputPath/" else outputPath
             if (cwdSymlink != outputPathWithSlash) outputPath else null
-        }.onFailure { mClient.logStackTraceWithMessage(LOG_TAG, "Error getting current directory", it) }.getOrNull()
+        }.onFailure { ex -> mClient.logStackTraceWithMessage(LOG_TAG, "Error getting current directory", ex as? Exception) }.getOrNull()
     }
 
     // --- TerminalOutput overrides (delegate to mClient) ---
     override fun titleChanged(oldTitle: String?, newTitle: String?) { mClient.onTitleChanged(this) }
-    override fun onCopyTextToClipboard(text: String?) { mClient.onCopyTextToClipboard(this, text) }
+    override fun onCopyTextToClipboard(text: String?) { text?.let { mClient.onCopyTextToClipboard(this, it) } }
     override fun onPasteTextFromClipboard() { mClient.onPasteTextFromClipboard(this) }
     override fun onBell() { mClient.onBell(this) }
     override fun onColorsChanged() { mClient.onColorsChanged(this) }
@@ -292,7 +292,7 @@ class TerminalSession(
             }
 
             var totalBytesRead = 0
-            var bytesRead: Int
+            var bytesRead = 0
             while (mEmulator?.isAlive() == true &&
                    mProcessToTerminalIOQueue.read(mReceiveBuffer, false).also { bytesRead = it } > 0) {
                 mEmulator!!.append(mReceiveBuffer, bytesRead)

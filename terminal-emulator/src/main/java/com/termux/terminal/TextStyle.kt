@@ -32,12 +32,12 @@ object TextStyle {
     @JvmStatic
     fun encode(foreColor: Int, backColor: Int, effect: Int): Long {
         var result = (effect and 0b11111111111).toLong()
-        if (foreColor and 0xff000000 == 0xff000000) {
+        if (foreColor and 0xff000000.toInt() == 0xff000000.toInt()) {
             result = result or (CHARACTER_ATTRIBUTE_TRUECOLOR_FOREGROUND.toLong() or ((foreColor.toLong() and 0x00ffffffL) shl 40))
         } else {
             result = result or ((foreColor.toLong() and 0b111111111L) shl 40)
         }
-        if (backColor and 0xff000000 == 0xff000000) {
+        if (backColor and 0xff000000.toInt() == 0xff000000.toInt()) {
             result = result or (CHARACTER_ATTRIBUTE_TRUECOLOR_BACKGROUND.toLong() or ((backColor.toLong() and 0x00ffffffL) shl 16))
         } else {
             result = result or ((backColor.toLong() and 0b111111111L) shl 16)

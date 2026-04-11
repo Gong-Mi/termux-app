@@ -14,7 +14,7 @@ package com.termux.terminal
  * https://github.com/termux/libandroid-support
  * https://github.com/termux/termux-packages/tree/master/packages/libandroid-support
  */
-@Deprecated
+@Deprecated("All logic has been migrated to Rust. This class now delegates to Rust implementation for backward compatibility.")
 object WcWidth {
 
     @JvmStatic external fun widthRust(ucs: Int): Int

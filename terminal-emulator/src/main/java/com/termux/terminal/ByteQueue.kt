@@ -10,41 +10,43 @@ internal class ByteQueue(size: Int) {
     private var mStoredBytes = 0
     private var mOpen = true
 
-    @Synchronized
     fun close() {
-        mOpen = false
-        notify()
+        synchronized(this) {
+            mOpen = false
+            (this as java.lang.Object).notify()
+        }
     }
 
-    @Synchronized
     fun read(buffer: ByteArray, block: Boolean): Int {
-        while (mStoredBytes == 0 && mOpen) {
-            if (block) {
-                try { wait() } catch (_: InterruptedException) {}
-            } else {
-                return 0
+        synchronized(this) {
+            while (mStoredBytes == 0 && mOpen) {
+                if (block) {
+                    try { (this as java.lang.Object).wait() } catch (_: InterruptedException) {}
+                } else {
+                    return 0
+                }
             }
-        }
-        if (!mOpen) return -1
+            if (!mOpen) return -1
 
-        var totalRead = 0
-        val bufferLength = mBuffer.size
-        val wasFull = bufferLength == mStoredBytes
-        var length = buffer.size
-        var offset = 0
-        while (length > 0 && mStoredBytes > 0) {
-            val oneRun = (bufferLength - mHead).coerceAtMost(mStoredBytes)
-            val bytesToCopy = length.coerceAtMost(oneRun)
-            System.arraycopy(mBuffer, mHead, buffer, offset, bytesToCopy)
-            mHead += bytesToCopy
-            if (mHead >= bufferLength) mHead = 0
-            mStoredBytes -= bytesToCopy
-            length -= bytesToCopy
-            offset += bytesToCopy
-            totalRead += bytesToCopy
+            var totalRead = 0
+            val bufferLength = mBuffer.size
+            val wasFull = bufferLength == mStoredBytes
+            var length = buffer.size
+            var offset = 0
+            while (length > 0 && mStoredBytes > 0) {
+                val oneRun = (bufferLength - mHead).coerceAtMost(mStoredBytes)
+                val bytesToCopy = length.coerceAtMost(oneRun)
+                System.arraycopy(mBuffer, mHead, buffer, offset, bytesToCopy)
+                mHead += bytesToCopy
+                if (mHead >= bufferLength) mHead = 0
+                mStoredBytes -= bytesToCopy
+                length -= bytesToCopy
+                offset += bytesToCopy
+                totalRead += bytesToCopy
+            }
+            if (wasFull) (this as java.lang.Object).notify()
+            return totalRead
         }
-        if (wasFull) notify()
-        return totalRead
     }
 
     /**
@@ -65,7 +67,7 @@ internal class ByteQueue(size: Int) {
         synchronized(this) {
             while (remainingLength > 0) {
                 while (bufferLength == mStoredBytes && mOpen) {
-                    try { wait() } catch (_: InterruptedException) {}
+                    try { (this as java.lang.Object).wait() } catch (_: InterruptedException) {}
                 }
                 if (!mOpen) return false
                 val wasEmpty = mStoredBytes == 0
@@ -87,7 +89,7 @@ internal class ByteQueue(size: Int) {
                     bytesToWriteBeforeWaiting -= bytesToCopy
                     mStoredBytes += bytesToCopy
                 }
-                if (wasEmpty) notify()
+                if (wasEmpty) (this as java.lang.Object).notify()
             }
         }
         return true
