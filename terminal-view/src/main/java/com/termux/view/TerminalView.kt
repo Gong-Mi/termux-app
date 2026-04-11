@@ -135,6 +135,7 @@ class TerminalView @JvmOverloads constructor(
     private var scrolledWithFinger = false
 
     init {
+        setWillNotDraw(false)
         holder.addCallback(this)
         updateRefreshRate(context)
 
@@ -714,25 +715,25 @@ class TerminalView @JvmOverloads constructor(
         if (mSixelBitmap != null && !mSixelBitmap!!.isRecycled) invalidate()
     }
 
+    fun updateRenderParamsToRust() {
+        val emu = mEmulator ?: return
+        var selActive = false
+        var selX1 = 0; var selY1 = 0; var selX2 = 0; var selY2 = 0
+        if (isSelectingText()) {
+            mTextSelectionCursorController?.getSelectors(mSelCoords)
+            selY1 = mSelCoords[0]; selY2 = mSelCoords[1]; selX1 = mSelCoords[2]; selX2 = mSelCoords[3]
+            selActive = true
+        }
+        nativeUpdateRenderParams(mScaleFactor, mTopRow * getFontLineSpacing(), mTopRow,
+            selX1, selY1, selX2, selY2, selActive)
+    }
+
     override fun onDraw(canvas: Canvas) {
         if (!mOnDrawCalledAtLeastOnce) {
             mOnDrawCalledAtLeastOnce = true
             Log.i("TerminalView-onDraw", ">>> FIRST onDraw call - emulator=${mEmulator != null}, font metrics ok=${mNativeFontWidth > 0}")
         }
-        val emu = mEmulator
-        if (emu != null) {
-            var selActive = false
-            var selX1 = 0; var selY1 = 0; var selX2 = 0; var selY2 = 0
-            if (isSelectingText()) {
-                mTextSelectionCursorController?.getSelectors(mSelCoords)
-                selY1 = mSelCoords[0]; selY2 = mSelCoords[1]; selX1 = mSelCoords[2]; selX2 = mSelCoords[3]
-                selActive = true
-            }
-            nativeUpdateRenderParams(mScaleFactor, mTopRow * getFontLineSpacing(), mTopRow,
-                selX1, selY1, selX2, selY2, selActive)
-        } else {
-            Log.w("TerminalView-onDraw", "mEmulator is NULL")
-        }
+        updateRenderParamsToRust()
         val bitmap = mSixelBitmap
         if (bitmap != null && !bitmap.isRecycled) {
             canvas.save()
