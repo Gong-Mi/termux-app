@@ -110,20 +110,21 @@ mod tests {
             }
         };
 
+        let font_family = env::var("FONT_FAMILY").unwrap_or_else(|_| "monospace".to_string());
         let db_path = Path::new("tests/calibration_production.db");
         let db = FontCalibrationDB::login_as_admin(db_path, &password).expect("Login failed");
 
-        // 1. 初始化 Skia 字体环境 (12.0px Monospace)
+        // 1. 初始化 Skia 字体环境
         let font_mgr = FontMgr::new();
-        let typeface = font_mgr.match_family_style("monospace", FontStyle::normal())
-            .expect("Failed to load monospace font");
+        let typeface = font_mgr.match_family_style(&font_family, FontStyle::normal())
+            .expect(&format!("Failed to load font family: {}", font_family));
         let font = Font::new(typeface, Some(12.0));
         
         // 测量基准宽度 (M)
         let (base_w, _) = font.measure_str("M", None);
-        println!("Base width (M): {}px", base_w);
+        println!("Font Family: {}, Base width (M): {}px", font_family, base_w);
 
-        println!("Admin logged in. Starting BMP (0..0xFFFF) scan...");
+        println!("Admin logged in. Starting BMP (0..0xFFFF) scan for {}...", font_family);
 
         let mut exception_count = 0;
         for cp in 0..0xFFFF {
