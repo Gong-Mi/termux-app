@@ -1266,7 +1266,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
 // ============================================================================
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_WcWidth_width(_env: JNIEnv, _class: JClass, ucs: jint) -> jint {
+pub extern "system" fn Java_com_termux_terminal_WcWidth_widthRust(_env: JNIEnv, _class: JClass, ucs: jint) -> jint {
     crate::utils::get_char_width(ucs as u32) as jint
 }
 

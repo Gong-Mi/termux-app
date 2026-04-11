@@ -46,7 +46,6 @@ impl VulkanContext {
         // 尝试启用调试扩展（如果可用）
         let ext_ext_name = CStr::from_bytes_with_nul(b"VK_EXT_debug_utils\0").ok();
         let has_debug_utils = ext_ext_name.and_then(|ext_name| {
-            // 检查扩展是否可用
             let instance_ext_props = unsafe { entry.enumerate_instance_extension_properties(None).ok()? };
             instance_ext_props.iter().any(|p| {
                 let name = unsafe { CStr::from_ptr(p.extension_name.as_ptr()) };
@@ -58,22 +57,43 @@ impl VulkanContext {
             android_log(LogPriority::INFO, "Vulkan: VK_EXT_debug_utils enabled");
         }
 
-        let app_info = ash_vk::ApplicationInfo { api_version: ash_vk::API_VERSION_1_1, ..Default::default() };
-        let create_info = ash_vk::InstanceCreateInfo { p_application_info: &app_info, enabled_extension_count: instance_exts.len() as u32, pp_enabled_extension_names: instance_exts.as_ptr(), ..Default::default() };
+        // 尝试使用 1.1，如果失败则回退到 1.0 (增强 Adreno 兼容性)
+        let mut instance = None;
+        for api_version in [ash_vk::API_VERSION_1_1, ash_vk::API_VERSION_1_0] {
+            let app_info = ash_vk::ApplicationInfo { 
+                p_application_name: std::ptr::null(),
+                application_version: 0,
+                p_engine_name: std::ptr::null(),
+                engine_version: 0,
+                api_version,
+                ..Default::default() 
+            };
+            let create_info = ash_vk::InstanceCreateInfo { 
+                p_application_info: &app_info, 
+                enabled_extension_count: instance_exts.len() as u32, 
+                pp_enabled_extension_names: instance_exts.as_ptr(), 
+                ..Default::default() 
+            };
 
-        let instance = unsafe { entry.create_instance(&create_info, None) };
-        if instance.is_err() {
-            android_log(LogPriority::ERROR, &format!("VulkanContext::new: create_instance failed: {:?}", instance.err()));
+            match unsafe { entry.create_instance(&create_info, None) } {
+                Ok(inst) => {
+                    instance = Some(inst);
+                    let ver_str = if api_version == ash_vk::API_VERSION_1_1 { "1.1" } else { "1.0" };
+                    android_log(LogPriority::INFO, &format!("VulkanContext::new: Instance created with API {}", ver_str));
+                    break;
+                }
+                Err(e) => {
+                    android_log(LogPriority::WARN, &format!("VulkanContext::new: Failed to create instance with API: {:?}", e));
+                }
+            }
+        }
+
+        let instance = if let Some(inst) = instance {
+            inst
+        } else {
+            android_log(LogPriority::ERROR, "VulkanContext::new: All API versions failed");
             return None;
-        }
-        let instance = instance.unwrap();
-        android_log(LogPriority::INFO, "VulkanContext::new: Instance created");
-
-        // 创建调试回调（如果启用了 debug_utils）
-        if has_debug_utils.is_some() {
-            // TODO: 创建 debug messenger 用于接收 Vulkan 验证层消息
-            android_log(LogPriority::INFO, "Vulkan: Debug messenger initialized");
-        }
+        };
 
         let surface_loader = ash::khr::surface::Instance::new(&entry, &instance);
         let android_surface_loader = ash::khr::android_surface::Instance::new(&entry, &instance);
@@ -123,7 +143,6 @@ impl VulkanContext {
             Some(p) => p,
             None => {
                 android_log(LogPriority::ERROR, "VulkanContext::new: No physical device found with GRAPHICS+PRESENT queue family");
-                // Fallback: try first device anyway
                 let pdev = pdevices[0];
                 let props = unsafe { instance.get_physical_device_properties(pdev) };
                 let device_name = unsafe { std::ffi::CStr::from_ptr(props.device_name.as_ptr()) };
@@ -137,7 +156,7 @@ impl VulkanContext {
         // 设备级扩展
         let mut device_exts = vec![swapchain::NAME.as_ptr()];
 
-        // 尝试启用内存优先级扩展（对移动端渲染有用）
+        // 尝试启用内存优先级扩展
         let memory_priority_ext = CStr::from_bytes_with_nul(b"VK_KHR_maintenance1\0").ok();
         if let Some(ext_name) = memory_priority_ext {
             let device_ext_props = unsafe { instance.enumerate_device_extension_properties(pdevice).ok() }.unwrap_or_default();
@@ -159,26 +178,6 @@ impl VulkanContext {
         }
         let device = device.unwrap();
         android_log(LogPriority::INFO, "VulkanContext::new: Device created");
-
-        // 尝试加载持久化的 Pipeline Cache（避免每次启动都重新编译 shader）
-        let pipeline_cache_data = load_pipeline_cache();
-        let pipeline_cache = if let Some(data) = pipeline_cache_data {
-            let cache_info = ash_vk::PipelineCacheCreateInfo {
-                initial_data_size: data.len(),
-                p_initial_data: data.as_ptr() as _,
-                ..Default::default()
-            };
-            let cache = unsafe { device.create_pipeline_cache(&cache_info, None) };
-            match cache {
-                Ok(c) => {
-                    android_log(LogPriority::INFO, "Vulkan: Pipeline cache loaded from disk");
-                    Some(c)
-                }
-                Err(_) => None,
-            }
-        } else {
-            None
-        };
 
         let queue = unsafe { device.get_device_queue(queue_family_index, 0) };
         let swapchain_loader = swapchain::Device::new(&instance, &device);
@@ -203,7 +202,10 @@ impl VulkanContext {
         let render_finished_semaphore = render_finished_semaphore.unwrap();
 
         let entry_ptr = entry.clone();
-        let instance_handle = instance.handle();
+        let instance_ptr = instance.clone();
+        let instance_raw = instance.handle().as_raw();
+        let device_raw = device.handle().as_raw();
+
         let get_proc = move |of: vk::GetProcOf| {
             unsafe {
                 match of {
@@ -211,9 +213,9 @@ impl VulkanContext {
                         let name_cstr = CStr::from_ptr(name);
                         entry_ptr.get_instance_proc_addr(ash_vk::Instance::from_raw(inst as _), name_cstr.as_ptr()).map(|f| f as _).unwrap_or(std::ptr::null())
                     }
-                    vk::GetProcOf::Device(_dev, name) => {
+                    vk::GetProcOf::Device(dev, name) => {
                         let name_cstr = CStr::from_ptr(name);
-                        entry_ptr.get_instance_proc_addr(ash_vk::Instance::from_raw(instance_handle.as_raw() as _), name_cstr.as_ptr()).map(|f| f as _).unwrap_or(std::ptr::null())
+                        instance_ptr.get_device_proc_addr(ash_vk::Device::from_raw(dev as _), name_cstr.as_ptr()).map(|f| f as _).unwrap_or(std::ptr::null())
                     }
                 }
             }
@@ -221,9 +223,9 @@ impl VulkanContext {
 
         let backend_context = unsafe {
             vk::BackendContext::new(
-                instance_handle.as_raw() as _,
+                instance_raw as _,
                 pdevice.as_raw() as _,
-                device.handle().as_raw() as _,
+                device_raw as _,
                 (queue.as_raw() as _, queue_family_index as usize),
                 &get_proc
             )
@@ -261,38 +263,29 @@ impl VulkanContext {
         unsafe {
             self.extent = ash_vk::Extent2D { width, height };
 
-            // 选择最优 PresentMode: MAILBOX (无撕裂的最低延迟)
-            // FIFO 是必须的 fallback，但 MAILBOX 在大多数现代 GPU 上可用
             let surface_formats = self.surface_loader.get_physical_device_surface_formats(self.pdevice, self.surface)
                 .unwrap_or_default();
             let present_modes = self.surface_loader.get_physical_device_surface_present_modes(self.pdevice, self.surface)
                 .unwrap_or_default();
 
-            // 优先使用 MAILBOX (vsync 但不阻塞，类似 triple buffering)
-            // 如果不可用则退回到 FIFO
             let present_mode = if present_modes.contains(&ash_vk::PresentModeKHR::MAILBOX) {
-                android_log(LogPriority::INFO, "Vulkan: Using MAILBOX present mode (low latency vsync)");
                 ash_vk::PresentModeKHR::MAILBOX
             } else {
-                android_log(LogPriority::WARN, "Vulkan: MAILBOX not available, falling back to FIFO");
                 ash_vk::PresentModeKHR::FIFO
             };
 
-            // 优先使用 surface 提供的格式，如果没有则用 R8G8B8A8_SRGB
             let format = if surface_formats.is_empty() {
                 ash_vk::SurfaceFormatKHR {
                     format: ash_vk::Format::R8G8B8A8_UNORM,
                     color_space: ash_vk::ColorSpaceKHR::SRGB_NONLINEAR,
                 }
             } else {
-                // 选择第一个可用的 sRGB 格式
                 surface_formats.iter()
                     .find(|f| f.color_space == ash_vk::ColorSpaceKHR::SRGB_NONLINEAR)
                     .copied()
                     .unwrap_or(surface_formats[0])
             };
 
-            // 获取 surface 能力（用于确定最小图像数量）
             let caps = self.surface_loader.get_physical_device_surface_capabilities(self.pdevice, self.surface)
                 .unwrap_or(ash_vk::SurfaceCapabilitiesKHR {
                     min_image_count: 2,
@@ -301,8 +294,11 @@ impl VulkanContext {
                     ..Default::default()
                 });
 
-            // Triple buffering: 请求 3 张图像（如果驱动支持）
-            let min_image_count = caps.min_image_count.max(3);
+            // Triple buffering with max count validation
+            let mut min_image_count = caps.min_image_count.max(3);
+            if caps.max_image_count > 0 && min_image_count > caps.max_image_count {
+                min_image_count = caps.max_image_count;
+            }
 
             let swapchain_create_info = ash_vk::SwapchainCreateInfoKHR {
                 surface: self.surface,
@@ -326,8 +322,7 @@ impl VulkanContext {
                 }
                 self.swapchain = new_swapchain;
                 self.swapchain_images = self.swapchain_loader.get_swapchain_images(self.swapchain).unwrap_or_default();
-                android_log(LogPriority::INFO, &format!("Vulkan: Swapchain created with {} images, present_mode={:?}",
-                    self.swapchain_images.len(), present_mode));
+                android_log(LogPriority::INFO, &format!("Vulkan: Swapchain created with {} images", self.swapchain_images.len()));
                 true
             } else {
                 false
@@ -349,8 +344,6 @@ impl VulkanContext {
     pub fn get_sk_surface(&mut self, index: u32) -> Option<SkSurface> {
         let image = self.swapchain_images.get(index as usize)?;
 
-        // 关键修复：使用 skia_safe::gpu::vk::ImageInfo::new() 正确构造
-        // 这样 Skia 能正确识别这是 Vulkan swapchain image，不会回退到 ANativeWindow dequeue
         let vk_image_info = unsafe {
             skia_safe::gpu::vk::ImageInfo::new(
                 image.as_raw() as _,
@@ -382,10 +375,6 @@ impl VulkanContext {
     }
 }
 
-/// 加载持久化的 Pipeline Cache（从 Android 应用缓存目录）
 fn load_pipeline_cache() -> Option<Vec<u8>> {
-    // 在 Android 上，Pipeline Cache 可以保存到应用缓存目录
-    // 这里返回 None，表示暂未实现持久化
-    // TODO: 实现 cache 持久化到 /data/data/com.termux/cache/vulkan_pipeline_cache.bin
     None
 }

@@ -132,38 +132,55 @@ class TextSelectionCursorController(
             override fun onDestroyActionMode(mode: ActionMode) {}
         }
 
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            mActionMode = terminalView.startActionMode(callback)
-            return
-        }
-
-        mActionMode = terminalView.startActionMode(object : ActionMode.Callback2() {
-            override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean =
-                callback.onCreateActionMode(mode, menu)
-
-            override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean = false
-
-            override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean =
-                callback.onActionItemClicked(mode, item)
-
-            override fun onDestroyActionMode(mode: ActionMode) {}
-
-            override fun onGetContentRect(mode: ActionMode, view: View, outRect: Rect) {
-                var x1 = terminalView.getPointX(mSelX1)
-                var x2 = terminalView.getPointX(mSelX2)
-                val y1 = terminalView.getPointY(mSelY1 - 1)
-                val y2 = terminalView.getPointY(mSelY2 + 1)
-                if (x1 > x2) {
-                    val tmp = x1; x1 = x2; x2 = tmp
-                }
-                val terminalBottom = terminalView.bottom
-                var top = y1 + mHandleHeight
-                var bottom = y2 + mHandleHeight
-                if (top > terminalBottom) top = terminalBottom
-                if (bottom > terminalBottom) bottom = terminalBottom
-                outRect.set(x1, top, x2, bottom)
+        try {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+                mActionMode = terminalView.startActionMode(callback)
+                return
             }
-        }, ActionMode.TYPE_FLOATING)
+
+            mActionMode = terminalView.startActionMode(object : ActionMode.Callback2() {
+                override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean =
+                    callback.onCreateActionMode(mode, menu)
+
+                override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean = false
+
+                override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean =
+                    callback.onActionItemClicked(mode, item)
+
+                override fun onDestroyActionMode(mode: ActionMode) {}
+
+                override fun onGetContentRect(mode: ActionMode, view: View, outRect: Rect) {
+                    var x1 = terminalView.getPointX(mSelX1)
+                    var x2 = terminalView.getPointX(mSelX2)
+                    val y1 = terminalView.getPointY(mSelY1 - 1)
+                    val y2 = terminalView.getPointY(mSelY2 + 1)
+                    if (x1 > x2) {
+                        val tmp = x1; x1 = x2; x2 = tmp
+                    }
+                    val terminalBottom = terminalView.bottom
+                    var top = y1 + mHandleHeight
+                    var bottom = y2 + mHandleHeight
+                    if (top > terminalBottom) top = terminalBottom
+                    if (bottom > terminalBottom) bottom = terminalBottom
+                    outRect.set(x1, top, x2, bottom)
+                }
+            }, ActionMode.TYPE_FLOATING)
+        } catch (e: ClassCastException) {
+            // MIUI (and some other OEM ROMs) cast the view to TextView internally.
+            // Fallback to legacy ActionMode.Callback on such devices.
+            try {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+                    mActionMode = terminalView.startActionMode(callback)
+                } else {
+                    mActionMode = terminalView.startActionMode(callback, ActionMode.TYPE_FLOATING)
+                }
+            } catch (_: Throwable) {
+                // If even the fallback fails, just skip the action mode — selection handles still work
+                mActionMode = null
+            }
+        } catch (_: Throwable) {
+            mActionMode = null
+        }
     }
 
     override fun updatePosition(handle: TextSelectionHandleView, x: Int, y: Int) {
