@@ -29,8 +29,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 class TerminalSession(
     val shellPath: String,
     val cwd: String?,
-    val args: Array<String>?,
-    val env: Array<String>?,
+    val args: Array<String?>?,
+    val env: Array<String?>?,
     val transcriptRows: Int?,
     client: TerminalSessionClient
 ) : TerminalOutput() {
@@ -47,10 +47,10 @@ class TerminalSession(
     var mSessionName: String? = null
 
     /** A queue written to from a separate thread when the process outputs, and read by main thread. */
-    val mProcessToTerminalIOQueue = ByteQueue(64 * 1024)
+    internal val mProcessToTerminalIOQueue = ByteQueue(64 * 1024)
 
     /** A queue written to from the main thread due to user interaction, read by another thread. */
-    val mTerminalToProcessIOQueue = ByteQueue(4096)
+    internal val mTerminalToProcessIOQueue = ByteQueue(4096)
 
     /** Buffer to write translate code points into utf8 before writing to mTerminalToProcessIOQueue */
     private val mUtf8InputBuffer = ByteArray(5)
@@ -98,7 +98,7 @@ class TerminalSession(
     /** The terminal title as set through escape sequences or null if none set. */
     override fun getTitle(): String? {
         if (mSessionState != SessionState.READY || mEmulator == null || !mEmulator!!.isAlive()) return null
-        return mEmulator!!.title
+        return mEmulator!!.getTitle()
     }
 
     /** Set the terminal emulator's window size and start terminal emulation asynchronously. */
@@ -118,6 +118,7 @@ class TerminalSession(
             mEmulator = TerminalEmulator(this, columns, rows, cellWidthPixels, cellHeightPixels, transcriptRows, mTerminalFileDescriptor, mClient)
             mSessionState = SessionState.READY
             mClient.setTerminalShellPid(this, mShellPid)
+            android.util.Log.d("TermuxTrace", "[TRACE_SESSION] JNI libraries not loaded, using mock")
         }
     }
 
@@ -139,23 +140,27 @@ class TerminalSession(
             if (mTerminalFileDescriptor != -1) {
                 val terminalFileDescriptorWrapped = wrapFileDescriptor(mTerminalFileDescriptor, mClient)
 
-                Thread("TermSessionOutputWriter[pid=$mShellPid]") {
-                    val buffer = ByteArray(4096)
-                    try {
-                        FileOutputStream(terminalFileDescriptorWrapped).use { termOut ->
-                            while (true) {
-                                val bytesToWrite = mTerminalToProcessIOQueue.read(buffer, true)
-                                if (bytesToWrite == -1) return@Thread
-                                termOut.write(buffer, 0, bytesToWrite)
+                Thread(null, object : Runnable {
+                    override fun run() {
+                        val buffer = ByteArray(4096)
+                        try {
+                            FileOutputStream(terminalFileDescriptorWrapped).use { termOut ->
+                                while (true) {
+                                    val bytesToWrite = mTerminalToProcessIOQueue.read(buffer, true)
+                                    if (bytesToWrite == -1) return
+                                    termOut.write(buffer, 0, bytesToWrite)
+                                }
                             }
-                        }
-                    } catch (_: IOException) { }
-                }.start()
+                        } catch (_: IOException) { }
+                    }
+                }, "TermSessionOutputWriter[pid=$mShellPid]").start()
 
-                Thread("TermSessionWaiter[pid=$mShellPid]") {
-                    val processExitCode = runCatching { JNI.waitFor(mShellPid) }.getOrDefault(0)
-                    mMainThreadHandler.sendMessage(mMainThreadHandler.obtainMessage(MSG_PROCESS_EXITED, processExitCode))
-                }.start()
+                Thread(null, object : Runnable {
+                    override fun run() {
+                        val processExitCode = runCatching { JNI.waitFor(mShellPid) }.getOrDefault(0)
+                        mMainThreadHandler.sendMessage(mMainThreadHandler.obtainMessage(MSG_PROCESS_EXITED, processExitCode))
+                    }
+                }, "TermSessionWaiter[pid=$mShellPid]").start()
             }
 
             notifyScreenUpdate()
@@ -288,7 +293,7 @@ class TerminalSession(
 
             var totalBytesRead = 0
             var bytesRead: Int
-            while (mEmulator?.isAlive == true &&
+            while (mEmulator?.isAlive() == true &&
                    mProcessToTerminalIOQueue.read(mReceiveBuffer, false).also { bytesRead = it } > 0) {
                 mEmulator!!.append(mReceiveBuffer, bytesRead)
                 totalBytesRead += bytesRead
@@ -300,7 +305,7 @@ class TerminalSession(
             if (totalBytesRead > 0) notifyScreenUpdate()
 
             if (msg.what == MSG_PROCESS_EXITED) {
-                val exitCode = msg.obj as Int
+                val exitCode = msg.obj as? Int ?: 0
                 var exitDescription = "\r\n[Process completed"
                 exitDescription += when {
                     exitCode > 0 -> " (code $exitCode)"
@@ -310,7 +315,7 @@ class TerminalSession(
                 exitDescription += " - press Enter]"
 
                 val bytesToWrite = exitDescription.toByteArray(StandardCharsets.UTF_8)
-                if (mEmulator?.isAlive == true) {
+                if (mEmulator?.isAlive() == true) {
                     mEmulator!!.append(bytesToWrite, bytesToWrite.size)
                     notifyScreenUpdate()
                 }

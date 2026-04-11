@@ -6,12 +6,9 @@ import java.nio.charset.StandardCharsets
  * A client which receives callbacks from events triggered by feeding input to a [TerminalEmulator].
  *
  * @deprecated Callbacks are now dispatched via Rust's [RustEngineCallback] interface through JNI.
- * This class is kept for backward compatibility only — [TerminalSession] still extends it,
- * but the Rust engine never calls these methods. All real callbacks go through JNI reflection
- * to `RustEngineCallback.onScreenUpdated()`, `onBell()`, `onColorsChanged()`, etc.
- * This class will be removed once TerminalSession is migrated to Kotlin.
+ * This class is kept for backward compatibility only.
  */
-@Deprecated
+@Deprecated("Callbacks now use RustEngineCallback via JNI")
 abstract class TerminalOutput {
 
     /** Write a string using the UTF-8 encoding to the terminal client. */

@@ -25,7 +25,7 @@ class RustEngineCallback(private val mClient: TerminalSessionClient?) : Terminal
         if (mSession != null) {
             mSession!!.onNativeScreenUpdated()
         } else if (mClient != null) {
-            mClient.onTextChanged(null)
+            mClient.logVerbose("RustEngineCallback", "Screen updated but no session available")
         }
     }
 
