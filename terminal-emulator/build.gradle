@@ -14,7 +14,13 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
-            abiFilters 'x86', 'x86_64', 'armeabi-v7a', 'arm64-v8a'
+            // Allow CI to override ABI list via environment variable (e.g., FAST_BUILD_ABI=arm64-v8a)
+            def fastBuildAbi = System.getenv("FAST_BUILD_ABI")
+            if (fastBuildAbi) {
+                abiFilters fastBuildAbi
+            } else {
+                abiFilters 'x86', 'x86_64', 'armeabi-v7a', 'arm64-v8a'
+            }
         }
     }
 
