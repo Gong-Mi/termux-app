@@ -32,8 +32,8 @@ class GestureAndScaleRecognizer(
                 return mListener.onScroll(e2, dx, dy)
             }
 
-            @Suppress("DEPRECATION")
-            override fun onFling(e1: MotionEvent, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+            @SuppressWarnings("deprecation")
+            override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
                 return mListener.onFling(e2, velocityX, velocityY)
             }
 
