@@ -273,7 +273,7 @@ fn flush_events_to_java(env: &mut JNIEnv, callback_obj: &Option<jni::objects::Gl
 
 /// 创建引擎实例
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_createEngineRustWithCallback(
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_createEngine(
     env: JNIEnv,
     _class: JClass,
     cols: jint,
@@ -283,7 +283,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_createEngineRus
     total_rows: jint,
     callback: JObject,
 ) -> jlong {
-    android_log(LogPriority::DEBUG, &format!("JNI: createEngineRustWithCallback ({}x{})", cols, rows));
+    android_log(LogPriority::DEBUG, &format!("JNI: createEngine ({}x{})", cols, rows));
     let mut engine = TerminalEngine::new(cols, rows, total_rows, cw, ch);
     if !callback.is_null() {
         if let Ok(global_ref) = env.new_global_ref(callback) {
@@ -296,7 +296,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_createEngineRus
 
 /// 处理字节数据
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeProcess(
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_nativeProcess(
     mut env: JNIEnv,
     _class: JClass,
     ptr: jlong,
@@ -322,7 +322,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeProcess(
 
 /// 批量处理
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_processBatchRust(
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatch(
     mut env: JNIEnv,
     _class: JClass,
     ptr: jlong,
@@ -350,7 +350,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_processBatchRus
 
 /// 处理 Unicode 码点
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_processCodePointRust(
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_processCodePoint(
     mut env: JNIEnv,
     _class: JClass,
     ptr: jlong,
@@ -372,7 +372,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_processCodePoin
 
 /// 销毁引擎
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_destroyEngineRust(
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_destroyEngine(
     _env: JNIEnv,
     _class: JClass,
     ptr: jlong,
@@ -385,7 +385,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_destroyEngineRu
 
 /// 启动 IO 线程
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeStartIoThread(
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_startIoThread(
     _env: JNIEnv,
     _class: JClass,
     ptr: jlong,
@@ -403,16 +403,16 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeStartIoTh
     }
 
     std::thread::Builder::new()
-        .name("RustEngine".to_string())
+        .name("Engine".to_string())
         .spawn(move || {
             let context = context_thread;
-            let thread_name = std::ffi::CString::new("RustEngine").unwrap();
+            let thread_name = std::ffi::CString::new("Engine").unwrap();
             unsafe {
                 libc::prctl(libc::PR_SET_NAME, thread_name.as_ptr(), 0, 0, 0);
                 libc::pthread_setname_np(libc::pthread_self(), thread_name.as_ptr());
             }
 
-            android_log(LogPriority::INFO, "Rust IO Thread started");
+            android_log(LogPriority::INFO, " IO Thread started");
 
             let mut attached_env = crate::JAVA_VM.get().and_then(|vm| {
                 vm.attach_current_thread_as_daemon().ok()
@@ -439,9 +439,9 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeStartIoTh
                     Err(_) => break,
                 }
             }
-            android_log(LogPriority::INFO, "Rust IO Thread stopped");
+            android_log(LogPriority::INFO, " IO Thread stopped");
         })
-        .expect("Failed to spawn Rust IO thread");
+        .expect("Failed to spawn  IO thread");
     let _ = Arc::into_raw(context);
 }
 
@@ -449,31 +449,9 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeStartIoTh
 // 其余 TerminalEmulator JNI 接口
 // ============================================================================
 
-/// 调整大小
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeResize(
-    mut env: JNIEnv,
-    _class: JClass,
-    ptr: jlong,
-    cols: jint,
-    rows: jint,
-) {
-    if ptr == 0 { return; }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
-    let (events, cb) = {
-        let mut engine = context.lock.write().unwrap();
-        engine.state.resize(cols, rows);
-        engine.events.push(TerminalEvent::ScreenUpdated);
-        (engine.take_events(), engine.state.java_callback_obj.clone())
-    };
-    render_thread::request_render();
-    flush_events_to_java(&mut env, &cb, events);
-    let _ = Arc::into_raw(context);
-}
-
 /// 完整调整大小
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_resizeEngineRustFull(
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_resize(
     mut env: JNIEnv,
     _class: JClass,
     ptr: jlong,
@@ -497,7 +475,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_resizeEngineRus
 
 /// 获取标题
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getTitleFromRust(
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_getTitle(
     env: JNIEnv,
     _class: JClass,
     ptr: jlong,
@@ -515,7 +493,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getTitleFromRus
 
 /// 获取光标行
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCursorRowFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_getCursorRow(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
@@ -528,7 +506,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCursorRowFro
 
 /// 获取光标列
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCursorColFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_getCursorCol(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
@@ -541,7 +519,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCursorColFro
 
 /// 获取光标样式
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCursorStyleFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_getCursorStyle(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
@@ -554,7 +532,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getCursorStyleF
 
 /// 设置光标样式
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorStyleFromRust(mut env: JNIEnv, _class: JClass, ptr: jlong, cursor_style: jint) {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorStyle(mut env: JNIEnv, _class: JClass, ptr: jlong, cursor_style: jint) {
     if ptr == 0 { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let (events, cb) = {
@@ -569,7 +547,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorStyleF
 
 /// DECSET/DECRST
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_doDecSetOrResetFromRust(mut env: JNIEnv, _class: JClass, ptr: jlong, setting: jboolean, mode: jint) {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_doDecSetOrReset(mut env: JNIEnv, _class: JClass, ptr: jlong, setting: jboolean, mode: jint) {
     if ptr == 0 { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -586,7 +564,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_doDecSetOrReset
 
 /// 光标可见性检查
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_shouldCursorBeVisibleFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jboolean {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_shouldCursorBeVisible(_env: JNIEnv, _class: JClass, ptr: jlong) -> jboolean {
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
@@ -598,7 +576,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_shouldCursorBeV
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isCursorEnabledFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jboolean {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_isCursorEnabled(_env: JNIEnv, _class: JClass, ptr: jlong) -> jboolean {
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
@@ -610,7 +588,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isCursorEnabled
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isReverseVideoFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jboolean {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_isReverseVideo(_env: JNIEnv, _class: JClass, ptr: jlong) -> jboolean {
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
@@ -622,7 +600,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isReverseVideoF
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isAlternateBufferActiveFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jboolean {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_isAlternateBufferActive(_env: JNIEnv, _class: JClass, ptr: jlong) -> jboolean {
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
@@ -634,7 +612,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isAlternateBuff
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isCursorKeysApplicationModeFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jboolean {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_isCursorKeysApplicationMode(_env: JNIEnv, _class: JClass, ptr: jlong) -> jboolean {
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
@@ -646,7 +624,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isCursorKeysApp
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isKeypadApplicationModeFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jboolean {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_isKeypadApplicationMode(_env: JNIEnv, _class: JClass, ptr: jlong) -> jboolean {
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
@@ -658,7 +636,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isKeypadApplica
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isMouseTrackingActiveFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jboolean {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_isMouseTrackingActive(_env: JNIEnv, _class: JClass, ptr: jlong) -> jboolean {
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
@@ -670,10 +648,10 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isMouseTracking
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isInsertModeActiveFromRust(_env: JNIEnv, _class: JClass, _ptr: jlong) -> jboolean { 0 }
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_isInsertModeActive(_env: JNIEnv, _class: JClass, _ptr: jlong) -> jboolean { 0 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getScrollCounterFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_getScrollCounter(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
@@ -685,7 +663,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getScrollCounte
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getRowsFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_getRows(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
@@ -697,7 +675,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getRowsFromRust
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColsFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_getCols(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
@@ -710,7 +688,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColsFromRust
 
 /// 读取行数据
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_readRowFromRust(
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_readRow(
     env: JNIEnv, _class: JClass, ptr: jlong, row: jint, text: jni::sys::jintArray, styles: jni::sys::jlongArray,
 ) {
     if ptr == 0 { return; }
@@ -736,7 +714,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_readRowFromRust
 
 /// 获取选中文本
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getSelectedTextFromRust(
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_getSelectedText(
     env: JNIEnv, _class: JClass, ptr: jlong, x1: jint, y1: jint, x2: jint, y2: jint,
 ) -> jstring {
     if ptr == 0 { return std::ptr::null_mut(); }
@@ -752,7 +730,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getSelectedText
 
 /// 获取单词
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getWordAtLocationFromRust(
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_getWordAtLocation(
     env: JNIEnv, _class: JClass, ptr: jlong, x: jint, y: jint,
 ) -> jstring {
     if ptr == 0 { return std::ptr::null_mut(); }
@@ -768,7 +746,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getWordAtLocati
 
 /// 获取历史记录文本
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getTranscriptTextFromRust(
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_getTranscriptText(
     env: JNIEnv, _class: JClass, ptr: jlong,
 ) -> jstring {
     if ptr == 0 { return std::ptr::null_mut(); }
@@ -784,7 +762,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getTranscriptTe
 
 /// 清除滚动计数器
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_clearScrollCounterFromRust(mut env: JNIEnv, _class: JClass, ptr: jlong) {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_clearScrollCounter(mut env: JNIEnv, _class: JClass, ptr: jlong) {
     if ptr == 0 { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let (events, cb) = {
@@ -798,7 +776,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_clearScrollCoun
 
 /// 自动滚动设置
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isAutoScrollDisabledFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jboolean {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_isAutoScrollDisabled(_env: JNIEnv, _class: JClass, ptr: jlong) -> jboolean {
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
@@ -810,7 +788,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_isAutoScrollDis
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_toggleAutoScrollDisabledFromRust(mut env: JNIEnv, _class: JClass, ptr: jlong) {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_toggleAutoScrollDisabled(mut env: JNIEnv, _class: JClass, ptr: jlong) {
     if ptr == 0 { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let (events, cb) = {
@@ -824,7 +802,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_toggleAutoScrol
 
 /// 鼠标事件
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendMouseEventFromRust(mut env: JNIEnv, _class: JClass, ptr: jlong, button: jint, col: jint, row: jint, pressed: jboolean) {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_sendMouseEvent(mut env: JNIEnv, _class: JClass, ptr: jlong, button: jint, col: jint, row: jint, pressed: jboolean) {
     if ptr == 0 { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let (events, cb) = {
@@ -838,7 +816,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendMouseEventF
 
 /// 按键码处理
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendKeyCodeFromRust(
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_sendKeyCode(
     mut env: JNIEnv, _class: JClass, ptr: jlong, key_code: jint, char_str: jstring, meta_state: jint,
 ) -> jstring {
     if ptr == 0 { return std::ptr::null_mut(); }
@@ -865,7 +843,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_sendKeyCodeFrom
 
 /// 粘贴文本
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_pasteTextFromRust(
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_pasteText(
     mut env: JNIEnv, _class: JClass, ptr: jlong, text: jstring,
 ) {
     if ptr == 0 { return; }
@@ -888,7 +866,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_pasteTextFromRu
 
 /// 获取活动历史记录行数
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getActiveTranscriptRowsFromRust(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_getActiveTranscriptRows(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
@@ -901,7 +879,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getActiveTransc
 
 /// 获取颜色
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColorsFromRust(env: JNIEnv, _class: JClass, ptr: jlong) -> jintArray {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_getColors(env: JNIEnv, _class: JClass, ptr: jlong) -> jintArray {
     if ptr == 0 { return std::ptr::null_mut(); }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let colors = {
@@ -919,7 +897,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getColorsFromRu
 
 /// 重置颜色
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_resetColorsFromRust(mut env: JNIEnv, _class: JClass, ptr: jlong) {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_resetColors(mut env: JNIEnv, _class: JClass, ptr: jlong) {
     if ptr == 0 { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
 
@@ -937,7 +915,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_resetColorsFrom
 
 /// 更新颜色
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_updateColorsFromProperties(
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_updateColorsFromProperties(
     mut env: JNIEnv,
     _class: JClass,
     ptr: jlong,
@@ -1009,7 +987,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_updateColorsFro
 
 /// 设置光标颜色
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorColorForBackgroundFromRust(
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorColorForBackground(
     mut env: JNIEnv,
     _class: JClass,
     ptr: jlong,
@@ -1033,7 +1011,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorColorF
 
 /// 获取感知亮度
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getPerceivedBrightnessOfColor(
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_getPerceivedBrightnessOfColor(
     _env: JNIEnv,
     _class: JClass,
     color: jint,
@@ -1044,7 +1022,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getPerceivedBri
 
 /// 更新终端会话客户端
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_updateTerminalSessionClientFromRust(
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_updateTerminalSessionClient(
     mut env: JNIEnv,
     _class: JClass,
     ptr: jlong,
@@ -1069,7 +1047,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_updateTerminalS
 
 /// 设置光标闪烁状态
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorBlinkStateInRust(mut env: JNIEnv, _class: JClass, ptr: jlong, state: jboolean) {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorBlinkState(mut env: JNIEnv, _class: JClass, ptr: jlong, state: jboolean) {
     if ptr == 0 { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let (events, cb) = {
@@ -1083,7 +1061,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorBlinkS
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorBlinkingEnabledInRust(mut env: JNIEnv, _class: JClass, ptr: jlong, enabled: jboolean) {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorBlinkingEnabled(mut env: JNIEnv, _class: JClass, ptr: jlong, enabled: jboolean) {
     if ptr == 0 { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let (events, cb) = {
@@ -1098,14 +1076,14 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_setCursorBlinki
 
 /// 释放
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeRelease(_env: JNIEnv, _class: JClass, ptr: jlong) {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_nativeRelease(_env: JNIEnv, _class: JClass, ptr: jlong) {
     if ptr != 0 {
         let _context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeGetCursorCol(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_nativeGetCursorCol(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
@@ -1117,7 +1095,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeGetCursor
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeGetCursorRow(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_nativeGetCursorRow(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
@@ -1130,7 +1108,7 @@ pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_nativeGetCursor
 
 /// 获取调试信息
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_TerminalEmulator_getDebugInfoFromRust(
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_getDebugInfo(
     env: JNIEnv,
     _class: JClass,
     ptr: jlong,
@@ -1346,7 +1324,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
 // ============================================================================
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_WcWidth_widthRust(_env: JNIEnv, _class: JClass, ucs: jint) -> jint {
+pub extern "system" fn Java_com_termux_terminal_WcWidth_width(_env: JNIEnv, _class: JClass, ucs: jint) -> jint {
     crate::utils::get_char_width(ucs as u32) as jint
 }
 
@@ -1406,7 +1384,7 @@ pub extern "system" fn Java_com_termux_terminal_JNI_getKeyCodeFromTermcap(
 pub extern "system" fn JNI_OnLoad(vm: jni::JavaVM, _reserved: std::ffi::c_void) -> jint {
     let result = crate::JAVA_VM.set(vm);
     match result {
-        Ok(()) => android_log(LogPriority::INFO, "JNI_OnLoad: Termux-Rust library loaded successfully"),
+        Ok(()) => android_log(LogPriority::INFO, "JNI_OnLoad: Termux- library loaded successfully"),
         Err(_) => android_log(LogPriority::WARN, "JNI_OnLoad: JAVA_VM was already set"),
     }
     jni::sys::JNI_VERSION_1_6
