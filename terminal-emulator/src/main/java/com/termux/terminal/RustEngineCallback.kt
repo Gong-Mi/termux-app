@@ -92,7 +92,7 @@ class RustEngineCallback(private val mClient: TerminalSessionClient?) : Terminal
     /**
      * Sixel 图像回调 - 由 Rust 引擎通过 JNI 调用
      */
-    fun onSixelImage(rgbaData: ByteArray?, width: Int, height: Int, startX: Int, startY: Int) {
+    override fun onSixelImage(rgbaData: ByteArray?, width: Int, height: Int, startX: Int, startY: Int) {
         if (mClient != null) {
             mClient.logDebug("SixelImage", String.format(
                 "Received Sixel image: %dx%d at (%d,%d), data size: %d",
