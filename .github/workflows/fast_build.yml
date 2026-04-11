@@ -7,6 +7,14 @@ name: Fast Build
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feature/rust-integration
+    paths:
+      - 'terminal-emulator/**'
+      - 'terminal-view/**'
+      - 'app/**'
+      - '.github/workflows/fast_build.yml'
   pull_request:
     branches:
       - feature/rust-integration
