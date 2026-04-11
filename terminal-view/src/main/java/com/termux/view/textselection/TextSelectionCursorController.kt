@@ -52,7 +52,7 @@ class TextSelectionCursorController(
     }
 
     override fun hide(): Boolean {
-        if (!isActive) return false
+        if (!isActive()) return false
         if (System.currentTimeMillis() - mShowStartTime < 300) return false
         mStartHandle.hide()
         mEndHandle.hide()
@@ -66,7 +66,7 @@ class TextSelectionCursorController(
     }
 
     override fun render() {
-        if (!isActive) return
+        if (!isActive()) return
         mStartHandle.positionAtCursor(mSelX1, mSelY1, false)
         mEndHandle.positionAtCursor(mSelX2 + 1, mSelY2, false)
         mActionMode?.invalidate()
@@ -87,7 +87,7 @@ class TextSelectionCursorController(
                 if (prev == null || prev.isEmpty() || prev == " ") break
                 mSelX1--
             }
-            while (mSelX2 < emulator.cols - 1) {
+            while (mSelX2 < emulator.getCols() - 1) {
                 val next = emulator.getSelectedText(mSelX2 + 1, mSelY1, mSelX2 + 1, mSelY1)
                 if (next == null || next.isEmpty() || next == " ") break
                 mSelX2++
@@ -168,25 +168,25 @@ class TextSelectionCursorController(
 
     override fun updatePosition(handle: TextSelectionHandleView, x: Int, y: Int) {
         val emulator = terminalView.mEmulator ?: return
-        val scrollRows = emulator.activeTranscriptRows
+        val scrollRows = emulator.getActiveTranscriptRows()
         if (handle == mStartHandle) {
             mSelX1 = terminalView.getCursorX(x.toFloat())
             mSelY1 = terminalView.getCursorY(y.toFloat())
             if (mSelX1 < 0) mSelX1 = 0
             if (mSelY1 < -scrollRows) mSelY1 = -scrollRows
-            else if (mSelY1 > emulator.rows - 1) mSelY1 = emulator.rows - 1
+            else if (mSelY1 > emulator.getRows() - 1) mSelY1 = emulator.getRows() - 1
             if (mSelY1 > mSelY2) mSelY1 = mSelY2
             if (mSelY1 == mSelY2 && mSelX1 > mSelX2) mSelX1 = mSelX2
-            if (!emulator.isAlternateBufferActive) {
-                var topRow = terminalView.topRow
+            if (!emulator.isAlternateBufferActive()) {
+                var topRow = terminalView.mTopRow
                 if (mSelY1 <= topRow) {
                     topRow--
                     if (topRow < -scrollRows) topRow = -scrollRows
-                } else if (mSelY1 >= topRow + emulator.rows) {
+                } else if (mSelY1 >= topRow + emulator.getRows()) {
                     topRow++
                     if (topRow > 0) topRow = 0
                 }
-                terminalView.setTopRow(topRow)
+                terminalView.mTopRow = topRow
             }
             mSelX1 = getValidCurX(emulator, mSelY1, mSelX1)
         } else {
@@ -194,19 +194,19 @@ class TextSelectionCursorController(
             mSelY2 = terminalView.getCursorY(y.toFloat())
             if (mSelX2 < 0) mSelX2 = 0
             if (mSelY2 < -scrollRows) mSelY2 = -scrollRows
-            else if (mSelY2 > emulator.rows - 1) mSelY2 = emulator.rows - 1
+            else if (mSelY2 > emulator.getRows() - 1) mSelY2 = emulator.getRows() - 1
             if (mSelY1 > mSelY2) mSelY2 = mSelY1
             if (mSelY1 == mSelY2 && mSelX1 > mSelX2) mSelX2 = mSelX1
-            if (!emulator.isAlternateBufferActive) {
-                var topRow = terminalView.topRow
+            if (!emulator.isAlternateBufferActive()) {
+                var topRow = terminalView.mTopRow
                 if (mSelY2 <= topRow) {
                     topRow--
                     if (topRow < -scrollRows) topRow = -scrollRows
-                } else if (mSelY2 >= topRow + emulator.rows) {
+                } else if (mSelY2 >= topRow + emulator.getRows()) {
                     topRow++
                     if (topRow > 0) topRow = 0
                 }
-                terminalView.setTopRow(topRow)
+                terminalView.mTopRow = topRow
             }
             mSelX2 = getValidCurX(emulator, mSelY2, mSelX2)
         }

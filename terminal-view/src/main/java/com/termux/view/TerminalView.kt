@@ -100,8 +100,8 @@ class TerminalView @JvmOverloads constructor(
     private var mCursorInvisibleIgnoreOnce = false
 
     private var mScaleFactor = 1f
-    private val mGestureRecognizer: GestureAndScaleRecognizer
-    private val mScroller: Scroller
+    private lateinit var mGestureRecognizer: GestureAndScaleRecognizer
+    private lateinit var mScroller: Scroller
     private var mMouseScrollStartX = -1
     private var mMouseScrollStartY = -1
     private var mMouseStartDownTime = -1L
@@ -141,7 +141,7 @@ class TerminalView @JvmOverloads constructor(
             override fun onUp(event: MotionEvent): Boolean {
                 mScrollRemainder = 0f
                 val emu = mEmulator
-                if (emu != null && emu.isMouseTrackingActive &&
+                if (emu != null && emu.isMouseTrackingActive() &&
                     !event.isFromSource(InputDevice.SOURCE_MOUSE) &&
                     !isSelectingText() && !scrolledWithFinger) {
                     sendMouseEventCode(event, TerminalEmulator.MOUSE_LEFT_BUTTON, true)
@@ -165,7 +165,7 @@ class TerminalView @JvmOverloads constructor(
 
             override fun onScroll(e: MotionEvent, distanceX: Float, distanceY: Float): Boolean {
                 val emu = mEmulator ?: return true
-                if (emu.isMouseTrackingActive && e.isFromSource(InputDevice.SOURCE_MOUSE)) {
+                if (emu.isMouseTrackingActive() && e.isFromSource(InputDevice.SOURCE_MOUSE)) {
                     sendMouseEventCode(e, TerminalEmulator.MOUSE_LEFT_BUTTON_MOVED, true)
                 } else {
                     scrolledWithFinger = true
@@ -188,17 +188,17 @@ class TerminalView @JvmOverloads constructor(
             override fun onFling(e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
                 val emu = mEmulator ?: return true
                 if (!mScroller.isFinished) return true
-                val mouseTracking = emu.isMouseTrackingActive
+                val mouseTracking = emu.isMouseTrackingActive()
                 val SCALE = 0.25f
                 if (mouseTracking) {
-                    mScroller.fling(0, 0, 0, -(velocityY * SCALE).toInt(), 0, 0, -emu.rows / 2, emu.rows / 2)
+                    mScroller.fling(0, 0, 0, -(velocityY * SCALE).toInt(), 0, 0, -emu.getCols() / 2, emu.getCols() / 2)
                 } else {
-                    mScroller.fling(0, mTopRow, 0, -(velocityY * SCALE).toInt(), 0, 0, -emu.activeTranscriptRows, 0)
+                    mScroller.fling(0, mTopRow, 0, -(velocityY * SCALE).toInt(), 0, 0, -emu.getActiveTranscriptRows(), 0)
                 }
                 post(object : Runnable {
                     var mLastY = 0
                     override fun run() {
-                        if (mouseTracking != mEmulator?.isMouseTrackingActive) {
+                        if (mouseTracking != mEmulator?.isMouseTrackingActive()) {
                             mScroller.abortAnimation()
                             return
                         }
@@ -218,7 +218,7 @@ class TerminalView @JvmOverloads constructor(
             override fun onDoubleTap(e: MotionEvent): Boolean = false
 
             override fun onLongPress(event: MotionEvent) {
-                if (mGestureRecognizer.isInProgress) return
+                if (mGestureRecognizer.isInProgress()) return
                 if (mClient?.onLongPress(event) == true) return
                 if (!isSelectingText()) {
                     performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
@@ -289,8 +289,8 @@ class TerminalView @JvmOverloads constructor(
     override fun invalidate(l: Int, t: Int, r: Int, b: Int) { invalidate() }
 
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
-        if (mClient?.isTerminalViewSelected == true) {
-            outAttrs.inputType = if (mClient?.shouldEnforceCharBasedInput == true) {
+        if (mClient?.isTerminalViewSelected() == true) {
+            outAttrs.inputType = if (mClient?.shouldEnforceCharBasedInput() == true) {
                 InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             } else {
                 InputType.TYPE_NULL
@@ -304,8 +304,8 @@ class TerminalView @JvmOverloads constructor(
             override fun finishComposingText(): Boolean {
                 if (TERMINAL_VIEW_KEY_LOGGING_ENABLED) mClient?.logInfo(LOG_TAG, "IME: finishComposingText()")
                 super.finishComposingText()
-                sendTextToTerminal(editable)
-                editable.clear()
+                sendTextToTerminal(editable ?: "")
+                editable?.clear()
                 return true
             }
 
@@ -315,9 +315,9 @@ class TerminalView @JvmOverloads constructor(
                 }
                 super.commitText(text, newCursorPosition)
                 if (mEmulator == null) return true
-                val content = editable
+                val content = editable ?: ""
                 sendTextToTerminal(content)
-                content.clear()
+                if (editable != null) content.clear()
                 return true
             }
 
@@ -346,7 +346,7 @@ class TerminalView @JvmOverloads constructor(
                     } else {
                         codePoint = firstChar.code
                     }
-                    val finalCodePoint = if (mClient?.readShiftKey == true) Character.toUpperCase(codePoint) else codePoint
+                    val finalCodePoint = if (mClient?.readShiftKey() == true) Character.toUpperCase(codePoint) else codePoint
                     var ctrlHeld = false
                     var cp = finalCodePoint
                     if (cp <= 31 && cp != 27) {
@@ -367,9 +367,9 @@ class TerminalView @JvmOverloads constructor(
         }
     }
 
-    override fun computeVerticalScrollRange(): Int = mEmulator?.activeRows ?: 1
-    override fun computeVerticalScrollExtent(): Int = mEmulator?.rows ?: 1
-    override fun computeVerticalScrollOffset(): Int = mEmulator?.let { it.activeRows + mTopRow - it.rows } ?: 1
+    override fun computeVerticalScrollRange(): Int = mEmulator?.getActiveRows() ?: 1
+    override fun computeVerticalScrollExtent(): Int = mEmulator?.getRows() ?: 1
+    override fun computeVerticalScrollOffset(): Int = mEmulator?.let { it.getActiveRows() + mTopRow - it.getRows() } ?: 1
 
     fun onScreenUpdated() = onScreenUpdated(false)
 
@@ -381,19 +381,19 @@ class TerminalView @JvmOverloads constructor(
         }
         if (!mEnginePointerSet) {
             mEnginePointerSet = true
-            val enginePtr = emu.nativePointer
+            val enginePtr = emu.getNativePointer()
             Log.i("TerminalView-Engine", ">>> FIRST onScreenUpdated - Calling nativeSetEnginePointer with ptr=$enginePtr")
             nativeSetEnginePointer(enginePtr)
         }
-        val rowsInHistory = emu.activeTranscriptRows
+        val rowsInHistory = emu.getActiveTranscriptRows()
         if (mTopRow < -rowsInHistory) mTopRow = -rowsInHistory
 
         var skipping = skipScrolling
-        if (isSelectingText() || emu.isAutoScrollDisabled) {
-            val rowShift = emu.scrollCounter
+        if (isSelectingText() || emu.isAutoScrollDisabled()) {
+            val rowShift = emu.getScrollCounter()
             if (-mTopRow + rowShift > rowsInHistory) {
                 if (isSelectingText()) stopTextSelectionMode()
-                if (emu.isAutoScrollDisabled) { mTopRow = -rowsInHistory; skipping = true }
+                if (emu.isAutoScrollDisabled()) { mTopRow = -rowsInHistory; skipping = true }
             } else {
                 skipping = true
                 mTopRow -= rowShift
@@ -456,12 +456,12 @@ class TerminalView @JvmOverloads constructor(
         val emu = mEmulator ?: return
         val up = rowsDown < 0
         repeat(Math.abs(rowsDown)) {
-            if (emu.isMouseTrackingActive) {
+            if (emu.isMouseTrackingActive()) {
                 sendMouseEventCode(event, if (up) TerminalEmulator.MOUSE_WHEELUP_BUTTON else TerminalEmulator.MOUSE_WHEELDOWN_BUTTON, true)
-            } else if (emu.isAlternateBufferActive) {
+            } else if (emu.isAlternateBufferActive()) {
                 handleKeyCode(if (up) KeyEvent.KEYCODE_DPAD_UP else KeyEvent.KEYCODE_DPAD_DOWN, 0)
             } else {
-                mTopRow = Math.min(0, Math.max(-emu.activeTranscriptRows, mTopRow + if (up) -1 else 1))
+                mTopRow = Math.min(0, Math.max(-emu.getActiveTranscriptRows(), mTopRow + if (up) -1 else 1))
                 if (!awakenScrollBars()) invalidate()
             }
         }
@@ -497,7 +497,7 @@ class TerminalView @JvmOverloads constructor(
                 val text = clipData?.getItemAt(0)?.coerceToText(context)
                 if (!TextUtils.isEmpty(text)) emu.paste(text.toString())
             }
-            if (emu.isMouseTrackingActive) {
+            if (emu.isMouseTrackingActive()) {
                 when (event.action) {
                     MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP ->
                         sendMouseEventCode(event, TerminalEmulator.MOUSE_LEFT_BUTTON, event.action == MotionEvent.ACTION_DOWN)
@@ -520,7 +520,7 @@ class TerminalView @JvmOverloads constructor(
                     stopTextSelectionMode()
                     return true
                 }
-                if (mClient?.shouldBackButtonBeMappedToEscape == true) {
+                if (mClient?.shouldBackButtonBeMappedToEscape() == true) {
                     return when (event.action) {
                         KeyEvent.ACTION_DOWN -> onKeyDown(keyCode, event)
                         KeyEvent.ACTION_UP -> onKeyUp(keyCode, event)
@@ -528,7 +528,7 @@ class TerminalView @JvmOverloads constructor(
                     }
                 }
             }
-            if (mClient?.shouldUseCtrlSpaceWorkaround == true && keyCode == KeyEvent.KEYCODE_SPACE && event.isCtrlPressed) {
+            if (mClient?.shouldUseCtrlSpaceWorkaround() == true && keyCode == KeyEvent.KEYCODE_SPACE && event.isCtrlPressed) {
                 return onKeyDown(keyCode, event)
             }
         }
@@ -544,7 +544,7 @@ class TerminalView @JvmOverloads constructor(
             invalidate()
             return true
         }
-        if (event.isSystem && (!mClient.shouldBackButtonBeMappedToEscape || keyCode != KeyEvent.KEYCODE_BACK)) {
+        if (event.isSystem && !(mClient?.shouldBackButtonBeMappedToEscape() == true) && keyCode != KeyEvent.KEYCODE_BACK) {
             return super.onKeyDown(keyCode, event)
         }
         if (event.action == KeyEvent.ACTION_MULTIPLE && keyCode == KeyEvent.KEYCODE_UNKNOWN) {
@@ -554,9 +554,9 @@ class TerminalView @JvmOverloads constructor(
         if (keyCode == KeyEvent.KEYCODE_LANGUAGE_SWITCH) return super.onKeyDown(keyCode, event)
 
         val metaState = event.metaState
-        val controlDown = event.isCtrlPressed || mClient.readControlKey
-        val leftAltDown = (metaState and KeyEvent.META_ALT_LEFT_ON) != 0 || mClient.readAltKey
-        val shiftDown = event.isShiftPressed || mClient.readShiftKey
+        val controlDown = event.isCtrlPressed || mClient.readControlKey()
+        val leftAltDown = (metaState and KeyEvent.META_ALT_LEFT_ON) != 0 || mClient.readAltKey()
+        val shiftDown = event.isShiftPressed || mClient.readShiftKey()
         val rightAltDownFromEvent = (metaState and KeyEvent.META_ALT_RIGHT_ON) != 0
 
         var keyMod = 0
@@ -574,7 +574,7 @@ class TerminalView @JvmOverloads constructor(
         if (!rightAltDownFromEvent) bitsToClear = bitsToClear or KeyEvent.META_ALT_ON or KeyEvent.META_ALT_LEFT_ON
         var effectiveMetaState = event.metaState and bitsToClear.inv()
         if (shiftDown) effectiveMetaState = effectiveMetaState or KeyEvent.META_SHIFT_ON or KeyEvent.META_SHIFT_LEFT_ON
-        if (mClient.readFnKey) effectiveMetaState = effectiveMetaState or KeyEvent.META_FUNCTION_ON
+        if (mClient.readFnKey()) effectiveMetaState = effectiveMetaState or KeyEvent.META_FUNCTION_ON
 
         val result = event.getUnicodeChar(effectiveMetaState)
         if (TERMINAL_VIEW_KEY_LOGGING_ENABLED) mClient?.logInfo(LOG_TAG, "KeyEvent#getUnicodeChar($effectiveMetaState) returned: $result")
@@ -602,8 +602,8 @@ class TerminalView @JvmOverloads constructor(
         }
         val session = mTermSession ?: return
         mEmulator?.setCursorBlinkState(true)
-        val controlDown = controlDownFromEvent || mClient.readControlKey
-        val altDown = leftAltDownFromEvent || mClient.readAltKey
+        val controlDown = controlDownFromEvent || mClient.readControlKey()
+        val altDown = leftAltDownFromEvent || mClient.readAltKey()
         if (mClient?.onCodePoint(codePoint, controlDown, session) == true) return
 
         var cp = codePoint
@@ -650,7 +650,7 @@ class TerminalView @JvmOverloads constructor(
         if ((keyCode == KeyEvent.KEYCODE_PAGE_UP || keyCode == KeyEvent.KEYCODE_PAGE_DOWN) && shiftDown) {
             val time = SystemClock.uptimeMillis()
             val motionEvent = MotionEvent.obtain(time, time, MotionEvent.ACTION_DOWN, 0f, 0f, 0)
-            doScroll(motionEvent, if (keyCode == KeyEvent.KEYCODE_PAGE_UP) -mEmulator.rows else mEmulator.rows)
+            doScroll(motionEvent, if (keyCode == KeyEvent.KEYCODE_PAGE_UP) -mEmulator.getRows() else mEmulator.getRows())
             motionEvent.recycle()
             return true
         }
@@ -689,12 +689,12 @@ class TerminalView @JvmOverloads constructor(
         val newColumns = Math.max(4, (viewWidth / (getFontWidth() * mScaleFactor)).toInt())
         val newRows = Math.max(4, ((viewHeight / mScaleFactor - getFontLineSpacingAndAscent()) / getFontLineSpacing()).toInt())
 
-        if (!session.isEngineInitialized) {
+        if (!session.isEngineInitialized()) {
             session.updateSize(newColumns, newRows, (getFontWidth() * mScaleFactor).toInt(), (getFontLineSpacing() * mScaleFactor).toInt())
             return
         }
         val emu = mEmulator
-        if (emu == null || newColumns != emu.cols || newRows != emu.rows) {
+        if (emu == null || newColumns != emu.getCols() || newRows != emu.getRows()) {
             session.updateSize(newColumns, newRows, (getFontWidth() * mScaleFactor).toInt(), (getFontLineSpacing() * mScaleFactor).toInt())
             mEmulator = session.emulator
             mClient?.onEmulatorSet()
@@ -744,14 +744,14 @@ class TerminalView @JvmOverloads constructor(
     fun getCurrentSession(): TerminalSession? = mTermSession
 
     private val text: CharSequence
-        get() = mEmulator?.getSelectedText(0, mTopRow, mEmulator!!.cols, mTopRow + mEmulator!!.rows) ?: ""
+        get() = mEmulator?.getSelectedText(0, mTopRow, mEmulator!!.getCols(), mTopRow + mEmulator!!.getRows()) ?: ""
 
     fun getCursorX(x: Float): Int = (x / (getFontWidth() * mScaleFactor)).toInt()
     fun getCursorY(y: Float): Int = ((y / mScaleFactor - getFontLineSpacingAndAscent()) / getFontLineSpacing()).toInt() + mTopRow
 
     fun getPointX(cx: Int): Int {
         var c = cx
-        if (mEmulator != null && c > mEmulator!!.cols) c = mEmulator!!.cols
+        if (mEmulator != null && c > mEmulator!!.getCols()) c = mEmulator!!.getCols()
         return Math.round(c * getFontWidth() * mScaleFactor)
     }
 
@@ -808,13 +808,13 @@ class TerminalView @JvmOverloads constructor(
     @RequiresApi(Build.VERSION_CODES.O)
     fun getAutoFillManagerService(): AutofillManager? = runCatching {
         context.getSystemService(AutofillManager::class.java)
-    }.onFailure { mClient?.logStackTraceWithMessage(LOG_TAG, "Failed to get AutofillManager service", it) }.getOrNull()
+    }.onFailure { mClient?.logStackTraceWithMessage(LOG_TAG, "Failed to get AutofillManager service", it as? Exception) }.getOrNull()
 
     @RequiresApi(Build.VERSION_CODES.O)
     fun isAutoFillEnabled(): Boolean = runCatching {
         val m = getAutoFillManagerService()
         m != null && m.isEnabled
-    }.onFailure { mClient?.logStackTraceWithMessage(LOG_TAG, "Failed to check Autofill", it) }.getOrNull() ?: false
+    }.onFailure { mClient?.logStackTraceWithMessage(LOG_TAG, "Failed to check Autofill", it as? Exception) }.getOrNull() ?: false
 
     @RequiresApi(Build.VERSION_CODES.O)
     fun requestAutoFill(autoFillHints: Array<String>?) {
@@ -827,7 +827,7 @@ class TerminalView @JvmOverloads constructor(
                 mAutoFillHints = autoFillHints
                 m.requestAutofill(this)
             }
-        }.onFailure { mClient?.logStackTraceWithMessage(LOG_TAG, "Failed to request Autofill", it) }
+        }.onFailure { mClient?.logStackTraceWithMessage(LOG_TAG, "Failed to request Autofill", it as? Exception) }
     }
 
     fun requestAutoFillUsername() {
@@ -847,7 +847,7 @@ class TerminalView @JvmOverloads constructor(
                 resetAutoFill()
                 m.cancel()
             }
-        }.onFailure { mClient?.logStackTraceWithMessage(LOG_TAG, "Failed to cancel Autofill", it) }
+        }.onFailure { mClient?.logStackTraceWithMessage(LOG_TAG, "Failed to cancel Autofill", it as? Exception) }
     }
 
     // --- Cursor Blinker ---
@@ -874,7 +874,7 @@ class TerminalView @JvmOverloads constructor(
         emu.setCursorBlinkingEnabled(false)
         if (start) {
             if (mTerminalCursorBlinkerRate < TERMINAL_CURSOR_BLINK_RATE_MIN || mTerminalCursorBlinkerRate > TERMINAL_CURSOR_BLINK_RATE_MAX) return
-            if (startOnlyIfCursorEnabled && !emu.isCursorEnabled) {
+            if (startOnlyIfCursorEnabled && !emu.isCursorEnabled()) {
                 if (TERMINAL_VIEW_KEY_LOGGING_ENABLED) mClient?.logVerbose(LOG_TAG, "Ignoring start - cursor not enabled")
                 return
             }
@@ -887,9 +887,11 @@ class TerminalView @JvmOverloads constructor(
     }
 
     private fun stopTerminalCursorBlinker() {
-        if (mTerminalCursorBlinkerHandler != null && mTerminalCursorBlinkerRunnable != null) {
+        val handler = mTerminalCursorBlinkerHandler
+        val runnable = mTerminalCursorBlinkerRunnable
+        if (handler != null && runnable != null) {
             if (TERMINAL_VIEW_KEY_LOGGING_ENABLED) mClient?.logVerbose(LOG_TAG, "Stopping cursor blinker")
-            mTerminalCursorBlinkerHandler!!.removeCallbacks(mTerminalCursorBlinkerRunnable)
+            handler.removeCallbacks(runnable)
         }
     }
 
@@ -904,9 +906,9 @@ class TerminalView @JvmOverloads constructor(
                 val emu = emulator ?: return
                 cursorVisible = !cursorVisible
                 emu.setCursorBlinkState(cursorVisible)
-                val cursorX = emu.cursorCol
-                val cursorY = emu.cursorRow
-                if (cursorY >= mTopRow && cursorY < mTopRow + emu.rows) {
+                val cursorX = emu.getCursorCol()
+                val cursorY = emu.getCursorRow()
+                if (cursorY >= mTopRow && cursorY < mTopRow + emu.getRows()) {
                     val left = cursorX * getFontWidth()
                     val top = (cursorY - mTopRow) * getFontLineSpacing()
                     val right = left + getFontWidth() * 2
@@ -936,7 +938,7 @@ class TerminalView @JvmOverloads constructor(
         if (mEmulator != null) mTextSelectionCursorController?.render()
     }
 
-    fun isSelectingText(): Boolean = mTextSelectionCursorController?.isActive ?: false
+    fun isSelectingText(): Boolean = mTextSelectionCursorController?.isActive() == true
 
     fun getSelectedText(): String? = if (isSelectingText()) mTextSelectionCursorController?.selectedText else null
     fun getStoredSelectedText(): String? = mTextSelectionCursorController?.getStoredSelectedText()
