@@ -235,19 +235,9 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     }
 
     @Override
-    public void onBell() {
-        onBell(mActivity.getCurrentSession());
-    }
-
-    @Override
     public void onColorsChanged(@NonNull TerminalSession changedSession) {
         if (mActivity.getCurrentSession() == changedSession)
             updateBackgroundColor();
-    }
-
-    @Override
-    public void onColorsChanged() {
-        onColorsChanged(mActivity.getCurrentSession());
     }
 
     @Override

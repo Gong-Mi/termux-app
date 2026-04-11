@@ -72,6 +72,7 @@ class TerminalView @JvmOverloads constructor(
 
     // --- State ---
     var mTermSession: TerminalSession? = null
+    @JvmField
     var mEmulator: TerminalEmulator? = null
     var mClient: TerminalViewClient? = null
     var mTopRow: Int = 0

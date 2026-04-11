@@ -42,7 +42,9 @@ class TerminalSession(
         private const val LOG_TAG = "TerminalSession"
     }
 
+    @JvmField
     val mHandle: String = UUID.randomUUID().toString()
+    @JvmField
     var mEmulator: TerminalEmulator? = null
     @JvmField
     var mSessionName: String? = null
