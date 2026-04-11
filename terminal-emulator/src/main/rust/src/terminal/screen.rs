@@ -117,7 +117,7 @@ impl TerminalRow {
         let cols = self.text.len();
         if x1 >= cols { return String::new(); }
         let end = min(x2, cols);
-        self.text[x1..end].iter().collect()
+        self.text[x1..end].iter().filter(|&&c| c != '\0').collect()
     }
 
     pub fn get_word_at(&self, column: usize) -> String {
@@ -206,8 +206,20 @@ impl Screen {
         for y in sy..=ey {
             let row = self.get_row(y);
             let s_x = if y == sy { max(0, sx) as usize } else { 0 };
-            let e_x = if y == ey { min(self.cols, ex + 1) as usize } else { self.cols as usize };
-            if s_x < e_x { res.push_str(&row.get_selected_text(s_x, e_x)); }
+            let mut e_x = if y == ey { min(self.cols, ex + 1) as usize } else { self.cols as usize };
+            
+            // Trim trailing spaces for lines that don't wrap and aren't fully selected
+            let space_used = row.get_space_used();
+            if e_x > space_used && (!row.line_wrap || y == ey) {
+                e_x = space_used;
+            }
+            
+            if s_x < e_x {
+                let text = row.get_selected_text(s_x, e_x);
+                // Filter out the '\0' placeholder characters used for wide chars
+                let filtered: String = text.chars().filter(|&c| c != '\0').collect();
+                res.push_str(&filtered);
+            }
             if y < ey && !row.line_wrap { res.push('\n'); }
         }
         res
