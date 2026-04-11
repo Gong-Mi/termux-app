@@ -378,7 +378,11 @@ impl TerminalRenderer {
                     let style_match = cell_style == style;
                     let sel_match = cell_sel == sel;
 
-                    if style_match && sel_match {
+                    // 核心修复：宽字符占位符 \0 必须跟随其前导字符，即使样式不匹配也不应断开 run
+                    // 否则会导致渲染列偏移，出现颜色与字符对不上的现象
+                    let is_placeholder = row_data.text[c] == '\0';
+
+                    if (style_match && sel_match) || is_placeholder {
                         let ch = row_data.text[c];
                         if ch != '\0' {
                             self.run_buf.push(ch);
@@ -396,8 +400,8 @@ impl TerminalRenderer {
                                 run_measured += w;
                             }
                         }
-                        // \0 是宽字符占位符，跳过
-                        c += if ch == '\0' { 1 } else { char_wc_width(ch as u32) };
+                        // 移动到下一个单元格
+                        c += 1;
                     } else {
                         break;
                     }
@@ -541,7 +545,10 @@ impl TerminalRenderer {
                     let style_match = cell_style == style;
                     let sel_match = cell_sel == sel;
 
-                    if style_match && sel_match {
+                    // 核心修复：宽字符占位符 \0 必须跟随其前导字符
+                    let is_placeholder = row_text[c] == '\0';
+
+                    if (style_match && sel_match) || is_placeholder {
                         let ch = row_text[c];
                         if ch != '\0' {
                             self.run_buf.push(ch);
@@ -558,7 +565,7 @@ impl TerminalRenderer {
                                 run_measured += w;
                             }
                         }
-                        c += if ch == '\0' { 1 } else { char_wc_width(ch as u32) };
+                        c += 1;
                     } else {
                         break;
                     }
