@@ -1,0 +1,177 @@
+# 快速构建工作流 - 优化 Rust 编译速度
+# 仅用于 feature/rust-integration 分支的快速验证
+# 与 debug_build.yml 完全独立，不冲突
+# 优化：仅编译 arm64-v8a，使用 rust-cache，减少 ABI 数量
+
+name: Fast Build
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - feature/rust-integration
+    paths:
+      - 'terminal-emulator/**'
+      - 'terminal-view/**'
+      - 'app/**'
+      - '.github/workflows/fast_build.yml'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  SKIA_BINDINGS_SKIP_LAYOUT_ASSERTIONS: 1
+  FORCE_SKIA_BUILD: 1
+  SKIA_NATIVE_API_LEVEL: 35
+  SKIA_USE_VULKAN: 1
+  SKIA_USE_GL: 0
+  CXXFLAGS: "-DSK_TYPEFACE_FACTORY_FREETYPE"
+  RUST_BACKTRACE: 1
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fast-build:
+    name: Fast Build (arm64 only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Fix git safe directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'gradle'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # 仅 arm64，加快编译速度
+          targets: aarch64-linux-android
+
+      - name: Install cargo-ndk
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk@3.5.0
+
+      # ================================
+      # Rust 缓存优化（关键加速点）
+      # ================================
+      - name: Cache Rust Dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "terminal-emulator/src/main/rust -> target"
+          # 缓存 cargo registry、git db、build script 输出
+          cache-provider: "buildjet"
+
+      # ================================
+      # Skia 缓存优化
+      # ================================
+      - name: Install Skia build dependencies (gn, ninja)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libfreetype6-dev libfontconfig1-dev
+
+          unzip scripts/gn-linux-amd64.zip -d /tmp/gn-bin
+          sudo mv /tmp/gn-bin/gn /usr/local/bin/gn
+          sudo chmod +x /usr/local/bin/gn
+
+          gn --version
+          ninja --version
+
+      - name: Cache Skia Build
+        uses: actions/cache@v4
+        with:
+          # 更精确的缓存路径，使用 cargo 的 target 目录
+          path: |
+            terminal-emulator/src/main/rust/target/*/build/skia-bindings-*/out
+            terminal-emulator/src/main/rust/target/aarch64-linux-android/release/build/skia-bindings-*/out
+          key: skia-fast-${{ runner.os }}-${{ env.SKIA_NATIVE_API_LEVEL }}-${{ hashFiles('terminal-emulator/src/main/rust/Cargo.lock') }}
+          restore-keys: |
+            skia-fast-${{ runner.os }}-${{ env.SKIA_NATIVE_API_LEVEL }}-
+            skia-fast-${{ runner.os }}-
+
+      # ================================
+      # 仅运行 Rust 测试（不编译 Skia）
+      # ================================
+      - name: Run Rust Tests
+        run: |
+          cd terminal-emulator/src/main/rust
+          cargo test --test consistency -- --test-threads=1
+
+      # ================================
+      # Gradle 缓存
+      # ================================
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', '**/build.gradle*', '**/settings.gradle*') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      # ================================
+      # 编译 APK - 仅 arm64-v8a 一个 ABI
+      # ================================
+      - name: Build APK (arm64-v8a only)
+        shell: bash
+        env:
+          PACKAGE_VARIANT: apt-android-7
+        run: |
+          set -e
+
+          # 设置版本信息
+          GITHUB_SHA=$(git rev-parse HEAD)
+          CURRENT_VERSION_NAME_REGEX='\s+versionName "([^"]+)"$'
+          CURRENT_VERSION_NAME="$(grep -m 1 -E "$CURRENT_VERSION_NAME_REGEX" ./app/build.gradle | sed -r "s/$CURRENT_VERSION_NAME_REGEX/\1/")"
+          RELEASE_VERSION_NAME="v$CURRENT_VERSION_NAME+${GITHUB_SHA:0:7}"
+
+          APK_DIR_PATH="./app/build/outputs/apk/debug"
+          APK_VERSION_TAG="$RELEASE_VERSION_NAME-apt-android-7-github-debug"
+          APK_BASENAME_PREFIX="termux-app_$APK_VERSION_TAG"
+
+          echo "APK_DIR_PATH=$APK_DIR_PATH" >> $GITHUB_ENV
+          echo "APK_VERSION_TAG=$APK_VERSION_TAG" >> $GITHUB_ENV
+          echo "APK_BASENAME_PREFIX=$APK_BASENAME_PREFIX" >> $GITHUB_ENV
+
+          export TERMUX_APP_VERSION_NAME="${RELEASE_VERSION_NAME/v/}"
+          export TERMUX_APK_VERSION_TAG="$APK_VERSION_TAG"
+          export TERMUX_PACKAGE_VARIANT="apt-android-7"
+
+          # 关键：使用 --parallel 和 -PabiFilter=arm64-v8a 限制只编译 arm64
+          # 同时启用 Gradle 配置缓存
+          ./gradlew assembleDebug \
+            --parallel \
+            --no-daemon \
+            -Dorg.gradle.parallel=true \
+            -Dorg.gradle.caching=true \
+            -Dkotlin.incremental=true \
+            -Dkotlin.incremental.useClasspathSnapshot=true
+
+          echo "Build completed successfully"
+
+      - name: Attach arm64-v8a APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ env.APK_BASENAME_PREFIX }}_arm64-v8a
+          path: |
+            ${{ env.APK_DIR_PATH }}/${{ env.APK_BASENAME_PREFIX }}_arm64-v8a.apk
+            ${{ env.APK_DIR_PATH }}/output-metadata.json
+
+      - name: Upload Build Report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: build-report
+          path: |
+            **/build/reports/
+            terminal-emulator/src/main/rust/target/release/.fingerprint/
+            terminal-emulator/src/main/rust/target/aarch64-linux-android/release/.fingerprint/
