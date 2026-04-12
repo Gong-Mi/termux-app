@@ -34,9 +34,17 @@ impl RenderFrame {
         let screen = if state.use_alternate_buffer { &state.alt_screen } else { &state.main_screen };
 
         let mut row_data = Vec::with_capacity(rows);
+        let start_row = -(screen.active_transcript_rows as i32);
+        let end_row = screen.rows as i32;
+
         for r in top_row..(top_row + rows as i32) {
-            let row = screen.get_row(r);
-            row_data.push((row.text.clone(), row.styles.clone()));
+            if r >= start_row && r < end_row {
+                let row = screen.get_row(r);
+                row_data.push((row.text.clone(), row.styles.clone()));
+            } else {
+                // 逻辑之外的行返回空白
+                row_data.push((vec![' '; cols], vec![crate::terminal::style::STYLE_NORMAL; cols]));
+            }
         }
 
         Self {
@@ -501,12 +509,13 @@ impl TerminalRenderer {
     ) {
         let palette = &frame.palette;
 
-        canvas.save();
-        canvas.scale((scale, scale));
-
-        // 背景清屏
+        // 彻底重置矩阵并清除背景，防止上一帧的平移或缩放污染当前清屏结果
+        canvas.reset_matrix();
         let bg_color = palette[257];
         canvas.clear(Color::new(bg_color));
+
+        canvas.save();
+        canvas.scale((scale, scale));
 
         // canvas.translate((0.0, -scroll_offset)); // 不再使用 translate，因为我们已经截取了正确的可见行
 
