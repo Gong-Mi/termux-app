@@ -432,15 +432,29 @@ impl ScreenState {
     }
 
     pub fn decstr_soft_reset(&mut self) {
+        // 重置所有应该在软复位时恢复的模式
         self.modes.reset(DECSET_BIT_ORIGIN_MODE);
+        self.modes.reset(MODE_LNM);
+        self.modes.reset(MODE_INSERT);
         self.modes.set(DECSET_BIT_AUTOWRAP);
         self.cursor_enabled = true;
+        self.application_cursor_keys = false;
+        self.bracketed_paste = false;
+        self.send_focus_events = false;
+        self.mouse_tracking = false;
+        self.mouse_button_event = false;
+        self.sgr_mouse = false;
         self.top_margin = 0;
         self.bottom_margin = self.rows;
+        self.left_margin = 0;
+        self.right_margin = self.cols;
         self.current_style = STYLE_NORMAL;
         self.fore_color = COLOR_INDEX_FOREGROUND as u64;
         self.back_color = COLOR_INDEX_BACKGROUND as u64;
         self.effect = 0;
+        self.use_line_drawing_g0 = false;
+        self.use_line_drawing_g1 = false;
+        self.use_line_drawing_uses_g0 = true;
     }
 
     pub fn cursor_horizontal_relative(&mut self, n: i32) { self.cursor.move_relative(n, 0, self.cols, self.rows); }

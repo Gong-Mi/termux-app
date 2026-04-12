@@ -89,6 +89,12 @@ impl ScreenState {
                         if set { self.modes.set(DECSET_BIT_BRACKETED_PASTE_MODE) } else { self.modes.reset(DECSET_BIT_BRACKETED_PASTE_MODE) }
                         self.bracketed_paste = set;
                     },
+                    20 => {
+                        // LNM (Linefeed/Newline Mode) - ANSI mode 20
+                        // 标准是 CSI 20 h (非私有)，但某些软件会发送 CSI ? 20 h
+                        // 为兼容性在此也处理私有模式版本
+                        if set { self.modes.set(MODE_LNM); } else { self.modes.reset(MODE_LNM); }
+                    },
                     _ => { /* 未知DECSET模式，忽略 */ }
                 }
             }

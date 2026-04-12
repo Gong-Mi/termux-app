@@ -110,11 +110,11 @@ fn handle_print_internal(state: &mut ScreenState, c: char) {
     // 5. 更新光标位置
     if state.cursor.x + char_width >= state.right_margin {
         // 到达或超过边界：停留在最后一列并标记 about_to_wrap
-        state.cursor.x = state.right_margin - char_width; 
+        state.cursor.x = state.right_margin - char_width;
         state.cursor.about_to_wrap = true;
     } else {
         state.cursor.x += char_width;
         state.cursor.about_to_wrap = false;
     }
-    }
+}
 
