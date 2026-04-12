@@ -20,10 +20,10 @@ pub fn handle_control(state: &mut ScreenState, byte: u8) -> bool {
         } // HT
         0x0a..=0x0c => {
             // LF, VT, FF
-            // 修复：LF 必须同时回到行首（隐式 CR），这是 POSIX 终端标准行为
-            // 同时清除 about_to_wrap，防止下一个字符再次触发换行
+            // 标准 VT100 行为：LF 只下移一行，不回到行首（与 upstream Java 一致）
+            // Shell 通常发送 \r\n 来同时完成回车和换行
+            // LNM (DECSET 20) 模式未实现，因此 LF 永远不包含隐式 CR
             state.cursor.about_to_wrap = false;
-            state.cursor.x = state.left_margin;
             if state.cursor.y < state.bottom_margin - 1 {
                 state.cursor.y += 1;
             } else {
