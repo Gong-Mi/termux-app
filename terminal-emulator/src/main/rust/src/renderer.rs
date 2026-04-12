@@ -138,6 +138,17 @@ impl FontCache {
         }
     }
 
+    fn get_font(&self, bold: bool, italic: bool, has_non_ascii: bool) -> &Font {
+        match (has_non_ascii, bold, italic) {
+            (false, false, false) => &self.font_mono,
+            (false, true, false) => &self.font_bold,
+            (false, false, true) => &self.font_italic,
+            (false, true, true) => &self.font_bold_italic,
+            (true, false, _) => &self.font_fallback,
+            (true, true, _) => &self.font_fallback_bold,
+        }
+    }
+
     fn get_font_for_char(&self, ch: char, bold: bool, italic: bool) -> &Font {
         let font_mgr = FontMgr::new();
         // 1. 尝试首选字体 (monospace)
