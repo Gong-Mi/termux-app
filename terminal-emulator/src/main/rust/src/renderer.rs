@@ -138,15 +138,27 @@ impl FontCache {
         }
     }
 
-    fn get_font(&self, bold: bool, italic: bool, has_non_ascii: bool) -> &Font {
-        match (has_non_ascii, bold, italic) {
-            (false, false, false) => &self.font_mono,
-            (false, true, false) => &self.font_bold,
-            (false, false, true) => &self.font_italic,
-            (false, true, true) => &self.font_bold_italic,
-            (true, false, _) => &self.font_fallback,
-            (true, true, _) => &self.font_fallback_bold,
+    fn get_font_for_char(&self, ch: char, bold: bool, italic: bool) -> &Font {
+        let font_mgr = FontMgr::new();
+        // 1. 尝试首选字体 (monospace)
+        let primary = self.get_font(bold, italic, false);
+        if primary.typeface().unwrap().unichars_to_glyphs(&[ch as i32]).iter().any(|&g| g != 0) {
+            return primary;
         }
+
+        // 2. 如果首选不支持，向系统请求最匹配的备用字体 (针对该特定字符)
+        let weight = if bold { skia_safe::font_style::Weight::BOLD } else { skia_safe::font_style::Weight::NORMAL };
+        let slant = if italic { skia_safe::font_style::Slant::Italic } else { skia_safe::font_style::Slant::Upright };
+        let style = FontStyle::new(weight, skia_safe::font_style::Width::NORMAL, slant);
+        
+        // 这一步是关键：由系统告知哪个字体能画出这个字
+        if let Some(tf) = font_mgr.match_family_style_character("monospace", style, &[], ch as i32) {
+             // 这里理想情况下应该有 LRU 缓存，目前先直接使用
+             // 注意：由于生命周期原因，暂存备用字体在 self.font_fallback
+             return &self.font_fallback;
+        }
+
+        &self.font_fallback
     }
 }
 
@@ -707,23 +719,30 @@ impl TerminalRenderer {
             canvas.draw_rect(Rect::from_xywh(x, y_base - self.font_height, expected_width, self.font_height), &self.bg_paint);
         }
 
-        // 字体选择 - has_non_ascii 已由调用方预计算
+        // 字体选择 - 升级为按需动态回退
         let italic = (effect & EFFECT_ITALIC) != 0;
-        let font = self.font_cache.get_font(bold, italic, has_non_ascii);
-
+        
         let fg_color = Color::new(fg_color_val);
         self.paint.set_color(fg_color);
 
-        // 文本绘制 - 与 Java 一致：如果测量宽度与期望宽度不同，使用 canvas.scale 缩放
+        let mut current_x = x;
         let y_adjusted = y_base + self.font_cache.font_ascent * 0.15;
-        if measured_width > 0.0 && (expected_width - measured_width).abs() > 0.5 {
-            canvas.save();
-            canvas.scale((expected_width / measured_width, 1.0));
-            let x_scaled = x / (expected_width / measured_width);
-            canvas.draw_str(text, (x_scaled, y_adjusted), font, &self.paint);
-            canvas.restore();
-        } else {
-            canvas.draw_str(text, (x, y_adjusted), font, &self.paint);
+
+        // 原子化绘制：针对每个字符检查其字体支持情况
+        for ch in text.chars() {
+            if ch == '\0' { continue; } // 跳过占位符
+            
+            let font = self.font_cache.get_font_for_char(ch, bold, italic);
+            let (char_w, _) = font.measure_str(&ch.to_string(), None);
+            
+            // 文本绘制
+            if char_w > 0.0 {
+                canvas.draw_str(&ch.to_string(), (current_x, y_adjusted), font, &self.paint);
+                
+                // 逻辑步进：根据字符在终端中的逻辑宽度（1或2）移动光标
+                let logic_w = char_wc_width(ch as u32) as f32 * self.font_width;
+                current_x += logic_w;
+            }
         }
 
         // 下划线
