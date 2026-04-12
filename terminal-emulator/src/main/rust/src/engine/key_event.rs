@@ -1,5 +1,6 @@
 /// 按键事件处理 - 生成转义序列
 use crate::engine::state::ScreenState;
+use crate::terminal::modes::*;
 
 impl ScreenState {
     /// 处理按键事件 - 实现 KeyHandler.getCode() 的逻辑
@@ -9,6 +10,12 @@ impl ScreenState {
         const KEYCODE_DPAD_DOWN: i32 = 20;
         const KEYCODE_DPAD_LEFT: i32 = 21;
         const KEYCODE_DPAD_RIGHT: i32 = 22;
+        const KEYCODE_DPAD_CENTER: i32 = 23;
+        const KEYCODE_ENTER: i32 = 66;
+        const KEYCODE_TAB: i32 = 61;
+        const KEYCODE_DEL: i32 = 67;
+        const KEYCODE_FORWARD_DEL: i32 = 112;
+        const KEYCODE_INSERT: i32 = 124;
         const KEYCODE_MOVE_HOME: i32 = 122;
         const KEYCODE_MOVE_END: i32 = 123;
         const KEYCODE_PAGE_UP: i32 = 92;
@@ -25,11 +32,8 @@ impl ScreenState {
         const KEYCODE_F10: i32 = 140;
         const KEYCODE_F11: i32 = 141;
         const KEYCODE_F12: i32 = 142;
-        const KEYCODE_TAB: i32 = 61;
         const KEYCODE_ESCAPE: i32 = 111;
-        const KEYCODE_DEL: i32 = 67;
-        const KEYCODE_FORWARD_DEL: i32 = 112;
-        const KEYCODE_INSERT: i32 = 124;
+        const KEYCODE_NUMPAD_ENTER: i32 = 160;
 
         const KEYMOD_SHIFT: i32 = 0x20000000u32 as i32;
         const KEYMOD_ALT: i32 = 0x80000000u32 as i32;
@@ -45,8 +49,12 @@ impl ScreenState {
         if ctrl_down { key_mode |= 4; }
 
         let cursor_app = self.application_cursor_keys;
+        let keypad_application = self.modes.is_enabled(DECSET_BIT_APPLICATION_KEYPAD);
 
-        let escape_seq: Option<String> = match key_code {
+        match key_code {
+            KEYCODE_DPAD_CENTER | KEYCODE_ENTER => {
+                if alt_down { Some("\x1b\r".to_string()) } else { Some("\r".to_string()) }
+            },
             KEYCODE_DPAD_UP => {
                 if key_mode == 0 {
                     Some(if cursor_app { "\x1bOA".to_string() } else { "\x1b[A".to_string() })
@@ -95,7 +103,10 @@ impl ScreenState {
                 if shift_down { Some("\x1b[Z".to_string()) } else { Some("\t".to_string()) }
             },
             KEYCODE_ESCAPE => Some("\x1b".to_string()),
-            KEYCODE_DEL => Some("\x7f".to_string()),
+            KEYCODE_DEL => {
+                let prefix = if alt_down { "\x1b" } else { "" };
+                Some(format!("{}{}", prefix, if ctrl_down { "\x08" } else { "\x7f" }))
+            },
             KEYCODE_FORWARD_DEL => Some(self.transform_for_modifiers("\x1b[3", key_mode, '~')),
             KEYCODE_INSERT => Some(self.transform_for_modifiers("\x1b[2", key_mode, '~')),
             KEYCODE_F1 => {
@@ -122,18 +133,25 @@ impl ScreenState {
             KEYCODE_F10 => Some(self.transform_for_modifiers("\x1b[21", key_mode, '~')),
             KEYCODE_F11 => Some(self.transform_for_modifiers("\x1b[23", key_mode, '~')),
             KEYCODE_F12 => Some(self.transform_for_modifiers("\x1b[24", key_mode, '~')),
+            
+            KEYCODE_NUMPAD_ENTER => {
+                if keypad_application {
+                    Some(self.transform_for_modifiers("\x1bO", key_mode, 'M'))
+                } else {
+                    Some("\n".to_string())
+                }
+            },
             _ => None,
-        };
-
-        escape_seq
+        }
     }
 
-    /// 为功能键转换修饰符
+    /// 根据修饰符转换转义序列
+    /// 1 = none, 2 = shift, 3 = alt, 4 = shift+alt, 5 = ctrl, 6 = ctrl+shift, 7 = ctrl+alt, 8 = ctrl+shift+alt
     fn transform_for_modifiers(&self, base: &str, key_mode: i32, suffix: char) -> String {
-        let mut result = base.to_string();
+        if key_mode == 0 {
+            return format!("{}{}", base, suffix);
+        }
         let modifier = key_mode + 1;
-        result.push_str(&format!(";{}", modifier));
-        result.push(suffix);
-        result
+        format!("{};{}{}", base, modifier, suffix)
     }
 }
