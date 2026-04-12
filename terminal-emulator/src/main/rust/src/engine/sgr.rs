@@ -41,10 +41,10 @@ impl ScreenState {
                 29 => self.effect &= !EFFECT_STRIKETHROUGH,
                 30..=37 => self.fore_color = (p - 30) as u64,
                 38 => {
-                    if i + 2 < params.len && params.values[i + 1] == 5 {
+                    if i + 2 <= params.len && params.values[i + 1] == 5 {
                         self.fore_color = params.values[i + 2] as u64;
                         i += 2;
-                    } else if i + 4 < params.len && params.values[i + 1] == 2 {
+                    } else if i + 4 <= params.len && params.values[i + 1] == 2 {
                         let r = params.values[i + 2] as u32;
                         let g = params.values[i + 3] as u32;
                         let b = params.values[i + 4] as u32;
@@ -55,10 +55,10 @@ impl ScreenState {
                 39 => self.fore_color = COLOR_INDEX_FOREGROUND as u64,
                 40..=47 => self.back_color = (p - 40) as u64,
                 48 => {
-                    if i + 2 < params.len && params.values[i + 1] == 5 {
+                    if i + 2 <= params.len && params.values[i + 1] == 5 {
                         self.back_color = params.values[i + 2] as u64;
                         i += 2;
-                    } else if i + 4 < params.len && params.values[i + 1] == 2 {
+                    } else if i + 4 <= params.len && params.values[i + 1] == 2 {
                         let r = params.values[i + 2] as u32;
                         let g = params.values[i + 3] as u32;
                         let b = params.values[i + 4] as u32;
@@ -68,10 +68,10 @@ impl ScreenState {
                 }
                 49 => self.back_color = COLOR_INDEX_BACKGROUND as u64,
                 58 => {
-                    if i + 2 < params.len && params.values[i + 1] == 5 {
+                    if i + 2 <= params.len && params.values[i + 1] == 5 {
                         self.underline_color = params.values[i + 2] as u64;
                         i += 2;
-                    } else if i + 4 < params.len && params.values[i + 1] == 2 {
+                    } else if i + 4 <= params.len && params.values[i + 1] == 2 {
                         let r = params.values[i + 2] as u32;
                         let g = params.values[i + 3] as u32;
                         let b = params.values[i + 4] as u32;

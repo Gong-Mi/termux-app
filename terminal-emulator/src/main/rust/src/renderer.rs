@@ -740,9 +740,12 @@ impl TerminalRenderer {
         let mut bg_idx = decode_back_color(style) as usize;
         let effect = decode_effect(style);
 
-        // Bold→Bright 颜色映射
+        let fg_truecolor = (effect & STYLE_TRUECOLOR_FG) != 0;
+        let bg_truecolor = (effect & STYLE_TRUECOLOR_BG) != 0;
+
+        // Bold→Bright 颜色映射（仅对索引色，不适用于真彩色）
         let bold = (effect & EFFECT_BOLD) != 0;
-        if bold && fg_idx < 8 {
+        if bold && !fg_truecolor && fg_idx < 8 {
             fg_idx += 8;
         }
 
@@ -758,15 +761,29 @@ impl TerminalRenderer {
             bg_idx = swapped.1;
         }
 
+        // 解析前景色：真彩色直接使用，索引色查调色板
+        let mut fg_color_val: u32;
+        if fg_truecolor {
+            fg_color_val = fg_idx as u32;  // decode_fore_color already returns 0xffRRGGBB
+        } else {
+            fg_color_val = if fg_idx < 259 { palette[fg_idx] } else { palette[256] };
+        }
+
         // Dim 效果
-        let mut fg_color_val = if fg_idx < 259 { palette[fg_idx] } else { palette[256] };
         if (effect & EFFECT_DIM) != 0 {
             fg_color_val = Self::apply_dim(fg_color_val);
         }
 
-        // 背景绘制
-        let bg_color_val = if bg_idx < 259 { palette[bg_idx] } else { palette[257] };
-        if bg_idx != 257 {
+        // 解析背景色：真彩色直接使用，索引色查调色板
+        let bg_color_val: u32;
+        let has_bg = if bg_truecolor {
+            bg_color_val = bg_idx as u32;
+            true  // Truecolor always has a background
+        } else {
+            bg_color_val = if bg_idx < 259 { palette[bg_idx] } else { palette[257] };
+            bg_idx != 257  // 257 = default background, don't draw
+        };
+        if has_bg {
             self.bg_paint.set_color(Color::new(bg_color_val));
             canvas.draw_rect(Rect::from_xywh(x, y_base - self.font_height, expected_width, self.font_height), &self.bg_paint);
         }
