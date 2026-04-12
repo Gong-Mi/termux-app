@@ -20,8 +20,10 @@ pub fn handle_control(state: &mut ScreenState, byte: u8) -> bool {
         } // HT
         0x0a..=0x0c => {
             // LF, VT, FF
-            // 注意：不清除 about_to_wrap，以与上游行为一致
-            // 当光标在最后一列且 about_to_wrap=true 时，下一个打印的字符会触发换行
+            // 修复：LF 必须同时回到行首（隐式 CR），这是 POSIX 终端标准行为
+            // 同时清除 about_to_wrap，防止下一个字符再次触发换行
+            state.cursor.about_to_wrap = false;
+            state.cursor.x = state.left_margin;
             if state.cursor.y < state.bottom_margin - 1 {
                 state.cursor.y += 1;
             } else {
