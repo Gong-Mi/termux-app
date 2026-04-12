@@ -56,6 +56,21 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetFontSize(
     render_thread::request_render();
 }
 
+/// 设置自定义字体文件路径
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetFontPath(
+    mut env: JNIEnv,
+    _obj: JObject,
+    path: JString,
+) {
+    if let Ok(path_str) = env.get_string(&path) {
+        let path_str: String = path_str.into();
+        render_thread::set_render_font_path(&path_str);
+        android_log(LogPriority::DEBUG, &format!("nativeSetFontPath: {}", path_str));
+        render_thread::request_render();
+    }
+}
+
 /// 获取字体指标
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
@@ -64,11 +79,24 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
     metrics_array: jni::sys::jfloatArray,
 ) {
     let font_size = *render_thread::get_render_font_size().lock().unwrap();
+    let font_path = render_thread::get_render_font_path();
     let safe_font_size = if font_size > 0.0 && font_size.is_finite() { font_size } else { 12.0 };
 
-    use skia_safe::{Font, FontMgr, FontStyle};
+    use skia_safe::{Font, FontMgr, FontStyle, Data};
 
-    let (font_width, font_height, font_ascent) = match FontMgr::new().match_family_style("monospace", FontStyle::normal()) {
+    let font_mgr = FontMgr::new();
+
+    // Try custom font first
+    let custom_typeface = font_path.as_ref().and_then(|path| {
+        std::fs::read(path).ok().map(|data| {
+            let font_data = Data::new_copy(&data);
+            font_mgr.new_from_data(&font_data, 0)
+        }).flatten()
+    });
+
+    let (font_width, font_height, font_ascent) = match custom_typeface
+        .or_else(|| font_mgr.match_family_style("monospace", FontStyle::normal()))
+    {
         Some(tf) => {
             let font = Font::new(tf, Some(safe_font_size));
             let metrics = font.metrics();

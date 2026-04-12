@@ -93,13 +93,24 @@ unsafe impl Send for FontCache {}
 unsafe impl Sync for FontCache {}
 
 impl FontCache {
-    fn new(font_size: f32) -> Self {
+    fn new(font_size: f32, custom_font_path: Option<&str>) -> Self {
         let font_mgr = Arc::new(FontMgr::new());
 
-        let tf_mono = font_mgr.match_family_style("monospace", FontStyle::normal())
-            .expect("monospace font");
-        let tf_bold = font_mgr.match_family_style("monospace",
-            FontStyle::new(skia_safe::font_style::Weight::BOLD, skia_safe::font_style::Width::NORMAL, skia_safe::font_style::Slant::Upright))
+        // Try to load custom font from file path if provided
+        let custom_typeface = custom_font_path.and_then(|path| {
+            std::fs::read(path).ok().and_then(|data| {
+                let font_data = skia_safe::Data::new_copy(&data);
+                font_mgr.new_from_data(&font_data, 0)
+            })
+        });
+
+        let tf_mono = custom_typeface.clone()
+            .or_else(|| font_mgr.match_family_style("monospace", FontStyle::normal()));
+        let tf_mono = tf_mono.expect("monospace font");
+
+        let tf_bold = custom_typeface.as_ref().map(|tf| tf.clone())
+            .or_else(|| font_mgr.match_family_style("monospace",
+                FontStyle::new(skia_safe::font_style::Weight::BOLD, skia_safe::font_style::Width::NORMAL, skia_safe::font_style::Slant::Upright)))
             .unwrap_or_else(|| tf_mono.clone());
         let tf_italic = font_mgr.match_family_style("monospace",
             FontStyle::new(skia_safe::font_style::Weight::NORMAL, skia_safe::font_style::Width::NORMAL, skia_safe::font_style::Slant::Italic))
@@ -107,10 +118,14 @@ impl FontCache {
         let tf_bold_italic = font_mgr.match_family_style("monospace",
             FontStyle::new(skia_safe::font_style::Weight::BOLD, skia_safe::font_style::Width::NORMAL, skia_safe::font_style::Slant::Italic))
             .unwrap_or_else(|| tf_mono.clone());
-        let tf_fallback = font_mgr.match_family_style("sans-serif", FontStyle::normal())
+
+        // For fallback (non-ASCII), also prefer custom font if available
+        let tf_fallback = custom_typeface.clone()
+            .or_else(|| font_mgr.match_family_style("sans-serif", FontStyle::normal()))
             .unwrap_or_else(|| tf_mono.clone());
-        let tf_fallback_bold = font_mgr.match_family_style("sans-serif",
-            FontStyle::new(skia_safe::font_style::Weight::BOLD, skia_safe::font_style::Width::NORMAL, skia_safe::font_style::Slant::Upright))
+        let tf_fallback_bold = custom_typeface.clone()
+            .or_else(|| font_mgr.match_family_style("sans-serif",
+                FontStyle::new(skia_safe::font_style::Weight::BOLD, skia_safe::font_style::Width::NORMAL, skia_safe::font_style::Slant::Upright)))
             .unwrap_or_else(|| tf_mono.clone());
 
         let mut font_mono = Font::new(tf_mono.clone(), Some(font_size));
@@ -240,6 +255,7 @@ impl NonAsciiWidthCache {
 
 pub struct TerminalRenderer {
     pub font_size: f32,
+    pub font_path: Option<String>,
     font_cache: FontCache,
     ascii_cache: AsciiWidthCache,
     non_ascii_cache: NonAsciiWidthCache,
@@ -260,8 +276,8 @@ unsafe impl Send for TerminalRenderer {}
 unsafe impl Sync for TerminalRenderer {}
 
 impl TerminalRenderer {
-    pub fn new(_font_data: &[u8], font_size: f32) -> Self {
-        let font_cache = FontCache::new(font_size);
+    pub fn new(_font_data: &[u8], font_size: f32, custom_font_path: Option<&str>) -> Self {
+        let font_cache = FontCache::new(font_size, custom_font_path);
         let ascii_cache = AsciiWidthCache::new(&font_cache.font_mono);
         let font_width = font_cache.font_width;
         let font_height = font_cache.font_height;
@@ -296,6 +312,7 @@ impl TerminalRenderer {
 
         Self {
             font_size,
+            font_path: custom_font_path.map(String::from),
             font_cache,
             ascii_cache,
             non_ascii_cache: NonAsciiWidthCache::new(),
@@ -832,7 +849,7 @@ mod tests {
 
     #[test]
     fn test_font_metrics_calculation() {
-        let renderer = TerminalRenderer::new(&[], 12.0);
+        let renderer = TerminalRenderer::new(&[], 12.0, None);
         assert!(renderer.font_width > 0.0);
         assert!(renderer.font_height > 0.0);
     }
@@ -848,7 +865,7 @@ mod tests {
 
     #[test]
     fn test_selection_bounds() {
-        let mut renderer = TerminalRenderer::new(&[], 12.0);
+        let mut renderer = TerminalRenderer::new(&[], 12.0, None);
         renderer.set_selection(2, 1, 5, 3);
         assert!(renderer.is_cell_selected(3, 2));
         assert!(renderer.is_cell_selected(2, 1));
@@ -858,7 +875,7 @@ mod tests {
 
     #[test]
     fn test_selection_reversed() {
-        let mut renderer = TerminalRenderer::new(&[], 12.0);
+        let mut renderer = TerminalRenderer::new(&[], 12.0, None);
         renderer.set_selection(5, 3, 2, 1); // 反向设置
         assert!(renderer.is_cell_selected(3, 2));
         assert!(renderer.is_cell_selected(2, 1));

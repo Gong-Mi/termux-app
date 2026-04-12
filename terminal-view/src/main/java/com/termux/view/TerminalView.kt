@@ -68,6 +68,7 @@ class TerminalView @JvmOverloads constructor(
     )
     external fun nativeOnSizeChanged(width: Int, height: Int)
     external fun nativeSetFontSize(fontSize: Float)
+    external fun nativeSetFontPath(path: String)
     external fun nativeGetFontMetrics(metrics: FloatArray)
 
     // --- State ---
@@ -116,6 +117,9 @@ class TerminalView @JvmOverloads constructor(
     private var mMinInvalidateInterval = 16L
     private var mInvalidatePending = false
     private var mLastUpdateSizeTime = 0L
+
+    /// 自定义字体文件路径（同步到 Rust 侧）
+    private var mFontFilePath: String? = null
 
     @RequiresApi(Build.VERSION_CODES.O)
     private var mAutoFillType = AUTOFILL_TYPE_NONE
@@ -421,6 +425,25 @@ class TerminalView @JvmOverloads constructor(
         refreshFontMetrics()
         updateSize()
     }
+
+    /**
+     * 设置自定义字体文件路径，并同步到 Rust 渲染器
+     * @param path 绝对路径，例如 "/data/.../.termux/font.ttf"
+     */
+    fun setFontFile(path: String?) {
+        mFontFilePath = path
+        if (path != null && path.isNotEmpty()) {
+            nativeSetFontPath(path)
+        }
+        refreshFontMetrics()
+        updateSize()
+        invalidate()
+    }
+
+    /**
+     * 获取当前自定义字体文件路径
+     */
+    fun getFontFile(): String? = mFontFilePath
 
     fun setTypeface(newTypeface: Typeface?) {
         refreshFontMetrics()

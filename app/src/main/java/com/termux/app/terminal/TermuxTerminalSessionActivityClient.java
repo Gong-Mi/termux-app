@@ -544,6 +544,13 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
 
             final Typeface newTypeface = (fontFile.exists() && fontFile.length() > 0) ? Typeface.createFromFile(fontFile) : Typeface.MONOSPACE;
             mActivity.getTerminalView().setTypeface(newTypeface);
+
+            // Sync font file path to Rust renderer
+            if (fontFile.exists() && fontFile.length() > 0) {
+                mActivity.getTerminalView().setFontFile(fontFile.getAbsolutePath());
+            } else {
+                mActivity.getTerminalView().setFontFile(null);
+            }
         } catch (Exception e) {
             Logger.logStackTraceWithMessage(LOG_TAG, "Error in checkForFontAndColors()", e);
         }

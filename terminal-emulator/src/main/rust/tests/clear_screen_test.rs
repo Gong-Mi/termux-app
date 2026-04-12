@@ -22,6 +22,6 @@ fn test_erase_in_display_mode_3_standard() {
     // 4. 验证历史记录已清除
     assert_eq!(screen.active_transcript_rows, 0, "Transcript should be completely cleared in mode 3");
     
-    // 5. 验证当前屏幕也已清除 (标准行为通常伴随全清)
-    assert_eq!(screen.get_row(10).text[0], ' ', "Screen content should also be cleared in mode 3");
+    // 5. 验证当前屏幕内容已保留 (对齐 xterm 标准)
+    assert_eq!(screen.get_row(10).text[0], 'X', "Screen content should be preserved in mode 3 per xterm standards");
 }

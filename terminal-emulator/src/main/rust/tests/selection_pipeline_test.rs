@@ -34,7 +34,7 @@ fn test_selection_in_render_frame() {
     let sel_x2: i32 = 10;
     
     // 创建渲染器并设置选择
-    let mut renderer = TerminalRenderer::new(&[], 12.0);
+    let mut renderer = TerminalRenderer::new(&[], 12.0, None);
     renderer.set_selection(sel_x1, sel_y1, sel_x2, sel_y2);
     
     // 验证选择状态
@@ -71,7 +71,7 @@ fn test_selection_no_scroll() {
     let _frame = RenderFrame::from_engine(&engine, 24, 80, top_row);
     
     // 不滚动时，可见行 0 = 绝对行 0
-    let mut renderer = TerminalRenderer::new(&[], 12.0);
+    let mut renderer = TerminalRenderer::new(&[], 12.0, None);
     renderer.set_selection(0, 0, 10, 2);
     
     // 可见行 0 (绝对行 0) 的单元格应该被选中

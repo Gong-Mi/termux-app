@@ -34,6 +34,17 @@ static RENDER_SEL_ACTIVE: Mutex<bool> = Mutex::new(false);
 /// 字体尺寸
 static RENDER_FONT_SIZE: Mutex<f32> = Mutex::new(12.0);
 
+/// 自定义字体文件路径（由 Java/Kotlin 侧设置）
+static RENDER_FONT_PATH: Mutex<Option<String>> = Mutex::new(None);
+
+pub fn get_render_font_path() -> Option<String> {
+    RENDER_FONT_PATH.lock().unwrap().clone()
+}
+
+pub fn set_render_font_path(path: &str) {
+    *RENDER_FONT_PATH.lock().unwrap() = Some(path.to_string());
+}
+
 /// 通知渲染线程重建 swapchain
 static SURFACE_SIZE_CHANGED: AtomicBool = AtomicBool::new(false);
 static SURFACE_NEW_WIDTH: Mutex<u32> = Mutex::new(0);
@@ -191,9 +202,12 @@ fn spawn_render_thread(engine_ptr: jlong) {
                 };
 
                 let font_size = *RENDER_FONT_SIZE.lock().unwrap();
-                let needs_recreate = renderer_guard.as_ref().map_or(true, |r| (r.font_size - font_size).abs() > 0.1);
+                let font_path = crate::render_thread::get_render_font_path();
+                let needs_recreate = renderer_guard.as_ref().map_or(true, |r| {
+                    (r.font_size - font_size).abs() > 0.1 || r.font_path != font_path
+                });
                 if needs_recreate {
-                    *renderer_guard = Some(TerminalRenderer::new(&[], font_size));
+                    *renderer_guard = Some(TerminalRenderer::new(&[], font_size, font_path.as_deref()));
                 }
 
                 if let Some(renderer) = renderer_guard.as_mut() {
