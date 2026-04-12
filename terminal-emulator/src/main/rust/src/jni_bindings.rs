@@ -91,7 +91,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
 /// 设置 Surface
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
-    _env: JNIEnv,
+    mut env: JNIEnv,
     _obj: JObject,
     surface: JObject,
 ) {

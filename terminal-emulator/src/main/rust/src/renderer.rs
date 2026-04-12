@@ -158,10 +158,11 @@ impl FontCache {
     fn get_font_for_char(&self, ch: char, bold: bool, italic: bool) -> &Font {
         // 1. 尝试首选字体 (monospace)
         let primary = self.get_font(bold, italic, false);
-        if let Some(tf) = primary.typeface() {
-            if tf.unichars_to_glyphs(&[ch as i32]).iter().any(|&g| g != 0) {
-                return primary;
-            }
+        let tf = primary.typeface();
+        let mut glyphs = [0u16; 1];
+        tf.unichars_to_glyphs(&[ch as i32], &mut glyphs);
+        if glyphs[0] != 0 {
+            return primary;
         }
 
         // 2. 如果首选不支持，向系统请求最匹配的备用字体 (针对该特定字符)
