@@ -78,9 +78,8 @@ impl TerminalRow {
 
     pub fn get_space_used(&self) -> usize {
         for i in (0..self.text.len()).rev() {
-            // 修复：\0 是 CJK 宽字符的占位符，不应算作有效内容
-            // 对齐官方 Java TerminalRow.isBlank() 的行为
-            if self.text[i] != ' ' && self.text[i] != '\0' {
+            // 修复：\0 虽然渲染不可见，但它是宽字符的物理占位符，不能被截断
+            if self.text[i] != ' ' {
                 return i + 1;
             }
         }
@@ -132,7 +131,8 @@ impl TerminalRow {
 }
 
 fn local_get_width(ucs: u32) -> usize {
-    if ucs == 0 || ucs == 32 { return 1; } 
+    if ucs == 0 { return 0; } // \0 是宽字符占位符，宽度为 0
+    if ucs == 32 { return 1; } // 空格
     if ucs < 32 || (ucs >= 0x7F && ucs < 0xA0) { return 0; }
     if (ucs >= 0x2E80 && ucs <= 0x9FFF) || (ucs >= 0xAC00 && ucs <= 0xD7A3) || (ucs >= 0xFF01 && ucs <= 0xFF60) { return 2; }
     1
@@ -468,30 +468,33 @@ impl Screen {
             let just_to_cursor = cursor_at_this_row;
 
             // Process each character in the old line
+            let mut i = 0;
             let mut current_old_col: usize = 0;
             let mut style_at_col = current_style;
 
-            for i in 0..last_non_space_index {
+            while i < last_non_space_index {
                 let c = old_line.text[i];
                 let code_point = c as u32;
-                let display_width = local_get_width(code_point);
+                let mut display_width = local_get_width(code_point);
+                
+                // 核心修复：宽字符原子性检测
+                // 如果当前是宽字符，检查下一个是否是 \0 占位符，并将它们作为一个整体处理
+                let is_atomic_pair = display_width == 2 && i + 1 < old_line.text.len() && old_line.text[i+1] == '\0';
+                let unit_width = if is_atomic_pair { 2 } else { display_width as usize };
 
                 // Update style for this column
                 if display_width > 0 && current_old_col < old_cols {
                     style_at_col = old_line.styles[current_old_col];
                 }
 
-                // Line wrap as necessary
-                if output_col + display_width as usize > n_cols {
+                // Line wrap as necessary (check if the entire unit fits)
+                if output_col + unit_width > n_cols {
                     if output_row < new_buffer.len() {
                         let idx = row_idx(screen_first_row, output_row, new_total_rows);
                         new_buffer[idx].line_wrap = true;
                     }
                     if output_row >= screen_rows - 1 {
-                        // Buffer is full - scroll up
-                        if cursor_placed && new_cursor_y > 0 {
-                            new_cursor_y -= 1;
-                        }
+                        if cursor_placed && new_cursor_y > 0 { new_cursor_y -= 1; }
                         do_scroll(&mut screen_first_row, &mut new_active_transcript_rows, screen_rows, current_style, new_total_rows, max_transcript_rows, &mut new_buffer);
                     } else {
                         output_row += 1;
@@ -499,15 +502,16 @@ impl Screen {
                     output_col = 0;
                 }
 
-                // Handle combining characters
-                let offset = if display_width <= 0 && output_col > 0 { 1 } else { 0 };
-                let output_column = output_col.saturating_sub(offset);
-
-                // Set character in new buffer
-                if output_column < n_cols && output_row < new_buffer.len() {
+                // Set character unit in new buffer
+                if output_row < new_buffer.len() {
                     let idx = row_idx(screen_first_row, output_row, new_total_rows);
-                    new_buffer[idx].text[output_column] = c;
-                    new_buffer[idx].styles[output_column] = style_at_col;
+                    new_buffer[idx].text[output_col] = c;
+                    new_buffer[idx].styles[output_col] = style_at_col;
+                    
+                    if is_atomic_pair && output_col + 1 < n_cols {
+                        new_buffer[idx].text[output_col + 1] = '\0';
+                        new_buffer[idx].styles[output_col + 1] = style_at_col;
+                    }
                 }
 
                 // Track cursor position
@@ -517,13 +521,16 @@ impl Screen {
                     cursor_placed = true;
                 }
 
-                if display_width > 0 {
-                    current_old_col += display_width;
-                    output_col += display_width as usize;
-
-                    // Break if we've placed cursor and just copying to cursor
-                    if just_to_cursor && cursor_placed {
-                        break;
+                // Advance indices
+                if is_atomic_pair {
+                    i += 2;
+                    current_old_col += 2;
+                    output_col += 2;
+                } else {
+                    i += 1;
+                    if display_width > 0 {
+                        current_old_col += display_width as usize;
+                        output_col += display_width as usize;
                     }
                 }
             }
