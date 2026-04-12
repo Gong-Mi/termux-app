@@ -774,16 +774,16 @@ class TerminalView @JvmOverloads constructor(
     private val text: CharSequence
         get() = mEmulator?.getSelectedText(0, mTopRow, mEmulator!!.getCols(), mTopRow + mEmulator!!.getRows()) ?: ""
 
-    fun getCursorX(x: Float): Int = (x / (getFontWidth() * mScaleFactor)).toInt()
-    fun getCursorY(y: Float): Int = ((y / mScaleFactor - getFontLineSpacingAndAscent()) / getFontLineSpacing()).toInt() + mTopRow
+    fun getCursorX(x: Float): Int = (x / getFontWidth()).toInt()
+    fun getCursorY(y: Float): Int = ((y - 40f) / getFontLineSpacing()).toInt() + mTopRow
 
     fun getPointX(cx: Int): Int {
         var c = cx
         if (mEmulator != null && c > mEmulator!!.getCols()) c = mEmulator!!.getCols()
-        return Math.round(c * getFontWidth() * mScaleFactor)
+        return Math.round(c * getFontWidth())
     }
 
-    fun getPointY(cy: Int): Int = Math.round(((cy - mTopRow) * getFontLineSpacing() + getFontLineSpacingAndAscent()) * mScaleFactor)
+    fun getPointY(cy: Int): Int = Math.round((cy - mTopRow) * getFontLineSpacing())
 
     override fun surfaceCreated(holder: SurfaceHolder) {
         Log.i("TerminalView-Surface", ">>> surfaceCreated")
