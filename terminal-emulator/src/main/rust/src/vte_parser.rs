@@ -397,8 +397,16 @@ impl Parser {
                 if self.escape_state != ESC_OSC {
                     self.escape_state = ESC;
                 } else {
-                    // OSC 序列中的 ESC
-                    self.osc_dispatch_and_reset(handler);
+                    // OSC 序列中的 ESC - 这是 String Terminator 的开始
+                    // 关键修复：先分发 OSC 内容，但将状态设为 ESC（不是 ESC_NONE）
+                    // 这样下一个 '\' 字符会被 do_esc 识别为 ST 终结符并消费掉
+                    let osc_data = self.osc_buffer.as_bytes().to_vec();
+                    let params: Vec<&[u8]> = osc_data
+                        .split(|&b| b == b';')
+                        .collect();
+                    handler.osc_dispatch(&params, true);
+                    self.osc_buffer.clear();
+                    self.escape_state = ESC; // 关键：设为 ESC 以消费接下来的 '\'
                 }
                 return;
             }
