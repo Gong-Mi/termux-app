@@ -883,7 +883,9 @@ impl TerminalRenderer {
         }
     }
 
-    /// 绘制块元素字符（▀▄█░▒▓─│┌┐└┘ 等），使用矩形填充确保像素级对齐
+    /// 绘制块元素字符，使用矩形填充确保像素级对齐
+    /// 覆盖 U+2580-U+259F 全部 Block Elements（半块、1/8块、象限块、阴影）
+    /// 以及 U+2500-U+257F Box Drawing（轻量线条）
     fn draw_block_char(
         &mut self,
         canvas: &Canvas,
@@ -895,153 +897,159 @@ impl TerminalRenderer {
         fg_color: u32,
         bg_color: u32,
     ) {
-        // y_base 是基线位置，单元格从 y_base - cell_h 到 y_base
         let y_top = y_base - cell_h;
 
-        match ch as u32 {
-            // Full Block — 填满整个单元格
-            0x2588 => {
-                self.bg_paint.set_color(Color::new(fg_color));
-                canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, cell_h), &self.bg_paint);
+        // === U+2596-U+259F: 象限块 (Quadrant Blocks) ===
+        // 将单元格分为 4 个象限: TL TR / BL BR
+        // 位掩码: 1=TL, 2=TR, 4=BL, 8=BR
+        let q_mask: u8 = match ch as u32 {
+            0x2596 => 0b0100, // ▖ LOWER LEFT
+            0x2597 => 0b1000, // ▗ LOWER RIGHT
+            0x2598 => 0b0001, // ▘ UPPER LEFT
+            0x259D => 0b0010, // ▝ UPPER RIGHT
+            0x2599 => 0b1101, // ▙ TL + BL + BR
+            0x259A | 0x259E => 0b1001, // ▚▞ TL + BR
+            0x259B => 0b0111, // ▛ TL + TR + BL
+            0x259C => 0b1011, // ▜ TL + TR + BR
+            0x259F => 0b1110, // ▟ TR + BL + BR
+            _ => 0,
+        };
+
+        if q_mask != 0 {
+            let half_w = cell_w / 2.0;
+            let half_h = cell_h / 2.0;
+            let quads = [
+                (x,            y_top,         half_w, half_h, (q_mask & 0b0001) != 0), // TL
+                (x + half_w,   y_top,         half_w, half_h, (q_mask & 0b0010) != 0), // TR
+                (x,            y_top + half_h, half_w, half_h, (q_mask & 0b0100) != 0), // BL
+                (x + half_w,   y_top + half_h, half_w, half_h, (q_mask & 0b1000) != 0), // BR
+            ];
+            for (qx, qy, qw, qh, fill) in quads {
+                self.bg_paint.set_color(Color::new(if fill { fg_color } else { bg_color }));
+                canvas.draw_rect(Rect::from_xywh(qx, qy, qw, qh), &self.bg_paint);
             }
-            // Upper Half Block — 上半填充
-            0x2580 => {
-                self.bg_paint.set_color(Color::new(fg_color));
-                canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, cell_h / 2.0), &self.bg_paint);
-                self.bg_paint.set_color(Color::new(bg_color));
-                canvas.draw_rect(Rect::from_xywh(x, y_top + cell_h / 2.0, cell_w, cell_h / 2.0), &self.bg_paint);
-            }
-            // Lower Half Block — 下半填充
-            0x2584 => {
-                self.bg_paint.set_color(Color::new(bg_color));
-                canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, cell_h / 2.0), &self.bg_paint);
-                self.bg_paint.set_color(Color::new(fg_color));
-                canvas.draw_rect(Rect::from_xywh(x, y_top + cell_h / 2.0, cell_w, cell_h / 2.0), &self.bg_paint);
-            }
-            // Left Half Block
-            0x258C => {
-                self.bg_paint.set_color(Color::new(fg_color));
-                canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w / 2.0, cell_h), &self.bg_paint);
-                self.bg_paint.set_color(Color::new(bg_color));
-                canvas.draw_rect(Rect::from_xywh(x + cell_w / 2.0, y_top, cell_w / 2.0, cell_h), &self.bg_paint);
-            }
-            // Right Half Block
-            0x2590 => {
-                self.bg_paint.set_color(Color::new(bg_color));
-                canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w / 2.0, cell_h), &self.bg_paint);
-                self.bg_paint.set_color(Color::new(fg_color));
-                canvas.draw_rect(Rect::from_xywh(x + cell_w / 2.0, y_top, cell_w / 2.0, cell_h), &self.bg_paint);
-            }
-            // Light/Medium/Dark Shade — 用不同密度的矩形模拟
-            0x2591 => {
-                // Light shade: 25% 填充
-                self.bg_paint.set_color(Color::new(bg_color));
-                canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, cell_h), &self.bg_paint);
-                self.draw_shade_pattern(canvas, x, y_top, cell_w, cell_h, fg_color, 0.25);
-            }
-            0x2592 => {
-                // Medium shade: 50% 填充
-                self.bg_paint.set_color(Color::new(bg_color));
-                canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, cell_h), &self.bg_paint);
-                self.draw_shade_pattern(canvas, x, y_top, cell_w, cell_h, fg_color, 0.50);
-            }
-            0x2593 => {
-                // Dark shade: 75% 填充
-                self.bg_paint.set_color(Color::new(bg_color));
-                canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, cell_h), &self.bg_paint);
-                self.draw_shade_pattern(canvas, x, y_top, cell_w, cell_h, fg_color, 0.75);
-            }
-            // Box Drawing — 用线条绘制
-            0x2500 => { // Light Horizontal ─
-                self.bg_paint.set_color(Color::new(fg_color));
-                let mid_y = y_top + cell_h / 2.0;
-                canvas.draw_rect(Rect::from_xywh(x, mid_y - 0.5, cell_w, 1.0), &self.bg_paint);
-            }
-            0x2502 => { // Light Vertical │
-                self.bg_paint.set_color(Color::new(fg_color));
-                let mid_x = x + cell_w / 2.0;
-                canvas.draw_rect(Rect::from_xywh(mid_x - 0.5, y_top, 1.0, cell_h), &self.bg_paint);
-            }
-            0x250C => { // Light Down and Right ┌
-                self.bg_paint.set_color(Color::new(fg_color));
-                let mid_x = x + cell_w / 2.0;
-                let mid_y = y_top + cell_h / 2.0;
-                canvas.draw_rect(Rect::from_xywh(mid_x - 0.5, y_top, 1.0, cell_h), &self.bg_paint);
-                canvas.draw_rect(Rect::from_xywh(x, mid_y - 0.5, cell_w, 1.0), &self.bg_paint);
-                // Clear bottom-right quadrant
-                self.bg_paint.set_color(Color::new(bg_color));
-                canvas.draw_rect(Rect::from_xywh(mid_x, mid_y, cell_w / 2.0, cell_h / 2.0), &self.bg_paint);
-            }
-            0x2510 => { // Light Down and Left ┐
-                self.bg_paint.set_color(Color::new(fg_color));
-                let mid_x = x + cell_w / 2.0;
-                let mid_y = y_top + cell_h / 2.0;
-                canvas.draw_rect(Rect::from_xywh(mid_x - 0.5, y_top, 1.0, cell_h), &self.bg_paint);
-                canvas.draw_rect(Rect::from_xywh(x, mid_y - 0.5, cell_w, 1.0), &self.bg_paint);
-                self.bg_paint.set_color(Color::new(bg_color));
-                canvas.draw_rect(Rect::from_xywh(x, mid_y, cell_w / 2.0, cell_h / 2.0), &self.bg_paint);
-            }
-            0x2514 => { // Light Up and Right └
-                self.bg_paint.set_color(Color::new(fg_color));
-                let mid_x = x + cell_w / 2.0;
-                let mid_y = y_top + cell_h / 2.0;
-                canvas.draw_rect(Rect::from_xywh(mid_x - 0.5, y_top, 1.0, cell_h), &self.bg_paint);
-                canvas.draw_rect(Rect::from_xywh(x, mid_y - 0.5, cell_w, 1.0), &self.bg_paint);
-                self.bg_paint.set_color(Color::new(bg_color));
-                canvas.draw_rect(Rect::from_xywh(mid_x, y_top, cell_w / 2.0, cell_h / 2.0), &self.bg_paint);
-            }
-            0x2518 => { // Light Up and Left ┘
-                self.bg_paint.set_color(Color::new(fg_color));
-                let mid_x = x + cell_w / 2.0;
-                let mid_y = y_top + cell_h / 2.0;
-                canvas.draw_rect(Rect::from_xywh(mid_x - 0.5, y_top, 1.0, cell_h), &self.bg_paint);
-                canvas.draw_rect(Rect::from_xywh(x, mid_y - 0.5, cell_w, 1.0), &self.bg_paint);
-                self.bg_paint.set_color(Color::new(bg_color));
-                canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w / 2.0, cell_h / 2.0), &self.bg_paint);
-            }
-            // 1/8 Block characters — 用部分矩形填充
-            0x258F => { // Left One Eighth Block
-                self.bg_paint.set_color(Color::new(fg_color));
-                canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w / 8.0, cell_h), &self.bg_paint);
-                self.bg_paint.set_color(Color::new(bg_color));
-                canvas.draw_rect(Rect::from_xywh(x + cell_w / 8.0, y_top, cell_w * 7.0 / 8.0, cell_h), &self.bg_paint);
-            }
-            0x258E => { // Left One Quarter Block
-                self.bg_paint.set_color(Color::new(fg_color));
-                canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w / 4.0, cell_h), &self.bg_paint);
-                self.bg_paint.set_color(Color::new(bg_color));
-                canvas.draw_rect(Rect::from_xywh(x + cell_w / 4.0, y_top, cell_w * 3.0 / 4.0, cell_h), &self.bg_paint);
-            }
-            0x258D => { // Left Three Eighths Block
-                self.bg_paint.set_color(Color::new(fg_color));
-                canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w * 3.0 / 8.0, cell_h), &self.bg_paint);
-                self.bg_paint.set_color(Color::new(bg_color));
-                canvas.draw_rect(Rect::from_xywh(x + cell_w * 3.0 / 8.0, y_top, cell_w * 5.0 / 8.0, cell_h), &self.bg_paint);
-            }
-            0x258B => { // Left Five Eighths Block
-                self.bg_paint.set_color(Color::new(fg_color));
-                canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w * 5.0 / 8.0, cell_h), &self.bg_paint);
-                self.bg_paint.set_color(Color::new(bg_color));
-                canvas.draw_rect(Rect::from_xywh(x + cell_w * 5.0 / 8.0, y_top, cell_w * 3.0 / 8.0, cell_h), &self.bg_paint);
-            }
-            0x258A => { // Left Three Quarters Block
-                self.bg_paint.set_color(Color::new(fg_color));
-                canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w * 3.0 / 4.0, cell_h), &self.bg_paint);
-                self.bg_paint.set_color(Color::new(bg_color));
-                canvas.draw_rect(Rect::from_xywh(x + cell_w * 3.0 / 4.0, y_top, cell_w / 4.0, cell_h), &self.bg_paint);
-            }
-            0x2589 => { // Left Seven Eighths Block
-                self.bg_paint.set_color(Color::new(fg_color));
-                canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w * 7.0 / 8.0, cell_h), &self.bg_paint);
-                self.bg_paint.set_color(Color::new(bg_color));
-                canvas.draw_rect(Rect::from_xywh(x + cell_w * 7.0 / 8.0, y_top, cell_w / 8.0, cell_h), &self.bg_paint);
-            }
-            // Fallback: use font for any unhandled block character
-            _ => {
-                let font = self.font_cache.get_font_for_char(ch, false, false);
-                self.draw_char_group(canvas, &ch.to_string(), x, y_base + self.font_cache.font_ascent * 0.15, font, cell_w);
-            }
+            return;
         }
+
+        // === U+2588: Full Block ===
+        if ch as u32 == 0x2588 {
+            self.bg_paint.set_color(Color::new(fg_color));
+            canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, cell_h), &self.bg_paint);
+            return;
+        }
+
+        // === U+2580 / U+2584: 半高块 ===
+        if ch as u32 == 0x2580 {
+            // ▀ UPPER HALF
+            self.bg_paint.set_color(Color::new(fg_color));
+            canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, cell_h / 2.0), &self.bg_paint);
+            self.bg_paint.set_color(Color::new(bg_color));
+            canvas.draw_rect(Rect::from_xywh(x, y_top + cell_h / 2.0, cell_w, cell_h / 2.0), &self.bg_paint);
+            return;
+        }
+        if ch as u32 == 0x2584 {
+            // ▄ LOWER HALF
+            self.bg_paint.set_color(Color::new(bg_color));
+            canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, cell_h / 2.0), &self.bg_paint);
+            self.bg_paint.set_color(Color::new(fg_color));
+            canvas.draw_rect(Rect::from_xywh(x, y_top + cell_h / 2.0, cell_w, cell_h / 2.0), &self.bg_paint);
+            return;
+        }
+
+        // === U+258C / U+2590: 半宽块 ===
+        if ch as u32 == 0x258C {
+            // ▌ LEFT HALF
+            self.bg_paint.set_color(Color::new(fg_color));
+            canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w / 2.0, cell_h), &self.bg_paint);
+            self.bg_paint.set_color(Color::new(bg_color));
+            canvas.draw_rect(Rect::from_xywh(x + cell_w / 2.0, y_top, cell_w / 2.0, cell_h), &self.bg_paint);
+            return;
+        }
+        if ch as u32 == 0x2590 {
+            // ▐ RIGHT HALF
+            self.bg_paint.set_color(Color::new(bg_color));
+            canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w / 2.0, cell_h), &self.bg_paint);
+            self.bg_paint.set_color(Color::new(fg_color));
+            canvas.draw_rect(Rect::from_xywh(x + cell_w / 2.0, y_top, cell_w / 2.0, cell_h), &self.bg_paint);
+            return;
+        }
+
+        // === U+258F-U+2589: 1/8 块 (Left n/8) ===
+        if let Some(n) = match ch as u32 {
+            0x258F => Some(1), // ▏ 1/8
+            0x258E => Some(2), // ▎ 2/8
+            0x258D => Some(3), // ▍ 3/8
+            0x258C => Some(4), // ▌ 4/8 (already handled above)
+            0x258B => Some(5), // ▋ 5/8
+            0x258A => Some(6), // ▊ 6/8
+            0x2589 => Some(7), // ▉ 7/8
+            _ => None,
+        } {
+            let fill_w = cell_w * n as f32 / 8.0;
+            self.bg_paint.set_color(Color::new(fg_color));
+            canvas.draw_rect(Rect::from_xywh(x, y_top, fill_w, cell_h), &self.bg_paint);
+            self.bg_paint.set_color(Color::new(bg_color));
+            canvas.draw_rect(Rect::from_xywh(x + fill_w, y_top, cell_w - fill_w, cell_h), &self.bg_paint);
+            return;
+        }
+
+        // === U+2591-U+2593: 阴影块 ===
+        if matches!(ch as u32, 0x2591 | 0x2592 | 0x2593) {
+            let density = match ch as u32 {
+                0x2591 => 0.25, // ░ Light
+                0x2592 => 0.50, // ▒ Medium
+                _      => 0.75, // ▓ Dark
+            };
+            self.bg_paint.set_color(Color::new(bg_color));
+            canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, cell_h), &self.bg_paint);
+            self.draw_shade_pattern(canvas, x, y_top, cell_w, cell_h, fg_color, density);
+            return;
+        }
+
+        // === U+2500-U+257F: Box Drawing ===
+        // 轻量水平和垂直线
+        if ch as u32 == 0x2500 {
+            self.bg_paint.set_color(Color::new(fg_color));
+            let mid_y = y_top + cell_h / 2.0;
+            canvas.draw_rect(Rect::from_xywh(x, mid_y - 0.5, cell_w, 1.0), &self.bg_paint);
+            return;
+        }
+        if ch as u32 == 0x2502 {
+            self.bg_paint.set_color(Color::new(fg_color));
+            let mid_x = x + cell_w / 2.0;
+            canvas.draw_rect(Rect::from_xywh(mid_x - 0.5, y_top, 1.0, cell_h), &self.bg_paint);
+            return;
+        }
+        // 轻量角块
+        if matches!(ch as u32, 0x250C | 0x2510 | 0x2514 | 0x2518) {
+            self.bg_paint.set_color(Color::new(fg_color));
+            let mid_x = x + cell_w / 2.0;
+            let mid_y = y_top + cell_h / 2.0;
+            match ch as u32 {
+                0x250C => { // ┌ Down+Right
+                    canvas.draw_rect(Rect::from_xywh(mid_x - 0.5, mid_y, 1.0, cell_h / 2.0), &self.bg_paint);
+                    canvas.draw_rect(Rect::from_xywh(x, mid_y - 0.5, cell_w / 2.0, 1.0), &self.bg_paint);
+                }
+                0x2510 => { // ┐ Down+Left
+                    canvas.draw_rect(Rect::from_xywh(mid_x - 0.5, mid_y, 1.0, cell_h / 2.0), &self.bg_paint);
+                    canvas.draw_rect(Rect::from_xywh(x + cell_w / 2.0, mid_y - 0.5, cell_w / 2.0, 1.0), &self.bg_paint);
+                }
+                0x2514 => { // └ Up+Right
+                    canvas.draw_rect(Rect::from_xywh(mid_x - 0.5, y_top, 1.0, cell_h / 2.0), &self.bg_paint);
+                    canvas.draw_rect(Rect::from_xywh(x, mid_y - 0.5, cell_w / 2.0, 1.0), &self.bg_paint);
+                }
+                0x2518 => { // ┘ Up+Left
+                    canvas.draw_rect(Rect::from_xywh(mid_x - 0.5, y_top, 1.0, cell_h / 2.0), &self.bg_paint);
+                    canvas.draw_rect(Rect::from_xywh(x + cell_w / 2.0, mid_y - 0.5, cell_w / 2.0, 1.0), &self.bg_paint);
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        // Fallback: 使用字体渲染任何未处理的字符
+        let font = self.font_cache.get_font_for_char(ch, false, false);
+        self.draw_char_group(canvas, &ch.to_string(), x, y_base + self.font_cache.font_ascent * 0.15, font, cell_w);
     }
 
     /// 绘制 shade 图案（使用小矩形模拟密度）
