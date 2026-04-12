@@ -774,10 +774,9 @@ impl TerminalRenderer {
     /// 测量单个字符的像素宽度（使用缓存字体，避免重复创建 Font）
     #[inline]
     fn measure_char(&self, ch: char, effect: u64) -> f32 {
-        let has_non_ascii = ch as u32 > 127;
         let bold = (effect & EFFECT_BOLD) != 0;
         let italic = (effect & EFFECT_ITALIC) != 0;
-        let font = self.font_cache.get_font(bold, italic, has_non_ascii);
+        let font = self.font_cache.get_font_for_char(ch, bold, italic);
         // 直接使用预创建的 Font，避免临时分配
         let (w, _) = font.measure_str(&ch.to_string(), None);
         w
