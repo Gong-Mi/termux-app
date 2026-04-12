@@ -685,10 +685,10 @@ impl TerminalRenderer {
         x: f32,
         y_base: f32,
         expected_width: f32,
-        measured_width: f32,
-        has_non_ascii: bool,
+        _measured_width: f32,
+        _has_non_ascii: bool,
         style: u64,
-        palette: &[u32; 259],
+        palette: &[u32; NUM_INDEXED_COLORS],
         global_reverse: bool,
         is_selected: bool,
         _row: i32,
@@ -697,15 +697,13 @@ impl TerminalRenderer {
         let mut bg_idx = decode_back_color(style) as usize;
         let effect = decode_effect(style);
 
-        // Bold→Bright 颜色映射 (与 Java TerminalRenderer.java:230 一致)
-        // 前景色在 0-7 范围且加粗时，映射到 8-15 亮色
+        // Bold→Bright 颜色映射
         let bold = (effect & EFFECT_BOLD) != 0;
         if bold && fg_idx < 8 {
             fg_idx += 8;
         }
 
-        // 选区特效标准化 (对齐 Upstream): 选区通过反色实现
-        // 最终是否反色 = (全局反色 ^ 字符反色 ^ 是否被选中)
+        // 选区特效标准化 (反色)
         let mut do_reverse = global_reverse != ((effect & EFFECT_REVERSE) != 0);
         if is_selected {
             do_reverse = !do_reverse;
@@ -723,37 +721,56 @@ impl TerminalRenderer {
             fg_color_val = Self::apply_dim(fg_color_val);
         }
 
-        // 背景绘制 - 标准化后移除蓝色背景，完全依赖反色
+        // 背景绘制
         let bg_color_val = if bg_idx < 259 { palette[bg_idx] } else { palette[257] };
         if bg_idx != 257 {
             self.bg_paint.set_color(Color::new(bg_color_val));
             canvas.draw_rect(Rect::from_xywh(x, y_base - self.font_height, expected_width, self.font_height), &self.bg_paint);
         }
 
-        // 字体选择 - 升级为按需动态回退
         let italic = (effect & EFFECT_ITALIC) != 0;
-        
         let fg_color = Color::new(fg_color_val);
         self.paint.set_color(fg_color);
 
         let mut current_x = x;
         let y_adjusted = y_base + self.font_cache.font_ascent * 0.15;
 
-        // 原子化绘制：针对每个字符检查其字体支持情况
+        // 分组绘制：将连续使用相同字体的字符合并为一个子 Run，以优化性能并确保栅格对齐
+        let mut group_text = String::new();
+        let mut group_font: Option<*const Font> = None;
+        let mut group_start_x = x;
+        let mut group_logic_w = 0.0f32;
+
         for ch in text.chars() {
-            if ch == '\0' { continue; } // 跳过占位符
+            if ch == '\0' { continue; }
             
             let font = self.font_cache.get_font_for_char(ch, bold, italic);
-            let (char_w, _) = font.measure_str(&ch.to_string(), None);
-            
-            // 文本绘制
-            if char_w > 0.0 {
-                canvas.draw_str(&ch.to_string(), (current_x, y_adjusted), font, &self.paint);
-                
-                // 逻辑步进：根据字符在终端中的逻辑宽度（1或2）移动光标
-                let logic_w = char_wc_width(ch as u32) as f32 * self.font_width;
-                current_x += logic_w;
+            let logic_w = char_wc_width(ch as u32) as f32 * self.font_width;
+            let font_ptr = font as *const Font;
+
+            if let Some(prev_font_ptr) = group_font {
+                if prev_font_ptr == font_ptr {
+                    group_text.push(ch);
+                    group_logic_w += logic_w;
+                } else {
+                    self.draw_char_group(canvas, &group_text, group_start_x, y_adjusted, unsafe { &*prev_font_ptr }, group_logic_w);
+                    group_text.clear();
+                    group_text.push(ch);
+                    group_font = Some(font_ptr);
+                    group_start_x = current_x;
+                    group_logic_w = logic_w;
+                }
+            } else {
+                group_text.push(ch);
+                group_font = Some(font_ptr);
+                group_start_x = x;
+                group_logic_w = logic_w;
             }
+            current_x += logic_w;
+        }
+
+        if let Some(font_ptr) = group_font {
+            self.draw_char_group(canvas, &group_text, group_start_x, y_adjusted, unsafe { &*font_ptr }, group_logic_w);
         }
 
         // 下划线
@@ -768,6 +785,22 @@ impl TerminalRenderer {
             let strike_y = y_base - self.font_height * 0.5;
             self.strikethrough_paint.set_color(fg_color);
             canvas.draw_line((x, strike_y), (x + expected_width, strike_y), &self.strikethrough_paint);
+        }
+    }
+
+    /// 辅助方法：绘制一组使用相同字体的字符，并进行缩放适配逻辑栅格
+    fn draw_char_group(&self, canvas: &Canvas, text: &str, x: f32, y: f32, font: &Font, expected_w: f32) {
+        let (measured_w, _) = font.measure_str(text, None);
+        if measured_w <= 0.0 { return; }
+
+        if (measured_w - expected_w).abs() > 0.5 {
+            canvas.save();
+            canvas.translate((x, y));
+            canvas.scale((expected_w / measured_w, 1.0));
+            canvas.draw_str(text, (0.0, 0.0), font, &self.paint);
+            canvas.restore();
+        } else {
+            canvas.draw_str(text, (x, y), font, &self.paint);
         }
     }
 
