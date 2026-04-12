@@ -59,7 +59,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetFontSize(
 /// 获取字体指标
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _obj: JObject,
     metrics_array: jni::sys::jfloatArray,
 ) {
@@ -70,7 +70,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
 
     let (font_width, font_height, font_ascent) = match FontMgr::new().match_family_style("monospace", FontStyle::normal()) {
         Some(tf) => {
-            let mut font = Font::new(tf, Some(safe_font_size));
+            let font = Font::new(tf, Some(safe_font_size));
             let metrics = font.metrics();
             let h = (metrics.1.descent - metrics.1.ascent + metrics.1.leading).ceil();
             let (w, _) = font.measure_str("M", None);
@@ -91,7 +91,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
 /// 设置 Surface
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
-    env: JNIEnv,
+    _env: JNIEnv,
     _obj: JObject,
     surface: JObject,
 ) {
@@ -297,7 +297,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_createEngine(
 /// 批量处理
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatch(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     ptr: jlong,
     batch: jbyteArray,
@@ -325,7 +325,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatch(
 /// 处理 Unicode 码点
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_processCodePoint(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     ptr: jlong,
     code_point: jint,
@@ -426,7 +426,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_startIoThread(
 /// 完整调整大小
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_resize(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     ptr: jlong,
     cols: jint,
@@ -890,7 +890,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_resetColors(mut env
 /// 更新颜色
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_updateColors(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     ptr: jlong,
     properties_obj: JObject,
@@ -962,7 +962,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_updateColors(
 /// 设置光标颜色
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorColorForBackground(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     ptr: jlong,
 ) {
@@ -997,7 +997,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getPerceivedBrightn
 /// 更新终端会话客户端
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_updateTerminalSessionClient(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     ptr: jlong,
     client: JObject,
@@ -1107,7 +1107,6 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
     transcript_rows: jint,
     callback: JObject,
 ) {
-    let mut env = env;
     let cmd_str = if !cmd.is_null() {
         let js = unsafe { JString::from_raw(cmd) };
         env.get_string(&js).map(|s| s.into()).unwrap_or_default()
@@ -1299,7 +1298,7 @@ pub extern "system" fn Java_com_termux_terminal_JNI_getKeyCode(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_JNI_getKeyCodeFromTermcap(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     termcap: JString,
     cursor_app: jboolean,

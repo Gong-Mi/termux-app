@@ -1,5 +1,4 @@
 use skia_safe::{Canvas, Paint, Color, Font, Rect, PaintStyle, FontMgr, FontStyle, BlendMode};
-use skia_safe::wrapper::PointerWrapper;
 use std::sync::Arc;
 use crate::engine::TerminalEngine;
 use crate::terminal::style::*;
@@ -159,8 +158,10 @@ impl FontCache {
     fn get_font_for_char(&self, ch: char, bold: bool, italic: bool) -> &Font {
         // 1. 尝试首选字体 (monospace)
         let primary = self.get_font(bold, italic, false);
-        if primary.typeface().unwrap().unichars_to_glyphs(&[ch as i32]).iter().any(|&g| g != 0) {
-            return primary;
+        if let Some(tf) = primary.typeface() {
+            if tf.unichars_to_glyphs(&[ch as i32]).iter().any(|&g| g != 0) {
+                return primary;
+            }
         }
 
         // 2. 如果首选不支持，向系统请求最匹配的备用字体 (针对该特定字符)
