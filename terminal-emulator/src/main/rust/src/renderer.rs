@@ -124,7 +124,7 @@ impl FontCache {
         let font_width = w;
 
         // 构建各变体字体
-        let mut build_font = |tf: &skia_safe::Typeface| {
+        let build_font = |tf: &skia_safe::Typeface| {
             let mut f = Font::new(tf.clone(), Some(font_size));
             f.set_edging(skia_safe::font::Edging::SubpixelAntiAlias);
             f.set_subpixel(true);

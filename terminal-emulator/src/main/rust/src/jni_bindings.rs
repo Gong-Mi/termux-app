@@ -1094,7 +1094,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_setPtyWindowSize(
 /// 创建异步会话
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     cmd: jstring,
     cwd: jstring,
@@ -1107,22 +1107,23 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
     transcript_rows: jint,
     callback: JObject,
 ) {
+    let mut env = env;
     let cmd_str = if !cmd.is_null() {
-        let js = JString::from_raw(cmd);
+        let js = unsafe { JString::from_raw(cmd) };
         env.get_string(&js).map(|s| s.into()).unwrap_or_default()
     } else {
         String::new()
     };
 
     let cwd_str = if !cwd.is_null() {
-        let js = JString::from_raw(cwd);
+        let js = unsafe { JString::from_raw(cwd) };
         env.get_string(&js).map(|s| s.into()).unwrap_or_default()
     } else {
         String::new()
     };
 
     let mut argv = Vec::new();
-    let args_obj = jni::objects::JObjectArray::from_raw(args);
+    let args_obj = unsafe { jni::objects::JObjectArray::from_raw(args) };
     if !args_obj.is_null() {
         if let Ok(len) = env.get_array_length(&args_obj) {
             for i in 0..len {
@@ -1137,7 +1138,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
     }
 
     let mut envp = Vec::new();
-    let env_vars_obj = jni::objects::JObjectArray::from_raw(env_vars);
+    let env_vars_obj = unsafe { jni::objects::JObjectArray::from_raw(env_vars) };
     if !env_vars_obj.is_null() {
         if let Ok(len) = env.get_array_length(&env_vars_obj) {
             for i in 0..len {

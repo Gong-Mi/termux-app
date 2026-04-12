@@ -467,7 +467,7 @@ impl Screen {
                 old_line.get_space_used()
             };
 
-            let just_to_cursor = cursor_at_this_row;
+            let _just_to_cursor = cursor_at_this_row;
 
             // Process each character in the old line
             let mut i = 0;
@@ -477,7 +477,7 @@ impl Screen {
             while i < last_non_space_index {
                 let c = old_line.text[i];
                 let code_point = c as u32;
-                let mut display_width = local_get_width(code_point);
+                let display_width = local_get_width(code_point);
                 
                 // 核心修复：宽字符原子性检测
                 // 如果当前是宽字符，检查下一个是否是 \0 占位符，并将它们作为一个整体处理
