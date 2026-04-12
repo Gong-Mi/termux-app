@@ -1,4 +1,6 @@
 use skia_safe::{Canvas, Paint, Color, Font, Rect, PaintStyle, FontMgr, FontStyle, BlendMode};
+use skia_safe::wrapper::PointerWrapper;
+use std::sync::Arc;
 use crate::engine::TerminalEngine;
 use crate::terminal::style::*;
 use crate::terminal::colors::{COLOR_INDEX_CURSOR, NUM_INDEXED_COLORS};
@@ -85,12 +87,15 @@ struct FontCache {
     font_width: f32,
     font_height: f32,
     font_ascent: f32,
-    font_mgr: FontMgr,
+    font_mgr: Arc<FontMgr>,
 }
+
+unsafe impl Send for FontCache {}
+unsafe impl Sync for FontCache {}
 
 impl FontCache {
     fn new(font_size: f32) -> Self {
-        let font_mgr = FontMgr::new();
+        let font_mgr = Arc::new(FontMgr::new());
 
         let tf_mono = font_mgr.match_family_style("monospace", FontStyle::normal())
             .expect("monospace font");
@@ -248,6 +253,9 @@ pub struct TerminalRenderer {
     pub font_height: f32,
     pub selection: SelectionBounds,
 }
+
+unsafe impl Send for TerminalRenderer {}
+unsafe impl Sync for TerminalRenderer {}
 
 impl TerminalRenderer {
     pub fn new(_font_data: &[u8], font_size: f32) -> Self {
