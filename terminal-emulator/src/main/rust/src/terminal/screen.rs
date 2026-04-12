@@ -78,8 +78,9 @@ impl TerminalRow {
 
     pub fn get_space_used(&self) -> usize {
         for i in (0..self.text.len()).rev() {
-            // 修复：\0 虽然渲染不可见，但它是宽字符的物理占位符，不能被截断
-            if self.text[i] != ' ' {
+            // \0 是宽字符的占位符，不应计入空间使用
+            // 跳过尾随的 \0 和空格，找到最后一个有效字符
+            if self.text[i] != ' ' && self.text[i] != '\0' {
                 return i + 1;
             }
         }
