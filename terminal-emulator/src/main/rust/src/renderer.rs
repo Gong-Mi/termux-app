@@ -394,7 +394,7 @@ impl TerminalRenderer {
     }
 
     #[inline]
-    fn reverse_colors(fg: usize, bg: usize) -> (usize, usize) {
+    pub fn reverse_colors(fg: usize, bg: usize) -> (usize, usize) {
         (bg, fg)
     }
 
