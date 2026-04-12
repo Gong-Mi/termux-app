@@ -364,52 +364,64 @@ impl Parser {
         
         let byte = c as u8;
         
-        // 处理特殊控制字符
+        // 处理特殊控制字符 (C0 控制字符集)
+        // 根据 VT100/Xterm 规范，这些字符在大多数状态下应立即执行且不中断序列
         match byte {
-            0x0C => {
-                // FF - 换页，当作 LF 处理
-                if self.escape_state == ESC_NONE {
-                    handler.execute(0x0A);
+            0x00 => return, // NUL - 忽略
+            0x07 | 0x08 | 0x09 | 0x0A | 0x0B | 0x0D | 0x0E | 0x0F => {
+                // BEL, BS, HT, LF, VT, CR, SO, SI - 立即执行
+                if self.escape_state == ESC_OSC {
+                    self.do_osc(handler, byte);
+                } else if self.escape_state == ESC_P_DATA {
+                    self.do_dcs_data(handler, byte);
+                } else if self.escape_state == ESC_APC {
+                    self.do_apc(handler, byte);
+                } else {
+                    handler.execute(byte);
                 }
                 return;
             }
-            0x00..=0x17 | 0x19 | 0x1C..=0x1F => {
-                if self.escape_state == ESC_NONE {
-                    handler.execute(byte);
-                    return;
-                }
+            0x0C => {
+                // FF - 换页，当作 LF 处理
+                handler.execute(0x0A);
+                return;
             }
             0x18 | 0x1A => {
-                // CAN / SUB - 取消转义序列
+                // CAN / SUB - 取消当前转义序列并回到普通状态
                 self.escape_state = ESC_NONE;
                 return;
             }
-            0x7F => {
-                // DEL - 在转义序列中忽略
-                return;
-            }
             0x1B => {
-                // ESC - 开始转义序列
-                if self.escape_state == ESC_P {
-                    // DCS 序列中，ESC 可能是 ST 的一部分
+                // ESC - 开始新的转义序列
+                if self.escape_state == ESC_P || self.escape_state == ESC_P_DATA {
+                    // DCS 数据阶段，ESC 可能是 ST 的一部分
+                    self.escape_state = ESC_P; // 确保在 ESC_P 状态处理接下来的字符
                     return;
                 }
                 if self.escape_state != ESC_OSC {
+                    self.params.reset();
+                    self.intermediates.clear();
                     self.escape_state = ESC;
                 } else {
-                    // OSC 序列中的 ESC - 这是 String Terminator 的开始
-                    // 关键修复：先分发 OSC 内容，但将状态设为 ESC（不是 ESC_NONE）
-                    // 这样下一个 '\' 字符会被 do_esc 识别为 ST 终结符并消费掉
+                    // OSC 序列中的 ESC - ST (String Terminator) 的可能开始
                     let osc_data = self.osc_buffer.as_bytes().to_vec();
                     let params: Vec<&[u8]> = osc_data
                         .split(|&b| b == b';')
                         .collect();
                     handler.osc_dispatch(&params, true);
                     self.osc_buffer.clear();
-                    self.escape_state = ESC; // 关键：设为 ESC 以消费接下来的 '\'
+                    self.escape_state = ESC; // 消费接下来的 '\'
                 }
                 return;
             }
+            0x00..=0x1F => {
+                // 其他 C0 控制字符 - 默认执行
+                if self.escape_state == ESC_NONE {
+                    handler.execute(byte);
+                }
+                return;
+            }
+            0x7F => return, // DEL - 忽略
             _ => {}
         }
         
