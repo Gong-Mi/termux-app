@@ -85,6 +85,7 @@ struct FontCache {
     font_width: f32,
     font_height: f32,
     font_ascent: f32,
+    font_mgr: FontMgr,
 }
 
 impl FontCache {
@@ -135,6 +136,7 @@ impl FontCache {
             font_width,
             font_height,
             font_ascent: metrics.1.ascent,
+            font_mgr,
         }
     }
 
@@ -150,7 +152,6 @@ impl FontCache {
     }
 
     fn get_font_for_char(&self, ch: char, bold: bool, italic: bool) -> &Font {
-        let font_mgr = FontMgr::new();
         // 1. 尝试首选字体 (monospace)
         let primary = self.get_font(bold, italic, false);
         if primary.typeface().unwrap().unichars_to_glyphs(&[ch as i32]).iter().any(|&g| g != 0) {
@@ -163,9 +164,8 @@ impl FontCache {
         let style = FontStyle::new(weight, skia_safe::font_style::Width::NORMAL, slant);
         
         // 这一步是关键：由系统告知哪个字体能画出这个字
-        if let Some(tf) = font_mgr.match_family_style_character("monospace", style, &[], ch as i32) {
-             // 这里理想情况下应该有 LRU 缓存，目前先直接使用
-             // 注意：由于生命周期原因，暂存备用字体在 self.font_fallback
+        if let Some(_tf) = self.font_mgr.match_family_style_character("monospace", style, &[], ch as i32) {
+             // 注意：这里理想情况下应该有 LRU 缓存，目前先暂时回退到 font_fallback
              return &self.font_fallback;
         }
 
