@@ -323,10 +323,14 @@ impl ScreenState {
         self.get_current_screen_mut().erase_in_display(mode, y, x, style);
         if mode == 3 { self.scroll_counter = 0; }
 
-        if mode == 2 || mode == 3 {
-            self.sixel_decoder.reset(); // 清除 Sixel 状态
+        if mode == 2 {
+            // ESC[2J - 清空整个可见屏幕，清除 Sixel 状态并通知 Java
+            self.sixel_decoder.reset();
             self.report_clear_screen();
-            crate::render_thread::request_render(); // 强制唤醒渲染线程
+            crate::render_thread::request_render();
+        } else if mode == 3 {
+            // ESC[3J - 仅清除滚动历史，可见内容不变，保留 Sixel 图像
+            crate::render_thread::request_render();
         }
     }
 
