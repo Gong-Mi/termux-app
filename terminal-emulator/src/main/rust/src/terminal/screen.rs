@@ -240,41 +240,38 @@ impl Screen {
             }
             2 => { for y in 0..self.rows { self.get_row_mut(y).clear(0, c, style); } }
             3 => {
-                // CSI 3 J - 清除滚动历史 + 当前屏幕
-                // 1. 清除所有物理行（彻底重置缓冲区）
-                for row in &mut self.buffer {
-                    row.clear(0, c, style);
-                }
-                // 2. 重置指针
-                self.first_row = 0;
-                self.active_transcript_rows = 0;
+                // CSI 3 J - 清除滚动历史 (Transcript)，保留屏幕上的可见内容
+                // 对齐 Java TerminalBuffer.clearTranscript() 和 xterm 的行为
+                self.clear_transcript(style);
             }
             _ => {}
         }
     }
 
     /// 清除历史行（transcript），保留屏幕上的可见内容
-    /// 对齐 Java TerminalBuffer.clearTranscript() 的行为
     pub fn clear_transcript(&mut self, style: u64) {
         let total_rows = self.buffer.len();
         let c = self.cols as usize;
-        if self.first_row < self.active_transcript_rows {
-            // 历史行跨越了环形缓冲区边界
-            let start = total_rows + self.first_row - self.active_transcript_rows;
-            for i in start..total_rows {
-                self.buffer[i].clear(0, c, style);
+        
+        if self.active_transcript_rows > 0 {
+            // 清除逻辑：找到历史行的物理索引并清空，然后重置 active_transcript_rows
+            if self.first_row < self.active_transcript_rows {
+                // 历史记录跨越了缓冲区末尾
+                let start = total_rows + self.first_row - self.active_transcript_rows;
+                for i in start..total_rows {
+                    self.buffer[i].clear(0, c, style);
+                }
+                for i in 0..self.first_row {
+                    self.buffer[i].clear(0, c, style);
+                }
+            } else {
+                let start = self.first_row - self.active_transcript_rows;
+                for i in start..self.first_row {
+                    self.buffer[i].clear(0, c, style);
+                }
             }
-            for i in 0..self.first_row {
-                self.buffer[i].clear(0, c, style);
-            }
-        } else {
-            // 历史行在 first_row 之前连续存储
-            let start = self.first_row - self.active_transcript_rows;
-            for i in start..self.first_row {
-                self.buffer[i].clear(0, c, style);
-            }
+            self.active_transcript_rows = 0;
         }
-        self.active_transcript_rows = 0;
     }
 
     pub fn insert_lines(&mut self, cursor_y: i32, bottom: i32, n: i32, style: u64) {
