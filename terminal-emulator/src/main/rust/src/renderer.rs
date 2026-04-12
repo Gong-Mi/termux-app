@@ -755,15 +755,21 @@ impl TerminalRenderer {
             do_reverse = !do_reverse;
         }
 
+        let mut fg_tc = fg_truecolor;
+        let mut bg_tc = bg_truecolor;
         if do_reverse {
             let swapped = Self::reverse_colors(fg_idx, bg_idx);
             fg_idx = swapped.0;
             bg_idx = swapped.1;
+            // 同时交换真彩色标志位，否则数据和标志位不匹配导致文字/背景同色
+            let tmp = fg_tc;
+            fg_tc = bg_tc;
+            bg_tc = tmp;
         }
 
         // 解析前景色：真彩色直接使用，索引色查调色板
         let mut fg_color_val: u32;
-        if fg_truecolor {
+        if fg_tc {
             fg_color_val = fg_idx as u32;  // decode_fore_color already returns 0xffRRGGBB
         } else {
             fg_color_val = if fg_idx < 259 { palette[fg_idx] } else { palette[256] };
@@ -776,7 +782,7 @@ impl TerminalRenderer {
 
         // 解析背景色：真彩色直接使用，索引色查调色板
         let bg_color_val: u32;
-        let has_bg = if bg_truecolor {
+        let has_bg = if bg_tc {
             bg_color_val = bg_idx as u32;
             true  // Truecolor always has a background
         } else {
