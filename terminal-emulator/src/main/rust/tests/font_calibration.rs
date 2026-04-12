@@ -168,4 +168,44 @@ mod tests {
         db.insert_exception(&metrics).unwrap();
         *count += 1;
     }
+
+    #[test]
+    fn print_top_100_exceptions() {
+        let db_path = Path::new("tests/calibration_production.db");
+        if !db_path.exists() {
+            println!("Production database not found.");
+            return;
+        }
+        let db = FontCalibrationDB::login_as_guest(db_path).expect("Login failed");
+        
+        let mut stmt = db.conn.prepare(
+            "SELECT cp, actual_width, expected_width, direction, category FROM glyph_exceptions LIMIT 100"
+        ).unwrap();
+
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, u32>(0)?,
+                row.get::<_, f32>(1)?,
+                row.get::<_, i32>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+            ))
+        }).unwrap();
+
+        println!("\n{:<8} | {:<4} | {:<10} | {:<10} | {:<6} | {:<10}", "CP(Hex)", "Char", "Actual(px)", "Expect(un)", "Units", "Category");
+        println!("{:-<60}", "");
+
+        let base_w = 11.0f32; // 针对 sans-serif 的分析
+
+        for row in rows {
+            let (cp, actual_w, expected_w, _direction, category) = row.unwrap();
+            let ch = std::char::from_u32(cp).unwrap_or(' ');
+            let units = actual_w / base_w;
+            
+            println!(
+                "U+{:04X}   | {:<4} | {:<10.2} | {:<10} | {:<6.2} | {:<10}",
+                cp, ch, actual_w, expected_w, units, category
+            );
+        }
+    }
 }

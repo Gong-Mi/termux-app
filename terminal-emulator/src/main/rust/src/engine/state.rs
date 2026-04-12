@@ -326,6 +326,7 @@ impl ScreenState {
         if mode == 2 || mode == 3 {
             self.sixel_decoder.reset(); // 清除 Sixel 状态
             self.report_clear_screen();
+            crate::render_thread::request_render(); // 强制唤醒渲染线程
         }
     }
 
