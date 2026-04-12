@@ -59,7 +59,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetFontSize(
 /// 获取字体指标
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _obj: JObject,
     metrics_array: jni::sys::jfloatArray,
 ) {
@@ -274,7 +274,7 @@ fn flush_events_to_java(env: &mut JNIEnv, callback_obj: &Option<jni::objects::Gl
 /// 创建引擎实例
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_createEngine(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _class: JClass,
     cols: jint,
     rows: jint,
@@ -297,7 +297,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_createEngine(
 /// 批量处理
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatch(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _class: JClass,
     ptr: jlong,
     batch: jbyteArray,
@@ -325,7 +325,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatch(
 /// 处理 Unicode 码点
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_processCodePoint(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _class: JClass,
     ptr: jlong,
     code_point: jint,
@@ -426,7 +426,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_startIoThread(
 /// 完整调整大小
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_resize(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _class: JClass,
     ptr: jlong,
     cols: jint,
@@ -450,7 +450,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_resize(
 /// 获取标题
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_getTitle(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _class: JClass,
     ptr: jlong,
 ) -> jstring {
@@ -890,7 +890,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_resetColors(mut env
 /// 更新颜色
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_updateColors(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _class: JClass,
     ptr: jlong,
     properties_obj: JObject,
@@ -962,7 +962,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_updateColors(
 /// 设置光标颜色
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorColorForBackground(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _class: JClass,
     ptr: jlong,
 ) {
@@ -997,7 +997,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getPerceivedBrightn
 /// 更新终端会话客户端
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_updateTerminalSessionClient(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _class: JClass,
     ptr: jlong,
     client: JObject,
@@ -1051,7 +1051,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorBlinkingEn
 /// 获取调试信息
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_getDebugInfo(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _class: JClass,
     ptr: jlong,
 ) -> jstring {
@@ -1094,7 +1094,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_setPtyWindowSize(
 /// 创建异步会话
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _class: JClass,
     cmd: jstring,
     cwd: jstring,
@@ -1233,7 +1233,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_close(
 /// 创建子进程
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _class: JClass,
     cmd: jstring,
     cwd: jstring,
@@ -1276,7 +1276,7 @@ pub extern "system" fn Java_com_termux_terminal_WcWidth_widthRust(_env: JNIEnv, 
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_JNI_getKeyCode(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _class: JClass,
     key_code: jint,
     key_mode: jint,
@@ -1298,7 +1298,7 @@ pub extern "system" fn Java_com_termux_terminal_JNI_getKeyCode(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_JNI_getKeyCodeFromTermcap(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _class: JClass,
     termcap: JString,
     cursor_app: jboolean,
