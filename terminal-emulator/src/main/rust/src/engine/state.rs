@@ -324,6 +324,7 @@ impl ScreenState {
         if mode == 3 { self.scroll_counter = 0; }
 
         if mode == 2 || mode == 3 {
+            self.sixel_decoder.reset(); // 清除 Sixel 状态
             self.report_clear_screen();
         }
     }
