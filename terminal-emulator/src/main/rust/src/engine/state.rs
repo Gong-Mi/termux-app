@@ -538,6 +538,9 @@ impl ScreenState {
                     4 => {
                         if set { self.modes.set(MODE_INSERT); } else { self.modes.reset(MODE_INSERT); }
                     },
+                    20 => {
+                        if set { self.modes.set(MODE_LNM); } else { self.modes.reset(MODE_LNM); }
+                    },
                     _ => {}
                 }
             }
