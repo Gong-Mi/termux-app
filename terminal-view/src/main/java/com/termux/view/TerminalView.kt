@@ -246,6 +246,7 @@ class TerminalView @JvmOverloads constructor(
         mTopRow = 0
         mTermSession = session
         mEmulator = null
+        mEnginePointerSet = false  // 关键修复：切换 session 时必须重置，否则新 session 的 engine 指针永远不会被设置
         mCombiningAccent = 0
         updateSize()
         isVerticalScrollBarEnabled = true
