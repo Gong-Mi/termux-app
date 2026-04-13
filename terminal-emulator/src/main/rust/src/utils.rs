@@ -48,13 +48,5 @@ pub fn map_line_drawing(c: u8) -> char {
 }
 
 pub fn get_char_width(ucs: u32) -> usize {
-    if ucs == 0 { return 0; } // 占位符必须为 0 宽
-    
-    use unicode_width::UnicodeWidthChar;
-    if let Some(c) = std::char::from_u32(ucs) {
-        if (ucs < 32) || (ucs >= 0x7F && ucs < 0xA0) { return 0; }
-        c.width().unwrap_or(1)
-    } else {
-        1
-    }
+    crate::wcwidth::wcwidth(ucs)
 }

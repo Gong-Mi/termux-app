@@ -10,6 +10,7 @@
 use once_cell::sync::OnceCell;
 
 // 声明子模块
+pub mod wcwidth;
 pub mod terminal;
 pub mod utils;
 pub mod engine;

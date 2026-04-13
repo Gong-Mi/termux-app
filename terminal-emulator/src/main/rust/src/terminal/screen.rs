@@ -132,11 +132,7 @@ impl TerminalRow {
 }
 
 fn local_get_width(ucs: u32) -> usize {
-    if ucs == 0 { return 0; } // \0 是宽字符占位符，宽度为 0
-    if ucs == 32 { return 1; } // 空格
-    if ucs < 32 || (ucs >= 0x7F && ucs < 0xA0) { return 0; }
-    if (ucs >= 0x2E80 && ucs <= 0x9FFF) || (ucs >= 0xAC00 && ucs <= 0xD7A3) || (ucs >= 0xFF01 && ucs <= 0xFF60) { return 2; }
-    1
+    crate::wcwidth::wcwidth(ucs)
 }
 
 pub struct Screen {

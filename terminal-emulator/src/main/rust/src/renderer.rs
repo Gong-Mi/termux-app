@@ -68,30 +68,7 @@ impl RenderFrame {
 /// 覆盖更多 CJK 扩展区、Emoji、全角标点等，避免宽度错配导致豆腐块
 #[inline]
 fn char_wc_width(ucs: u32) -> usize {
-    if ucs == 0 || ucs == 32 { return 1; }
-    if ucs < 32 || (ucs >= 0x7F && ucs < 0xA0) { return 0; }
-
-    // CJK 统一表意文字 + 扩展区 A-F + 兼容区 + 韩文 + 日文 + Emoji
-    // 使用合并后的范围避免重复检查
-    if (ucs >= 0x1100 && ucs <= 0x11FF) ||   // Hangul Jamo
-       (ucs >= 0x2E80 && ucs <= 0x4DBF) ||   // CJK Radicals + Extension A
-       (ucs >= 0x4E00 && ucs <= 0x9FFF) ||   // CJK Unified Ideographs
-       (ucs >= 0xAC00 && ucs <= 0xD7A3) ||   // Hangul Syllables
-       (ucs >= 0xF900 && ucs <= 0xFAFF) ||   // CJK Compatibility Ideographs
-       (ucs >= 0xFE30 && ucs <= 0xFE4F) ||   // CJK Compatibility Forms
-       (ucs >= 0xFF01 && ucs <= 0xFF60) ||   // Fullwidth ASCII + Symbols
-       (ucs >= 0x3000 && ucs <= 0x30FF) ||   // CJK Symbols + Hiragana + Katakana
-       (ucs >= 0x3105 && ucs <= 0x312F) ||   // Bopomofo
-       (ucs >= 0x3130 && ucs <= 0x318F) ||   // Hangul Compatibility Jamo
-       (ucs >= 0x31F0 && ucs <= 0x31FF) ||   // Katakana Phonetic Extensions
-       (ucs >= 0x20000 && ucs <= 0x2FFFF) || // CJK Extension B-F + SIP
-       (ucs >= 0x30000 && ucs <= 0x3134F) || // CJK Extension F-G
-       (ucs >= 0x2600 && ucs <= 0x27BF) ||   // Misc Symbols + Dingbats
-       (ucs >= 0x1F300 && ucs <= 0x1F9FF) || // Emoji / Pictographs
-       (ucs >= 0x1FA00 && ucs <= 0x1FAFF)    // Chess / Symbols Extended
-    { return 2; }
-
-    1
+    crate::wcwidth::wcwidth(ucs)
 }
 
 /// 判断字符是否为块元素（Block Elements / Box Drawing / Braille 等）
