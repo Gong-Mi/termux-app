@@ -65,13 +65,32 @@ impl RenderFrame {
 }
 
 /// Unicode 字符终端单元格宽度计算 (与 Java WcWidth 一致)
+/// 覆盖更多 CJK 扩展区、Emoji、全角标点等，避免宽度错配导致豆腐块
 #[inline]
 fn char_wc_width(ucs: u32) -> usize {
     if ucs == 0 || ucs == 32 { return 1; }
     if ucs < 32 || (ucs >= 0x7F && ucs < 0xA0) { return 0; }
-    if (ucs >= 0x2E80 && ucs <= 0x9FFF) ||
-       (ucs >= 0xAC00 && ucs <= 0xD7A3) ||
-       (ucs >= 0xFF01 && ucs <= 0xFF60) { return 2; }
+
+    // CJK 统一表意文字 + 扩展区 A-F + 兼容区 + 韩文 + 日文 + Emoji
+    // 使用合并后的范围避免重复检查
+    if (ucs >= 0x1100 && ucs <= 0x11FF) ||   // Hangul Jamo
+       (ucs >= 0x2E80 && ucs <= 0x4DBF) ||   // CJK Radicals + Extension A
+       (ucs >= 0x4E00 && ucs <= 0x9FFF) ||   // CJK Unified Ideographs
+       (ucs >= 0xAC00 && ucs <= 0xD7A3) ||   // Hangul Syllables
+       (ucs >= 0xF900 && ucs <= 0xFAFF) ||   // CJK Compatibility Ideographs
+       (ucs >= 0xFE30 && ucs <= 0xFE4F) ||   // CJK Compatibility Forms
+       (ucs >= 0xFF01 && ucs <= 0xFF60) ||   // Fullwidth ASCII + Symbols
+       (ucs >= 0x3000 && ucs <= 0x30FF) ||   // CJK Symbols + Hiragana + Katakana
+       (ucs >= 0x3105 && ucs <= 0x312F) ||   // Bopomofo
+       (ucs >= 0x3130 && ucs <= 0x318F) ||   // Hangul Compatibility Jamo
+       (ucs >= 0x31F0 && ucs <= 0x31FF) ||   // Katakana Phonetic Extensions
+       (ucs >= 0x20000 && ucs <= 0x2FFFF) || // CJK Extension B-F + SIP
+       (ucs >= 0x30000 && ucs <= 0x3134F) || // CJK Extension F-G
+       (ucs >= 0x2600 && ucs <= 0x27BF) ||   // Misc Symbols + Dingbats
+       (ucs >= 0x1F300 && ucs <= 0x1F9FF) || // Emoji / Pictographs
+       (ucs >= 0x1FA00 && ucs <= 0x1FAFF)    // Chess / Symbols Extended
+    { return 2; }
+
     1
 }
 
@@ -186,28 +205,47 @@ impl FontCache {
         }
     }
 
-    fn get_font_for_char(&self, ch: char, bold: bool, italic: bool) -> &Font {
+    /// 获取字符对应的字体 — 关键修复：当 monospace 和 fallback 都不支持时，
+    /// 使用系统匹配到的字体，避免豆腐块
+    /// 返回 (Font, is_fallback) 元组，is_fallback=true 表示使用了特殊匹配字体
+    fn get_font_for_char(&self, ch: char, bold: bool, italic: bool) -> (Font, bool) {
+        let ucs = ch as u32;
+
         // 1. 尝试首选字体 (monospace)
         let primary = self.get_font(bold, italic, false);
         let tf = primary.typeface();
         let mut glyphs = [0u16; 1];
-        tf.unichars_to_glyphs(&[ch as i32], &mut glyphs);
+        tf.unichars_to_glyphs(&[ucs as i32], &mut glyphs);
         if glyphs[0] != 0 {
-            return primary;
+            return (primary.clone(), false);
         }
 
-        // 2. 如果首选不支持，向系统请求最匹配的备用字体 (针对该特定字符)
+        // 2. 检查 fallback 是否支持
+        let fallback_ref = if bold { &self.font_fallback_bold } else { &self.font_fallback };
+        let mut fallback_glyphs = [0u16; 1];
+        fallback_ref.typeface().unichars_to_glyphs(&[ucs as i32], &mut fallback_glyphs);
+        if fallback_glyphs[0] != 0 {
+            return (fallback_ref.clone(), false);
+        }
+
+        // 3. 向系统请求匹配的字体 — 关键修复
         let weight = if bold { skia_safe::font_style::Weight::BOLD } else { skia_safe::font_style::Weight::NORMAL };
         let slant = if italic { skia_safe::font_style::Slant::Italic } else { skia_safe::font_style::Slant::Upright };
         let style = FontStyle::new(weight, skia_safe::font_style::Width::NORMAL, slant);
-        
-        // 这一步是关键：由系统告知哪个字体能画出这个字
-        if let Some(_tf) = self.font_mgr.match_family_style_character("monospace", style, &[], ch as i32) {
-             // 注意：这里理想情况下应该有 LRU 缓存，目前先暂时回退到 font_fallback
-             return &self.font_fallback;
+
+        // 尝试多种字体家族，提高找到支持字符的字体的概率
+        if let Some(tf) = self.font_mgr.match_family_style_character("Noto Sans CJK SC", style, &[], ucs as i32)
+            .or_else(|| self.font_mgr.match_family_style_character("Noto Sans", style, &[], ucs as i32))
+            .or_else(|| self.font_mgr.match_family_style_character("Droid Sans Fallback", style, &[], ucs as i32))
+            .or_else(|| self.font_mgr.match_family_style_character("sans-serif", style, &[], ucs as i32)) {
+            let mut matched_font = Font::new(tf, Some(self.font_height));
+            matched_font.set_edging(skia_safe::font::Edging::SubpixelAntiAlias);
+            matched_font.set_subpixel(true);
+            return (matched_font, true);
         }
 
-        &self.font_fallback
+        // 4. 实在找不到，返回 fallback（会显示豆腐块，但至少尝试过了）
+        (fallback_ref.clone(), false)
     }
 }
 
@@ -804,7 +842,7 @@ impl TerminalRenderer {
         // 分组绘制：将连续使用相同字体的字符合并为一个子 Run
         // 块元素特殊处理：使用矩形填充代替字体 glyph
         let mut group_text = String::new();
-        let mut group_font: Option<*const Font> = None;
+        let mut group_font: Option<Font> = None;
         let mut group_start_x = x;
         let mut group_logic_w = 0.0f32;
 
@@ -814,8 +852,8 @@ impl TerminalRenderer {
             // 块元素/特殊字符不走字体渲染，直接矩形填充
             if is_special_render_char(ch) {
                 // 先刷新当前 group
-                if let Some(font_ptr) = group_font {
-                    self.draw_char_group(canvas, &group_text, group_start_x, y_adjusted, unsafe { &*font_ptr }, group_logic_w);
+                if let Some(ref font) = group_font {
+                    self.draw_char_group(canvas, &group_text, group_start_x, y_adjusted, font, group_logic_w);
                 }
                 group_text.clear();
                 group_font = None;
@@ -829,33 +867,34 @@ impl TerminalRenderer {
                 continue;
             }
 
-            let font = self.font_cache.get_font_for_char(ch, bold, italic);
+            let (font, _is_fallback) = self.font_cache.get_font_for_char(ch, bold, italic);
             let logic_w = char_wc_width(ch as u32) as f32 * self.font_width;
-            let font_ptr = font as *const Font;
 
-            if let Some(prev_font_ptr) = group_font {
-                if prev_font_ptr == font_ptr {
+            if let Some(ref prev_font) = group_font {
+                // 使用字体家族名作为分组依据（同一 typeface 可合并）
+                let same_family = font.typeface().unique_id() == prev_font.typeface().unique_id();
+                if same_family {
                     group_text.push(ch);
                     group_logic_w += logic_w;
                 } else {
-                    self.draw_char_group(canvas, &group_text, group_start_x, y_adjusted, unsafe { &*prev_font_ptr }, group_logic_w);
+                    self.draw_char_group(canvas, &group_text, group_start_x, y_adjusted, prev_font, group_logic_w);
                     group_text.clear();
                     group_text.push(ch);
-                    group_font = Some(font_ptr);
+                    group_font = Some(font);
                     group_start_x = current_x;
                     group_logic_w = logic_w;
                 }
             } else {
                 group_text.push(ch);
-                group_font = Some(font_ptr);
+                group_font = Some(font);
                 group_start_x = x;
                 group_logic_w = logic_w;
             }
             current_x += logic_w;
         }
 
-        if let Some(font_ptr) = group_font {
-            self.draw_char_group(canvas, &group_text, group_start_x, y_adjusted, unsafe { &*font_ptr }, group_logic_w);
+        if let Some(ref font) = group_font {
+            self.draw_char_group(canvas, &group_text, group_start_x, y_adjusted, font, group_logic_w);
         }
 
         // 下划线
@@ -1054,8 +1093,8 @@ impl TerminalRenderer {
         }
 
         // Fallback: 使用字体渲染任何未处理的字符
-        let font = self.font_cache.get_font_for_char(ch, false, false);
-        self.draw_char_group(canvas, &ch.to_string(), x, y_base + self.font_cache.font_ascent * 0.15, font, cell_w);
+        let (font, _) = self.font_cache.get_font_for_char(ch, false, false);
+        self.draw_char_group(canvas, &ch.to_string(), x, y_base + self.font_cache.font_ascent * 0.15, &font, cell_w);
     }
 
     /// 绘制 shade 图案（使用小矩形模拟密度）
@@ -1083,8 +1122,7 @@ impl TerminalRenderer {
     fn measure_char(&self, ch: char, effect: u64) -> f32 {
         let bold = (effect & EFFECT_BOLD) != 0;
         let italic = (effect & EFFECT_ITALIC) != 0;
-        let font = self.font_cache.get_font_for_char(ch, bold, italic);
-        // 直接使用预创建的 Font，避免临时分配
+        let (font, _) = self.font_cache.get_font_for_char(ch, bold, italic);
         let (w, _) = font.measure_str(&ch.to_string(), None);
         w
     }
