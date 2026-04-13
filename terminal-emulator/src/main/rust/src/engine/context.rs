@@ -79,9 +79,17 @@ impl TerminalContext {
 
     pub fn start_io_thread(self: std::sync::Arc<Self>, pty_fd: i32) {
         let context = self.clone();
+        // 关键修复：dup FD，避免与 Java 侧的 FileOutputStream 争夺同一个 FD
+        // Java 也使用相同的 pty_fd 进行写入，如果 Rust 侧通过 from_raw_fd 拥有它，
+        // 当 File drop 时会关闭 FD，导致 Java 的写入失败
+        let dup_fd = unsafe { libc::dup(pty_fd) };
+        if dup_fd < 0 {
+            crate::utils::android_log(crate::utils::LogPriority::ERROR, "IO Thread: dup failed");
+            return;
+        }
         std::thread::spawn(move || {
             let mut buffer = [0u8; 8192];
-            let mut pty_file = unsafe { std::fs::File::from_raw_fd(pty_fd) };
+            let mut pty_file = unsafe { std::fs::File::from_raw_fd(dup_fd) };
 
             let vm = match crate::JAVA_VM.get() {
                 Some(v) => v,
