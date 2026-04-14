@@ -185,9 +185,13 @@ class TerminalView @JvmOverloads constructor(
 
             override fun onScale(focusX: Float, focusY: Float, scale: Float): Boolean {
                 if (mEmulator == null || isSelectingText()) return true
+                // Only accumulate scale during active pinch gesture.
+                // The actual font size change is handled by mClient.onScale() which calls
+                // changeFontSize() -> setTextSize() -> nativeSetFontSize() + updateSize().
+                // Do NOT call invalidate() here - it will be called by updateSize() after
+                // the font size change, avoiding rendering out-of-sync state.
                 mScaleFactor *= scale
                 mScaleFactor = mClient?.onScale(mScaleFactor) ?: mScaleFactor
-                invalidate()
                 return true
             }
 
@@ -715,16 +719,20 @@ class TerminalView @JvmOverloads constructor(
         val viewHeight = height
         val session = mTermSession
         if (viewWidth == 0 || viewHeight == 0 || session == null) return
-        val newColumns = Math.max(4, (viewWidth / (getFontWidth() * mScaleFactor)).toInt())
-        val newRows = Math.max(4, ((viewHeight / mScaleFactor - getFontLineSpacingAndAscent()) / getFontLineSpacing()).toInt())
+
+        // Match upstream: calculate columns/rows from font metrics directly, NOT using mScaleFactor.
+        // After changeFontSize() -> setTextSize() -> nativeSetFontSize(), the native font metrics
+        // are already updated, so we use them as-is.
+        val newColumns = Math.max(4, (viewWidth / getFontWidth()).toInt())
+        val newRows = Math.max(4, ((viewHeight - getFontLineSpacingAndAscent()) / getFontLineSpacing()).toInt())
 
         if (!session.isEngineInitialized()) {
-            session.updateSize(newColumns, newRows, (getFontWidth() * mScaleFactor).toInt(), (getFontLineSpacing() * mScaleFactor).toInt())
+            session.updateSize(newColumns, newRows, getFontWidth().toInt(), getFontLineSpacing().toInt())
             return
         }
         val emu = mEmulator
         if (emu == null || newColumns != emu.getCols() || newRows != emu.getRows()) {
-            session.updateSize(newColumns, newRows, (getFontWidth() * mScaleFactor).toInt(), (getFontLineSpacing() * mScaleFactor).toInt())
+            session.updateSize(newColumns, newRows, getFontWidth().toInt(), getFontLineSpacing().toInt())
             mEmulator = session.mEmulator
             mClient?.onEmulatorSet()
             mTerminalCursorBlinkerRunnable?.setEmulator(mEmulator)
@@ -761,7 +769,7 @@ class TerminalView @JvmOverloads constructor(
         val bitmap = mSixelBitmap
         if (bitmap != null && !bitmap.isRecycled) {
             canvas.save()
-            canvas.scale(mScaleFactor, mScaleFactor)
+            // Match upstream: do NOT scale the canvas. The native renderer handles the correct size.
             val pixelX = mSixelStartX * getFontWidth()
             val pixelY = (mSixelStartY - mTopRow) * getFontLineSpacing() + getFontLineSpacingAndAscent()
             canvas.drawBitmap(bitmap, pixelX, pixelY, mSixelPaint)

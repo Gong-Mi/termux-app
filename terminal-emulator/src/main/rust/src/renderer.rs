@@ -425,7 +425,9 @@ impl TerminalRenderer {
         let screen = if state.use_alternate_buffer { &state.alt_screen } else { &state.main_screen };
 
         canvas.save();
-        canvas.scale((scale, scale));
+        // Match upstream: do NOT scale the canvas. Font size is handled by nativeSetFontSize()
+        // which updates the font metrics directly. The scale parameter is kept for potential
+        // future smooth animation during pinch gestures, but currently not used for rendering.
 
         // 背景清屏
         let bg_color = palette[257];
@@ -596,7 +598,7 @@ impl TerminalRenderer {
         canvas.clear(Color::new(bg_color));
 
         canvas.save();
-        canvas.scale((scale, scale));
+        // Match upstream: do NOT scale the canvas. Font size is handled by native font metrics.
 
         // canvas.translate((0.0, -scroll_offset)); // 不再使用 translate，因为我们已经截取了正确的可见行
 
