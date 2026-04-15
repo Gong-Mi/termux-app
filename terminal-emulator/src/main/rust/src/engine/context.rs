@@ -2,7 +2,6 @@
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::os::fd::FromRawFd;
-use std::io::Read;
 
 use crate::vte_parser::Parser;
 use crate::engine::state::ScreenState;

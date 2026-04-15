@@ -1,5 +1,5 @@
-use termux_rust_new::wcwidth::wcwidth;
-use termux_rust_new::terminal::screen::TerminalRow;
+use termux_rust::wcwidth::wcwidth;
+use termux_rust::terminal::screen::TerminalRow;
 
 #[test]
 fn test_wcwidth_basic_categories() {

@@ -2,7 +2,7 @@
 // 运行：cargo test --test vulkan_render_benchmark -- --nocapture
 
 use skia_safe::{
-    surfaces, Color, Paint, Font, FontMgr, FontStyle,
+    surfaces, Color, Paint, Font, FontMgr, FontStyle, TextBlobBuilder,
 };
 use std::time::{Duration, Instant};
 
@@ -73,10 +73,14 @@ fn simulate_render_pipeline(canvas: &skia_safe::Canvas, terminal: &TerminalMock,
         // 1. 背景清屏 (模拟 terminal clear)
         canvas.clear(Color::new(0xFF000000u32));
 
-        // 2. 逐行绘制 (与 renderer.rs 的 draw_terminal 一致)
+        // 2. 逐行绘制 (使用 TextBlob 优化)
         for r in 0..terminal.rows {
             let y_base = (r as f32 + 1.0) * font_height;
+            let y_adj = y_base + 3.0;
             let row_start = r * terminal.cols;
+
+            let mut builder = TextBlobBuilder::new();
+            let mut has_content = false;
 
             let mut c = 0;
             while c < terminal.cols {
@@ -86,27 +90,45 @@ fn simulate_render_pipeline(canvas: &skia_safe::Canvas, terminal: &TerminalMock,
                 if ch == ' ' { c += 1; continue; }
 
                 // 合并相同样式的 run
-                let run_start = c;
-                let mut run_text = String::new();
+                let mut run_chars = Vec::new();
 
                 while c < terminal.cols {
                     let ci = row_start + c;
                     if ci >= terminal.cells.len() { break; }
                     let (ch2, style2) = terminal.cells[ci];
                     if style2 != style || ch2 == ' ' { break; }
-                    run_text.push(ch2);
+                    run_chars.push((ch2, c as f32 * font_width));
                     c += 1;
                 }
 
-                if !run_text.is_empty() {
-                    let x = run_start as f32 * font_width;
-                    canvas.draw_str(&run_text, (x, y_base + 3.0), font, paint);
+                if !run_chars.is_empty() {
+                    flush_run_to_blob(&mut builder, &run_chars, font);
+                    has_content = true;
+                }
+            }
+
+            if has_content {
+                if let Some(blob) = builder.make() {
+                    canvas.draw_text_blob(&blob, (0.0, y_adj), paint);
                 }
             }
         }
     });
 
     elapsed
+}
+
+fn flush_run_to_blob(builder: &mut TextBlobBuilder, chars: &[(char, f32)], font: &Font) {
+    if chars.is_empty() { return; }
+    let text: String = chars.iter().map(|(c, _)| *c).collect();
+    let mut glyphs = vec![skia_safe::GlyphId::default(); chars.len()];
+    font.str_to_glyphs(&text, &mut glyphs);
+
+    let (run_glyphs, run_pos) = builder.alloc_run_pos_h(font, chars.len(), 0.0, None);
+    run_glyphs.copy_from_slice(&glyphs);
+    for (i, (_, x)) in chars.iter().enumerate() {
+        run_pos[i] = *x;
+    }
 }
 
 // ============================================================

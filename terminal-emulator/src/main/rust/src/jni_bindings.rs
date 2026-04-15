@@ -32,14 +32,16 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeUpdateRenderParam
     sel_y2: jint,
     sel_active: jboolean,
 ) {
-    *render_thread::get_render_scale().lock().unwrap() = scale;
-    *render_thread::get_render_scroll_offset().lock().unwrap() = scroll_offset;
-    *render_thread::get_render_top_row().lock().unwrap() = top_row;
-    *render_thread::get_render_sel_x1().lock().unwrap() = sel_x1;
-    *render_thread::get_render_sel_y1().lock().unwrap() = sel_y1;
-    *render_thread::get_render_sel_x2().lock().unwrap() = sel_x2;
-    *render_thread::get_render_sel_y2().lock().unwrap() = sel_y2;
-    *render_thread::get_render_sel_active().lock().unwrap() = sel_active != 0;
+    let mut params = render_thread::get_render_params().lock().unwrap();
+    params.scale = scale;
+    params.scroll_offset = scroll_offset;
+    params.top_row = top_row;
+    params.sel_x1 = sel_x1;
+    params.sel_y1 = sel_y1;
+    params.sel_x2 = sel_x2;
+    params.sel_y2 = sel_y2;
+    params.sel_active = sel_active != 0;
+    drop(params);
     render_thread::request_render();
 }
 
@@ -74,7 +76,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetFontPath(
 /// 获取字体指标
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _obj: JObject,
     metrics_array: jni::sys::jfloatArray,
 ) {
@@ -119,7 +121,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
 /// 设置 Surface
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _obj: JObject,
     surface: JObject,
 ) {
@@ -302,7 +304,7 @@ fn flush_events_to_java(env: &mut JNIEnv, callback_obj: &Option<jni::objects::Gl
 /// 创建引擎实例
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_createEngine(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     cols: jint,
     rows: jint,
@@ -478,7 +480,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_resize(
 /// 获取标题
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_getTitle(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     ptr: jlong,
 ) -> jstring {
@@ -1079,7 +1081,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorBlinkingEn
 /// 获取调试信息
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_getDebugInfo(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     ptr: jlong,
 ) -> jstring {
@@ -1261,7 +1263,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_close(
 /// 创建子进程
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     cmd: jstring,
     cwd: jstring,
@@ -1304,7 +1306,7 @@ pub extern "system" fn Java_com_termux_terminal_WcWidth_widthRust(_env: JNIEnv, 
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_JNI_getKeyCode(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     key_code: jint,
     key_mode: jint,
