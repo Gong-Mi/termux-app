@@ -812,6 +812,9 @@ class TerminalView @JvmOverloads constructor(
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         Log.i("TerminalView-Surface", ">>> surfaceDestroyed")
+        // 关键修复：进入后台时必须重置 mEnginePointerSet，
+        // 否则回到前台时不会调用 nativeSetEnginePointer()，导致渲染线程使用旧的 engine 指针
+        mEnginePointerSet = false
         try { nativeSetSurface(null) }
         catch (e: Exception) { Log.e("TerminalView-Surface", "!!! surfaceDestroyed: ${e.message}", e) }
     }
