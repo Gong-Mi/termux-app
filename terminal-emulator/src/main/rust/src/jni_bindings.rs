@@ -134,13 +134,26 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
             render_thread::get_surface_ready().store(false, std::sync::atomic::Ordering::SeqCst);
             render_thread::get_render_thread_running().store(false, std::sync::atomic::Ordering::SeqCst);
             
-            android_log(LogPriority::DEBUG, "CHECKPOINT: Flags cleared, waiting for join()...");
+            android_log(LogPriority::DEBUG, "CHECKPOINT: Flags cleared, breaking potential driver blocks...");
+
+            // 在 join 之前，通过 Mutex 获取上下文并强制 Abandon。
+            // 这一步能解除渲染线程可能在驱动内部（如 queue_present）的阻塞。
+            if let Some(mutex) = render_thread::get_vulkan_context().get() {
+                if let Ok(mut guard) = mutex.try_lock() {
+                    if let Some(ctx) = guard.as_mut() {
+                        android_log(LogPriority::WARN, "CHECKPOINT: Force abandoning Skia context from UI thread");
+                        unsafe { ctx.context.abandon_context(); }
+                    }
+                }
+            }
+
             if let Some(handle) = render_thread::get_render_thread_handle().lock().unwrap().take() {
                 let join_start = std::time::Instant::now();
                 let _ = handle.join();
                 android_log(LogPriority::INFO, &format!("CHECKPOINT: Render thread joined in {:?}. Total time so far: {:?}", 
                     join_start.elapsed(), start_time.elapsed()));
-            } else {
+            }
+ else {
                 android_log(LogPriority::WARN, "CHECKPOINT: No active render thread handle found to join");
             }
 

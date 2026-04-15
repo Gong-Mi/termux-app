@@ -411,35 +411,48 @@ impl Drop for VulkanContext {
         android_log(LogPriority::WARN, "CHECKPOINT: VulkanContext::drop ENTERED");
         
         unsafe {
+            // 1. 第一时间放弃 Skia 上下文。
+            // 这会防止 Skia 在 drop 时尝试调用任何 Vulkan 函数。
+            android_log(LogPriority::DEBUG, "VulkanContext::drop: Abandoning Skia context...");
+            self.context.abandon_context();
+            
+            // 2. 强制等待 GPU 彻底空闲。
+            // 必须在销毁任何底层句柄前完成。
             android_log(LogPriority::DEBUG, "VulkanContext::drop: Waiting for device idle...");
             let wait_start = std::time::Instant::now();
             match self.device.device_wait_idle() {
                 Ok(_) => android_log(LogPriority::INFO, &format!("VulkanContext::drop: device_wait_idle success in {:?}", wait_start.elapsed())),
-                Err(e) => android_log(LogPriority::ERROR, &format!("VulkanContext::drop: device_wait_idle FAILED: {:?}", e)),
+                Err(e) => android_log(LogPriority::ERROR, &format!("VulkanContext::drop: device_wait_idle FAILED (expected if surface lost): {:?}", e)),
             }
 
-            android_log(LogPriority::DEBUG, "VulkanContext::drop: Cleaning up resources...");
+            android_log(LogPriority::DEBUG, "VulkanContext::drop: Cleaning up Vulkan objects...");
             save_pipeline_cache(&self.device, self.pipeline_cache);
             
             self.device.destroy_pipeline_cache(self.pipeline_cache, None);
             self.device.destroy_semaphore(self.image_available_semaphore, None);
             self.device.destroy_semaphore(self.render_finished_semaphore, None);
             
+            // 3. 销毁交换链。
+            // 在 Adreno 驱动中，重置命令池可能与交换链状态有关。
             if self.swapchain != ash_vk::SwapchainKHR::null() {
                 android_log(LogPriority::DEBUG, "VulkanContext::drop: Destroying swapchain");
                 self.swapchain_loader.destroy_swapchain(self.swapchain, None);
+                self.swapchain = ash_vk::SwapchainKHR::null();
             }
             
+            // 4. 销毁 Surface。
             android_log(LogPriority::DEBUG, "VulkanContext::drop: Destroying surface");
             self.surface_loader.destroy_surface(self.surface, None);
 
-            // 关键：在销毁 device 之前，确保 Skia 的 DirectContext 已经释放
-            // 由于成员释放顺序，我们需要手动控制顺序或在此记录
-            android_log(LogPriority::WARN, "VulkanContext::drop: Final stage - destroying device and instance");
+            // 5. 最后销毁核心驱动对象。
+            // 顺序极其重要：Device -> Instance。
+            android_log(LogPriority::WARN, "VulkanContext::drop: Destroying device...");
             self.device.destroy_device(None);
+            
+            android_log(LogPriority::WARN, "VulkanContext::drop: Destroying instance...");
             self.instance.destroy_instance(None);
         }
-        android_log(LogPriority::WARN, "CHECKPOINT: VulkanContext::drop EXITING - All resources released");
+        android_log(LogPriority::WARN, "CHECKPOINT: VulkanContext::drop EXITING - Mutex issues should be avoided");
     }
 }
 
