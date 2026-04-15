@@ -414,7 +414,7 @@ impl Drop for VulkanContext {
             // 1. 第一时间放弃 Skia 上下文。
             // 这会防止 Skia 在 drop 时尝试调用任何 Vulkan 函数。
             android_log(LogPriority::DEBUG, "VulkanContext::drop: Abandoning Skia context...");
-            self.context.abandon_context();
+            self.context.abandon();
             
             // 2. 强制等待 GPU 彻底空闲。
             // 必须在销毁任何底层句柄前完成。

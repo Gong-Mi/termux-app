@@ -142,7 +142,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
                 if let Ok(mut guard) = mutex.try_lock() {
                     if let Some(ctx) = guard.as_mut() {
                         android_log(LogPriority::WARN, "CHECKPOINT: Force abandoning Skia context from UI thread");
-                        unsafe { ctx.context.abandon_context(); }
+                        ctx.context.abandon();
                     }
                 }
             }

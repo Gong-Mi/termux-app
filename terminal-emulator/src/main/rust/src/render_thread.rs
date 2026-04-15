@@ -114,7 +114,7 @@ fn spawn_render_thread(engine_ptr: jlong) {
             android_log(LogPriority::INFO, "Render thread started");
 
             let mut frame_count: u64 = 0;
-            let mut last_log_time = std::time::Instant::now();
+            // let mut last_log_time = std::time::Instant::now(); // 已移动到条件日志中
 
             while RENDER_THREAD_RUNNING.load(Ordering::SeqCst) {
                 // 1. 检查是否需要重建 swapchain
