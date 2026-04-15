@@ -128,20 +128,41 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
     #[cfg(target_os = "android")]
     {
         if surface.is_null() {
-            android_log(LogPriority::INFO, "nativeSetSurface: Surface destroyed, stopping render thread");
+            let start_time = std::time::Instant::now();
+            android_log(LogPriority::WARN, "CHECKPOINT: nativeSetSurface(null) ENTERED - Surface being destroyed");
+            
             render_thread::get_surface_ready().store(false, std::sync::atomic::Ordering::SeqCst);
-
             render_thread::get_render_thread_running().store(false, std::sync::atomic::Ordering::SeqCst);
+            
+            android_log(LogPriority::DEBUG, "CHECKPOINT: Flags cleared, waiting for join()...");
             if let Some(handle) = render_thread::get_render_thread_handle().lock().unwrap().take() {
+                let join_start = std::time::Instant::now();
                 let _ = handle.join();
-                android_log(LogPriority::INFO, "nativeSetSurface: Render thread stopped");
+                android_log(LogPriority::INFO, &format!("CHECKPOINT: Render thread joined in {:?}. Total time so far: {:?}", 
+                    join_start.elapsed(), start_time.elapsed()));
+            } else {
+                android_log(LogPriority::WARN, "CHECKPOINT: No active render thread handle found to join");
             }
 
             if let Some(mutex) = render_thread::get_vulkan_context().get() {
-                let mut guard = mutex.lock().unwrap();
-                *guard = None;
-                android_log(LogPriority::INFO, "nativeSetSurface: Vulkan context destroyed");
+                android_log(LogPriority::DEBUG, "CHECKPOINT: Attempting to clear VULKAN_CONTEXT...");
+                let lock_start = std::time::Instant::now();
+                match mutex.try_lock() {
+                    Ok(mut guard) => {
+                        *guard = None;
+                        android_log(LogPriority::INFO, &format!("CHECKPOINT: VULKAN_CONTEXT cleared. Lock acquired in {:?}. Total: {:?}", 
+                            lock_start.elapsed(), start_time.elapsed()));
+                    }
+                    Err(_) => {
+                        android_log(LogPriority::ERROR, "CRITICAL: VULKAN_CONTEXT lock is held by another thread! Forcing wait...");
+                        let mut guard = mutex.lock().unwrap();
+                        *guard = None;
+                        android_log(LogPriority::WARN, &format!("CHECKPOINT: VULKAN_CONTEXT cleared after FORCED WAIT. Total: {:?}", 
+                            start_time.elapsed()));
+                    }
+                }
             }
+            android_log(LogPriority::INFO, "CHECKPOINT: nativeSetSurface(null) EXITING");
             return;
         }
 

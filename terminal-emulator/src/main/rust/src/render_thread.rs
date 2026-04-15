@@ -153,6 +153,9 @@ fn spawn_render_thread(engine_ptr: jlong) {
                 let mut ctx_guard = match ctx_mutex.try_lock() {
                     Ok(g) => g,
                     Err(_) => {
+                        if frame_count % 60 == 0 {
+                            android_log(LogPriority::DEBUG, "RenderThread: VULKAN_CONTEXT lock contention, sleeping...");
+                        }
                         std::thread::sleep(std::time::Duration::from_millis(8));
                         continue;
                     }
@@ -161,8 +164,9 @@ fn spawn_render_thread(engine_ptr: jlong) {
                 let ctx = match ctx_guard.as_mut() {
                     Some(c) => c,
                     None => {
-                        std::thread::sleep(std::time::Duration::from_millis(16));
-                        continue;
+                        android_log(LogPriority::WARN, "RenderThread: VULKAN_CONTEXT is None, breaking loop");
+                        RENDER_THREAD_RUNNING.store(false, Ordering::SeqCst);
+                        break;
                     }
                 };
 
@@ -183,6 +187,9 @@ fn spawn_render_thread(engine_ptr: jlong) {
                     let engine = match term_ctx.lock.try_read() {
                         Ok(e) => e,
                         Err(_) => {
+                            if frame_count % 60 == 0 {
+                                android_log(LogPriority::DEBUG, "RenderThread: Engine lock busy, frame skipped");
+                            }
                             std::thread::sleep(std::time::Duration::from_millis(2));
                             continue;
                         }
@@ -190,10 +197,13 @@ fn spawn_render_thread(engine_ptr: jlong) {
                     RenderFrame::from_engine(&engine, engine.state.rows as usize, engine.state.cols as usize, top_row)
                 };
 
+                let step_start = std::time::Instant::now();
+
                 // 1. 获取下一个交换链图像索引
                 let image_index = match ctx.acquire_next_image() {
                     Some(idx) => idx,
                     None => {
+                        android_log(LogPriority::WARN, "RenderThread: acquire_next_image failed");
                         std::thread::sleep(std::time::Duration::from_millis(8));
                         continue;
                     }
@@ -203,10 +213,7 @@ fn spawn_render_thread(engine_ptr: jlong) {
                 let mut sk_surface = match ctx.get_sk_surface(image_index) {
                     Some(s) => s,
                     None => {
-                        if frame_count == 0 || last_log_time.elapsed().as_secs() >= 5 {
-                            android_log(LogPriority::WARN, &format!("Render: get_sk_surface returned None (frame {})", frame_count));
-                            last_log_time = std::time::Instant::now();
-                        }
+                        android_log(LogPriority::WARN, "RenderThread: get_sk_surface failed");
                         continue;
                     }
                 };
@@ -225,6 +232,7 @@ fn spawn_render_thread(engine_ptr: jlong) {
                     (r.font_size - font_size).abs() > 0.1 || r.font_path != font_path
                 });
                 if needs_recreate {
+                    android_log(LogPriority::DEBUG, "RenderThread: Recreating TerminalRenderer");
                     *renderer_guard = Some(TerminalRenderer::new(&[], font_size, font_path.as_deref()));
                 }
 
@@ -234,14 +242,6 @@ fn spawn_render_thread(engine_ptr: jlong) {
                     } else {
                         renderer.clear_selection();
                     }
-
-                    if frame_count == 0 {
-                        android_log(LogPriority::INFO, &format!(
-                            "Render: First frame - scale={}, scroll_offset={}, font_size={}, rows={}, cols={}",
-                            params.scale, params.scroll_offset, font_size, frame.rows, frame.cols
-                        ));
-                    }
-
                     renderer.draw_frame(canvas, &frame, params.scale, params.scroll_offset);
                 }
 
@@ -258,9 +258,13 @@ fn spawn_render_thread(engine_ptr: jlong) {
                 let present_result = unsafe {
                     ctx.swapchain_loader.queue_present(ctx.queue, &present_info)
                 };
+                
+                if let Err(e) = present_result {
+                    android_log(LogPriority::ERROR, &format!("CRITICAL: queue_present FAILED: {:?}. Surface likely invalidated.", e));
+                }
 
-                if frame_count == 0 {
-                    android_log(LogPriority::INFO, &format!("Render: Present completed (result={:?})", present_result));
+                if frame_count % 300 == 0 {
+                    android_log(LogPriority::INFO, &format!("RenderThread: Frame {} completed, lat={:?}", frame_count, step_start.elapsed()));
                 }
 
                 frame_count += 1;

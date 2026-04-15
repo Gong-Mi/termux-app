@@ -408,19 +408,38 @@ impl VulkanContext {
 
 impl Drop for VulkanContext {
     fn drop(&mut self) {
-        android_log(LogPriority::INFO, "VulkanContext::drop: Saving pipeline cache and cleaning up");
-        save_pipeline_cache(&self.device, self.pipeline_cache);
+        android_log(LogPriority::WARN, "CHECKPOINT: VulkanContext::drop ENTERED");
+        
         unsafe {
+            android_log(LogPriority::DEBUG, "VulkanContext::drop: Waiting for device idle...");
+            let wait_start = std::time::Instant::now();
+            match self.device.device_wait_idle() {
+                Ok(_) => android_log(LogPriority::INFO, &format!("VulkanContext::drop: device_wait_idle success in {:?}", wait_start.elapsed())),
+                Err(e) => android_log(LogPriority::ERROR, &format!("VulkanContext::drop: device_wait_idle FAILED: {:?}", e)),
+            }
+
+            android_log(LogPriority::DEBUG, "VulkanContext::drop: Cleaning up resources...");
+            save_pipeline_cache(&self.device, self.pipeline_cache);
+            
             self.device.destroy_pipeline_cache(self.pipeline_cache, None);
             self.device.destroy_semaphore(self.image_available_semaphore, None);
             self.device.destroy_semaphore(self.render_finished_semaphore, None);
+            
             if self.swapchain != ash_vk::SwapchainKHR::null() {
+                android_log(LogPriority::DEBUG, "VulkanContext::drop: Destroying swapchain");
                 self.swapchain_loader.destroy_swapchain(self.swapchain, None);
             }
+            
+            android_log(LogPriority::DEBUG, "VulkanContext::drop: Destroying surface");
             self.surface_loader.destroy_surface(self.surface, None);
+
+            // 关键：在销毁 device 之前，确保 Skia 的 DirectContext 已经释放
+            // 由于成员释放顺序，我们需要手动控制顺序或在此记录
+            android_log(LogPriority::WARN, "VulkanContext::drop: Final stage - destroying device and instance");
             self.device.destroy_device(None);
             self.instance.destroy_instance(None);
         }
+        android_log(LogPriority::WARN, "CHECKPOINT: VulkanContext::drop EXITING - All resources released");
     }
 }
 
