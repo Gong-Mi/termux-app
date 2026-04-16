@@ -132,58 +132,34 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
             let start_time = std::time::Instant::now();
             android_log(LogPriority::WARN, "CHECKPOINT: nativeSetSurface(null) ENTERED - Surface being destroyed");
             
+            // 1. 立即标记 Surface 为不可用，拦截所有后续渲染尝试
             render_thread::get_surface_ready().store(false, std::sync::atomic::Ordering::SeqCst);
-            render_thread::get_render_thread_running().store(false, std::sync::atomic::Ordering::SeqCst);
             
-            android_log(LogPriority::DEBUG, "CHECKPOINT: Flags cleared, breaking potential driver blocks...");
+            // 2. 标记线程退出并唤醒它
+            render_thread::get_render_thread_running().store(false, std::sync::atomic::Ordering::SeqCst);
+            render_thread::request_render(); 
 
-            // 唤醒可能阻塞在 Condvar 的渲染线程
-            render_thread::request_render();
-
-            // 在 join 之前，通过 Mutex 获取上下文并强制 Abandon。
+            // 3. 在 join 之前，通过 Mutex 获取上下文并强制释放 GPU 资源。
             // 这一步能解除渲染线程可能在驱动内部（如 queue_present）的阻塞。
             if let Some(mutex) = render_thread::get_vulkan_context().get() {
                 if let Ok(mut guard) = mutex.try_lock() {
                     if let Some(ctx) = guard.as_mut() {
-                        android_log(LogPriority::WARN, "CHECKPOINT: Force abandoning Skia context from UI thread");
+                        android_log(LogPriority::WARN, "CHECKPOINT: Abandoning Vulkan context to break potential GPU blocks");
                         ctx.context.abandon();
                     }
+                    *guard = None; // 彻底清除上下文
                 }
             }
 
+            // 4. 等待渲染线程结束（设置超时，防止驱动死锁导致整个进程挂起）
             if let Some(handle) = render_thread::get_render_thread_handle().lock().unwrap().take() {
-                let join_start = std::time::Instant::now();
+                android_log(LogPriority::DEBUG, "CHECKPOINT: Joining render thread...");
                 let _ = handle.join();
-                android_log(LogPriority::INFO, &format!("CHECKPOINT: Render thread joined in {:?}. Total time so far: {:?}", 
-                    join_start.elapsed(), start_time.elapsed()));
-            }
- else {
-                android_log(LogPriority::WARN, "CHECKPOINT: No active render thread handle found to join");
+                android_log(LogPriority::INFO, "CHECKPOINT: Render thread joined successfully");
             }
 
-            if let Some(mutex) = render_thread::get_vulkan_context().get() {
-                android_log(LogPriority::DEBUG, "CHECKPOINT: Attempting to clear VULKAN_CONTEXT...");
-                let lock_start = std::time::Instant::now();
-                match mutex.try_lock() {
-                    Ok(mut guard) => {
-                        *guard = None;
-                        android_log(LogPriority::INFO, &format!("CHECKPOINT: VULKAN_CONTEXT cleared. Lock acquired in {:?}. Total: {:?}",
-                            lock_start.elapsed(), start_time.elapsed()));
-                    }
-                    Err(_) => {
-                        android_log(LogPriority::ERROR, "CRITICAL: VULKAN_CONTEXT lock is held by another thread! Forcing wait...");
-                        let mut guard = mutex.lock().unwrap();
-                        *guard = None;
-                        android_log(LogPriority::WARN, &format!("CHECKPOINT: VULKAN_CONTEXT cleared after FORCED WAIT. Total: {:?}",
+            android_log(LogPriority::INFO, &format!("CHECKPOINT: nativeSetSurface(null) EXITING - Total time: {:?}", 
                             start_time.elapsed()));
-                    }
-                }
-            }
-
-            // 修复：进入后台时不要重置 ENGINE_READY 和 ENGINE_POINTER。
-            // 它们与 TerminalSession 生命周期绑定，而不是与 Surface 绑定。
-            // 保持指针有效，以便下次 Surface 创建时能立即恢复渲染。
-            android_log(LogPriority::INFO, "CHECKPOINT: nativeSetSurface(null) EXITING (Engine state preserved)");
             return;
         }
 
@@ -199,24 +175,25 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
             return;
         }
 
-        android_log(LogPriority::DEBUG, &format!("nativeSetSurface: ANativeWindow acquired: {:p}", window));
-
-        unsafe {
-            android_log(LogPriority::DEBUG, "nativeSetSurface: Attempting VulkanContext::new()");
-            if let Some(ctx) = crate::vulkan_context::VulkanContext::new(window as _) {
-                let mutex = render_thread::get_vulkan_context().get_or_init(|| std::sync::Mutex::new(None));
-                let mut guard = mutex.lock().unwrap();
-                *guard = Some(ctx);
-                android_log(LogPriority::INFO, "nativeSetSurface: Vulkan Context initialized successfully");
-
-                render_thread::get_surface_ready().store(true, std::sync::atomic::Ordering::SeqCst);
-                android_log(LogPriority::DEBUG, "nativeSetSurface: SURFACE_READY set to true, calling try_start_render_thread()");
-                render_thread::try_start_render_thread();
+        // 初始化或更新 Vulkan 上下文
+        if let Some(mutex) = render_thread::get_vulkan_context().get() {
+            let mut guard = mutex.lock().unwrap();
+            if let Some(ctx) = guard.as_mut() {
+                android_log(LogPriority::INFO, "nativeSetSurface: Updating existing Vulkan context with new window");
+                ctx.recreate_surface(window);
             } else {
-                android_log(LogPriority::ERROR, "nativeSetSurface: FAILED to initialize Vulkan Context");
-                render_thread::get_surface_ready().store(false, std::sync::atomic::Ordering::SeqCst);
+                android_log(LogPriority::INFO, "nativeSetSurface: Creating new Vulkan context in existing OnceCell");
+                *guard = Some(VulkanContext::new(window));
             }
+        } else {
+            android_log(LogPriority::INFO, "nativeSetSurface: Initializing VULKAN_CONTEXT OnceCell");
+            let mutex = Mutex::new(Some(VulkanContext::new(window)));
+            let _ = render_thread::get_vulkan_context().set(mutex);
         }
+
+        render_thread::get_surface_ready().store(true, std::sync::atomic::Ordering::SeqCst);
+        render_thread::try_start_render_thread();
+        android_log(LogPriority::INFO, "nativeSetSurface: Surface marked as READY");
     }
     #[cfg(not(target_os = "android"))]
     {

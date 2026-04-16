@@ -248,7 +248,15 @@ fn spawn_render_thread(engine_ptr: jlong) {
                 ctx.context.flush_and_submit();
 
                 // 4. 呈现图像
+                // 关键点：在呈现前再次检查运行状态，防止向已销毁的 surface 提交
+                if !RENDER_THREAD_RUNNING.load(Ordering::SeqCst) || !SURFACE_READY.load(Ordering::SeqCst) {
+                    android_log(LogPriority::WARN, "RenderThread: Surface invalidated before present, dropping frame");
+                    break;
+                }
+
                 let present_info = ash::vk::PresentInfoKHR {
+                    wait_semaphore_count: 0,
+                    p_wait_semaphores: std::ptr::null(),
                     swapchain_count: 1,
                     p_swapchains: &ctx.swapchain,
                     p_image_indices: &image_index,
@@ -260,7 +268,9 @@ fn spawn_render_thread(engine_ptr: jlong) {
                 };
                 
                 if let Err(e) = present_result {
-                    android_log(LogPriority::ERROR, &format!("CRITICAL: queue_present FAILED: {:?}. Surface likely invalidated.", e));
+                    android_log(LogPriority::ERROR, &format!("CRITICAL: queue_present FAILED: {:?}. Stopping render loop.", e));
+                    RENDER_THREAD_RUNNING.store(false, Ordering::SeqCst);
+                    break;
                 }
 
                 if frame_count % 300 == 0 {
@@ -270,6 +280,9 @@ fn spawn_render_thread(engine_ptr: jlong) {
                 frame_count += 1;
             }
             android_log(LogPriority::INFO, &format!("Render thread stopped after {} frames", frame_count));
+            
+            // 线程退出前彻底清除 SURFACE_READY 标志
+            SURFACE_READY.store(false, Ordering::SeqCst);
         })
         .expect("Failed to spawn render thread");
 
