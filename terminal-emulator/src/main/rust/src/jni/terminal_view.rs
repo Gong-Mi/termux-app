@@ -161,13 +161,24 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
             render_thread::get_surface_ready().store(false, std::sync::atomic::Ordering::SeqCst);
             return;
         }
+// 初始化或更新 Vulkan 上下文
+if let Some(mutex) = render_thread::get_vulkan_context().get() {
+    let mut guard = mutex.lock().unwrap();
 
-        // 初始化或更新 Vulkan 上下文
-        if let Some(mutex) = render_thread::get_vulkan_context().get() {
-            let mut guard = mutex.lock().unwrap();
-            android_log(LogPriority::INFO, "nativeSetSurface: Recreating Vulkan context for new window");
-            *guard = unsafe { VulkanContext::new(window as _) };
-        } else {
+    // 关键点：将旧上下文 take 出来。这样 Rust 的 drop 逻辑
+    // 不会在 UI 线程持有锁的期间发生，而是由接下来的逻辑控制。
+    let old_ctx = guard.take();
+    if old_ctx.is_some() {
+        android_log(LogPriority::INFO, "nativeSetSurface: Existing context taken for safe disposal");
+        // 在这里可以手动处理 old_ctx 的销毁，或者将其移动到后台线程
+        // 这里我们让它在 guard 释放后自动 drop
+    }
+
+    android_log(LogPriority::INFO, "nativeSetSurface: Creating new Vulkan context");
+    *guard = unsafe { VulkanContext::new(window as _) };
+    drop(guard); // 显式提前释放锁
+} else {
+
             android_log(LogPriority::INFO, "nativeSetSurface: Initializing VULKAN_CONTEXT OnceCell");
             let ctx = unsafe { VulkanContext::new(window as _) };
             let mutex = Mutex::new(ctx);
