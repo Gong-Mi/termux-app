@@ -40,7 +40,7 @@ fn test_quadrant_block_mapping() {
         (0x259Du32, 0b0010u8, "▝ UPPER RIGHT"),
         (0x2599u32, 0b1101u8, "▙ TL+BL+BR"),
         (0x259Au32, 0b1001u8, "▚ TL+BR"),
-        (0x259Eu32, 0b1001u8, "▞ TL+BR (same as 259A)"),
+        (0x259Eu32, 0b0110u8, "▞ TR+BL"),
         (0x259Bu32, 0b0111u8, "▛ TL+TR+BL"),
         (0x259Cu32, 0b1011u8, "▜ TL+TR+BR"),
         (0x259Fu32, 0b1110u8, "▟ TR+BL+BR"),

@@ -811,7 +811,7 @@ impl TerminalRenderer {
         // 象限块
         let q_mask: u8 = match ch as u32 {
             0x2596 => 0b0100, 0x2597 => 0b1000, 0x2598 => 0b0001, 0x259D => 0b0010,
-            0x2599 => 0b1101, 0x259A | 0x259E => 0b1001, 0x259B => 0b0111,
+            0x2599 => 0b1101, 0x259A => 0b1001, 0x259E => 0b0110, 0x259B => 0b0111,
             0x259C => 0b1011, 0x259F => 0b1110, _ => 0,
         };
         if q_mask != 0 {
@@ -836,41 +836,38 @@ impl TerminalRenderer {
             return;
         }
 
-        // 半高块
-        if ch as u32 == 0x2580 {
+        // 垂直分数块 (上)
+        if let Some(n) = match ch as u32 {
+            0x2580 => Some(4), // 1/2
+            0x2594 => Some(1), // 1/8
+            _ => None,
+        } {
+            let fh = cell_h * n as f32 / 8.0;
             bg_paint.set_color(Color::new(fg_color));
-            canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, cell_h / 2.0), bg_paint);
+            canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, fh), bg_paint);
             bg_paint.set_color(Color::new(bg_color));
-            canvas.draw_rect(Rect::from_xywh(x, y_top + cell_h / 2.0, cell_w, cell_h / 2.0), bg_paint);
-            return;
-        }
-        if ch as u32 == 0x2584 {
-            bg_paint.set_color(Color::new(bg_color));
-            canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, cell_h / 2.0), bg_paint);
-            bg_paint.set_color(Color::new(fg_color));
-            canvas.draw_rect(Rect::from_xywh(x, y_top + cell_h / 2.0, cell_w, cell_h / 2.0), bg_paint);
-            return;
-        }
-
-        // 半宽块
-        if ch as u32 == 0x258C {
-            bg_paint.set_color(Color::new(fg_color));
-            canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w / 2.0, cell_h), bg_paint);
-            bg_paint.set_color(Color::new(bg_color));
-            canvas.draw_rect(Rect::from_xywh(x + cell_w / 2.0, y_top, cell_w / 2.0, cell_h), bg_paint);
-            return;
-        }
-        if ch as u32 == 0x2590 {
-            bg_paint.set_color(Color::new(bg_color));
-            canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w / 2.0, cell_h), bg_paint);
-            bg_paint.set_color(Color::new(fg_color));
-            canvas.draw_rect(Rect::from_xywh(x + cell_w / 2.0, y_top, cell_w / 2.0, cell_h), bg_paint);
+            canvas.draw_rect(Rect::from_xywh(x, y_top + fh, cell_w, cell_h - fh), bg_paint);
             return;
         }
 
-        // 1/8 块
+        // 垂直分数块 (下)
+        if let Some(n) = match ch as u32 {
+            0x2581 => Some(1), 0x2582 => Some(2), 0x2583 => Some(3),
+            0x2584 => Some(4), // 1/2
+            0x2585 => Some(5), 0x2586 => Some(6), 0x2587 => Some(7), _ => None,
+        } {
+            let fh = cell_h * n as f32 / 8.0;
+            bg_paint.set_color(Color::new(bg_color));
+            canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, cell_h - fh), bg_paint);
+            bg_paint.set_color(Color::new(fg_color));
+            canvas.draw_rect(Rect::from_xywh(x, y_top + cell_h - fh, cell_w, fh), bg_paint);
+            return;
+        }
+
+        // 水平分数块 (左)
         if let Some(n) = match ch as u32 {
             0x258F => Some(1), 0x258E => Some(2), 0x258D => Some(3),
+            0x258C => Some(4), // 1/2
             0x258B => Some(5), 0x258A => Some(6), 0x2589 => Some(7), _ => None,
         } {
             let fw = cell_w * n as f32 / 8.0;
@@ -878,6 +875,20 @@ impl TerminalRenderer {
             canvas.draw_rect(Rect::from_xywh(x, y_top, fw, cell_h), bg_paint);
             bg_paint.set_color(Color::new(bg_color));
             canvas.draw_rect(Rect::from_xywh(x + fw, y_top, cell_w - fw, cell_h), bg_paint);
+            return;
+        }
+
+        // 水平分数块 (右)
+        if let Some(n) = match ch as u32 {
+            0x2590 => Some(4), // 1/2
+            0x2595 => Some(1), // 1/8
+            _ => None,
+        } {
+            let fw = cell_w * n as f32 / 8.0;
+            bg_paint.set_color(Color::new(bg_color));
+            canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w - fw, cell_h), bg_paint);
+            bg_paint.set_color(Color::new(fg_color));
+            canvas.draw_rect(Rect::from_xywh(x + cell_w - fw, y_top, fw, cell_h), bg_paint);
             return;
         }
 
