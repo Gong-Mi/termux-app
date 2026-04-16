@@ -127,7 +127,8 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
 ) {
     #[cfg(target_os = "android")]
     {
-        if surface.is_null() {
+        // 关键修复：确保在访问 surface 之前检查其是否为 null (底层的 jobject 指针)
+        if surface.as_raw().is_null() {
             let start_time = std::time::Instant::now();
             android_log(LogPriority::WARN, "CHECKPOINT: nativeSetSurface(null) ENTERED - Surface being destroyed");
             
@@ -135,6 +136,9 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
             render_thread::get_render_thread_running().store(false, std::sync::atomic::Ordering::SeqCst);
             
             android_log(LogPriority::DEBUG, "CHECKPOINT: Flags cleared, breaking potential driver blocks...");
+
+            // 唤醒可能阻塞在 Condvar 的渲染线程
+            render_thread::request_render();
 
             // 在 join 之前，通过 Mutex 获取上下文并强制 Abandon。
             // 这一步能解除渲染线程可能在驱动内部（如 queue_present）的阻塞。
