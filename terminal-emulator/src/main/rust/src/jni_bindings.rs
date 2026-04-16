@@ -56,6 +56,20 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetFontSize(
     render_thread::request_render();
 }
 
+/// 设置缓存目录
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetCacheDir(
+    mut env: JNIEnv,
+    _obj: JObject,
+    path: JString,
+) {
+    if let Ok(path_str) = env.get_string(&path) {
+        let path_str: String = path_str.into();
+        render_thread::set_render_cache_dir(&path_str);
+        android_log(LogPriority::DEBUG, &format!("nativeSetCacheDir: {}", path_str));
+    }
+}
+
 /// 设置自定义字体文件路径
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetFontPath(
@@ -125,16 +139,24 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
 ) {
     #[cfg(target_os = "android")]
     {
-        if surface.is_null() {
-            android_log(LogPriority::INFO, "nativeSetSurface: Surface destroyed, stopping render thread");
+        // 关键修复：确保在访问 surface 之前检查其是否为 null
+        if surface.as_raw().is_null() {
+            android_log(LogPriority::INFO, "nativeSetSurface: Surface is NULL, stopping render thread");
+            
+            // 1. 设置标志停止渲染循环
             render_thread::get_surface_ready().store(false, std::sync::atomic::Ordering::SeqCst);
-
             render_thread::get_render_thread_running().store(false, std::sync::atomic::Ordering::SeqCst);
+            
+            // 2. 唤醒并停止渲染线程
+            render_thread::request_render(); // 唤醒可能阻塞在等待信号的线程
+            
             if let Some(handle) = render_thread::get_render_thread_handle().lock().unwrap().take() {
+                android_log(LogPriority::DEBUG, "nativeSetSurface: Waiting for render thread to join...");
                 let _ = handle.join();
                 android_log(LogPriority::INFO, "nativeSetSurface: Render thread stopped");
             }
 
+            // 3. 销毁 Vulkan 上下文
             if let Some(mutex) = render_thread::get_vulkan_context().get() {
                 let mut guard = mutex.lock().unwrap();
                 *guard = None;
