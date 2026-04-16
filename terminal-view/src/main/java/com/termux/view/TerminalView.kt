@@ -795,13 +795,16 @@ class TerminalView @JvmOverloads constructor(
     fun getPointY(cy: Int): Int = Math.round((cy - mTopRow) * getFontLineSpacing())
 
     override fun surfaceCreated(holder: SurfaceHolder) {
-        Log.i("TerminalView-Surface", ">>> surfaceCreated")
+        Log.i("TerminalView-Surface", ">>> surfaceCreated - Resetting engine pointer state")
+        mEnginePointerSet = false // 强制在下一帧重传指针，防止切后台后失效
         try {
             nativeSetSurface(holder.surface)
             refreshFontMetrics()
         } catch (e: Exception) {
             Log.e("TerminalView-Surface", "!!! surfaceCreated: nativeSetSurface() threw exception: ${e.message}", e)
         }
+        // 显式触发重绘以恢复内容
+        onScreenUpdated()
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {

@@ -180,13 +180,10 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
                 }
             }
 
-            // 关键修复：进入后台时必须重置 ENGINE_READY 和 ENGINE_POINTER
-            // 否则回到前台时，渲染线程会使用已经失效的旧 engine 指针，导致 session 丢失
-            *render_thread::get_engine_pointer().lock().unwrap() = 0;
-            render_thread::get_engine_ready().store(false, std::sync::atomic::Ordering::SeqCst);
-            android_log(LogPriority::DEBUG, "CHECKPOINT: ENGINE_POINTER and ENGINE_READY reset");
-
-            android_log(LogPriority::INFO, "CHECKPOINT: nativeSetSurface(null) EXITING");
+            // 修复：进入后台时不要重置 ENGINE_READY 和 ENGINE_POINTER。
+            // 它们与 TerminalSession 生命周期绑定，而不是与 Surface 绑定。
+            // 保持指针有效，以便下次 Surface 创建时能立即恢复渲染。
+            android_log(LogPriority::INFO, "CHECKPOINT: nativeSetSurface(null) EXITING (Engine state preserved)");
             return;
         }
 
