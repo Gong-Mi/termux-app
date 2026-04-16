@@ -208,7 +208,7 @@ impl ScreenState {
             if let Some(vm) = crate::JAVA_VM.get() {
                 if let Ok(mut env) = vm.get_env() {
                     if let Ok(java_title) = env.new_string(title) {
-                        let _ = env.call_method(obj.as_obj(), "reportTitleChange", "(Ljava/lang/String;)V", &[JValue::Object(&java_title.into())]);
+                        let _ = env.call_method(obj.as_obj(), "reportTitleChange", "(Ljava/lang/String;)V", &[JValue::from(&java_title)]);
                     }
                 }
             }
@@ -235,7 +235,7 @@ impl ScreenState {
                             "onSixelImage",
                             "([BIIII)V",
                             &[
-                                JValue::Object(&byte_array.into()),
+                                JValue::from(&byte_array),
                                 JValue::Int(width),
                                 JValue::Int(height),
                                 JValue::Int(start_x),
@@ -263,7 +263,7 @@ impl ScreenState {
             if let Some(vm) = crate::JAVA_VM.get() {
                 if let Ok(mut env) = vm.get_env() {
                     if let Ok(java_response) = env.new_string(response) {
-                        let _ = env.call_method(obj.as_obj(), "write", "(Ljava/lang/String;)V", &[JValue::Object(&java_response.into())]);
+                        let _ = env.call_method(obj.as_obj(), "write", "(Ljava/lang/String;)V", &[JValue::from(&java_response)]);
                     }
                 }
             }

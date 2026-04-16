@@ -2,6 +2,7 @@
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::os::fd::FromRawFd;
+use jni::objects::JValue;
 
 use crate::vte_parser::Parser;
 use crate::engine::state::ScreenState;
@@ -35,7 +36,7 @@ impl TerminalEngine {
         if !self.state.shared_buffer_ptr.0.is_null() {
             unsafe {
                 if let Some(flat) = &self.state.flat_buffer {
-                    flat.sync_to_shared(self.state.shared_buffer_ptr.0);
+                    let _ = flat.sync_to_shared(self.state.shared_buffer_ptr.0);
                 }
             }
         }
@@ -78,9 +79,6 @@ impl TerminalContext {
 
     pub fn start_io_thread(self: std::sync::Arc<Self>, pty_fd: i32) {
         let context = self.clone();
-        // 关键修复：dup FD，避免与 Java 侧的 FileOutputStream 争夺同一个 FD
-        // Java 也使用相同的 pty_fd 进行写入，如果 Rust 侧通过 from_raw_fd 拥有它，
-        // 当 File drop 时会关闭 FD，导致 Java 的写入失败
         let dup_fd = unsafe { libc::dup(pty_fd) };
         if dup_fd < 0 {
             crate::utils::android_log(crate::utils::LogPriority::ERROR, "IO Thread: dup failed");
@@ -98,8 +96,8 @@ impl TerminalContext {
                 }
             };
 
-            let mut guard = match vm.attach_current_thread() {
-                Ok(g) => g,
+            let mut env = match vm.attach_current_thread() {
+                Ok(e) => e,
                 Err(e) => {
                     crate::utils::android_log(crate::utils::LogPriority::ERROR, &format!("IO Thread: Failed to attach to JVM: {:?}", e));
                     return;
@@ -120,7 +118,6 @@ impl TerminalContext {
 
                         if !events.is_empty() {
                             if let Some(obj) = &callback_obj {
-                                let env = &mut *guard;
                                 if context.running.load(Ordering::Relaxed) {
                                     for event in events {
                                         if obj.as_obj().is_null() { break; }
@@ -131,25 +128,34 @@ impl TerminalContext {
                                             TerminalEvent::ColorsChanged => { let _ = env.call_method(obj.as_obj(), "onColorsChanged", "()V", &[]); }
                                             TerminalEvent::CopytoClipboard(text) => {
                                                 if let Ok(j_text) = env.new_string(text) {
-                                                    let _ = env.call_method(obj.as_obj(), "onCopyTextToClipboard", "(Ljava/lang/String;)V", &[(&j_text).into()]);
+                                                    let val = JValue::from(&j_text);
+                                                    let _ = env.call_method(obj.as_obj(), "onCopyTextToClipboard", "(Ljava/lang/String;)V", &[val]);
                                                 }
                                             }
                                             TerminalEvent::TitleChanged(title) => {
                                                 if let Ok(j_title) = env.new_string(title) {
-                                                    let _ = env.call_method(obj.as_obj(), "reportTitleChange", "(Ljava/lang/String;)V", &[(&j_title).into()]);
+                                                    let val = JValue::from(&j_title);
+                                                    let _ = env.call_method(obj.as_obj(), "reportTitleChange", "(Ljava/lang/String;)V", &[val]);
                                                 }
                                             }
                                             TerminalEvent::TerminalResponse(resp) => {
                                                 if let Ok(j_resp) = env.new_string(resp) {
-                                                    let _ = env.call_method(obj.as_obj(), "write", "(Ljava/lang/String;)V", &[(&j_resp).into()]);
+                                                    let val = JValue::from(&j_resp);
+                                                    let _ = env.call_method(obj.as_obj(), "write", "(Ljava/lang/String;)V", &[val]);
                                                 }
                                             }
                                             TerminalEvent::SixelImage { rgba_data, width, height, start_x, start_y } => {
                                                 if let Ok(j_data) = env.new_byte_array(rgba_data.len() as i32) {
-                                                    unsafe { let _ = env.set_byte_array_region(&j_data, 0, std::mem::transmute::<&[u8], &[i8]>(&rgba_data)); }
-                                                    let _ = env.call_method(obj.as_obj(), "onSixelImage", "([BIIII)V", &[
-                                                        (&j_data).into(), width.into(), height.into(), start_x.into(), start_y.into()
-                                                    ]);
+                                                    let bytes: Vec<i8> = rgba_data.iter().map(|&b| b as i8).collect();
+                                                    let _ = env.set_byte_array_region(&j_data, 0, &bytes);
+                                                    let args = [
+                                                        JValue::from(&j_data),
+                                                        JValue::Int(width),
+                                                        JValue::Int(height),
+                                                        JValue::Int(start_x),
+                                                        JValue::Int(start_y)
+                                                    ];
+                                                    let _ = env.call_method(obj.as_obj(), "onSixelImage", "([BIIII)V", &args);
                                                 }
                                             }
                                         }
