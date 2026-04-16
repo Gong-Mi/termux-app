@@ -404,6 +404,48 @@ impl VulkanContext {
             None,
         )
     }
+
+    /// 仅销毁 Surface 和 Swapchain，保留 Device/Instance 以维持后台进程优先级
+    pub fn abandon_surface(&mut self) {
+        android_log(LogPriority::WARN, "VulkanContext: Abandoning Surface/Swapchain only");
+        unsafe {
+            let _ = self.device.device_wait_idle();
+            if self.swapchain != ash_vk::SwapchainKHR::null() {
+                self.swapchain_loader.destroy_swapchain(self.swapchain, None);
+                self.swapchain = ash_vk::SwapchainKHR::null();
+            }
+            self.surface_loader.destroy_surface(self.surface, None);
+            self.surface = ash_vk::SurfaceKHR::null();
+        }
+    }
+
+    /// 为现有的上下文重新关联新 Surface
+    pub unsafe fn recreate_surface(&mut self, entry: &Entry, window: *mut std::ffi::c_void) -> bool {
+        android_log(LogPriority::INFO, "VulkanContext: Reattaching to new window");
+        
+        let android_surface_loader = ash::khr::android_surface::Instance::new(entry, &self.instance);
+        let surface = android_surface_loader.create_android_surface(
+            &ash_vk::AndroidSurfaceCreateInfoKHR { window, ..Default::default() }, 
+            None
+        );
+
+        match surface {
+            Ok(s) => {
+                self.surface = s;
+                let caps = self.surface_loader.get_physical_device_surface_capabilities(self.pdevice, self.surface).ok();
+                if let Some(c) = caps {
+                    self.extent = c.current_extent;
+                    self.recreate_swapchain(self.extent.width, self.extent.height)
+                } else {
+                    false
+                }
+            }
+            Err(e) => {
+                android_log(LogPriority::ERROR, &format!("VulkanContext: Failed to recreate android surface: {:?}", e));
+                false
+            }
+        }
+    }
 }
 
 impl Drop for VulkanContext {

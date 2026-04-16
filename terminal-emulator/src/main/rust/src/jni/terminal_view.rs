@@ -129,14 +129,14 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
             render_thread::get_render_thread_running().store(false, std::sync::atomic::Ordering::SeqCst);
             render_thread::request_render(); 
 
-            // 3. 在 join 之前，通过 Mutex 获取上下文并强制释放 GPU 资源。
+            // 3. 在 join 之前，尝试获取上下文并仅分离 Surface。
+            // 重要：不要将 guard 设为 None，保持 Device/Instance 存活。
             if let Some(mutex) = render_thread::get_vulkan_context().get() {
                 if let Ok(mut guard) = mutex.try_lock() {
                     if let Some(ctx) = guard.as_mut() {
-                        android_log(LogPriority::WARN, "CHECKPOINT: Abandoning Vulkan context");
-                        ctx.context.abandon();
+                        android_log(LogPriority::WARN, "CHECKPOINT: Abandoning Surface but KEEPING Device alive");
+                        ctx.abandon_surface();
                     }
-                    *guard = None; // 彻底清除上下文
                 }
             }
 
@@ -146,44 +146,47 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
                 android_log(LogPriority::INFO, "CHECKPOINT: Render thread joined successfully");
             }
 
-            android_log(LogPriority::INFO, &format!("CHECKPOINT: nativeSetSurface(null) EXITING - Total time: {:?}", start_time.elapsed()));
+            android_log(LogPriority::INFO, &format!("CHECKPOINT: nativeSetSurface(null) EXITING (Engine and Device preserved)"));
             return;
-        }
+            }
 
-        android_log(LogPriority::DEBUG, "nativeSetSurface: Non-null surface received");
+            android_log(LogPriority::DEBUG, "nativeSetSurface: Non-null surface received");
 
-        let window = unsafe {
+            let window = unsafe {
             ndk_sys::ANativeWindow_fromSurface(env.get_native_interface(), surface.as_raw())
-        };
+            };
 
-        if window.is_null() {
+            if window.is_null() {
             android_log(LogPriority::ERROR, "nativeSetSurface: Failed to get ANativeWindow from Surface");
             render_thread::get_surface_ready().store(false, std::sync::atomic::Ordering::SeqCst);
             return;
-        }
-// 初始化或更新 Vulkan 上下文
-if let Some(mutex) = render_thread::get_vulkan_context().get() {
-    let mut guard = mutex.lock().unwrap();
+            }
 
-    // 关键点：将旧上下文 take 出来。这样 Rust 的 drop 逻辑
-    // 不会在 UI 线程持有锁的期间发生，而是由接下来的逻辑控制。
-    let old_ctx = guard.take();
-    if old_ctx.is_some() {
-        android_log(LogPriority::INFO, "nativeSetSurface: Existing context taken for safe disposal");
-        // 在这里可以手动处理 old_ctx 的销毁，或者将其移动到后台线程
-        // 这里我们让它在 guard 释放后自动 drop
-    }
+            // 初始化或更新 Vulkan 上下文
+            if let Some(mutex) = render_thread::get_vulkan_context().get() {
+            let mut guard = mutex.lock().unwrap();
 
-    android_log(LogPriority::INFO, "nativeSetSurface: Creating new Vulkan context");
-    *guard = unsafe { VulkanContext::new(window as _) };
-    drop(guard); // 显式提前释放锁
-} else {
-
+            if let Some(ctx) = guard.as_mut() {
+                android_log(LogPriority::INFO, "nativeSetSurface: Reusing existing Device, reattaching Surface");
+                let entry = ash::Entry::load().unwrap(); // 需要加载 Entry 来获取函数指针
+                unsafe {
+                    if !ctx.recreate_surface(&entry, window as _) {
+                        android_log(LogPriority::ERROR, "nativeSetSurface: Failed to reattach Surface, recreating whole context");
+                        *guard = VulkanContext::new(window as _);
+                    }
+                }
+            } else {
+                android_log(LogPriority::INFO, "nativeSetSurface: Creating new Vulkan context (found None)");
+                *guard = unsafe { VulkanContext::new(window as _) };
+            }
+            drop(guard);
+            } else {
             android_log(LogPriority::INFO, "nativeSetSurface: Initializing VULKAN_CONTEXT OnceCell");
             let ctx = unsafe { VulkanContext::new(window as _) };
             let mutex = Mutex::new(ctx);
             let _ = render_thread::get_vulkan_context().set(mutex);
-        }
+            }
+
 
         render_thread::get_surface_ready().store(true, std::sync::atomic::Ordering::SeqCst);
         render_thread::try_start_render_thread();
