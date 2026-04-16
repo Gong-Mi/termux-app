@@ -15,6 +15,56 @@ fn measure<F: FnOnce()>(f: F) -> Duration {
     start.elapsed()
 }
 
+// 统计信息结构体
+struct Stats {
+    samples: Vec<Duration>,
+}
+
+impl Stats {
+    fn new() -> Self {
+        Self { samples: Vec::with_capacity(100) }
+    }
+
+    fn add(&mut self, d: Duration) {
+        self.samples.push(d);
+    }
+
+    fn analyze(&self) -> (Duration, Duration, Duration, Duration, f64) {
+        if self.samples.is_empty() {
+            return (Duration::ZERO, Duration::ZERO, Duration::ZERO, Duration::ZERO, 0.0);
+        }
+        let mut sorted = self.samples.clone();
+        sorted.sort();
+
+        let sum: Duration = sorted.iter().sum();
+        let avg = sum / sorted.len() as u32;
+        let min = sorted[0];
+        let max = sorted[sorted.len() - 1];
+        let p95 = sorted[(sorted.len() as f32 * 0.95) as usize];
+
+        let avg_f = avg.as_secs_f64();
+        let variance: f64 = self.samples.iter()
+            .map(|d| {
+                let diff = d.as_secs_f64() - avg_f;
+                diff * diff
+            })
+            .sum::<f64>() / self.samples.len() as f64;
+        let std_dev = variance.sqrt();
+
+        (min, avg, p95, max, std_dev)
+    }
+}
+
+fn format_duration(d: Duration) -> String {
+    if d.as_secs() > 0 {
+        format!("{:.2}s", d.as_secs_f64())
+    } else if d.as_millis() > 0 {
+        format!("{:.2}ms", d.as_secs_f64() * 1000.0)
+    } else {
+        format!("{:.2}μs", d.as_secs_f64() * 1_000_000.0)
+    }
+}
+
 // 创建模拟终端状态的测试数据
 struct TerminalMock {
     cols: usize,
@@ -65,70 +115,103 @@ enum FillMode {
 // ============================================================
 // 模拟渲染管线 - 与 Vulkan 管线相同的操作模式
 // ============================================================
-fn simulate_render_pipeline(canvas: &skia_safe::Canvas, terminal: &TerminalMock, font: &Font, paint: &Paint) -> Duration {
-    let font_width = 10.0;
-    let font_height = 20.0;
-
-    let elapsed = measure(|| {
-        // 1. 背景清屏 (模拟 terminal clear)
-        canvas.clear(Color::new(0xFF000000u32));
-
-        // 2. 逐行绘制 (使用 TextBlob 优化)
-        for r in 0..terminal.rows {
-            let y_base = (r as f32 + 1.0) * font_height;
-            let y_adj = y_base + 3.0;
-            let row_start = r * terminal.cols;
-
-            let mut builder = TextBlobBuilder::new();
-            let mut has_content = false;
-
-            let mut c = 0;
-            while c < terminal.cols {
-                let cell_idx = row_start + c;
-                if cell_idx >= terminal.cells.len() { break; }
-                let (ch, style) = terminal.cells[cell_idx];
-                if ch == ' ' { c += 1; continue; }
-
-                // 合并相同样式的 run
-                let mut run_chars = Vec::new();
-
-                while c < terminal.cols {
-                    let ci = row_start + c;
-                    if ci >= terminal.cells.len() { break; }
-                    let (ch2, style2) = terminal.cells[ci];
-                    if style2 != style || ch2 == ' ' { break; }
-                    run_chars.push((ch2, c as f32 * font_width));
-                    c += 1;
-                }
-
-                if !run_chars.is_empty() {
-                    flush_run_to_blob(&mut builder, &run_chars, font);
-                    has_content = true;
-                }
-            }
-
-            if has_content {
-                if let Some(blob) = builder.make() {
-                    canvas.draw_text_blob(&blob, (0.0, y_adj), paint);
-                }
-            }
-        }
-    });
-
-    elapsed
+struct DetailedDuration {
+    clear: Duration,
+    grouping: Duration,
+    glyph_lookup: Duration,
+    blob_alloc: Duration,
+    blob_make: Duration,
+    draw_call: Duration,
 }
 
-fn flush_run_to_blob(builder: &mut TextBlobBuilder, chars: &[(char, f32)], font: &Font) {
-    if chars.is_empty() { return; }
-    let text: String = chars.iter().map(|(c, _)| *c).collect();
-    let mut glyphs = vec![skia_safe::GlyphId::default(); chars.len()];
-    font.str_to_glyphs(&text, &mut glyphs);
+fn simulate_detailed_pipeline(canvas: &skia_safe::Canvas, terminal: &TerminalMock, font: &Font, paint: &Paint) -> DetailedDuration {
+    let font_width = 10.0;
+    let font_height = 20.0;
+    
+    let mut clear = Duration::ZERO;
+    let mut grouping = Duration::ZERO;
+    let mut glyph_lookup = Duration::ZERO;
+    let mut blob_alloc = Duration::ZERO;
+    let mut blob_make = Duration::ZERO;
+    let mut draw_call = Duration::ZERO;
 
-    let (run_glyphs, run_pos) = builder.alloc_run_pos_h(font, chars.len(), 0.0, None);
-    run_glyphs.copy_from_slice(&glyphs);
-    for (i, (_, x)) in chars.iter().enumerate() {
-        run_pos[i] = *x;
+    // 1. 背景清屏
+    clear = measure(|| {
+        canvas.clear(Color::new(0xFF000000u32));
+    });
+
+    // 2. 逐行绘制
+    for r in 0..terminal.rows {
+        let y_base = (r as f32 + 1.0) * font_height;
+        let y_adj = y_base + 3.0;
+        let row_start = r * terminal.cols;
+
+        let mut builder = TextBlobBuilder::new();
+        let mut has_content = false;
+
+        let mut c = 0;
+        while c < terminal.cols {
+            let start_group = Instant::now();
+            let cell_idx = row_start + c;
+            if cell_idx >= terminal.cells.len() { break; }
+            let (ch, style) = terminal.cells[cell_idx];
+            if ch == ' ' { c += 1; grouping += start_group.elapsed(); continue; }
+
+            let mut run_chars = Vec::new();
+            while c < terminal.cols {
+                let ci = row_start + c;
+                if ci >= terminal.cells.len() { break; }
+                let (ch2, style2) = terminal.cells[ci];
+                if style2 != style || ch2 == ' ' { break; }
+                run_chars.push((ch2, c as f32 * font_width));
+                c += 1;
+            }
+            grouping += start_group.elapsed();
+
+            if !run_chars.is_empty() {
+                // 细化 flush_run_to_blob
+                let text: String = run_chars.iter().map(|(ch, _)| *ch).collect();
+                let mut glyphs = vec![skia_safe::GlyphId::default(); run_chars.len()];
+                
+                glyph_lookup += measure(|| {
+                    font.str_to_glyphs(&text, &mut glyphs);
+                });
+
+                let mut run_data: Option<(&mut [u16], &mut [f32])> = None;
+                blob_alloc += measure(|| {
+                    run_data = Some(builder.alloc_run_pos_h(font, run_chars.len(), 0.0, None));
+                });
+
+                if let Some((run_glyphs, run_pos)) = run_data {
+                    run_glyphs.copy_from_slice(&glyphs);
+                    for (i, (_, x)) in run_chars.iter().enumerate() {
+                        run_pos[i] = *x;
+                    }
+                }
+                has_content = true;
+            }
+        }
+
+        if has_content {
+            let mut blob: Option<skia_safe::TextBlob> = None;
+            blob_make += measure(|| {
+                blob = builder.make();
+            });
+            
+            if let Some(b) = blob {
+                draw_call += measure(|| {
+                    canvas.draw_text_blob(&b, (0.0, y_adj), paint);
+                });
+            }
+        }
     }
+
+    DetailedDuration { clear, grouping, glyph_lookup, blob_alloc, blob_make, draw_call }
+}
+
+fn simulate_render_pipeline(canvas: &skia_safe::Canvas, terminal: &TerminalMock, font: &Font, paint: &Paint) -> Duration {
+    let d = simulate_detailed_pipeline(canvas, terminal, font, paint);
+    d.clear + d.grouping + d.glyph_lookup + d.blob_alloc + d.blob_make + d.draw_call
 }
 
 // ============================================================
@@ -162,9 +245,9 @@ fn benchmark_terminal_sizes() {
         (FillMode::Stress, "压力"),
     ];
 
-    println!("{:<20} | {:<8} | {:<12} | {:<12} | {:<10}",
-             "终端配置", "内容", "单元格数", "帧时间", "FPS 估算");
-    println!("{:-<78}", "");
+    println!("{:<20} | {:<8} | {:<10} | {:<22} | {:<8} | {:<15}",
+             "终端配置", "内容", "单元格数", "耗时(min/avg/p95)", "FPS", "吞吐量 (像素)");
+    println!("{:-<105}", "");
 
     for (cols, rows, label) in &configs {
         for (fill_mode, fill_label) in &fill_modes {
@@ -181,23 +264,27 @@ fn benchmark_terminal_sizes() {
                 simulate_render_pipeline(canvas, &terminal, &font, &paint);
             }
 
-            // 测量 10 帧
-            let iterations = 10;
-            let mut total = Duration::ZERO;
+            // 测量 20 帧以获得更好的统计数据
+            let iterations = 20;
+            let mut stats = Stats::new();
             for _ in 0..iterations {
-                total += simulate_render_pipeline(canvas, &terminal, &font, &paint);
+                stats.add(simulate_render_pipeline(canvas, &terminal, &font, &paint));
             }
-            let avg = total / iterations as u32;
-            let fps = 1.0 / avg.as_secs_f64();
+            let (min_d, avg_d, p95_d, _max_d, _std_dev) = stats.analyze();
+            let fps = 1.0 / avg_d.as_secs_f64();
+            let throughput = (cell_count as f64 / avg_d.as_secs_f64()) / 1_000_000.0;
+            // 假设每个单元格 10x20 像素
+            let pixel_throughput = (cell_count as f64 * 200.0 / avg_d.as_secs_f64()) / 1_000_000.0;
 
-            let cell_str = format!("{:>6}", cell_count);
-            let time_str = format!("{:>6.2}ms", avg.as_secs_f64() * 1000.0);
-            let fps_str = format!("{:>7.1}", fps);
+            let time_combined = format!("{:.1}/{:.1}/{:.1}ms", 
+                min_d.as_secs_f64() * 1000.0, 
+                avg_d.as_secs_f64() * 1000.0, 
+                p95_d.as_secs_f64() * 1000.0);
 
-            println!("{:<20} | {:<8} | {:>6} 格 | {:>10} | {:>8}",
-                     label, fill_label, cell_str, time_str, fps_str);
+            println!("{:<20} | {:<8} | {:>7} 格 | {:>22} | {:>8.1} | {:>7.2}Mc/s ({:>5.0}MP/s)",
+                     label, fill_label, cell_count, time_combined, fps, throughput, pixel_throughput);
         }
-        println!("{:-<78}", "");
+        println!("{:-<105}", "");
     }
 }
 
@@ -224,40 +311,60 @@ fn benchmark_pipeline_stages() {
     let mut paint = Paint::default();
     paint.set_anti_alias(false);
 
-    // 1. 纯清屏耗时
-    let clear_time = measure(|| {
-        for _ in 0..100 {
-            canvas.clear(Color::new(0xFF000000u32));
-        }
-    });
-    let clear_avg = clear_time / 100;
+    // 1. 获取详细耗时
+    let mut total_d = DetailedDuration {
+        clear: Duration::ZERO, grouping: Duration::ZERO, glyph_lookup: Duration::ZERO,
+        blob_alloc: Duration::ZERO, blob_make: Duration::ZERO, draw_call: Duration::ZERO,
+    };
+    
+    let iterations = 20;
+    for _ in 0..iterations {
+        let d = simulate_detailed_pipeline(canvas, &terminal, &font, &paint);
+        total_d.clear += d.clear;
+        total_d.grouping += d.grouping;
+        total_d.glyph_lookup += d.glyph_lookup;
+        total_d.blob_alloc += d.blob_alloc;
+        total_d.blob_make += d.blob_make;
+        total_d.draw_call += d.draw_call;
+    }
 
-    // 2. 完整渲染
-    let render_time = measure(|| {
-        for _ in 0..10 {
-            simulate_render_pipeline(canvas, &terminal, &font, &paint);
-        }
-    });
-    let render_avg = render_time / 10;
-
-    // 3. 绘制操作占比
-    let draw_time = render_avg.saturating_sub(clear_avg);
+    let avg_d = |d: Duration| d.as_micros() as f64 / iterations as f64;
+    let clear_us = avg_d(total_d.clear);
+    let group_us = avg_d(total_d.grouping);
+    let glyph_us = avg_d(total_d.glyph_lookup);
+    let alloc_us = avg_d(total_d.blob_alloc);
+    let make_us = avg_d(total_d.blob_make);
+    let draw_us = avg_d(total_d.draw_call);
+    let total_us = clear_us + group_us + glyph_us + alloc_us + make_us + draw_us;
 
     println!("终端配置: {}x{} ({} 单元格)", cols, rows, cols * rows);
     println!("填充模式: 混合 (中文+ASCII)");
     println!();
-    println!("  阶段           | 平均耗时    | 占比");
-    println!("  {:-<40}", "");
-    println!("  清屏 (clear)   | {:>8.3}μs | {:.1}%",
-             clear_avg.as_micros() as f64,
-             clear_avg.as_micros() as f64 / render_avg.as_micros() as f64 * 100.0);
-    println!("  文本绘制 (draw)| {:>8.3}μs | {:.1}%",
-             draw_time.as_micros() as f64,
-             draw_time.as_micros() as f64 / render_avg.as_micros() as f64 * 100.0);
-    println!("  {:-<40}", "");
-    println!("  总帧时间       | {:>8.3}μs | 100.0%",
-             render_avg.as_micros() as f64);
-    println!("  理论 FPS       | {:.1} FPS", 1.0 / render_avg.as_secs_f64());
+    println!("  渲染步骤           | 平均耗时    | 占比   | 可视化分布");
+    println!("  {:-<65}", "");
+
+    let stages = [
+        ("清屏 (Clear)", clear_us),
+        ("字符分组 (Grouping)", group_us),
+        ("字形查找 (Glyph ID)", glyph_us),
+        ("Blob 分配 (Alloc)", alloc_us),
+        ("Blob 生成 (Make)", make_us),
+        ("Vulkan 提交 (Draw)", draw_us),
+    ];
+
+    for (name, us) in stages {
+        let pct = us / total_us * 100.0;
+        let bar = "█".repeat((pct / 4.0) as usize);
+        println!("  {:<18} | {:>8.1}μs | {:>5.1}% | {}", name, us, pct, bar);
+    }
+
+    println!("  {:-<65}", "");
+    println!("  整帧总计           | {:>8.1}μs | 100.0% | {}", total_us, "█".repeat(25));
+    println!();
+    println!("  性能诊断指标:");
+    println!("    理论最大帧率: {:.1} FPS", 1_000_000.0 / total_us);
+    println!("    字体处理开销: {:.1}% (Glyph+Alloc+Make)", (glyph_us + alloc_us + make_us) / total_us * 100.0);
+    println!("    CPU 预处理占比: {:.1}% (Grouping)", group_us / total_us * 100.0);
 }
 
 // ============================================================
@@ -284,28 +391,42 @@ fn benchmark_sustained_rendering() {
     paint.set_anti_alias(false);
 
     let frames = 1000;
+    let mut stats = Stats::new();
     let start = Instant::now();
 
     for i in 0..frames {
-        simulate_render_pipeline(canvas, &terminal, &font, &paint);
+        let frame_time = measure(|| {
+            simulate_render_pipeline(canvas, &terminal, &font, &paint);
+        });
+        stats.add(frame_time);
+
         if (i + 1) % 200 == 0 {
             let elapsed = start.elapsed();
-            let fps = (i + 1) as f64 / elapsed.as_secs_f64();
-            println!("  帧 {:>4}/{} | 累计 FPS: {:.1}", i + 1, frames, fps);
+            let current_fps = (i + 1) as f64 / elapsed.as_secs_f64();
+            println!("  进度: {:>4}/{} | 累计耗时: {:.2}s | 实时 FPS: {:.1}", i + 1, frames, elapsed.as_secs_f64(), current_fps);
         }
     }
 
-    let total = start.elapsed();
-    let avg_fps = frames as f64 / total.as_secs_f64();
-    let avg_frame = total / frames as u32;
+    let total_elapsed = start.elapsed();
+    let (min_v, avg_v, p95_v, max_v, std_dev) = stats.analyze();
+    let avg_fps = frames as f64 / total_elapsed.as_secs_f64();
 
     println!();
-    println!("  总帧数:       {}", frames);
-    println!("  总耗时:       {:.3}s", total.as_secs_f64());
-    println!("  平均帧时间:   {:.2}ms", avg_frame.as_secs_f64() * 1000.0);
-    println!("  平均 FPS:     {:.1}", avg_fps);
-    println!("  渲染单元格总数: {} ({:.1} M cells)", frames * cols * rows, (frames * cols * rows) as f64 / 1_000_000.0);
-    println!("  渲染吞吐量:   {:.2} M cells/s", (frames * cols * rows) as f64 / total.as_secs_f64() / 1_000_000.0);
+    println!("  统计概览:");
+    println!("    总帧数:       {}", frames);
+    println!("    总耗时:       {:.3}s", total_elapsed.as_secs_f64());
+    println!("    平均 FPS:     {:.1}", avg_fps);
+    println!("    抖动 (StdDev): {:.3}ms", std_dev * 1000.0);
+    println!();
+    println!("  延迟分布:");
+    println!("    最小值 (Min): {:>8}", format_duration(min_v));
+    println!("    平均值 (Avg): {:>8}", format_duration(avg_v));
+    println!("    95分位 (P95): {:>8}", format_duration(p95_v));
+    println!("    最大值 (Max): {:>8}", format_duration(max_v));
+    println!();
+    println!("  吞吐量分析:");
+    println!("    渲染单元格总数: {} ({:.1} M cells)", frames * cols * rows, (frames * cols * rows) as f64 / 1_000_000.0);
+    println!("    渲染吞吐量:     {:.2} M cells/s", (frames * cols * rows) as f64 / total_elapsed.as_secs_f64() / 1_000_000.0);
 }
 
 // ============================================================
