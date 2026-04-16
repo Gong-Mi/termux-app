@@ -1,6 +1,7 @@
 /// 屏幕状态管理
 use std::cmp::{max, min};
 use jni::objects::JValue;
+use jni::JNIEnv;
 
 use crate::terminal::style::*;
 use crate::terminal::modes::*;
@@ -206,7 +207,8 @@ impl ScreenState {
     pub fn report_title_change(&self, title: &str) {
         if let Some(obj) = &self.java_callback_obj {
             if let Some(vm) = crate::JAVA_VM.get() {
-                if let Ok(mut env) = vm.get_env() {
+                if let Ok(env) = vm.get_env() {
+                    let mut env: jni::JNIEnv = env;
                     if let Ok(java_title) = env.new_string(title) {
                         let _ = env.call_method(obj.as_obj(), "reportTitleChange", "(Ljava/lang/String;)V", &[JValue::from(&java_title)]);
                     }
@@ -218,7 +220,8 @@ impl ScreenState {
     pub fn report_sixel_image(&self, callback_obj: &Option<jni::objects::GlobalRef>) {
         if let Some(obj) = callback_obj {
             if let Some(vm) = crate::JAVA_VM.get() {
-                if let Ok(mut env) = vm.get_env() {
+                if let Ok(env) = vm.get_env() {
+                    let mut env: jni::JNIEnv = env;
                     let decoder = &self.sixel_decoder;
                     let rgba_data = decoder.get_image_data();
                     let width = decoder.width.max(1) as i32;
@@ -252,6 +255,7 @@ impl ScreenState {
         if let Some(obj) = &self.java_callback_obj {
             if let Some(vm) = crate::JAVA_VM.get() {
                 if let Ok(mut env) = vm.get_env() {
+                    let mut env: JNIEnv = env;
                     let _ = env.call_method(obj.as_obj(), "onClearScreen", "()V", &[]);
                 }
             }
@@ -262,6 +266,7 @@ impl ScreenState {
         if let Some(obj) = &self.java_callback_obj {
             if let Some(vm) = crate::JAVA_VM.get() {
                 if let Ok(mut env) = vm.get_env() {
+                    let mut env: JNIEnv = env;
                     if let Ok(java_response) = env.new_string(response) {
                         let _ = env.call_method(obj.as_obj(), "write", "(Ljava/lang/String;)V", &[JValue::from(&java_response)]);
                     }
@@ -585,7 +590,8 @@ impl ScreenState {
     pub fn report_bell(&self) {
         if let Some(obj) = &self.java_callback_obj {
             if let Some(vm) = crate::JAVA_VM.get() {
-                if let Ok(mut env) = vm.get_env() {
+                if let Ok(env) = vm.get_env() {
+                    let mut env: JNIEnv = env;
                     let _ = env.call_method(obj.as_obj(), "onBell", "()V", &[]);
                 }
             }

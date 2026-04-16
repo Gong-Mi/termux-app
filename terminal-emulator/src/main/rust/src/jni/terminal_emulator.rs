@@ -901,14 +901,14 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
     callback: JObject,
 ) {
     let cmd_str = if !cmd.is_null() {
-        let js = JString::from_raw(cmd);
+        let js = unsafe { JString::from_raw(cmd) };
         env.get_string(&js).map(|s| s.into()).unwrap_or_default()
     } else {
         String::new()
     };
 
     let cwd_str = if !cwd.is_null() {
-        let js = JString::from_raw(cwd);
+        let js = unsafe { JString::from_raw(cwd) };
         env.get_string(&js).map(|s| s.into()).unwrap_or_default()
     } else {
         String::new()
@@ -976,6 +976,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
         if let Some(ref cb) = callback_ref {
             if let Some(vm) = crate::JAVA_VM.get() {
                 if let Ok(mut env) = vm.attach_current_thread_as_daemon() {
+                    let mut env: JNIEnv = env;
                     let _ = env.call_method(
                         cb.as_obj(),
                         "onEngineInitialized",
@@ -1027,16 +1028,18 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
     cw: jint,
     ch: jint,
 ) -> jint {
-    crate::pty::create_subprocess(
-        env.get_native_interface(),
-        cmd,
-        cwd,
-        args,
-        env_vars,
-        process_id_array,
-        rows,
-        cols,
-        cw,
-        ch,
-    )
+    unsafe {
+        crate::pty::create_subprocess(
+            env.get_native_interface(),
+            cmd,
+            cwd,
+            args,
+            env_vars,
+            process_id_array,
+            rows,
+            cols,
+            cw,
+            ch,
+        )
+    }
 }

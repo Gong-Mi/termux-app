@@ -2,6 +2,7 @@
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::os::fd::FromRawFd;
+use jni::JNIEnv;
 use jni::objects::JValue;
 
 use crate::vte_parser::Parser;
@@ -55,7 +56,8 @@ impl TerminalEngine {
         if let Some(obj) = &self.state.java_callback_obj {
             if let Some(vm) = crate::JAVA_VM.get() {
                 let env_res = vm.get_env().or_else(|_| vm.attach_current_thread_as_daemon());
-                if let Ok(mut env) = env_res {
+                if let Ok(env) = env_res {
+                    let mut env: jni::JNIEnv = env;
                     let _ = env.call_method(obj.as_obj(), "onScreenUpdated", "()V", &[]);
                 }
             }
@@ -96,13 +98,14 @@ impl TerminalContext {
                 }
             };
 
-            let mut env = match vm.attach_current_thread() {
-                Ok(e) => e,
+            let mut guard = match vm.attach_current_thread() {
+                Ok(g) => g,
                 Err(e) => {
                     crate::utils::android_log(crate::utils::LogPriority::ERROR, &format!("IO Thread: Failed to attach to JVM: {:?}", e));
                     return;
                 }
             };
+            let mut env = &mut *guard;
 
             crate::utils::android_log(crate::utils::LogPriority::DEBUG, "IO Thread: Attached and running");
 

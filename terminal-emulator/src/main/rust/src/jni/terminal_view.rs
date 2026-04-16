@@ -168,7 +168,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
 
             if let Some(ctx) = guard.as_mut() {
                 android_log(LogPriority::INFO, "nativeSetSurface: Reusing existing Device, reattaching Surface");
-                let entry = ash::Entry::load().unwrap(); // 需要加载 Entry 来获取函数指针
+                let entry = unsafe { ash::Entry::load().unwrap() }; // 需要加载 Entry 来获取函数指针
                 unsafe {
                     if !ctx.recreate_surface(&entry, window as _) {
                         android_log(LogPriority::ERROR, "nativeSetSurface: Failed to reattach Surface, recreating whole context");

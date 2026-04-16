@@ -424,15 +424,17 @@ impl VulkanContext {
         android_log(LogPriority::INFO, "VulkanContext: Reattaching to new window");
         
         let android_surface_loader = ash::khr::android_surface::Instance::new(entry, &self.instance);
-        let surface = android_surface_loader.create_android_surface(
-            &ash_vk::AndroidSurfaceCreateInfoKHR { window, ..Default::default() }, 
-            None
-        );
+        let surface = unsafe { 
+            android_surface_loader.create_android_surface(
+                &ash_vk::AndroidSurfaceCreateInfoKHR { window, ..Default::default() }, 
+                None
+            ) 
+        };
 
         match surface {
             Ok(s) => {
                 self.surface = s;
-                let caps = self.surface_loader.get_physical_device_surface_capabilities(self.pdevice, self.surface).ok();
+                let caps = unsafe { self.surface_loader.get_physical_device_surface_capabilities(self.pdevice, self.surface).ok() };
                 if let Some(c) = caps {
                     self.extent = c.current_extent;
                     self.recreate_swapchain(self.extent.width, self.extent.height)
