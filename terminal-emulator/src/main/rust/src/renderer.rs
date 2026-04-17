@@ -569,14 +569,34 @@ impl TerminalRenderer {
         // 光标绘制
         if frame.cursor_enabled {
             self.cursor_paint.set_color(Color::new(palette[COLOR_INDEX_CURSOR]));
-            let cx = frame.cursor_x as f32 * self.font_width;
-            let cy = frame.cursor_y as f32 * self.font_height;
-            let rect = match frame.cursor_style {
-                1 => Rect::from_xywh(cx, cy + self.font_height - 2.0, self.font_width, 2.0),
-                2 => Rect::from_xywh(cx, cy, 2.0, self.font_height),
-                _ => Rect::from_xywh(cx, cy, self.font_width, self.font_height),
-            };
-            canvas.draw_rect(rect, &self.cursor_paint);
+            // 修复: 考虑滚动偏移 (top_row)
+            let visual_y = frame.cursor_y - frame.top_row;
+            if visual_y >= 0 && visual_y < frame.rows as i32 {
+                let cx = frame.cursor_x as f32 * self.font_width;
+                let cy = visual_y as f32 * self.font_height;
+                
+                // 修复: 考虑宽字符宽度
+                let mut cursor_width = self.font_width;
+                if let Some(row) = frame.row_data.get(visual_y as usize) {
+                    if let Some(&ch) = row.0.get(frame.cursor_x as usize) {
+                        if char_wc_width(ch as u32) > 1 {
+                            cursor_width *= 2.0;
+                        }
+                    }
+                }
+
+                let rect = match frame.cursor_style {
+                    1 => Rect::from_xywh(cx, cy + self.font_height - 2.0, cursor_width, 2.0),
+                    2 => Rect::from_xywh(cx, cy, 2.0, self.font_height),
+                    _ => Rect::from_xywh(cx, cy, cursor_width, self.font_height),
+                };
+
+                // 改进: 使用 Difference 混合模式，使光标下的文字可见
+                let old_blend = self.cursor_paint.blend_mode_or(skia_safe::BlendMode::SrcOver);
+                self.cursor_paint.set_blend_mode(skia_safe::BlendMode::Difference);
+                canvas.draw_rect(rect, &self.cursor_paint);
+                self.cursor_paint.set_blend_mode(old_blend);
+            }
         }
     }
 

@@ -574,3 +574,62 @@ fn test_concurrent_rendering() {
 
     println!("  ✅ 并发渲染安全测试通过 ({} threads)", final_count);
 }
+
+#[test]
+fn test_cursor_rendering_visual_correctness() {
+    use termux_rust::renderer::{RenderFrame, TerminalRenderer};
+    use termux_rust::engine::TerminalEngine;
+    use termux_rust::terminal::style::STYLE_NORMAL;
+    use skia_safe::{surfaces, Color};
+
+    let font_width = 10.0;
+    let font_height = 20.0;
+    let mut renderer = TerminalRenderer::new(&[], 12.0, None);
+    // 强制设置指标以便精确计算
+    renderer.font_width = font_width;
+    renderer.font_height = font_height;
+
+    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    
+    // 场景：光标在第 2 行，但我们向上滚动了 5 行 (top_row = -5)
+    // 视觉上，光标应该出现在屏幕的第 7 行 (index 7)
+    engine.state.cursor.y = 2;
+    engine.state.cursor.x = 0;
+    engine.state.cursor_enabled = true;
+    
+    // 在光标位置放一个宽字符
+    let row = engine.state.main_screen.get_row_mut(2);
+    row.text[0] = '你';
+    row.styles[0] = STYLE_NORMAL;
+
+    let top_row = -5;
+    let frame = RenderFrame::from_engine(&engine, 24, 80, top_row);
+
+    // 创建画布进行渲染
+    let mut surface = surfaces::raster_n32_premul((800, 480)).expect("Failed to create surface");
+    let canvas = surface.canvas();
+    canvas.clear(Color::BLACK);
+
+    // 执行渲染逻辑链条
+    renderer.draw_frame(canvas, &frame, 1.0, 0.0);
+
+    let pixmap = surface.peek_pixels().expect("Failed to peek pixels");
+
+    // --- 验证点 1: 滚动偏移 ---
+    let pixel_at_expected_y = get_pixel(&pixmap, 5, 150);
+    let pixel_at_wrong_y = get_pixel(&pixmap, 5, 50);
+
+    println!("  Pixel at expected Y (150): {:#010X}", pixel_at_expected_y);
+    println!("  Pixel at wrong Y (50): {:#010X}", pixel_at_wrong_y);
+
+    // 在 Difference 模式下，白色光标盖在黑色背景上是白色，盖在灰色文字上是反色
+    // 只要不是背景色 (0xFF000000)，就说明光标渲染到了这里
+    assert_ne!(pixel_at_expected_y, 0xFF000000, "Cursor should be visible at scrolled position (Row 7)");
+    assert_eq!(pixel_at_wrong_y, 0xFF000000, "Cursor should NOT be at absolute position (Row 2) when scrolled");
+
+    // --- 验证点 2: 宽字符宽度 ---
+    // 检查第二个单元格 (x=15)。在修复后，这里也应该有光标像素
+    let pixel_in_second_cell = get_pixel(&pixmap, 15, 150);
+    println!("  Pixel in second cell of wide char (15, 150): {:#010X}", pixel_in_second_cell);
+    assert_ne!(pixel_in_second_cell, 0xFF000000, "Cursor should cover both cells of a wide character");
+}
