@@ -501,7 +501,7 @@ impl Drop for VulkanContext {
 }
 
 fn get_cache_path() -> std::path::PathBuf {
-    std::path::PathBuf::from("/data/data/com.termux/files/home/.termux/vulkan_pipeline_cache.bin")
+    std::path::PathBuf::from("/data/data/com.termux/cache/vulkan_pipeline_cache.bin")
 }
 
 fn load_pipeline_cache() -> Option<Vec<u8>> {
