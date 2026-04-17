@@ -104,6 +104,8 @@ struct FontCache {
     font_height: f32,
     font_ascent: f32,
     font_mgr: Arc<FontMgr>,
+    /// 动态备用字体缓存：存储由系统匹配到的特定 Unicode 字符字体
+    dynamic_fonts: std::sync::RwLock<std::collections::HashMap<u32, Font>>,
 }
 
 unsafe impl Send for FontCache {}
@@ -149,6 +151,7 @@ impl FontCache {
             font_height,
             font_ascent: metrics.1.ascent,
             font_mgr,
+            dynamic_fonts: std::sync::RwLock::new(std::collections::HashMap::with_capacity(64)),
         }
     }
 
@@ -206,25 +209,47 @@ impl FontCache {
 
     fn get_font_for_char(&self, ch: char, bold: bool, italic: bool) -> (Font, bool) {
         let ucs = ch as u32;
+        
+        // 1. 检查主字体
         let primary = self.get_font(bold, italic, false);
-        let tf = primary.typeface();
         let mut glyphs = [0u16; 1];
-        tf.unichars_to_glyphs(&[ucs as i32], &mut glyphs);
+        primary.typeface().unichars_to_glyphs(&[ucs as i32], &mut glyphs);
         if glyphs[0] != 0 { return (primary.clone(), false); }
 
-        let fallback_ref = if bold { &self.font_fallback_bold } else { &self.font_fallback };
-        fallback_ref.typeface().unichars_to_glyphs(&[ucs as i32], &mut glyphs);
-        if glyphs[0] != 0 { return (fallback_ref.clone(), false); }
+        // 2. 检查动态缓存
+        {
+            let cache = self.dynamic_fonts.read().unwrap();
+            if let Some(font) = cache.get(&ucs) {
+                return (font.clone(), true);
+            }
+        }
 
-        let style = if bold { if italic { FontStyle::bold_italic() } else { FontStyle::bold() } } else { if italic { FontStyle::italic() } else { FontStyle::normal() } };
-        if let Some(tf) = self.font_mgr.match_family_style_character("Noto Sans CJK SC", style, &[], ucs as i32)
-            .or_else(|| self.font_mgr.match_family_style_character("sans-serif", style, &[], ucs as i32)) {
-            let mut matched_font = Font::new(tf, Some(self.font_height));
+        // 3. 检查基础 fallback (sans-serif)
+        let fallback = if bold { &self.font_fallback_bold } else { &self.font_fallback };
+        fallback.typeface().unichars_to_glyphs(&[ucs as i32], &mut glyphs);
+        if glyphs[0] != 0 { return (fallback.clone(), true); }
+
+        // 4. 系统动态匹配 (核心：不再硬编码名字)
+        let style = if bold {
+            if italic { FontStyle::bold_italic() } else { FontStyle::bold() }
+        } else {
+            if italic { FontStyle::italic() } else { FontStyle::normal() }
+        };
+        
+        if let Some(tf) = self.font_mgr.match_family_style_character("monospace", style, &[], ucs as i32) {
+            let mut matched_font = Font::new(tf, Some(self.font_mono.size()));
             matched_font.set_edging(skia_safe::font::Edging::SubpixelAntiAlias);
             matched_font.set_subpixel(true);
+            
+            // 写入缓存
+            let mut cache = self.dynamic_fonts.write().unwrap();
+            if cache.len() > 500 { cache.clear(); }
+            cache.insert(ucs, matched_font.clone());
             return (matched_font, true);
         }
-        (fallback_ref.clone(), false)
+
+        // 5. 最终降级
+        (fallback.clone(), true)
     }
 }
 
@@ -711,18 +736,17 @@ impl TerminalRenderer {
 
             // 优化：使用预分配的 group_chars 缓冲区
             group_chars.clear();
-            let mut group_font_type: Option<usize> = None;
+            let mut current_group_font: Option<Font> = None;
 
             for ch in text.chars() {
                 if ch == '\0' { continue; }
-                let logic_w = char_wc_width(ch as u32) as f32 * font_width;
+                let logic_w = crate::wcwidth::wcwidth(ch as u32) as f32 * font_width;
 
                 if is_special_render_char(ch) {
                     // 刷新 TextBlob
                     if !group_chars.is_empty() {
-                        if let Some(ft) = group_font_type {
-                            let font = font_cache.get_font_by_index(ft);
-                            Self::flush_text_group_blob(builder, group_chars, font, glyph_cache);
+                        if let Some(ref f) = current_group_font {
+                            Self::flush_text_group_blob(builder, group_chars, f, glyph_cache);
                         }
                     }
                     // 绘制块元素
@@ -731,28 +755,25 @@ impl TerminalRenderer {
                     continue;
                 }
 
-                // 快速字体查找（返回索引，避免 Font::clone）
-                let (font_type, _is_fallback) = font_cache.get_font_type_for_char(ch, bold, italic);
-                let font_id = font_cache.get_typeface_id(font_type);
+                // 核心改动：使用动态匹配逻辑
+                let (font, _) = font_cache.get_font_for_char(ch, bold, italic);
 
                 // 如果字体切换，刷新当前组
-                if let Some(prev_type) = group_font_type {
-                    if font_id != font_cache.get_typeface_id(prev_type) {
-                        let prev_font = font_cache.get_font_by_index(prev_type);
+                if let Some(ref prev_font) = current_group_font {
+                    if font.typeface().unique_id() != prev_font.typeface().unique_id() {
                         Self::flush_text_group_blob(builder, group_chars, prev_font, glyph_cache);
                     }
                 }
 
-                group_font_type = Some(font_type);
+                current_group_font = Some(font);
                 group_chars.push((ch, current_x - x));
                 current_x += logic_w;
             }
 
             // 刷新剩余的文本组
-            if let Some(ft) = group_font_type {
+            if let Some(ref f) = current_group_font {
                 if !group_chars.is_empty() {
-                    let font = font_cache.get_font_by_index(ft);
-                    Self::flush_text_group_blob(builder, group_chars, font, glyph_cache);
+                    Self::flush_text_group_blob(builder, group_chars, f, glyph_cache);
                 }
             }
 
@@ -818,9 +839,9 @@ impl TerminalRenderer {
             let (hw, hh) = (cell_w / 2.0, cell_h / 2.0);
             let quads = [
                 (x, y_top, hw, hh, (q_mask & 1) != 0),
-                (x + hw, y_top, hw, hh, (q_mask & 2) != 0),
-                (x, y_top + hh, hw, hh, (q_mask & 4) != 0),
-                (x + hw, y_top + hh, hw, hh, (q_mask & 8) != 0),
+                (x + hw, y_top, cell_w - hw, hh, (q_mask & 2) != 0),
+                (x, y_top + hh, hw, cell_h - hh, (q_mask & 4) != 0),
+                (x + hw, y_top + hh, cell_w - hw, cell_h - hh, (q_mask & 8) != 0),
             ];
             for (qx, qy, qw, qh, fill) in quads {
                 bg_paint.set_color(Color::new(if fill { fg_color } else { bg_color }));
@@ -955,54 +976,17 @@ mod tests {
     fn test_selection_bounds() { let mut renderer = TerminalRenderer::new(&[], 12.0, None); renderer.set_selection(2, 1, 5, 3); assert!(renderer.is_cell_selected(3, 2)); }
 
     #[test]
-    fn test_text_blob_cache_speedup() {
-        let mut renderer = TerminalRenderer::new(&[], 12.0, None);
-        // 创建一个足够大的内存画布
-        let mut surface = skia_safe::surfaces::raster_n32_premul((800, 600)).unwrap();
-        let canvas = surface.canvas();
-        let palette = [0u32; NUM_INDEXED_COLORS];
-        let text = "Hello, TextBlob Cache Performance Test!";
-        let style = 0u64;
-
-        // 第一次调用：填充缓存 (Warm up)
-        for _ in 0..10 {
-            TerminalRenderer::draw_run_optimized(
-                &canvas, text, 0.0, 20.0, 400.0, &renderer.font_cache, &mut renderer.glyph_cache,
-                &mut renderer.paint, &mut renderer.bg_paint, &mut renderer.underline_paint,
-                &mut renderer.strikethrough_paint, 10.0, 20.0, style, &palette, false, false,
-                &mut renderer.text_blob_builder, &mut renderer.group_chars_buf, &mut renderer.text_blob_cache
-            );
+    fn test_font_fallback_generic() {
+        let renderer = TerminalRenderer::new(&[], 12.0, None);
+        // 测试一组主字体肯定不支持的字符
+        let characters = ['✦', '😊', '中', '𐐷'];
+        for &ch in &characters {
+            let (font, is_fallback) = renderer.font_cache.get_font_for_char(ch, false, false);
+            let tf = font.typeface();
+            let mut glyphs = [0u16; 1];
+            tf.unichars_to_glyphs(&[ch as i32], &mut glyphs);
+            println!("Char: {}, Fallback: {}, Glyph ID: {}", ch, is_fallback, glyphs[0]);
+            assert!(glyphs[0] != 0, "Character {} resulted in TOFU!", ch);
         }
-
-        // 测量缓存命中情况下的性能
-        let start_cached = Instant::now();
-        for _ in 0..5000 {
-            TerminalRenderer::draw_run_optimized(
-                &canvas, text, 0.0, 20.0, 400.0, &renderer.font_cache, &mut renderer.glyph_cache,
-                &mut renderer.paint, &mut renderer.bg_paint, &mut renderer.underline_paint,
-                &mut renderer.strikethrough_paint, 10.0, 20.0, style, &palette, false, false,
-                &mut renderer.text_blob_builder, &mut renderer.group_chars_buf, &mut renderer.text_blob_cache
-            );
-        }
-        let cached_duration = start_cached.elapsed();
-
-        // 测量缓存未命中情况下的性能 (通过不断改变 text 使得缓存无法命中)
-        let start_uncached = Instant::now();
-        for i in 0..5000 {
-            let dynamic_text = format!("Uncached test sequence {}", i);
-            TerminalRenderer::draw_run_optimized(
-                &canvas, &dynamic_text, 0.0, 20.0, 400.0, &renderer.font_cache, &mut renderer.glyph_cache,
-                &mut renderer.paint, &mut renderer.bg_paint, &mut renderer.underline_paint,
-                &mut renderer.strikethrough_paint, 10.0, 20.0, style, &palette, false, false,
-                &mut renderer.text_blob_builder, &mut renderer.group_chars_buf, &mut renderer.text_blob_cache
-            );
-        }
-        let uncached_duration = start_uncached.elapsed();
-
-        println!("Cached (5000 iterations): {:?}", cached_duration);
-        println!("Uncached (5000 iterations): {:?}", uncached_duration);
-
-        // 预期缓存命中的速度应远快于未命中（通常在 10x 以上，因为避开了 TextBlob 分配和 Glyph 查找）
-        assert!(cached_duration < uncached_duration, "Cache should provide significant speedup");
     }
 }

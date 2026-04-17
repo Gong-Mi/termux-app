@@ -89,3 +89,71 @@ impl ScreenState {
         self.current_style = encode_style(self.fore_color, self.back_color, self.effect);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_params(vals: &[i32]) -> Params {
+        let mut p = Params::default();
+        for &v in vals {
+            p.values[p.len] = v;
+            p.len += 1;
+        }
+        p
+    }
+
+    #[test]
+    fn test_sgr_simple_colors() {
+        let mut state = ScreenState::new(80, 24, 1000, 10, 20);
+        // CSI 31;42m -> Red FG, Green BG
+        let params = create_params(&[31, 42]);
+        state.handle_sgr(&params);
+        assert_eq!(state.fore_color, 1); // 31-30
+        assert_eq!(state.back_color, 2); // 42-40
+    }
+
+    #[test]
+    fn test_sgr_truecolor_fg() {
+        let mut state = ScreenState::new(80, 24, 1000, 10, 20);
+        // CSI 38;2;255;128;64m
+        let params = create_params(&[38, 2, 255, 128, 64]);
+        state.handle_sgr(&params);
+        assert_eq!(state.fore_color, 0xffff8040);
+    }
+
+    #[test]
+    fn test_sgr_mixed_malformed_consumption() {
+        let mut state = ScreenState::new(80, 24, 1000, 10, 20);
+        // 模拟一个错误：38 后面没有跟着 2 或 5，而是跟着 1 (Bold)
+        // CSI 38;1;32m
+        let params = create_params(&[38, 1, 32]);
+        state.handle_sgr(&params);
+        
+        // 期望：38 因为不符合真彩色/256色格式被跳过，1 应该被解析为加粗，32 为绿色
+        assert_ne!(state.effect & EFFECT_BOLD, 0, "Bold flag should be set");
+        assert_eq!(state.fore_color, 2, "Foreground should be green (32-30)");
+    }
+
+    #[test]
+    fn test_sgr_parameter_skipping_bug() {
+        let mut state = ScreenState::new(80, 24, 1000, 10, 20);
+        // CSI 1;38;5;42;4m  -> Bold, 256-color(42), Underline
+        // 这是一个标准的多参数序列
+        let params = create_params(&[1, 38, 5, 42, 4]);
+        state.handle_sgr(&params);
+        
+        assert_ne!(state.effect & EFFECT_BOLD, 0, "Should be bold");
+        assert_eq!(state.fore_color, 42, "Should be color 42");
+        assert_ne!(state.effect & EFFECT_UNDERLINE, 0, "Should be underlined");
+    }
+
+    #[test]
+    fn test_sgr_subparameters_fail() {
+        let mut state = ScreenState::new(80, 24, 1000, 10, 20);
+        // 模拟子参数情况
+        let params = create_params(&[38, 2, 255, 255, 255]);
+        state.handle_sgr(&params);
+        assert_eq!(state.fore_color, 0xffffffff);
+    }
+}
