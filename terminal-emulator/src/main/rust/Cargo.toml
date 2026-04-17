@@ -102,21 +102,10 @@ name = "vte_parser_benchmark"
 path = "tests/vte_parser_benchmark.rs"
 
 [[test]]
-name = "vulkan_cache_test"
-path = "tests/vulkan_cache_test.rs"
+name = "vulkan_path_cache_test"
+path = "tests/vulkan_path_cache_test.rs"
 
-[[test]]
-name = "detect_layout"
-path = "tests/detect_layout.rs"
-
-[[test]]
-name = "vulkan_physical_cache_test"
-path = "tests/vulkan_physical_cache_test.rs"
 
 [[test]]
 name = "vulkan_cache_performance_proof"
 path = "tests/vulkan_cache_performance_proof.rs"
-
-[[test]]
-name = "vulkan_path_cache_test"
-path = "tests/vulkan_path_cache_test.rs"

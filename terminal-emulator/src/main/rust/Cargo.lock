@@ -1426,6 +1426,7 @@ dependencies = [
  "rayon",
  "rusqlite",
  "simdutf8",
+ "skia-bindings",
  "skia-safe",
  "unicode-bidi",
  "unicode-properties",

@@ -129,21 +129,20 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
             render_thread::get_render_thread_running().store(false, std::sync::atomic::Ordering::SeqCst);
             render_thread::request_render(); 
 
-            // 3. 在 join 之前，尝试获取上下文并仅分离 Surface。
-            // 重要：不要将 guard 设为 None，保持 Device/Instance 存活。
-            if let Some(mutex) = render_thread::get_vulkan_context().get() {
-                if let Ok(mut guard) = mutex.try_lock() {
-                    if let Some(ctx) = guard.as_mut() {
-                        android_log(LogPriority::WARN, "CHECKPOINT: Abandoning Surface but KEEPING Device alive");
-                        ctx.abandon_surface();
-                    }
-                }
-            }
-
-            // 4. 等待渲染线程结束
+            // 3. 必须先等待渲染线程彻底结束，确保它不再持有 VULKAN_CONTEXT 锁或 Skia 资源
             if let Some(handle) = render_thread::get_render_thread_handle().lock().unwrap().take() {
                 let _ = handle.join();
                 android_log(LogPriority::INFO, "CHECKPOINT: Render thread joined successfully");
+            }
+
+            // 4. 现在线程已结束，可以安全地锁定并分离 Surface。
+            // 重要：保持 Device/Instance 存活，仅清理与 Surface 相关的资源。
+            if let Some(mutex) = render_thread::get_vulkan_context().get() {
+                let mut guard = mutex.lock().unwrap();
+                if let Some(ctx) = guard.as_mut() {
+                    android_log(LogPriority::WARN, "CHECKPOINT: Abandoning Surface but KEEPING Device alive");
+                    ctx.abandon_surface();
+                }
             }
 
             android_log(LogPriority::INFO, &format!("CHECKPOINT: nativeSetSurface(null) EXITING (Engine and Device preserved)"));

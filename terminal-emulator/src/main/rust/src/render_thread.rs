@@ -245,7 +245,9 @@ fn spawn_render_thread(engine_ptr: jlong) {
                     renderer.draw_frame(canvas, &frame, params.scale, params.scroll_offset);
                 }
 
-                ctx.context.flush_and_submit();
+                if let Some(ctx_skia) = ctx.context.as_mut() {
+                    ctx_skia.flush_and_submit();
+                }
 
                 // 4. 呈现图像
                 // 关键点：在呈现前再次检查运行状态，防止向已销毁的 surface 提交

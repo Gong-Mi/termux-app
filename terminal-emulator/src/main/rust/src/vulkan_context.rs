@@ -6,21 +6,30 @@ use std::ffi::CStr;
 use crate::utils::{android_log, LogPriority};
 
 pub struct VulkanContext {
-    pub instance: Instance,
-    pub device: Device,
-    pub context: DirectContext,
-    pub queue: ash_vk::Queue,
-    pub graphics_queue_index: u32,
-    pub pdevice: ash_vk::PhysicalDevice,
-    pub surface: ash_vk::SurfaceKHR,
-    pub surface_loader: ash::khr::surface::Instance,
-    pub swapchain_loader: swapchain::Device,
-    pub swapchain: ash_vk::SwapchainKHR,
-    pub swapchain_images: Vec<ash_vk::Image>,
-    pub extent: ash_vk::Extent2D,
+    // 依赖对象最先声明，以便最先销毁
+    pub context: Option<DirectContext>,
+    
+    // 渲染资源
+    pub pipeline_cache: ash_vk::PipelineCache,
     pub image_available_semaphore: ash_vk::Semaphore,
     pub render_finished_semaphore: ash_vk::Semaphore,
-    pub pipeline_cache: ash_vk::PipelineCache,
+    pub swapchain: ash_vk::SwapchainKHR,
+    pub swapchain_images: Vec<ash_vk::Image>,
+    pub surface: ash_vk::SurfaceKHR,
+    
+    // 加载器
+    pub swapchain_loader: swapchain::Device,
+    pub surface_loader: ash::khr::surface::Instance,
+
+    // 核心驱动对象最后声明，以便最后销毁
+    pub device: Device,
+    pub instance: Instance,
+
+    // 其他状态
+    pub pdevice: ash_vk::PhysicalDevice,
+    pub graphics_queue_index: u32,
+    pub queue: ash_vk::Queue,
+    pub extent: ash_vk::Extent2D,
 }
 
 unsafe impl Send for VulkanContext {}
@@ -271,14 +280,21 @@ impl VulkanContext {
         android_log(LogPriority::INFO, "VulkanContext::new: Skia context created and optimized");
 
         let mut ctx = Self {
-            instance, device, context, queue, graphics_queue_index: queue_family_index,
-            pdevice, surface, surface_loader, swapchain_loader,
-            swapchain: ash_vk::SwapchainKHR::null(),
-            swapchain_images: vec![],
-            extent,
+            context: Some(context),
+            pipeline_cache,
             image_available_semaphore,
             render_finished_semaphore,
-            pipeline_cache,
+            swapchain: ash_vk::SwapchainKHR::null(),
+            swapchain_images: vec![],
+            surface,
+            swapchain_loader,
+            surface_loader,
+            device,
+            instance,
+            pdevice,
+            graphics_queue_index: queue_family_index,
+            queue,
+            extent,
         };
 
         let swapchain_ok = ctx.recreate_swapchain(extent.width, extent.height);
@@ -396,7 +412,7 @@ impl VulkanContext {
         );
 
         skia_safe::gpu::surfaces::wrap_backend_render_target(
-            &mut self.context,
+            self.context.as_mut().expect("Skia context missing"),
             &render_target,
             skia_safe::gpu::SurfaceOrigin::TopLeft,
             ColorType::RGBA8888,
@@ -408,6 +424,10 @@ impl VulkanContext {
     /// 仅销毁 Surface 和 Swapchain，保留 Device/Instance 以维持后台进程优先级
     pub fn abandon_surface(&mut self) {
         android_log(LogPriority::WARN, "VulkanContext: Abandoning Surface/Swapchain only");
+        if let Some(ctx) = self.context.as_mut() {
+            ctx.flush_and_submit();
+        }
+
         unsafe {
             let _ = self.device.device_wait_idle();
             if self.swapchain != ash_vk::SwapchainKHR::null() {
@@ -433,6 +453,10 @@ impl VulkanContext {
 
         match surface {
             Ok(s) => {
+                // 关键：销毁旧 Surface 句柄
+                if self.surface != ash_vk::SurfaceKHR::null() {
+                    unsafe { self.surface_loader.destroy_surface(self.surface, None); }
+                }
                 self.surface = s;
                 let caps = unsafe { self.surface_loader.get_physical_device_surface_capabilities(self.pdevice, self.surface).ok() };
                 if let Some(c) = caps {
@@ -455,10 +479,13 @@ impl Drop for VulkanContext {
         android_log(LogPriority::WARN, "CHECKPOINT: VulkanContext::drop ENTERED");
         
         unsafe {
-            // 1. 第一时间放弃 Skia 上下文。
-            // 这会防止 Skia 在 drop 时尝试调用任何 Vulkan 函数。
-            android_log(LogPriority::DEBUG, "VulkanContext::drop: Abandoning Skia context...");
-            self.context.abandon();
+            // 1. 第一时间放弃并销毁 Skia 上下文。
+            // 这会释放 Skia 所有的资源，并确保它不再引用 Vulkan 设备。
+            if let Some(mut sk_ctx) = self.context.take() {
+                android_log(LogPriority::DEBUG, "VulkanContext::drop: Abandoning Skia context...");
+                sk_ctx.abandon();
+                drop(sk_ctx); // 显式显式释放
+            }
             
             // 2. 强制等待 GPU 彻底空闲。
             // 必须在销毁任何底层句柄前完成。
@@ -466,7 +493,7 @@ impl Drop for VulkanContext {
             let wait_start = std::time::Instant::now();
             match self.device.device_wait_idle() {
                 Ok(_) => android_log(LogPriority::INFO, &format!("VulkanContext::drop: device_wait_idle success in {:?}", wait_start.elapsed())),
-                Err(e) => android_log(LogPriority::ERROR, &format!("VulkanContext::drop: device_wait_idle FAILED (expected if surface lost): {:?}", e)),
+                Err(e) => android_log(LogPriority::ERROR, &format!("VulkanContext::drop: device_wait_idle FAILED: {:?}", e)),
             }
 
             android_log(LogPriority::DEBUG, "VulkanContext::drop: Cleaning up Vulkan objects...");
@@ -477,7 +504,6 @@ impl Drop for VulkanContext {
             self.device.destroy_semaphore(self.render_finished_semaphore, None);
             
             // 3. 销毁交换链。
-            // 在 Adreno 驱动中，重置命令池可能与交换链状态有关。
             if self.swapchain != ash_vk::SwapchainKHR::null() {
                 android_log(LogPriority::DEBUG, "VulkanContext::drop: Destroying swapchain");
                 self.swapchain_loader.destroy_swapchain(self.swapchain, None);
@@ -485,8 +511,11 @@ impl Drop for VulkanContext {
             }
             
             // 4. 销毁 Surface。
-            android_log(LogPriority::DEBUG, "VulkanContext::drop: Destroying surface");
-            self.surface_loader.destroy_surface(self.surface, None);
+            if self.surface != ash_vk::SurfaceKHR::null() {
+                android_log(LogPriority::DEBUG, "VulkanContext::drop: Destroying surface");
+                self.surface_loader.destroy_surface(self.surface, None);
+                self.surface = ash_vk::SurfaceKHR::null();
+            }
 
             // 5. 最后销毁核心驱动对象。
             // 顺序极其重要：Device -> Instance。
@@ -496,7 +525,7 @@ impl Drop for VulkanContext {
             android_log(LogPriority::WARN, "VulkanContext::drop: Destroying instance...");
             self.instance.destroy_instance(None);
         }
-        android_log(LogPriority::WARN, "CHECKPOINT: VulkanContext::drop EXITING - Mutex issues should be avoided");
+        android_log(LogPriority::WARN, "CHECKPOINT: VulkanContext::drop EXITING");
     }
 }
 
