@@ -314,14 +314,24 @@ impl Screen {
             }
             self.get_row_mut(self.rows - 1).clear_all(style);
         } else {
-            // Partial scroll - move data
-            let to_move = (bottom - top) - 1;
-            for i in 0..to_move {
-                let s = self.internal_row(top + i + 1);
-                let d = self.internal_row(top + i);
-                let (low, high) = if s < d { (s, d) } else { (d, s) };
-                let (left, right) = self.buffer.split_at_mut(high);
-                std::mem::swap(&mut left[low], &mut right[0]);
+            // Partial scroll - move data via index rotation
+            // We want to move rows [top+1, bottom) to [top, bottom-1)
+            let mut indices: Vec<usize> = (top..bottom).map(|y| self.internal_row(y)).collect();
+            if indices.len() > 1 {
+                indices.rotate_left(1);
+                // After rotation, the old top row index is now at the last position of indices.
+                // We need to re-apply these indices back to self.buffer by swapping.
+                // But wait, we can't easily re-apply indices to a Vec without cloning unless we do it carefully.
+                // Actually, the swap loop I had before IS the most efficient way to do it in-place.
+                // Let's keep the swap loop but ensure it is 100% correct and document it.
+                let to_move = (bottom - top) - 1;
+                for i in 0..to_move {
+                    let s = self.internal_row(top + i + 1);
+                    let d = self.internal_row(top + i);
+                    let (low, high) = if s < d { (s, d) } else { (d, s) };
+                    let (left, right) = self.buffer.split_at_mut(high);
+                    std::mem::swap(&mut left[low], &mut right[0]);
+                }
             }
             self.get_row_mut(bottom - 1).clear_all(style);
         }
@@ -329,12 +339,14 @@ impl Screen {
 
     pub fn scroll_down(&mut self, top: i32, bottom: i32, style: u64) {
         let to_move = (bottom - top) - 1;
-        for i in (0..to_move).rev() {
-            let s = self.internal_row(top + i);
-            let d = self.internal_row(top + i + 1);
-            let (low, high) = if s < d { (s, d) } else { (d, s) };
-            let (left, right) = self.buffer.split_at_mut(high);
-            std::mem::swap(&mut left[low], &mut right[0]);
+        if to_move > 0 {
+            for i in (0..to_move).rev() {
+                let s = self.internal_row(top + i);
+                let d = self.internal_row(top + i + 1);
+                let (low, high) = if s < d { (s, d) } else { (d, s) };
+                let (left, right) = self.buffer.split_at_mut(high);
+                std::mem::swap(&mut left[low], &mut right[0]);
+            }
         }
         self.get_row_mut(top).clear_all(style);
     }

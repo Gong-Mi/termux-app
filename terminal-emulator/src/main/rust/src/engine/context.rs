@@ -17,6 +17,12 @@ pub struct TerminalEngine {
     pub events: Vec<TerminalEvent>,
 }
 
+impl Drop for TerminalEngine {
+    fn drop(&mut self) {
+        crate::utils::android_log(crate::utils::LogPriority::INFO, "TerminalEngine: Dropping engine and releasing resources");
+    }
+}
+
 impl TerminalEngine {
     pub fn new(cols: i32, rows: i32, total_rows: i32, cw: i32, ch: i32) -> Self {
         Self {

@@ -11,8 +11,11 @@ pub const DECSET_BIT_SEND_FOCUS_EVENTS: i32 = 1 << 8;
 pub const DECSET_BIT_MOUSE_PROTOCOL_SGR: i32 = 1 << 9;
 pub const DECSET_BIT_BRACKETED_PASTE_MODE: i32 = 1 << 10;
 pub const DECSET_BIT_LEFTRIGHT_MARGIN_MODE: i32 = 1 << 11;
-pub const MODE_INSERT: i32 = 1 << 12;
-pub const MODE_LNM: i32 = 1 << 13;
+pub const DECSET_BIT_RECTANGULAR_CHANGEATTRIBUTE: i32 = 1 << 12;
+
+// Standard Modes (Non-DECSET) - Use higher bits to avoid collision
+pub const MODE_INSERT: i32 = 1 << 16;
+pub const MODE_LNM: i32 = 1 << 17;
 
 pub struct TerminalModes {
     pub flags: i32,
