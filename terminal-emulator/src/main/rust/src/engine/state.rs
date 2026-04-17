@@ -386,6 +386,25 @@ impl ScreenState {
         self.bottom_margin = max(self.top_margin + 1, min(bottom, self.rows));
     }
 
+    pub fn set_cursor_style(&mut self, style: i32) {
+        // 0, 1 -> blinking block
+        // 2 -> steady block
+        // 3 -> blinking underline
+        // 4 -> steady underline
+        // 5 -> blinking bar
+        // 6 -> steady bar
+        self.cursor.style = match style {
+            0 | 1 | 2 => 0,
+            3 | 4 => 1,
+            5 | 6 => 2,
+            _ => 0,
+        };
+        self.cursor.blinking_enabled = match style {
+            0 | 1 | 3 | 5 => true,
+            _ => false,
+        };
+    }
+
     pub fn save_cursor(&mut self) {
         self.cursor.save_state(
             self.current_style, self.modes.flags,

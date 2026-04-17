@@ -476,3 +476,78 @@ fn benchmark_extreme_stress() {
     println!("  渲染吞吐量:   {:.2} M cells/s",
              (frames * cols * rows) as f64 / total.as_secs_f64() / 1_000_000.0);
 }
+
+// ============================================================
+// 测试 5: 缓存效率与样式密度分析
+// ============================================================
+#[test]
+fn benchmark_cache_and_styles() {
+    println!("\n========== 缓存效率与样式密度分析 ==========\n");
+
+    let mut surface = surfaces::raster_n32_premul((1200, 2400)).expect("Surface failed");
+    let canvas = surface.canvas();
+    let font_mgr = FontMgr::new();
+    let tf = font_mgr.match_family_style("monospace", FontStyle::normal()).unwrap();
+    let font = Font::new(tf, Some(12.0));
+    let mut paint = Paint::default();
+    paint.set_anti_alias(false);
+
+    // 1. 模拟冷启动（无缓存）
+    let terminal_simple = TerminalMock::new(100, 30, FillMode::Ascii);
+    let cold_time = measure(|| {
+        simulate_detailed_pipeline(canvas, &terminal_simple, &font, &paint);
+    });
+
+    // 2. 模拟热启动（命中缓存）
+    // 在真实场景中，缓存会跳过 Glyph Lookup, Alloc, Make 步骤
+    let hot_time = measure(|| {
+        canvas.clear(Color::new(0xFF000000u32));
+        for r in 0..30 {
+            // 模拟从缓存直接绘制 TextBlob
+            let mut builder = TextBlobBuilder::new();
+            let (run_glyphs, _) = builder.alloc_run_pos_h(&font, 100, 0.0, None);
+            run_glyphs.fill(0); // 假数据
+            if let Some(blob) = builder.make() {
+                canvas.draw_text_blob(&blob, (0.0, (r + 1) as f32 * 20.0), &paint);
+            }
+        }
+    });
+
+    println!("  缓存效能:");
+    println!("    冷启动 (Cold):   {:>8}", format_duration(cold_time));
+    println!("    热启动 (Cached): {:>8}", format_duration(hot_time));
+    println!("    提升倍率:        {:.1}x", cold_time.as_secs_f64() / hot_time.as_secs_f64());
+    println!();
+
+    // 3. 样式密度压力测试 (Style Density)
+    println!("  样式密度影响 (100x30 终端):");
+    println!("    样式配置         | 绘制 Run 数量 | 平均耗时    | FPS");
+    println!("    {:-<60}", "");
+
+    let densities = [
+        (1, "单一样式 (Uniform)"),
+        (5, "低密度 (5 styles/row)"),
+        (20, "高密度 (20 styles/row)"),
+        (100, "极限密度 (Each char different)"),
+    ];
+
+    for (runs_per_row, label) in densities {
+        let mut cells = Vec::new();
+        for _r in 0..30 {
+            for c in 0..100 {
+                let style = (c / (100 / runs_per_row)) as u64;
+                cells.push(('A', style));
+            }
+        }
+        let terminal = TerminalMock { cols: 100, rows: 30, cells };
+        
+        let mut total = Duration::ZERO;
+        for _ in 0..20 {
+            total += simulate_render_pipeline(canvas, &terminal, &font, &paint);
+        }
+        let avg = total / 20;
+        
+        println!("    {:<16} | {:>12} | {:>10} | {:>6.1}",
+                 label, runs_per_row * 30, format_duration(avg), 1.0 / avg.as_secs_f64());
+    }
+}

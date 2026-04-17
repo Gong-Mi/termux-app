@@ -6,26 +6,27 @@ use crate::vte_parser::Params;
 /// 参数默认值行为与 Java TerminalEmulator.getArg0()/getArg1() 保持一致
 pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8], action: char) {
     let is_private = intermediates.contains(&b'?');
+    let is_gt = intermediates.contains(&b'>');
     let is_bang = intermediates.contains(&b'!');
+
+    // 辅助逻辑：清理 wrap 标志（大多数 CSI 指令都会清理它）
+    let mut clear_wrap = true;
 
     match action {
         '@' => {
             // ICH - Insert Character (默认 1)
             let n = params.get_arg0(1);
-            state.cursor.about_to_wrap = false;
             state.insert_characters(n);
         }
         'A' => {
             // CUU - Cursor Up (默认 1)
             let dist = params.get_arg0(1);
             state.cursor.y = max(state.top_margin, state.cursor.y - dist);
-            state.cursor.about_to_wrap = false;
         }
         'B' => {
             // CUD - Cursor Down (默认 1)
             let dist = params.get_arg0(1);
             state.cursor.y = min(state.bottom_margin - 1, state.cursor.y + dist);
-            state.cursor.about_to_wrap = false;
         }
         'C' | 'a' => {
             // CUF - Cursor Forward (默认 1)
@@ -36,7 +37,6 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
             // CUB - Cursor Backward (默认 1)
             let dist = params.get_arg0(1);
             state.cursor.x = max(state.left_margin, state.cursor.x - dist);
-            state.cursor.about_to_wrap = false;
         }
         'E' => {
             // CNL - Cursor Next Line (默认 1)
@@ -63,7 +63,6 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
                 state.cursor.y = max(0, min(state.rows - 1, row - 1));
             }
             state.cursor.x = max(state.left_margin, min(state.right_margin - 1, col - 1));
-            state.cursor.about_to_wrap = false;
         }
         'I' => {
             // CHT - Cursor Horizontal Tab (默认 1)
@@ -71,51 +70,59 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
             for _ in 0..n { state.cursor_forward_tab(); }
         }
         'J' => {
-            // ED - Erase in Display (默认 0)
-            let mode = params.get_arg0(0);
-            state.cursor.about_to_wrap = false;
-            state.erase_in_display(mode);
+            if is_private {
+                // DECSED - Selective Erase in Display (暂时按 ED 处理)
+                let mode = params.get_arg0(0);
+                state.erase_in_display(mode);
+            } else {
+                // ED - Erase in Display (默认 0)
+                let mode = params.get_arg0(0);
+                state.erase_in_display(mode);
+            }
         }
         'K' => {
-            // EL - Erase in Line (默认 0)
-            let mode = params.get_arg0(0);
-            state.cursor.about_to_wrap = false;
-            state.erase_in_line(mode);
+            if is_private {
+                // DECSEL - Selective Erase in Line
+                let mode = params.get_arg0(0);
+                state.erase_in_line(mode);
+            } else {
+                // EL - Erase in Line (默认 0)
+                let mode = params.get_arg0(0);
+                state.erase_in_line(mode);
+            }
         }
         'L' => {
             // IL - Insert Line (默认 1)
             let n = params.get_arg0(1);
-            state.cursor.about_to_wrap = false;
             state.insert_lines(n);
         }
         'M' => {
             // DL - Delete Line (默认 1)
             let n = params.get_arg0(1);
-            state.cursor.about_to_wrap = false;
             state.delete_lines(n);
         }
         'P' => {
             // DCH - Delete Character (默认 1)
             let n = params.get_arg0(1);
-            state.cursor.about_to_wrap = false;
             state.delete_characters(n);
         }
         'S' => {
             // SU - Scroll Up (默认 1)
             let n = params.get_arg0(1);
-            state.cursor.about_to_wrap = false;
             state.scroll_up_lines(n);
         }
         'T' => {
-            // SD - Scroll Down (默认 1)
-            let n = params.get_arg0(1);
-            state.cursor.about_to_wrap = false;
-            state.scroll_down_lines(n);
+            if is_gt {
+                // Ignore CSI > T
+            } else {
+                // SD - Scroll Down (默认 1)
+                let n = params.get_arg0(1);
+                state.scroll_down_lines(n);
+            }
         }
         'X' => {
             // ECH - Erase Character (默认 1)
             let n = params.get_arg0(1);
-            state.cursor.about_to_wrap = false;
             state.erase_characters(n);
         }
         'Z' => {
@@ -131,8 +138,14 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
             }
         }
         'c' => {
-            // DA - Device Attributes
-            state.report_terminal_response("\x1b[?6c");
+            clear_wrap = false;
+            if is_gt {
+                // DA2 - Secondary Device Attributes
+                state.report_terminal_response("\x1b[>41;320;0c");
+            } else {
+                // DA1 - Primary Device Attributes
+                state.report_terminal_response("\x1b[?64;1;2;6;15;22c");
+            }
         }
         'd' => {
             // VPA - Vertical Position Absolute (默认 1)
@@ -150,31 +163,66 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
             state.clear_tab_stop(mode);
         }
         'h' => {
-            // SM - Set Mode
+            clear_wrap = false;
             if is_private { state.handle_decset(params, true); }
             else { state.handle_set_mode(params, true); }
         }
         'l' => {
-            // RM - Reset Mode
+            clear_wrap = false;
             if is_private { state.handle_decset(params, false); }
             else { state.handle_set_mode(params, false); }
         }
-        'm' => { state.handle_sgr(params); }
-        'n' => {
-            // DSR - Device Status Report
-            // Java: getArg0(-1) - 默认 -1 表示无参数
-            let mode = if params.len == 0 { -1 } else { params.get(0, 0) };
-            match mode {
-                5 => state.report_terminal_response("\x1b[0n"),  // DSR Status Report
-                6 => {  // CPR - Cursor Position Report
-                    let r = state.cursor.y + 1;
-                    let c = state.cursor.x + 1;
-                    state.report_terminal_response(&format!("\x1b[{};{}R", r, c));
-                }
-                _ => {}  // 其他值或无参数时忽略
+        'm' => {
+            clear_wrap = false;
+            if is_gt {
+                // xterm resource / keyboard mode, ignore safely
+            } else {
+                state.handle_sgr(params);
             }
         }
-        'p' => { if is_bang { state.decstr_soft_reset(); } }
+        'n' => {
+            clear_wrap = false;
+            if is_private {
+                // DEC-specific DSR
+                match params.get_arg0(-1) {
+                    6 => { // DECXCPR - Extended Cursor Position
+                        let r = state.cursor.y + 1;
+                        let c = state.cursor.x + 1;
+                        state.report_terminal_response(&format!("\x1b[?{};{};1R", r, c));
+                    }
+                    _ => {}
+                }
+            } else {
+                // Standard DSR
+                let mode = if params.len == 0 { -1 } else { params.get(0, 0) };
+                match mode {
+                    5 => state.report_terminal_response("\x1b[0n"),  // DSR Status Report
+                    6 => {  // CPR - Cursor Position Report
+                        let r = state.cursor.y + 1;
+                        let c = state.cursor.x + 1;
+                        state.report_terminal_response(&format!("\x1b[{};{}R", r, c));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        'p' => { 
+            if is_bang { 
+                state.decstr_soft_reset(); 
+            } else if is_gt {
+                // xterm resource modification, ignore safely
+            }
+        }
+        'q' => {
+            if is_gt {
+                // Secondary DA / Terminal Name query
+                state.report_terminal_response("\x1bP>|Termux-Rust(0.1)\x1b\\");
+            } else {
+                // DECSCUSR - Set Cursor Style (1-6)
+                let style = params.get_arg0(1);
+                state.set_cursor_style(style);
+            }
+        }
         'r' => {
             // DECSTBM - Set Top and Bottom Margins (默认 top=1, bottom=rows)
             let top = params.get_arg0(1);
@@ -191,7 +239,17 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
                 state.save_cursor();
             }
         }
-        'u' => { state.restore_cursor(); }
-        _ => {}
+        'u' => { 
+            if is_private {
+                // Kitty Keyboard Protocol query (CSI ? u), ignore
+            } else {
+                state.restore_cursor(); 
+            }
+        }
+        _ => { clear_wrap = false; }
+    }
+
+    if clear_wrap {
+        state.cursor.about_to_wrap = false;
     }
 }

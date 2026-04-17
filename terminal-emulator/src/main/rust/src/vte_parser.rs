@@ -702,8 +702,8 @@ impl Parser {
             b':' => {
                 self.params.start_subparam();
             }
-            b'$' => {
-                self.escape_state = ESC_CSI_QUESTIONMARK_ARG_DOLLAR;
+            b' ' | b'#' | b'!' | b'"' | b'\'' | b'$' | b'&' | b'*' | b'>' | b'?' => {
+                self.intermediates.push(byte);
             }
             b'@'..=b'~' => {
                 self.params.finish_param();
@@ -725,9 +725,12 @@ impl Parser {
             b';' => {
                 self.params.finish_param();
             }
-            b'm' => {
+            b' ' | b'#' | b'!' | b'"' | b'\'' | b'$' | b'&' | b'*' | b'>' | b'?' => {
+                self.intermediates.push(byte);
+            }
+            b'@'..=b'~' => {
                 self.params.finish_param();
-                handler.csi_dispatch(&self.params, &self.intermediates, false, 'm');
+                handler.csi_dispatch(&self.params, &self.intermediates, false, byte as char);
                 self.escape_state = ESC_NONE;
             }
             _ => {
