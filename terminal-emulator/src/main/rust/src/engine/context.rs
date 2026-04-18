@@ -2,7 +2,6 @@
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::os::fd::FromRawFd;
-use jni::JNIEnv;
 use jni::objects::JValue;
 
 use crate::vte_parser::Parser;
@@ -111,7 +110,7 @@ impl TerminalContext {
                     return;
                 }
             };
-            let mut env = &mut *guard;
+            let env = &mut *guard;
 
             crate::utils::android_log(crate::utils::LogPriority::DEBUG, "IO Thread: Attached and running");
 

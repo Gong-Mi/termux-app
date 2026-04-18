@@ -198,9 +198,13 @@ pub fn wait_for(pid: jint) -> jint {
     unsafe {
         libc::waitpid(pid, &mut status, 0);
         if libc::WIFEXITED(status) {
-            libc::WEXITSTATUS(status)
+            let exit_code = libc::WEXITSTATUS(status);
+            log::info!("[STAGE:EXIT] Process PID: {} exited normally with code: {}", pid, exit_code);
+            exit_code
         } else if libc::WIFSIGNALED(status) {
-            -libc::WTERMSIG(status)
+            let sig = libc::WTERMSIG(status);
+            log::warn!("[STAGE:TERMINATED] Process PID: {} killed by signal: {}. (If 9, it's Phantom Process Killer)", pid, sig);
+            -sig
         } else {
             0
         }

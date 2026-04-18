@@ -258,7 +258,7 @@ impl ScreenState {
     pub fn report_clear_screen(&self) {
         if let Some(obj) = &self.java_callback_obj {
             if let Some(vm) = crate::JAVA_VM.get() {
-                if let Ok(mut env) = vm.get_env() {
+                if let Ok(env) = vm.get_env() {
                     let mut env: JNIEnv = env;
                     let _ = env.call_method(obj.as_obj(), "onClearScreen", "()V", &[]);
                 }
@@ -269,7 +269,7 @@ impl ScreenState {
     pub fn report_terminal_response(&self, response: &str) {
         if let Some(obj) = &self.java_callback_obj {
             if let Some(vm) = crate::JAVA_VM.get() {
-                if let Ok(mut env) = vm.get_env() {
+                if let Ok(env) = vm.get_env() {
                     let mut env: JNIEnv = env;
                     if let Ok(java_response) = env.new_string(response) {
                         let _ = env.call_method(obj.as_obj(), "write", "(Ljava/lang/String;)V", &[JValue::from(&java_response)]);

@@ -247,7 +247,12 @@ public class RunCommandService extends Service {
     private void runStartForeground() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             setupNotificationChannel();
-            startForeground(TermuxConstants.TERMUX_RUN_COMMAND_NOTIFICATION_ID, buildNotification());
+            Notification notification = buildNotification();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(TermuxConstants.TERMUX_RUN_COMMAND_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+            } else {
+                startForeground(TermuxConstants.TERMUX_RUN_COMMAND_NOTIFICATION_ID, notification);
+            }
         }
     }
 

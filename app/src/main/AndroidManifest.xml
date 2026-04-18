@@ -201,7 +201,8 @@
 
         <service
             android:name=".app.TermuxService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="specialUse" />
 
         <service
             android:name=".app.RunCommandService"
@@ -235,6 +236,11 @@
         <meta-data
             android:name="com.sec.android.support.multiwindow"
             android:value="true" />
+
+    </application>
+
+</manifest>
+
 
     </application>
 

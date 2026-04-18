@@ -122,6 +122,22 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
         SystemEventReceiver.registerPackageUpdateEvents(this);
     }
 
+    @Override
+    public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        String levelName = "UNKNOWN";
+        switch (level) {
+            case TRIM_MEMORY_UI_HIDDEN: levelName = "UI_HIDDEN (Background)"; break;
+            case TRIM_MEMORY_RUNNING_MODERATE: levelName = "RUNNING_MODERATE"; break;
+            case TRIM_MEMORY_RUNNING_LOW: levelName = "RUNNING_LOW"; break;
+            case TRIM_MEMORY_RUNNING_CRITICAL: levelName = "RUNNING_CRITICAL"; break;
+            case TRIM_MEMORY_BACKGROUND: levelName = "BACKGROUND"; break;
+            case TRIM_MEMORY_MODERATE: levelName = "MODERATE"; break;
+            case TRIM_MEMORY_COMPLETE: levelName = "COMPLETE (High Risk of Killing)"; break;
+        }
+        Logger.logWarn(LOG_TAG, "[STAGE:MEMORY_TRIM] Level: " + levelName + ". Phantom process killer may be active soon.");
+    }
+
     @SuppressLint("Wakelock")
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -203,7 +219,12 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
     /** Make service run in foreground mode. */
     private void runStartForeground() {
         setupNotificationChannel();
-        startForeground(TermuxConstants.TERMUX_APP_NOTIFICATION_ID, buildNotification());
+        Notification notification = buildNotification();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(TermuxConstants.TERMUX_APP_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+        } else {
+            startForeground(TermuxConstants.TERMUX_APP_NOTIFICATION_ID, notification);
+        }
     }
 
     /** Make service leave foreground mode. */
@@ -352,7 +373,7 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
             return;
         }
 
-        Logger.logDebug(LOG_TAG, "Releasing WakeLocks");
+        Logger.logDebug(LOG_TAG, "[STAGE:WAKELOCK] Releasing WakeLocks.");
 
         if (mWakeLock != null) {
             mWakeLock.release();
@@ -1036,6 +1057,10 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
 
     public boolean wantsToStop() {
         return mWantsToStop;
+    }
+
+}
+rn mWantsToStop;
     }
 
 }

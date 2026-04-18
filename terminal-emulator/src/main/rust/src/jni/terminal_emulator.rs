@@ -975,7 +975,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
 
         if let Some(ref cb) = callback_ref {
             if let Some(vm) = crate::JAVA_VM.get() {
-                if let Ok(mut env) = vm.attach_current_thread_as_daemon() {
+                if let Ok(env) = vm.attach_current_thread_as_daemon() {
                     let mut env: JNIEnv = env;
                     let _ = env.call_method(
                         cb.as_obj(),
@@ -1016,7 +1016,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_close(
 /// 创建子进程
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     cmd: jstring,
     cwd: jstring,

@@ -111,7 +111,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
 /// 设置 Surface
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _obj: JObject,
     surface: JObject,
 ) {
@@ -119,7 +119,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
     {
         // 关键修复：确保在访问 surface 之前检查其是否为 null (底层的 jobject 指针)
         if surface.as_raw().is_null() {
-            let start_time = std::time::Instant::now();
+            let _start_time = std::time::Instant::now();
             android_log(LogPriority::WARN, "CHECKPOINT: nativeSetSurface(null) ENTERED - Surface being destroyed");
             
             // 1. 立即标记 Surface 为不可用，拦截所有后续渲染尝试
