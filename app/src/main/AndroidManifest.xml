@@ -33,6 +33,7 @@
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.READ_LOGS" />
@@ -202,7 +203,11 @@
         <service
             android:name=".app.TermuxService"
             android:exported="false"
-            android:foregroundServiceType="specialUse" />
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_TYPE"
+                android:value="Termux provides a terminal emulator and linux environment. The foreground service is used to keep the terminal sessions and their background processes (like compilers, servers, or long-running scripts) alive while the user is away from the app, ensuring work is not interrupted by the system's aggressive process management." />
+        </service>
 
         <service
             android:name=".app.RunCommandService"
