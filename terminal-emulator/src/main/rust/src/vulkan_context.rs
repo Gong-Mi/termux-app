@@ -262,9 +262,9 @@ impl VulkanContext {
 
         android_log(LogPriority::INFO, "VulkanContext::new: Creating Skia context with optimized options");
         let mut context_options = skia_safe::gpu::ContextOptions::new();
-        // 增加缓存的程序数量，减少重新编译
-        context_options.runtime_program_cache_size = 256;
-        // 减少着色器变体，降低编译开销
+        
+        // 性能优化：扩大内存中的管线缓存，减少 Android 上的着色器编译卡顿
+        context_options.runtime_program_cache_size = 512;
         context_options.reduced_shader_variations = true;
         
         let context = skia_safe::gpu::direct_contexts::make_vulkan(&backend_context, Some(&context_options));
@@ -274,7 +274,7 @@ impl VulkanContext {
         }
         let mut context = context.unwrap();
         
-        // 设置更大的资源缓存限制 (512MB)
+        // 设置更大的资源缓存限制 (512MB) 以提高多字体/大数据量下的渲染稳定性
         context.set_resource_cache_limit(512 * 1024 * 1024);
 
         android_log(LogPriority::INFO, "VulkanContext::new: Skia context created and optimized");
