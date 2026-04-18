@@ -196,16 +196,22 @@ pub fn set_pty_window_size(fd: jint, rows: jint, cols: jint, cell_width: jint, c
 pub fn wait_for(pid: jint) -> jint {
     let mut status: i32 = 0;
     unsafe {
-        libc::waitpid(pid, &mut status, 0);
+        let res = libc::waitpid(pid, &mut status, 0);
+        if res < 0 {
+            crate::utils::android_log(crate::utils::LogPriority::ERROR, &format!("CHECKPOINT: waitpid failed for PID: {}", pid));
+            return -1;
+        }
+
         if libc::WIFEXITED(status) {
             let exit_code = libc::WEXITSTATUS(status);
-            log::info!("[STAGE:EXIT] Process PID: {} exited normally with code: {}", pid, exit_code);
+            crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("CHECKPOINT: Process PID: {} EXITED normally with code: {}", pid, exit_code));
             exit_code
         } else if libc::WIFSIGNALED(status) {
             let sig = libc::WTERMSIG(status);
-            log::warn!("[STAGE:TERMINATED] Process PID: {} killed by signal: {}. (If 9, it's Phantom Process Killer)", pid, sig);
+            crate::utils::android_log(crate::utils::LogPriority::WARN, &format!("CHECKPOINT: Process PID: {} TERMINATED by signal: {} (If 9, likely Phantom Killer)", pid, sig));
             -sig
         } else {
+            crate::utils::android_log(crate::utils::LogPriority::DEBUG, &format!("CHECKPOINT: Process PID: {} changed state (other)", pid));
             0
         }
     }

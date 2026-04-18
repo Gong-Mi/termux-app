@@ -92,6 +92,7 @@ impl TerminalContext {
             return;
         }
         std::thread::spawn(move || {
+            crate::utils::android_log(crate::utils::LogPriority::INFO, "CHECKPOINT: IO Thread STARTing");
             let mut buffer = [0u8; 8192];
             let mut pty_file = unsafe { std::fs::File::from_raw_fd(dup_fd) };
 
@@ -181,7 +182,7 @@ impl TerminalContext {
                     Err(_) => break,
                 }
             }
-            crate::utils::android_log(crate::utils::LogPriority::DEBUG, "IO Thread: Exiting");
+            crate::utils::android_log(crate::utils::LogPriority::INFO, "CHECKPOINT: IO Thread EXITing (normal)");
         });
     }
 }
