@@ -5,7 +5,7 @@ use crate::terminal::modes::*;
 impl ScreenState {
     /// 处理按键事件 - 实现 KeyHandler.getCode() 的逻辑
     /// 返回生成的转义序列，由 Java 写入 PTY
-    pub fn send_key_event(&mut self, key_code: i32, _char_str: Option<String>, meta_state: i32) -> Option<String> {
+    pub fn send_key_event(&mut self, key_code: i32, char_str: Option<String>, meta_state: i32) -> Option<String> {
         const KEYCODE_DPAD_UP: i32 = 19;
         const KEYCODE_DPAD_DOWN: i32 = 20;
         const KEYCODE_DPAD_LEFT: i32 = 21;
@@ -42,6 +42,15 @@ impl ScreenState {
         let shift_down = (meta_state & KEYMOD_SHIFT) != 0;
         let alt_down = (meta_state & KEYMOD_ALT) != 0;
         let ctrl_down = (meta_state & KEYMOD_CTRL) != 0;
+
+        if let Some(ref s) = char_str {
+            if !s.is_empty() {
+                if alt_down && s.chars().count() == 1 {
+                    return Some(format!("\x1b{}", s));
+                }
+                return Some(s.clone());
+            }
+        }
 
         let mut key_mode = 0;
         if shift_down { key_mode |= 1; }
