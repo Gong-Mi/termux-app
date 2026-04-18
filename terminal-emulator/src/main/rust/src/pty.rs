@@ -5,8 +5,16 @@ use nix::fcntl::{OFlag, open};
 use nix::sys::stat::Mode;
 use nix::unistd::{ForkResult, chdir, close, fork, setsid};
 use std::ffi::{CStr, CString};
+use std::sync::atomic::{AtomicI32, Ordering};
+
+// 全局活跃进程计数器
+static ACTIVE_CHILD_COUNT: AtomicI32 = AtomicI32::new(0);
+
+// 安卓 14/15 的 Phantom Killer 阈值为 32，我们预留余量，限制在 28。
+const MAX_CONCURRENT_SUBPROCESSES: i32 = 28;
 
 // Android 上的 PTY 辅助函数
+// ... (rest of extern C)
 unsafe extern "C" {
     fn grantpt(fd: i32) -> i32;
     fn unlockpt(fd: i32) -> i32;
@@ -89,6 +97,27 @@ pub unsafe fn create_subprocess(
     ptm as jint
 }
 
+/// 获取当前 UID 下的所有进程总数 (通过扫描 /proc)
+fn get_total_uid_process_count() -> i32 {
+    let mut count = 0;
+    if let Ok(entries) = std::fs::read_dir("/proc") {
+        let my_uid = unsafe { libc::getuid() };
+        for entry in entries.flatten() {
+            if let Ok(file_name) = entry.file_name().into_string() {
+                if file_name.chars().all(|c| c.is_ascii_digit()) {
+                    if let Ok(metadata) = std::fs::metadata(entry.path()) {
+                        use std::os::unix::fs::MetadataExt;
+                        if metadata.uid() == my_uid {
+                            count += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    count
+}
+
 pub fn create_subprocess_with_data(
     cmd_str: String,
     cwd_str: String,
@@ -99,7 +128,21 @@ pub fn create_subprocess_with_data(
     cell_width: jint,
     cell_height: jint,
 ) -> Result<(i32, i32), ()> {
-    // 1. 打开 PTM
+    // 1. 进程流控 (Governor)
+    let current_count = ACTIVE_CHILD_COUNT.load(Ordering::SeqCst);
+    let total_uid_count = get_total_uid_process_count();
+    
+    // 如果总进程数接近 32 (Phantom Killer 阈值)，或者 Termux 自身产生的进程过多，强行限流排队
+    if total_uid_count >= MAX_CONCURRENT_SUBPROCESSES || current_count >= (MAX_CONCURRENT_SUBPROCESSES - 4) {
+        crate::utils::android_log(
+            crate::utils::LogPriority::WARN, 
+            &format!("GOVERNOR: UID PIDs: {}, Termux PIDs: {}. Throttling fork (limit {})...", total_uid_count, current_count, MAX_CONCURRENT_SUBPROCESSES)
+        );
+        // 睡眠等待，给系统喘息机会
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+
+    // 2. 打开 PTM
     use std::os::fd::IntoRawFd;
     let ptm = match open("/dev/ptmx", OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::empty()) {
         Ok(fd) => fd.into_raw_fd(),
@@ -134,10 +177,14 @@ pub fn create_subprocess_with_data(
         // 3. Fork
         match fork() {
             Ok(ForkResult::Parent { child }) => {
+                ACTIVE_CHILD_COUNT.fetch_add(1, Ordering::SeqCst);
                 Ok((ptm, child.as_raw()))
             }
             Ok(ForkResult::Child) => {
                 let _ = setsid();
+                
+                // 降低子进程优先级 (Nice 19)，减少对系统负载的冲击，从而规避 Phantom Killer
+                unsafe { libc::setpriority(libc::PRIO_PROCESS, 0, 19); }
 
                 let c_devname = CString::new(devname).unwrap();
                 let pts = libc::open(c_devname.as_ptr(), libc::O_RDWR);
@@ -203,10 +250,12 @@ pub fn wait_for(pid: jint) -> jint {
         }
 
         if libc::WIFEXITED(status) {
+            ACTIVE_CHILD_COUNT.fetch_sub(1, Ordering::SeqCst);
             let exit_code = libc::WEXITSTATUS(status);
             crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("CHECKPOINT: Process PID: {} EXITED normally with code: {}", pid, exit_code));
             exit_code
         } else if libc::WIFSIGNALED(status) {
+            ACTIVE_CHILD_COUNT.fetch_sub(1, Ordering::SeqCst);
             let sig = libc::WTERMSIG(status);
             crate::utils::android_log(crate::utils::LogPriority::WARN, &format!("CHECKPOINT: Process PID: {} TERMINATED by signal: {} (If 9, likely Phantom Killer)", pid, sig));
             -sig
