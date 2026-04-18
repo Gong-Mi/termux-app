@@ -98,6 +98,16 @@ fn handle_print_internal(state: &mut ScreenState, c: char) {
 
         // 执行写入
         if x < row.text.len() {
+            // 处理覆盖旧的宽字符
+            // Case 1: 写入到旧宽字符的右半部分 (\0)，清除左半部分
+            if row.text[x] == '\0' && x > 0 {
+                row.text[x - 1] = ' ';
+            }
+            // Case 2: 写入到旧宽字符的左半部分，且新字符是窄字符，清除右半部分的 \0
+            if char_width == 1 && x + 1 < row.text.len() && row.text[x + 1] == '\0' {
+                row.text[x + 1] = ' ';
+            }
+
             row.text[x] = c;
             row.styles[x] = style;
             if char_width == 2 && x + 1 < row.text.len() {

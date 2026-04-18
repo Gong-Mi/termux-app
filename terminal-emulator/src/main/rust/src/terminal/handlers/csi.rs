@@ -7,6 +7,7 @@ use crate::vte_parser::Params;
 pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8], action: char) {
     let is_private = intermediates.contains(&b'?');
     let is_gt = intermediates.contains(&b'>');
+    let is_lt = intermediates.contains(&b'<');
     let is_bang = intermediates.contains(&b'!');
 
     // 辅助逻辑：清理 wrap 标志（大多数 CSI 指令都会清理它）
@@ -175,7 +176,10 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
         'm' => {
             clear_wrap = false;
             if is_gt {
-                // xterm resource / keyboard mode, ignore safely
+                // xterm modifyOtherKeys (e.g. CSI > 4 ; 2 m)
+                if params.get_arg0(0) == 4 {
+                    state.modify_other_keys = params.get_arg1(0);
+                }
             } else {
                 state.handle_sgr(params);
             }
@@ -239,11 +243,21 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
                 state.save_cursor();
             }
         }
-        'u' => { 
-            if is_private {
-                // Kitty Keyboard Protocol query (CSI ? u), ignore
+        'u' => {
+            if is_gt {
+                // CSI > 1 u -> Enable Kitty Keyboard Protocol
+                if params.get_arg0(0) == 1 {
+                    state.kitty_keyboard_mode = true;
+                }
+            } else if is_lt {
+                // CSI < u -> Disable Kitty Keyboard Protocol
+                state.kitty_keyboard_mode = false;
+            } else if is_private {
+                // Kitty Keyboard Protocol query (CSI ? u)
+                let flags = if state.kitty_keyboard_mode { 1 } else { 0 };
+                state.report_terminal_response(&format!("\x1b[?{}u", flags));
             } else {
-                state.restore_cursor(); 
+                state.restore_cursor();
             }
         }
         _ => { clear_wrap = false; }

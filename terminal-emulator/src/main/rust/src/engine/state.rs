@@ -56,6 +56,8 @@ pub struct ScreenState {
     pub sgr_mouse: bool,
     pub auto_scroll_disabled: bool,
     pub underline_color: u64,
+    pub kitty_keyboard_mode: bool,
+    pub modify_other_keys: i32,
 }
 
 impl Drop for ScreenState {
@@ -123,6 +125,8 @@ impl ScreenState {
             sgr_mouse: false,
             auto_scroll_disabled: false,
             underline_color: COLOR_INDEX_FOREGROUND as u64,
+            kitty_keyboard_mode: false,
+            modify_other_keys: 0,
         }
     }
 

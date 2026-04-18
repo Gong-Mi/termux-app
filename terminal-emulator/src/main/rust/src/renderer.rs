@@ -4,6 +4,12 @@ use std::collections::HashMap;
 use crate::terminal::style::*;
 use crate::terminal::colors::{COLOR_INDEX_CURSOR, NUM_INDEXED_COLORS};
 
+/// 带有代际标记的缓存实体，用于实现 LRU-Gen (分代缓存)
+pub struct GenerationalEntry<T> {
+    pub data: T,
+    pub last_generation: u32,
+}
+
 /// 预计算的渲染帧数据 - 用于异步渲染（不需要持有 engine 锁）
 #[derive(Clone)]
 pub struct RenderFrame {
@@ -344,7 +350,9 @@ pub struct TerminalRenderer {
     group_chars_buf: Vec<(char, f32)>,           // 字符分组缓冲区
     row_selection_buf: Vec<bool>,                // 选区缓冲区
     // === TextBlob 缓存：避免每帧重新创建相同的 blob ===
-    text_blob_cache: HashMap<u64, TextBlob>,     // (hash, style) -> TextBlob
+    text_blob_cache: HashMap<u64, GenerationalEntry<TextBlob>>, // (hash, style) -> TextBlob
+    pub current_generation: u32,
+    pub frame_count: u32,
 }
 
 unsafe impl Send for TerminalRenderer {}
@@ -391,6 +399,8 @@ impl TerminalRenderer {
             group_chars_buf: Vec::with_capacity(256),
             row_selection_buf: Vec::with_capacity(512),
             text_blob_cache: HashMap::with_capacity(512),
+            current_generation: 0,
+            frame_count: 0,
         }
     }
 
@@ -425,7 +435,27 @@ impl TerminalRenderer {
     #[inline]
     pub fn reverse_colors(fg: usize, bg: usize) -> (usize, usize) { (bg, fg) }
 
+    /// 推进代际，通常在渲染一定帧数后调用
+    pub fn advance_generation(&mut self) {
+        self.current_generation = self.current_generation.wrapping_add(1);
+    }
+
+    /// 清理冷数据
+    pub fn evict_cold_assets(&mut self, max_age: u32) {
+        let current = self.current_generation;
+        // 移除那些太久没被访问的数据 (代差超过 max_age)
+        self.text_blob_cache.retain(|_, entry| {
+            current.wrapping_sub(entry.last_generation) <= max_age
+        });
+    }
+
     pub fn draw_frame(&mut self, canvas: &Canvas, frame: &RenderFrame, _scale: f32, _scroll_offset: f32) {
+        // 定期推进代际 (例如每 60 帧推进一代)
+        self.frame_count = self.frame_count.wrapping_add(1);
+        if self.frame_count % 60 == 0 {
+            self.advance_generation();
+        }
+
         let palette = &frame.palette;
         let palette_h = {
             use std::hash::{Hash, Hasher};
@@ -559,8 +589,8 @@ impl TerminalRenderer {
                         let ch = row_text[c];
                         if ch != '\0' {
                             r_buf.push(ch);
-                            run_cells += char_wc_width(ch as u32);
                         }
+                        run_cells += 1; // 每一列无论是否有占位符都计入单元格计数
                         c += 1;
                     } else { break; }
                 }
@@ -575,6 +605,7 @@ impl TerminalRenderer {
                         style, palette, global_reverse, sel,
                         &mut self.text_blob_builder, &mut self.group_chars_buf,
                         &mut self.text_blob_cache,
+                        self.current_generation,
                     );
                     r_buf.clear();
                 }
@@ -735,7 +766,8 @@ impl TerminalRenderer {
         is_selected: bool,
         builder: &mut TextBlobBuilder,
         group_chars: &mut Vec<(char, f32)>,
-        blob_cache: &mut HashMap<u64, TextBlob>,
+        blob_cache: &mut HashMap<u64, GenerationalEntry<TextBlob>>,
+        current_generation: u32,
     ) {
         let effect = decode_effect(style);
         let mut fg_idx = decode_fore_color(style) as usize;
@@ -773,8 +805,10 @@ impl TerminalRenderer {
         is_selected.hash(&mut hasher);
         let cache_key = hasher.finish();
 
-        if let Some(blob) = blob_cache.get(&cache_key) {
-            canvas.draw_text_blob(blob, (x, blob_y), paint);
+        if let Some(entry) = blob_cache.get_mut(&cache_key) {
+            // 热数据命中：更新代际
+            entry.last_generation = current_generation;
+            canvas.draw_text_blob(&entry.data, (x, blob_y), paint);
         } else {
             let mut current_x = x;
             let italic = (effect & EFFECT_ITALIC) != 0;
@@ -825,9 +859,17 @@ impl TerminalRenderer {
             // 一次性绘制所有 TextBlob 并存入缓存
             if let Some(blob) = builder.make() {
                 canvas.draw_text_blob(&blob, (x, blob_y), paint);
-                // 缓存生成的 blob (Skia TextBlob 是引用计数的，克隆成本极低)
-                if blob_cache.len() < 2000 {
-                    blob_cache.insert(cache_key, blob);
+                // 如果缓存过大，执行冷数据剔除
+                if blob_cache.len() >= 2000 {
+                    // 保留距离 current_generation 最近的 2 代数据
+                    blob_cache.retain(|_, entry| current_generation.wrapping_sub(entry.last_generation) <= 2);
+                }
+                // 缓存生成的 blob
+                if blob_cache.len() < 3000 {
+                    blob_cache.insert(cache_key, GenerationalEntry {
+                        data: blob,
+                        last_generation: current_generation,
+                    });
                 }
             }
         }

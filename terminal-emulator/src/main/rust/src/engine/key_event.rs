@@ -51,6 +51,39 @@ impl ScreenState {
         let cursor_app = self.application_cursor_keys;
         let keypad_application = self.modes.is_enabled(DECSET_BIT_APPLICATION_KEYPAD);
 
+        if self.kitty_keyboard_mode {
+            let modifier = key_mode + 1;
+            let mut cp: Option<u32> = None;
+            
+            match key_code {
+                29..=54 => cp = Some((key_code - 29) as u32 + 'a' as u32),
+                7..=16 => cp = Some((key_code - 7) as u32 + '0' as u32),
+                62 => cp = Some(' ' as u32),
+                55 => cp = Some(',' as u32),
+                56 => cp = Some('.' as u32),
+                69 => cp = Some('-' as u32),
+                70 => cp = Some('=' as u32),
+                71 => cp = Some('[' as u32),
+                72 => cp = Some(']' as u32),
+                73 => cp = Some('\\' as u32),
+                74 => cp = Some(';' as u32),
+                75 => cp = Some('\'' as u32),
+                76 => cp = Some('/' as u32),
+                68 => cp = Some('`' as u32),
+                KEYCODE_ENTER | KEYCODE_DPAD_CENTER => cp = Some(13),
+                KEYCODE_ESCAPE => cp = Some(27),
+                KEYCODE_TAB => cp = Some(9),
+                KEYCODE_DEL => cp = Some(127),
+                _ => {}
+            };
+            
+            if let Some(c) = cp {
+                if key_mode > 0 || c < 32 || c == 127 {
+                    return Some(format!("\x1b[{};{}u", c, modifier));
+                }
+            }
+        }
+
         match key_code {
             KEYCODE_DPAD_CENTER | KEYCODE_ENTER => {
                 if alt_down { Some("\x1b\r".to_string()) } else { Some("\r".to_string()) }
