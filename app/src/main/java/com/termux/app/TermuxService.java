@@ -7,6 +7,7 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
 import android.content.res.Resources;
 import android.net.wifi.WifiManager;
 import android.os.Binder;
