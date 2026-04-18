@@ -95,6 +95,10 @@ class TerminalEmulator(
         RustTerminal.resize(mEnginePtr, columns, rows, cellWidthPixels, cellHeightPixels)
     }
 
+    fun setTranscriptRows(rows: Int) {
+        RustTerminal.setTranscriptRows(mEnginePtr, rows)
+    }
+
     fun reset() = resetColors()
 
     fun destroy() {

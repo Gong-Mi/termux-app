@@ -151,6 +151,33 @@ impl Screen {
         Self { rows, cols, buffer: b, first_row: 0, active_transcript_rows: 0 }
     }
 
+    /// 动态调整历史记录大小
+    pub fn resize_transcript(&mut self, new_total_rows: usize) {
+        let current_total = self.buffer.len();
+        let new_total = max(self.rows as usize, new_total_rows);
+
+        if new_total > current_total {
+            // 扩容：在逻辑末尾插入新行（注意处理循环缓冲区偏移）
+            let diff = new_total - current_total;
+            for _ in 0..diff {
+                self.buffer.push(TerminalRow::new(self.cols as usize));
+            }
+            // 如果 first_row 不在开头，我们需要旋转 buffer 以保持逻辑顺序
+            if self.first_row != 0 {
+                self.buffer.rotate_left(self.first_row);
+                self.first_row = 0;
+            }
+        } else if new_total < current_total {
+            // 缩容：裁剪掉最老的历史记录
+            if self.first_row != 0 {
+                self.buffer.rotate_left(self.first_row);
+                self.first_row = 0;
+            }
+            self.buffer.truncate(new_total);
+            self.active_transcript_rows = min(self.active_transcript_rows, new_total - self.rows as usize);
+        }
+    }
+
     #[inline]
     pub fn internal_row(&self, row: i32) -> usize {
         let t = self.buffer.len() as i64;

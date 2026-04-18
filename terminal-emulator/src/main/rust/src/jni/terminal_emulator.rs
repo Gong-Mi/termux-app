@@ -2,6 +2,7 @@ use jni::JNIEnv;
 use jni::objects::{JClass, JString, JObject, JValue};
 use jni::sys::{jint, jlong, jbyteArray, jboolean, jintArray, jstring};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::os::fd::FromRawFd;
 use std::io::Read;
 
@@ -119,6 +120,69 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatch(
     let _ = Arc::into_raw(context);
 }
 
+/// 处理用户输入（写回 PTY）
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_processInput(
+    env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+    data: jbyteArray,
+    offset: jint,
+    count: jint,
+) {
+    if ptr == 0 || data.is_null() { return; }
+    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    
+    let fd = context.pty_fd.load(Ordering::SeqCst);
+    if fd != -1 {
+        let j_array = unsafe { jni::objects::JByteArray::from_raw(data) };
+        if let Ok(bytes) = env.convert_byte_array(&j_array) {
+            let offset = offset as usize;
+            let count = count as usize;
+            if offset + count <= bytes.len() {
+                unsafe {
+                    libc::write(fd, bytes[offset..offset+count].as_ptr() as *const _, count);
+                }
+            }
+        }
+    }
+
+    let _ = Arc::into_raw(context);
+}
+
+/// 启动 IO 线程
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_startIoThread(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+    pty_fd: jint,
+) {
+    if ptr == 0 { return; }
+    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    context.clone().start_io_thread(pty_fd);
+    let _ = Arc::into_raw(context);
+}
+
+/// 销毁引擎实例
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_destroyEngine(
+    _env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) {
+    if ptr == 0 { return; }
+    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    
+    // 强制关闭逻辑：彻底消灭幻影线程
+    context.running.store(false, Ordering::SeqCst);
+    let fd = context.pty_fd.swap(-1, Ordering::SeqCst);
+    if fd != -1 {
+        android_log(LogPriority::INFO, &format!("JNI: destroyEngine - Closing PTY FD {} to kill IO thread", fd));
+        unsafe { libc::close(fd); }
+    }
+}
+
 /// 处理 Unicode 码点
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_processCodePoint(
@@ -141,82 +205,24 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processCodePoint(
     let _ = Arc::into_raw(context);
 }
 
-/// 销毁引擎
+/// 设置历史记录行数
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_RustTerminal_destroyEngine(
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_setTranscriptRows(
     _env: JNIEnv,
     _class: JClass,
     ptr: jlong,
-) {
-    if ptr != 0 {
-        let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
-        context.running.store(false, std::sync::atomic::Ordering::SeqCst);
-    }
-}
-
-/// 启动 IO 线程
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_RustTerminal_startIoThread(
-    _env: JNIEnv,
-    _class: JClass,
-    ptr: jlong,
-    fd: jint,
+    rows: jint,
 ) {
     if ptr == 0 { return; }
-
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
-    let context_thread = Arc::clone(&context);
-
-    let pty_fd = unsafe { libc::dup(fd) };
-    if pty_fd < 0 {
-        let _ = Arc::into_raw(context);
-        return;
+    {
+        let mut engine = context.lock.write().unwrap();
+        engine.state.main_screen.resize_transcript(rows as usize);
     }
-
-    std::thread::Builder::new()
-        .name("Engine".to_string())
-        .spawn(move || {
-            let context = context_thread;
-            let thread_name = std::ffi::CString::new("Engine").unwrap();
-            unsafe {
-                libc::prctl(libc::PR_SET_NAME, thread_name.as_ptr(), 0, 0, 0);
-                libc::pthread_setname_np(libc::pthread_self(), thread_name.as_ptr());
-            }
-
-            android_log(LogPriority::INFO, " IO Thread started");
-
-            let mut attached_env: Option<JNIEnv> = crate::JAVA_VM.get().and_then(|vm: &JavaVM| {
-                vm.attach_current_thread_as_daemon().ok()
-            });
-
-            let mut file = unsafe { std::fs::File::from_raw_fd(pty_fd) };
-            let mut buffer = [0u8; 8192];
-
-            while context.running.load(std::sync::atomic::Ordering::SeqCst) {
-                match file.read(&mut buffer) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        let (events, cb) = {
-                            let mut engine = context.lock.write().unwrap();
-                            engine.process_bytes(&buffer[..n]);
-                            (engine.take_events(), engine.state.java_callback_obj.clone())
-                        };
-                        render_thread::request_render();
-                        if let Some(ref mut env) = attached_env {
-                            flush_events_to_java(env, &cb, events);
-                        }
-                    }
-                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-                    Err(_) => break,
-                }
-            }
-            android_log(LogPriority::INFO, " IO Thread stopped");
-        })
-        .expect("Failed to spawn  IO thread");
     let _ = Arc::into_raw(context);
 }
 
-/// 完整调整大小
+/// 处理尺寸调整
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_resize(
     mut env: JNIEnv,

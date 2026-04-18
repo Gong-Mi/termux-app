@@ -28,9 +28,15 @@ object RustTerminal {
     external fun processBatch(enginePtr: Long, batch: ByteArray, length: Int)
 
     @JvmStatic
+    external fun processInput(enginePtr: Long, data: ByteArray, offset: Int, count: Int)
+
+    @JvmStatic
     external fun processCodePoint(enginePtr: Long, codePoint: Int)
 
     // --- 尺寸调整 ---
+
+    @JvmStatic
+    external fun setTranscriptRows(enginePtr: Long, rows: Int)
 
     @JvmStatic
     external fun resize(enginePtr: Long, columns: Int, rows: Int, cellWidthPixels: Int, cellHeightPixels: Int)

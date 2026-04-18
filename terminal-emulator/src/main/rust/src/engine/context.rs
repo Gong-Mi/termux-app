@@ -74,6 +74,7 @@ impl TerminalEngine {
 pub struct TerminalContext {
     pub lock: RwLock<TerminalEngine>,
     pub running: AtomicBool,
+    pub pty_fd: std::sync::atomic::AtomicI32,
 }
 
 impl TerminalContext {
@@ -81,10 +82,12 @@ impl TerminalContext {
         Self {
             lock: RwLock::new(engine),
             running: AtomicBool::new(true),
+            pty_fd: std::sync::atomic::AtomicI32::new(-1),
         }
     }
 
     pub fn start_io_thread(self: std::sync::Arc<Self>, pty_fd: i32) {
+        self.pty_fd.store(pty_fd, Ordering::SeqCst);
         let context = self.clone();
         let dup_fd = unsafe { libc::dup(pty_fd) };
         if dup_fd < 0 {

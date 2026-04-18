@@ -140,32 +140,6 @@ class TerminalSession(
 
             mClient.onTextChanged(this)
 
-            if (mTerminalFileDescriptor != -1) {
-                val terminalFileDescriptorWrapped = wrapFileDescriptor(mTerminalFileDescriptor, mClient)
-
-                Thread(null, object : Runnable {
-                    override fun run() {
-                        val buffer = ByteArray(4096)
-                        try {
-                            FileOutputStream(terminalFileDescriptorWrapped).use { termOut ->
-                                while (true) {
-                                    val bytesToWrite = mTerminalToProcessIOQueue.read(buffer, true)
-                                    if (bytesToWrite == -1) return
-                                    termOut.write(buffer, 0, bytesToWrite)
-                                }
-                            }
-                        } catch (_: IOException) { }
-                    }
-                }, "TermSessionOutputWriter[pid=$mShellPid]").start()
-
-                Thread(null, object : Runnable {
-                    override fun run() {
-                        val processExitCode = runCatching { JNI.waitFor(mShellPid) }.getOrDefault(0)
-                        mMainThreadHandler.sendMessage(mMainThreadHandler.obtainMessage(MSG_PROCESS_EXITED, processExitCode))
-                    }
-                }, "TermSessionWaiter[pid=$mShellPid]").start()
-            }
-
             notifyScreenUpdate()
         }
     }
@@ -174,8 +148,11 @@ class TerminalSession(
 
     /** Write data to the shell process. */
     override fun write(data: ByteArray, offset: Int, count: Int) {
-        if (mSessionState != SessionState.READY) return
-        if (mShellPid > 0) mTerminalToProcessIOQueue.write(data, offset, count)
+        if (mSessionState != SessionState.READY || mEmulator == null) return
+        val ptr = mEmulator!!.getNativePointer()
+        if (ptr != 0L) {
+            RustTerminal.processInput(ptr, data, offset, count)
+        }
     }
 
     /** Write the Unicode code point to the terminal encoded in UTF-8. */
