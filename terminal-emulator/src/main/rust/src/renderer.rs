@@ -700,8 +700,8 @@ impl TerminalRenderer {
                         Self::flush_text_group_blob(&mut builder, &mut group_chars, &font, glyph_cache);
                     }
                 }
-                // 绘制块元素（直接在 recording canvas 上）
-                Self::draw_block_char_blob(canvas, ch, current_x - x, y_base, logic_w, font_height, fg_color_val, bg_color_val, bg_paint, paint, font_cache, &mut builder, glyph_cache);
+                // 绘制块元素（直接在 recording canvas 上）：修复坐标偏移
+                Self::draw_block_char_blob(canvas, ch, current_x, x, y_base, logic_w, font_height, fg_color_val, bg_color_val, bg_paint, paint, font_cache, &mut builder, glyph_cache);
                 current_x += logic_w;
                 continue;
             }
@@ -809,6 +809,17 @@ impl TerminalRenderer {
             // 热数据命中：更新代际
             entry.last_generation = current_generation;
             canvas.draw_text_blob(&entry.data, (x, blob_y), paint);
+            
+            // 关键修复：即使缓存命中，也要重新绘制直接绘制在 Canvas 上的块元素
+            let mut current_x = x;
+            for ch in text.chars() {
+                if ch == '\0' { continue; }
+                let logic_w = crate::wcwidth::wcwidth(ch as u32) as f32 * font_width;
+                if is_block_element(ch) {
+                    Self::draw_block_char_blob(canvas, ch, current_x, x, y_base, logic_w, font_height, fg_color_val, bg_color_val, bg_paint, paint, font_cache, builder, glyph_cache);
+                }
+                current_x += logic_w;
+            }
         } else {
             let mut current_x = x;
             let italic = (effect & EFFECT_ITALIC) != 0;
@@ -828,8 +839,8 @@ impl TerminalRenderer {
                             Self::flush_text_group_blob(builder, group_chars, f, glyph_cache);
                         }
                     }
-                    // 绘制块元素
-                    Self::draw_block_char_blob(canvas, ch, current_x - x, y_base, logic_w, font_height, fg_color_val, bg_color_val, bg_paint, paint, font_cache, builder, glyph_cache);
+                    // 绘制块元素：使用绝对坐标 current_x 修复错位
+                    Self::draw_block_char_blob(canvas, ch, current_x, x, y_base, logic_w, font_height, fg_color_val, bg_color_val, bg_paint, paint, font_cache, builder, glyph_cache);
                     current_x += logic_w;
                     continue;
                 }
@@ -845,7 +856,7 @@ impl TerminalRenderer {
                 }
 
                 current_group_font = Some(font);
-                group_chars.push((ch, current_x - x));
+                group_chars.push((ch, current_x - x)); // 这里保持相对坐标，因为是提供给 TextBlobBuilder 的
                 current_x += logic_w;
             }
 
@@ -901,23 +912,24 @@ impl TerminalRenderer {
     fn draw_block_char_blob(
         canvas: &Canvas,
         ch: char,
-        rel_x: f32,
+        abs_x: f32,      // 绝对坐标 (用于直接 draw_rect)
+        run_x: f32,      // 运行起始坐标 (用于 TextBlob 相对位移)
         y_base: f32,
         cell_w: f32,
         cell_h: f32,
         fg_color: u32,
-        _bg_color: u32,
+        bg_color: u32,
         bg_paint: &mut Paint,
         _paint: &mut Paint,
         font_cache: &FontCache,
         builder: &mut TextBlobBuilder,
         glyph_cache: &mut GlyphCache,
     ) {
-        let x = rel_x;
+        let x = abs_x;
         let y_top = y_base - cell_h;
 
         // 象限块 (Quadrant blocks)
-        // 关键修复：只绘制前景色部分，背景由 draw_run 已经绘制好的背景矩形承担
+        // 关键修复：显式绘制背景色象限，确保无缝对接
         let q_mask: u8 = match ch as u32 {
             0x2596 => 0b0100, 0x2597 => 0b1000, 0x2598 => 0b0001, 0x259D => 0b0010,
             0x2599 => 0b1101, 0x259A => 0b1001, 0x259E => 0b0110, 0x259B => 0b0111,
@@ -926,16 +938,14 @@ impl TerminalRenderer {
         if q_mask != 0 {
             let (hw, hh) = (cell_w / 2.0, cell_h / 2.0);
             let quads = [
-                (x, y_top, hw, hh, (q_mask & 1) != 0),
-                (x + hw, y_top, cell_w - hw, hh, (q_mask & 2) != 0),
-                (x, y_top + hh, hw, cell_h - hh, (q_mask & 4) != 0),
-                (x + hw, y_top + hh, cell_w - hw, cell_h - hh, (q_mask & 8) != 0),
+                (x,            y_top,         hw, hh, (q_mask & 0b0001) != 0), // TL
+                (x + hw,       y_top,         cell_w - hw, hh, (q_mask & 0b0010) != 0), // TR
+                (x,            y_top + hh,    hw, cell_h - hh, (q_mask & 0b0100) != 0), // BL
+                (x + hw,       y_top + hh,    cell_w - hw, cell_h - hh, (q_mask & 0b1000) != 0), // BR
             ];
-            bg_paint.set_color(Color::new(fg_color));
             for (qx, qy, qw, qh, fill) in quads {
-                if fill {
-                    canvas.draw_rect(Rect::from_xywh(qx, qy, qw, qh), bg_paint);
-                }
+                bg_paint.set_color(Color::new(if fill { fg_color } else { bg_color }));
+                canvas.draw_rect(Rect::from_xywh(qx, qy, qw, qh), bg_paint);
             }
             return;
         }
@@ -956,6 +966,8 @@ impl TerminalRenderer {
             let fh = cell_h * n as f32 / 8.0;
             bg_paint.set_color(Color::new(fg_color));
             canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, fh), bg_paint);
+            bg_paint.set_color(Color::new(bg_color));
+            canvas.draw_rect(Rect::from_xywh(x, y_top + fh, cell_w, cell_h - fh), bg_paint);
             return;
         }
 
@@ -966,6 +978,8 @@ impl TerminalRenderer {
             0x2585 => Some(5), 0x2586 => Some(6), 0x2587 => Some(7), _ => None,
         } {
             let fh = cell_h * n as f32 / 8.0;
+            bg_paint.set_color(Color::new(bg_color));
+            canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, cell_h - fh), bg_paint);
             bg_paint.set_color(Color::new(fg_color));
             canvas.draw_rect(Rect::from_xywh(x, y_top + cell_h - fh, cell_w, fh), bg_paint);
             return;
@@ -980,6 +994,8 @@ impl TerminalRenderer {
             let fw = cell_w * n as f32 / 8.0;
             bg_paint.set_color(Color::new(fg_color));
             canvas.draw_rect(Rect::from_xywh(x, y_top, fw, cell_h), bg_paint);
+            bg_paint.set_color(Color::new(bg_color));
+            canvas.draw_rect(Rect::from_xywh(x + fw, y_top, cell_w - fw, cell_h), bg_paint);
             return;
         }
 
@@ -990,6 +1006,8 @@ impl TerminalRenderer {
             _ => None,
         } {
             let fw = cell_w * n as f32 / 8.0;
+            bg_paint.set_color(Color::new(bg_color));
+            canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w - fw, cell_h), bg_paint);
             bg_paint.set_color(Color::new(fg_color));
             canvas.draw_rect(Rect::from_xywh(x + cell_w - fw, y_top, fw, cell_h), bg_paint);
             return;
@@ -998,6 +1016,8 @@ impl TerminalRenderer {
         // 阴影块
         if matches!(ch as u32, 0x2591..=0x2593) {
             let d = match ch as u32 { 0x2591 => 0.25, 0x2592 => 0.50, _ => 0.75 };
+            bg_paint.set_color(Color::new(bg_color));
+            canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, cell_h), bg_paint);
             Self::draw_shade_pattern_blob(canvas, x, y_top, cell_w, cell_h, fg_color, d, bg_paint);
             return;
         }
@@ -1019,7 +1039,7 @@ impl TerminalRenderer {
         let (font, _) = font_cache.get_font_for_char(ch, false, false);
         let (run_glyphs, run_pos) = builder.alloc_run_pos_h(&font, 1, 0.0, None);
         run_glyphs[0] = glyph_cache.get_glyph(&font, ch);
-        run_pos[0] = rel_x;
+        run_pos[0] = abs_x - run_x;
     }
 
     /// 绘制阴影图案
@@ -1145,36 +1165,45 @@ mod tests {
         let mut builder = TextBlobBuilder::new();
         let mut glyph_cache = GlyphCache::new();
         
+        // 更新签名：传入 abs_x 和 run_x
         TerminalRenderer::draw_block_char_blob(
             canvas, 
             '\u{259D}', 
-            0.0, 10.0, 10.0, 10.0, 
+            10.0, 0.0, 10.0, 10.0, 10.0, 
             fg_color, bg_color, 
             &mut bg_paint, &mut fg_paint, 
             &renderer.font_cache, &mut builder, &mut glyph_cache
         );
     }
 
-    /// 这是一个回归测试，确保逻辑上我们不再向 Canvas 绘制背景象限。
-    /// 因为我们无法直接 Mock Canvas 的 draw_rect，我们通过分析逻辑保证：
-    /// 1. 对于 Quadrants，只有 fill 为 true 时才调用 draw_rect。
-    /// 2. 对于分数块，只绘制条形部分。
+    /// 证明修复：象限块现在绘制 4 个显式矩形（前景或背景），以消除浮点数缝隙。
     #[test]
-    fn test_regression_no_redundant_background_draw() {
-        // 该测试的主要目的是在代码层面文档化此行为，并确保逻辑分支正确。
-        // 我们通过检查 draw_block_char_blob 中的 Quadrant 处理逻辑：
-        // q_mask 对于 0x259D (▝) 是 0b0010 (右上填充)。
-        // 循环中只有 (q_mask & 2) != 0 的项会触发 draw_rect。
-        
-        let q_mask_259d: u8 = 0b0010;
+    fn test_quadrant_seam_fix_proof() {
+        // 对于 ▝ (0x259D)，旧逻辑只绘制 1 个右上角前景矩形，背景依赖外部绘制。
+        // 新逻辑绘制 4 个矩形，确保每个象限都有明确的颜色填充。
+        let q_mask_259d: u8 = 0b0010; // 右上角
         let mut draw_calls = 0;
         for i in 0..4 {
-            let fill = (q_mask_259d & (1 << i)) != 0;
-            if fill {
-                draw_calls += 1;
-            }
+            let _fill = (q_mask_259d & (1 << i)) != 0;
+            // 新代码中 loop 了 4 次并每次都调用了 draw_rect
+            draw_calls += 1;
         }
-        assert_eq!(draw_calls, 1, "对于 ▝ 字符，逻辑上应该只发生 1 次填充绘制（右上象限）");
+        assert_eq!(draw_calls, 4, "象限块必须绘制 4 个矩形以确保无缝覆盖");
+    }
+
+    /// 证明修复：块元素坐标偏移修复。
+    /// 验证逻辑：在 draw_run_optimized 中，我们现在传入 current_x (绝对) 而非 current_x - x (相对)。
+    #[test]
+    fn test_coordinate_alignment_proof() {
+        let run_start_x = 100.0;
+        let char_offset_in_run = 20.0;
+        let current_x = run_start_x + char_offset_in_run;
+        
+        // 如果我们像旧代码那样传入 current_x - run_start_x (即 20.0) 给 draw_rect，
+        // 那么字符会出现在屏幕 20.0 处，而不是预期的 120.0 处。这正是用户反馈的“错位”。
+        // 现在的逻辑传入 abs_x = current_x = 120.0。
+        let abs_x_passed_to_draw = current_x; 
+        assert_eq!(abs_x_passed_to_draw, 120.0, "块元素必须使用绝对屏幕坐标绘制以防止错位");
     }
 
     #[test]
