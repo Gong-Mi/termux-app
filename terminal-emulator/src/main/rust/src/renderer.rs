@@ -66,7 +66,7 @@ impl RenderFrame {
             cursor_x: state.cursor.x,
             cursor_y: state.cursor.y,
             cursor_style: state.cursor.style,
-            cursor_enabled: state.cursor_enabled,
+            cursor_enabled: state.cursor.should_be_visible(state.cursor_enabled),
             reverse_video: state.modes.is_enabled(crate::terminal::modes::DECSET_BIT_REVERSE_VIDEO),
             top_row,
             row_data,
@@ -258,6 +258,7 @@ struct RowCacheEntry {
     hash: u64,
     picture: skia_safe::Picture,
     palette_hash: u64,
+    selection_hash: u64,
 }
 
 /// 字形缓存
@@ -454,19 +455,7 @@ impl TerminalRenderer {
             let (row_text, row_styles, row_h) = (&row_info.0, &row_info.1, row_info.2);
             let y_base = (r as f32 + 1.0) * self.font_height;
 
-            // 行缓存命中
-            if let Some(ref entry) = self.row_cache[r as usize] {
-                if entry.hash == row_h && entry.palette_hash == palette_h {
-                    canvas.draw_picture(&entry.picture, None, None);
-                    continue;
-                }
-            }
-
-            // 克隆行数据以避免借用冲突
-            let row_text_clone = row_text.clone();
-            let row_styles_clone = row_styles.clone();
-
-            // 内联选区计算，避免借用 self 的问题
+            // 内联选区计算，用于哈希校验
             let sel_bounds = &self.selection;
             let sel_active = sel_bounds.active;
             let (sy, sx, ey, ex) = if sel_active {
@@ -478,6 +467,37 @@ impl TerminalRenderer {
             } else {
                 (0, 0, 0, 0)
             };
+
+            // 计算当前行的选区哈希
+            let row_sel_hash = if !sel_active || absolute_row < sy || absolute_row > ey {
+                0u64
+            } else if (absolute_row > sy && absolute_row < ey) 
+                || (absolute_row == sy && sx == 0 && absolute_row < ey)
+                || (absolute_row == ey && ex >= cols as i32 - 1 && absolute_row > sy)
+                || (absolute_row == sy && absolute_row == ey && sx == 0 && ex >= cols as i32 - 1) 
+            {
+                u64::MAX // 整行选中
+            } else {
+                // 部分选中：对列范围进行哈希
+                use std::hash::{Hash, Hasher};
+                let mut h = std::collections::hash_map::DefaultHasher::new();
+                if absolute_row == sy { sx.hash(&mut h); }
+                if absolute_row == ey { ex.hash(&mut h); }
+                h.finish()
+            };
+
+            // 行缓存命中
+            if let Some(ref entry) = self.row_cache[r as usize] {
+                if entry.hash == row_h && entry.palette_hash == palette_h && entry.selection_hash == row_sel_hash {
+                    canvas.draw_picture(&entry.picture, None, None);
+                    continue;
+                }
+            }
+
+            // 克隆行数据以避免借用冲突
+            let row_text_clone = row_text.clone();
+            let row_styles_clone = row_styles.clone();
+
 
             let row_sel = &mut self.row_selection_buf[..cols];
             let abs_row = absolute_row;
@@ -562,7 +582,12 @@ impl TerminalRenderer {
 
             if let Some(pic) = self.recorder.finish_recording_as_picture(None) {
                 canvas.draw_picture(&pic, None, None);
-                self.row_cache[r as usize] = Some(RowCacheEntry { hash: row_h, picture: pic, palette_hash: palette_h });
+                self.row_cache[r as usize] = Some(RowCacheEntry {
+                    hash: row_h,
+                    picture: pic,
+                    palette_hash: palette_h,
+                    selection_hash: row_sel_hash,
+                });
             }
         }
 
@@ -994,6 +1019,79 @@ mod tests {
     fn test_dim_color() { let white = 0xffffffff; let dimmed = TerminalRenderer::apply_dim(white); assert_eq!((dimmed >> 16) & 0xFF, 170); }
     #[test]
     fn test_selection_bounds() { let mut renderer = TerminalRenderer::new(&[], 12.0, None); renderer.set_selection(2, 1, 5, 3); assert!(renderer.is_cell_selected(3, 2)); }
+
+    #[test]
+    fn test_cursor_visibility_logic() {
+        let mut engine = crate::engine::TerminalEngine::new(80, 24, 100, 10, 20);
+        
+        // 1. 默认状态：光标启用，不闪烁 -> 应可见
+        engine.state.cursor_enabled = true;
+        engine.state.cursor.blinking_enabled = false;
+        let frame = RenderFrame::from_engine(&engine, 24, 80, 0);
+        assert!(frame.cursor_enabled);
+
+        // 2. 启用闪烁，状态为可见 -> 应可见
+        engine.state.cursor.blinking_enabled = true;
+        engine.state.cursor.blink_state = true;
+        let frame = RenderFrame::from_engine(&engine, 24, 80, 0);
+        assert!(frame.cursor_enabled);
+
+        // 3. 启用闪烁，状态为不可见 -> 应不可见
+        engine.state.cursor.blink_state = false;
+        let frame = RenderFrame::from_engine(&engine, 24, 80, 0);
+        assert!(!frame.cursor_enabled);
+
+        // 4. 关闭光标 -> 无论闪烁状态如何都不可见
+        engine.state.cursor_enabled = false;
+        engine.state.cursor.blink_state = true;
+        let frame = RenderFrame::from_engine(&engine, 24, 80, 0);
+        assert!(!frame.cursor_enabled);
+    }
+
+    #[test]
+    fn test_selection_pipeline_invalidation() {
+        // 1. 初始化引擎和渲染器
+        let mut engine = crate::engine::TerminalEngine::new(80, 24, 100, 10, 20);
+        let mut renderer = TerminalRenderer::new(&[], 12.0, None);
+        let mut surface = skia_safe::surfaces::raster(&skia_safe::ImageInfo::new_n32_premul((800, 600), None), None, None).unwrap();
+        let canvas = surface.canvas();
+
+        // 填充一行测试数据
+        engine.state.main_screen.get_row_mut(0).text[0] = 'A';
+        engine.state.main_screen.get_row_mut(0).text[1] = 'B';
+
+        // 2. 第一次绘制：无选区
+        renderer.clear_selection();
+        let frame = RenderFrame::from_engine(&engine, 24, 80, 0);
+        renderer.draw_frame(canvas, &frame, 1.0, 0.0);
+
+        let hash_no_sel = renderer.row_cache[0].as_ref().unwrap().selection_hash;
+        assert_eq!(hash_no_sel, 0, "无选区时 hash 应为 0");
+        let pic_no_sel = renderer.row_cache[0].as_ref().unwrap().picture.unique_id();
+
+        // 3. 第二次绘制：设置选区（选中第一行的前两个字符）
+        renderer.set_selection(0, 0, 1, 0); 
+        let frame = RenderFrame::from_engine(&engine, 24, 80, 0); // 重新生成帧
+        renderer.draw_frame(canvas, &frame, 1.0, 0.0);
+
+        let hash_with_sel = renderer.row_cache[0].as_ref().unwrap().selection_hash;
+        let pic_with_sel = renderer.row_cache[0].as_ref().unwrap().picture.unique_id();
+
+        assert!(hash_with_sel != hash_no_sel, "选区变化后 hash 必须改变");
+        assert!(pic_with_sel != pic_no_sel, "选区变化后必须重新记录 picture");
+
+        // 4. 第三次绘制：选区跨行（第一行变为全选，因为它从 0 开始且不是最后一行）
+        renderer.set_selection(0, 0, 10, 1); 
+        let frame = RenderFrame::from_engine(&engine, 24, 80, 0); 
+        renderer.draw_frame(canvas, &frame, 1.0, 0.0);
+
+        let hash_full_sel = renderer.row_cache[0].as_ref().unwrap().selection_hash;
+        assert_eq!(hash_full_sel, u64::MAX, "整行选中时 hash 应为 u64::MAX");
+        
+        // 校验第二行（部分选中）
+        let hash_part_sel = renderer.row_cache[1].as_ref().unwrap().selection_hash;
+        assert!(hash_part_sel != 0 && hash_part_sel != u64::MAX, "第二行应为部分选中哈希");
+    }
 
     #[test]
     fn test_font_fallback_generic() {
