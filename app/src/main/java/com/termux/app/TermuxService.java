@@ -1060,7 +1060,3 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
     }
 
 }
-rn mWantsToStop;
-    }
-
-}
