@@ -109,7 +109,26 @@ class TerminalSession(
         android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 4. initializeEmulator called (${columns}x${rows})")
         mSessionState = SessionState.INITIALIZING
         if (JNI.sNativeLibrariesLoaded) {
-            android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 5. Calling JNI.createSessionAsync")
+            val sessionId = JNI.registerSession()
+            android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 5. Calling JNI.createSessionAsync (SessionID=$sessionId)")
+            
+            // 开启轮询：每 50ms 检查一次 Rust 是否准备好
+            val pollHandler = Handler(Looper.getMainLooper())
+            val pollRunnable = object : Runnable {
+                override fun run() {
+                    val data = JNI.pollEngineData(sessionId)
+                    if (data != null) {
+                        android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 6. pollEngineData SUCCESS (pid=${data[2]})")
+                        onEngineInitialized(data[0], data[1].toInt(), data[2].toInt())
+                    } else {
+                        if (mSessionState == SessionState.INITIALIZING) {
+                            pollHandler.postDelayed(this, 50)
+                        }
+                    }
+                }
+            }
+            pollHandler.post(pollRunnable)
+
             JNI.createSessionAsync(
                 shellPath, cwd ?: "", args, env, rows, columns, cellWidthPixels, cellHeightPixels,
                 transcriptRows ?: TerminalEmulator.DEFAULT_TERMINAL_TRANSCRIPT_ROWS, mRustCallback

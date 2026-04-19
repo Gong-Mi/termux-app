@@ -58,6 +58,7 @@ internal object JNI {
 
     // --- Session Coordinator ---
     @JvmStatic external fun registerSession(): Int
+    @JvmStatic external fun pollEngineData(sessionId: Int): LongArray?
     @JvmStatic external fun unregisterSession(sessionId: Int)
     @JvmStatic external fun tryAcquirePkgLock(sessionId: Int): Boolean
     @JvmStatic external fun releasePkgLock(sessionId: Int)

@@ -957,18 +957,27 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
     };
 
     std::thread::spawn(move || {
+        crate::utils::android_log(crate::utils::LogPriority::INFO, "[TRACE_SESSION] 5.1. Background thread started in Rust");
         let coordinator = SessionCoordinator::get();
         let session_id = coordinator.register_session();
 
         let pty_res = crate::pty::create_subprocess_with_data(cmd_str, cwd_str, argv, envp, rows, cols, cw, ch);
         let (pty_fd, pid) = match pty_res {
-            Ok(res) => res,
+            Ok(res) => {
+                crate::utils::android_log(crate::utils::LogPriority::DEBUG, &format!("[TRACE_SESSION] 5.2. PTY created (fd={}, pid={})", res.0, res.1));
+                res
+            },
             Err(_) => {
+                crate::utils::android_log(crate::utils::LogPriority::ERROR, "[TRACE_SESSION] 5.2. FAILED to create PTY");
                 coordinator.unregister_session(session_id);
                 return;
             }
         };
 
+        // 核心改动：立即绑定 PID，让 Rust 监控线程接管
+        coordinator.bind_pid(session_id, pid);
+
+        crate::utils::android_log(crate::utils::LogPriority::DEBUG, "[TRACE_SESSION] 5.3. Creating TerminalEngine");
         let mut engine = TerminalEngine::new(cols, rows, transcript_rows, cw, ch);
         if let Some(ref cb) = callback_ref {
             engine.state.java_callback_obj = Some(cb.clone());
@@ -977,25 +986,17 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
         let context = Arc::new(TerminalContext::new(engine));
         let context_ptr = Arc::into_raw(context.clone());
 
+        crate::utils::android_log(crate::utils::LogPriority::DEBUG, "[TRACE_SESSION] 5.4. Starting IO thread");
         context.start_io_thread(pty_fd);
 
-        if let Some(ref cb) = callback_ref {
-            if let Some(vm) = crate::JAVA_VM.get() {
-                if let Ok(env) = vm.attach_current_thread_as_daemon() {
-                    let mut env: JNIEnv = env;
-                    let _ = env.call_method(
-                        cb.as_obj(),
-                        "onEngineInitialized",
-                        "(JII)V",
-                        &[
-                            JValue::from(context_ptr as jlong),
-                            JValue::from(pty_fd),
-                            JValue::from(pid),
-                        ],
-                    );
-                }
-            }
-        }
+        // 寄存数据，等待 Java 拉取
+        coordinator.set_engine_data(session_id, crate::coordinator::SessionEngineData {
+            ptr: context_ptr as jlong,
+            pty_fd: pty_fd as i32,
+            pid: pid as i32,
+        });
+
+        crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[TRACE_SESSION] 5.5. Engine data registered for session {}. (pid={}, engine=0x{:x})", session_id, pid, context_ptr as usize));
     });
 }
 
