@@ -907,16 +907,12 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
     let cmd_str = if !cmd.is_null() {
         let js = unsafe { JString::from_raw(cmd) };
         env.get_string(&js).map(|s| s.into()).unwrap_or_default()
-    } else {
-        String::new()
-    };
+    } else { String::new() };
 
     let cwd_str = if !cwd.is_null() {
         let js = unsafe { JString::from_raw(cwd) };
         env.get_string(&js).map(|s| s.into()).unwrap_or_default()
-    } else {
-        String::new()
-    };
+    } else { String::new() };
 
     let mut argv = Vec::new();
     let args_obj = unsafe { jni::objects::JObjectArray::from_raw(args) };
@@ -925,9 +921,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
             for i in 0..len {
                 if let Ok(arg_obj) = env.get_object_array_element(&args_obj, i) {
                     let arg_java: JString = arg_obj.into();
-                    if let Ok(s) = env.get_string(&arg_java) {
-                        argv.push(String::from(s));
-                    }
+                    if let Ok(s) = env.get_string(&arg_java) { argv.push(String::from(s)); }
                 }
             }
         }
@@ -940,61 +934,57 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
             for i in 0..len {
                 if let Ok(env_obj) = env.get_object_array_element(&env_vars_obj, i) {
                     let env_java: JString = env_obj.into();
-                    if let Ok(s) = env.get_string(&env_java) {
-                        envp.push(String::from(s));
-                    }
+                    if let Ok(s) = env.get_string(&env_java) { envp.push(String::from(s)); }
                 }
             }
         }
     }
 
-    let callback_ref = if !callback.is_null() {
-        env.new_global_ref(callback).ok()
-    } else {
-        None
-    };
+    let callback_ref = if !callback.is_null() { env.new_global_ref(callback).ok() } else { None };
 
     std::thread::spawn(move || {
-        crate::utils::android_log(crate::utils::LogPriority::INFO, "[TRACE_SESSION] 5.1. Background thread started in Rust");
-        let coordinator = SessionCoordinator::get();
-        let session_id = session_id as usize;
+        let result = std::panic::catch_unwind(move || {
+            crate::utils::android_log(crate::utils::LogPriority::INFO, "[TRACE_SESSION] 5.1. Background thread started in Rust");
+            let coordinator = SessionCoordinator::get();
+            let session_id = session_id as usize;
 
-        let pty_res = crate::pty::create_subprocess_with_data(cmd_str, cwd_str, argv, envp, rows, cols, cw, ch);
-        let (pty_fd, pid) = match pty_res {
-            Ok(res) => {
-                crate::utils::android_log(crate::utils::LogPriority::DEBUG, &format!("[TRACE_SESSION] 5.2. PTY created (fd={}, pid={})", res.0, res.1));
-                res
-            },
-            Err(_) => {
-                crate::utils::android_log(crate::utils::LogPriority::ERROR, "[TRACE_SESSION] 5.2. FAILED to create PTY");
-                coordinator.unregister_session(session_id);
-                return;
+            let pty_res = crate::pty::create_subprocess_with_data(cmd_str, cwd_str, argv, envp, rows, cols, cw, ch);
+            let (pty_fd, pid) = match pty_res {
+                Ok(res) => {
+                    crate::utils::android_log(crate::utils::LogPriority::DEBUG, &format!("[TRACE_SESSION] 5.2. PTY created (fd={}, pid={})", res.0, res.1));
+                    res
+                },
+                Err(_) => {
+                    crate::utils::android_log(crate::utils::LogPriority::ERROR, "[TRACE_SESSION] 5.2. FAILED to create PTY");
+                    return;
+                }
+            };
+
+            coordinator.bind_pid(session_id, pid);
+
+            crate::utils::android_log(crate::utils::LogPriority::DEBUG, "[TRACE_SESSION] 5.3. Creating TerminalEngine");
+            let mut engine = TerminalEngine::new(cols, rows, transcript_rows, cw, ch);
+            if let Some(ref cb) = callback_ref {
+                engine.state.java_callback_obj = Some(cb.clone());
             }
-        };
 
-        // 核心改动：立即绑定 PID，让 Rust 监控线程接管
-        coordinator.bind_pid(session_id, pid);
+            let context = Arc::new(TerminalContext::new(engine));
+            let context_ptr = Arc::into_raw(context.clone());
 
-        crate::utils::android_log(crate::utils::LogPriority::DEBUG, "[TRACE_SESSION] 5.3. Creating TerminalEngine");
-        let mut engine = TerminalEngine::new(cols, rows, transcript_rows, cw, ch);
-        if let Some(ref cb) = callback_ref {
-            engine.state.java_callback_obj = Some(cb.clone());
-        }
+            crate::utils::android_log(crate::utils::LogPriority::DEBUG, "[TRACE_SESSION] 5.4. Starting IO thread");
+            context.start_io_thread(pty_fd);
 
-        let context = Arc::new(TerminalContext::new(engine));
-        let context_ptr = Arc::into_raw(context.clone());
-
-        crate::utils::android_log(crate::utils::LogPriority::DEBUG, "[TRACE_SESSION] 5.4. Starting IO thread");
-        context.start_io_thread(pty_fd);
-
-        // 寄存数据，等待 Java 拉取
-        coordinator.set_engine_data(session_id, crate::coordinator::SessionEngineData {
-            ptr: context_ptr as jlong,
-            pty_fd: pty_fd as i32,
-            pid: pid as i32,
+            coordinator.set_engine_data(session_id, crate::coordinator::SessionEngineData {
+                ptr: context_ptr as jlong,
+                pty_fd: pty_fd as i32,
+                pid: pid as i32,
+            });
+            crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[TRACE_SESSION] 5.5. Engine data registered for session {}. SUCCESS.", session_id));
         });
 
-        crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[TRACE_SESSION] 5.5. Engine data registered for session {}. (pid={}, engine=0x{:x})", session_id, pid, context_ptr as usize));
+        if let Err(e) = result {
+            crate::utils::android_log(crate::utils::LogPriority::ERROR, &format!("CRITICAL: Rust background thread PANICKED: {:?}", e));
+        }
     });
 }
 
@@ -1048,4 +1038,3 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
         )
     }
 }
-
