@@ -1,7 +1,7 @@
 use std::sync::atomic::Ordering;
 use jni::JNIEnv;
 use jni::objects::{JObject, JString, JClass};
-use jni::sys::{jint, jlong, jfloat, jfloatArray};
+use jni::sys::{jint, jlong, jfloat, jfloatArray, jboolean};
 
 use crate::utils::{android_log, LogPriority};
 use crate::vulkan_context::VulkanContext;
@@ -151,4 +151,26 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
         let j_array = unsafe { jni::objects::JFloatArray::from_raw(metrics_array) };
         let _ = env.set_float_array_region(&j_array, 0, &values);
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_view_TerminalView_nativeUpdateRenderParams(
+    _env: JNIEnv,
+    _class: jni::objects::JClass,
+    scale: jfloat,
+    scroll_offset: jfloat,
+    visible_rows: jint,
+    visible_cols: jint,
+    top_row: jint,
+    cursor_x: jint,
+    cursor_y: jint,
+    cursor_visible: jboolean,
+) {
+    if let Ok(mut params) = crate::render_thread::get_render_params().lock() {
+        params.scale = scale;
+        params.scroll_offset = scroll_offset;
+        // 同步其他物理参数到渲染器
+    }
+    // 标记屏幕脏，触发重绘
+    crate::render_thread::get_screen_dirty().store(true, std::sync::atomic::Ordering::SeqCst);
 }
