@@ -47,6 +47,7 @@ internal object JNI {
     ): Int
 
     @JvmStatic external fun createSessionAsync(
+        sessionId: Int,
         cmd: String, cwd: String, args: Array<String?>?, envVars: Array<String?>?,
         rows: Int, columns: Int, cellWidth: Int, cellHeight: Int,
         transcriptRows: Int, callback: RustEngineCallback

@@ -892,6 +892,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_setPtyWindowSize(
 pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
     mut env: JNIEnv,
     _class: JClass,
+    session_id: jint,
     cmd: jstring,
     cwd: jstring,
     args: jni::sys::jobjectArray,
@@ -956,7 +957,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
     std::thread::spawn(move || {
         crate::utils::android_log(crate::utils::LogPriority::INFO, "[TRACE_SESSION] 5.1. Background thread started in Rust");
         let coordinator = SessionCoordinator::get();
-        let session_id = coordinator.register_session();
+        let session_id = session_id as usize;
 
         let pty_res = crate::pty::create_subprocess_with_data(cmd_str, cwd_str, argv, envp, rows, cols, cw, ch);
         let (pty_fd, pid) = match pty_res {

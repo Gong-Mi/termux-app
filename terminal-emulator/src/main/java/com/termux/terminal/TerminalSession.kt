@@ -131,6 +131,7 @@ class TerminalSession(
             pollHandler.post(pollRunnable)
 
             JNI.createSessionAsync(
+                sessionId,
                 shellPath, cwd ?: "", args, env, rows, columns, cellWidthPixels, cellHeightPixels,
                 transcriptRows ?: TerminalEmulator.DEFAULT_TERMINAL_TRANSCRIPT_ROWS, mRustCallback
             )
