@@ -210,15 +210,36 @@ pub fn create_subprocess_with_data(
                     let _ = chdir(c_cwd.as_c_str());
                 }
 
+                // W^X Bypass for Android 10+
+                let mut final_cmd = cmd_str.clone();
+                let mut final_args = argv.clone();
+                
+                if final_cmd.starts_with("/data/") {
+                    #[cfg(target_pointer_width = "64")]
+                    let linker = "/system/bin/linker64";
+                    #[cfg(target_pointer_width = "32")]
+                    let linker = "/system/bin/linker";
+                    
+                    if std::path::Path::new(linker).exists() {
+                        if !final_args.is_empty() {
+                            final_args.insert(1, final_cmd.clone());
+                        } else {
+                            final_args.push(final_cmd.clone());
+                            final_args.push(final_cmd.clone());
+                        }
+                        final_cmd = linker.to_string();
+                    }
+                }
+
                 let mut c_args = Vec::new();
-                for arg in argv {
+                for arg in final_args {
                     if let Ok(ca) = CString::new(arg) { c_args.push(ca); }
                 }
                 
                 let ptr_args: Vec<_> = c_args.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
-                if !cmd_str.is_empty() {
-                    let c_cmd = CString::new(cmd_str.clone()).unwrap();
-                    crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY_EXEC] Attempting to exec: {} in {}", cmd_str, cwd_str));
+                if !final_cmd.is_empty() {
+                    let c_cmd = CString::new(final_cmd.clone()).unwrap();
+                    crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY_EXEC] Attempting to exec: {} with {:?} in {}", final_cmd, ptr_args, cwd_str));
                     libc::execvp(c_cmd.as_ptr(), ptr_args.as_ptr());
                     
                     // --- 救命逻辑：首选 Shell 失败，回退到系统 Shell ---

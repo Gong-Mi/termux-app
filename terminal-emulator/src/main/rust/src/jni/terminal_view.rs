@@ -67,6 +67,9 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetEnginePointer(
         *engine_ptr = ptr;
     }
     crate::render_thread::get_engine_ready().store(ptr != 0, Ordering::SeqCst);
+    if ptr != 0 {
+        crate::render_thread::try_start_render_thread();
+    }
 }
 
 #[unsafe(no_mangle)]
