@@ -210,10 +210,49 @@ pub fn create_subprocess_with_data(
                     let _ = chdir(c_cwd.as_c_str());
                 }
 
-                // W^X Bypass for Android 10+
                 let mut final_cmd = cmd_str.clone();
                 let mut final_args = argv.clone();
                 
+                // Parse ELF / Shebang
+                if let Ok(mut f) = std::fs::File::open(&final_cmd) {
+                    use std::io::Read;
+                    let mut buf = [0u8; 256];
+                    if let Ok(bytes_read) = f.read(&mut buf) {
+                        if bytes_read > 4 && buf[0] == 0x7F && buf[1] == b'E' && buf[2] == b'L' && buf[3] == b'F' {
+                            // ELF file, do nothing
+                        } else if bytes_read > 2 && buf[0] == b'#' && buf[1] == b'!' {
+                            // Parse shebang
+                            if let Ok(shebang) = std::str::from_utf8(&buf[2..bytes_read]) {
+                                let interpreter_line = shebang.lines().next().unwrap_or("").trim();
+                                if !interpreter_line.is_empty() {
+                                    let mut parts = interpreter_line.split_whitespace();
+                                    if let Some(interpreter) = parts.next() {
+                                        let old_cmd = final_cmd.clone();
+                                        final_cmd = interpreter.to_string();
+                                        if !final_args.is_empty() {
+                                            final_args.insert(1, old_cmd);
+                                        } else {
+                                            final_args.push(old_cmd.clone());
+                                            final_args.push(old_cmd);
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            // Not ELF and no shebang, default to Termux sh
+                            let old_cmd = final_cmd.clone();
+                            final_cmd = "/data/data/com.termux/files/usr/bin/sh".to_string();
+                            if !final_args.is_empty() {
+                                final_args.insert(1, old_cmd);
+                            } else {
+                                final_args.push(old_cmd.clone());
+                                final_args.push(old_cmd);
+                            }
+                        }
+                    }
+                }
+
+                // W^X Bypass for Android 10+
                 if final_cmd.starts_with("/data/") {
                     #[cfg(target_pointer_width = "64")]
                     let linker = "/system/bin/linker64";
