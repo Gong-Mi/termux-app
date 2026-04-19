@@ -98,6 +98,7 @@ impl TerminalContext {
             crate::utils::android_log(crate::utils::LogPriority::INFO, "CHECKPOINT: IO Thread STARTing [ARCH_REWRITE]");
             let mut buffer = [0u8; 8192];
             let mut pty_file = unsafe { std::fs::File::from_raw_fd(dup_fd) };
+            // 这里的 pty_file 会在循环结束时自动释放 FD，这是正确的
 
             let vm = match crate::JAVA_VM.get() {
                 Some(v) => v,
@@ -119,7 +120,7 @@ impl TerminalContext {
 
             while context.running.load(Ordering::Relaxed) {
                 match std::io::Read::read(&mut pty_file, &mut buffer) {
-                    Ok(0) => break,
+                    Ok(0) => { crate::utils::android_log(crate::utils::LogPriority::WARN, "IO Thread: Received EOF from PTY"); break; },
                     Ok(n) => {
                         let (events, pending_responses, callback_obj) = {
                             let mut engine = context.lock.write().unwrap();

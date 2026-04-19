@@ -157,10 +157,11 @@ class TerminalSession(
 
             mEmulator = TerminalEmulator(this, enginePtr, ptyFd, mRustCallback)
             mClient.setTerminalShellPid(this, mShellPid)
-            android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 8. Emulator instance created")
+            android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 8. Emulator instance created and READY")
 
+            // 唤醒 UI 关键点
+            mClient.onSessionStateChanged(this)
             mClient.onTextChanged(this)
-
             notifyScreenUpdate()
         }
     }
