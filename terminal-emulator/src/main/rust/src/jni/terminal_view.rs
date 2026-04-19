@@ -159,13 +159,15 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeUpdateRenderParam
     _class: jni::objects::JClass,
     scale: jni::sys::jfloat,
     scroll_offset: jni::sys::jfloat,
-    _visible_rows: jni::sys::jint,
-    _visible_cols: jni::sys::jint,
-    _top_row: jni::sys::jint,
-    _cursor_x: jni::sys::jint,
-    _cursor_y: jni::sys::jint,
-    _cursor_visible: jni::sys::jboolean,
+    _v_rows: jni::sys::jint,
+    _v_cols: jni::sys::jint,
+    _t_row: jni::sys::jint,
+    _c_x: jni::sys::jint,
+    _c_y: jni::sys::jint,
+    _c_visible: jni::sys::jboolean,
 ) {
+    // 这里的参数个数是 8 个 (除了 _env 和 _class 这两个 JNI 固定开销外)
+    // 对应的 Java 签名就是 (ffiiiiiZ)V
     if let Ok(mut params) = crate::render_thread::get_render_params().lock() {
         params.scale = scale;
         params.scroll_offset = scroll_offset;
