@@ -13,39 +13,47 @@ pub unsafe extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface
     _class: JClass,
     surface: JObject,
 ) {
-    if surface.as_raw().is_null() {
-        android_log(LogPriority::WARN, "CHECKPOINT: nativeSetSurface(null) - Detaching surface");
-        if let Some(mutex) = crate::render_thread::get_vulkan_context().get() {
-            if let Ok(mut guard) = mutex.lock() {
-                let ctx_opt: &mut Option<VulkanContext> = &mut *guard;
-                if let Some(ctx) = ctx_opt.as_mut() {
-                    ctx.abandon_surface();
-                }
-            }
-        }
-        crate::render_thread::get_surface_ready().store(false, Ordering::SeqCst);
-    } else {
-        android_log(LogPriority::DEBUG, "nativeSetSurface: Attaching new surface");
-        let window = ndk_sys::ANativeWindow_fromSurface(env.get_native_interface(), surface.as_raw());
-        if !window.is_null() {
-            let ctx_cell = crate::render_thread::get_vulkan_context();
-            if let Some(mutex) = ctx_cell.get() {
+    #[cfg(target_os = "android")]
+    {
+        if surface.as_raw().is_null() {
+            android_log(LogPriority::WARN, "CHECKPOINT: nativeSetSurface(null) - Detaching surface");
+            if let Some(mutex) = crate::render_thread::get_vulkan_context().get() {
                 if let Ok(mut guard) = mutex.lock() {
                     let ctx_opt: &mut Option<VulkanContext> = &mut *guard;
                     if let Some(ctx) = ctx_opt.as_mut() {
-                        ctx.recreate_surface(window as _);
-                    } else if let Some(new_ctx) = VulkanContext::new(window as _) {
-                        *ctx_opt = Some(new_ctx);
+                        ctx.abandon_surface();
                     }
                 }
-            } else {
-                let _ = ctx_cell.get_or_init(|| {
-                    let ctx = VulkanContext::new(window as _);
-                    std::sync::Mutex::new(ctx)
-                });
             }
-            crate::render_thread::get_surface_ready().store(true, Ordering::SeqCst);
+            crate::render_thread::get_surface_ready().store(false, Ordering::SeqCst);
+        } else {
+            android_log(LogPriority::DEBUG, "nativeSetSurface: Attaching new surface");
+            let window = ndk_sys::ANativeWindow_fromSurface(env.get_native_interface(), surface.as_raw());
+            if !window.is_null() {
+                let ctx_cell = crate::render_thread::get_vulkan_context();
+                if let Some(mutex) = ctx_cell.get() {
+                    if let Ok(mut guard) = mutex.lock() {
+                        let ctx_opt: &mut Option<VulkanContext> = &mut *guard;
+                        if let Some(ctx) = ctx_opt.as_mut() {
+                            ctx.recreate_surface(window as _);
+                        } else if let Some(new_ctx) = VulkanContext::new(window as _) {
+                            *ctx_opt = Some(new_ctx);
+                        }
+                    }
+                } else {
+                    let _ = ctx_cell.get_or_init(|| {
+                        let ctx = VulkanContext::new(window as _);
+                        std::sync::Mutex::new(ctx)
+                    });
+                }
+                crate::render_thread::get_surface_ready().store(true, Ordering::SeqCst);
+            }
         }
+    }
+    
+    #[cfg(not(target_os = "android"))]
+    {
+        // CI 环境下的空实现
     }
 }
 
