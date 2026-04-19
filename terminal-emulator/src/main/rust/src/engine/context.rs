@@ -119,9 +119,14 @@ impl TerminalContext {
             crate::utils::android_log(crate::utils::LogPriority::DEBUG, "IO Thread: Attached and running");
 
             while context.running.load(Ordering::Relaxed) {
-                match std::io::Read::read(&mut pty_file, &mut buffer) {
-                    Ok(0) => { crate::utils::android_log(crate::utils::LogPriority::WARN, "IO Thread: Received EOF from PTY"); break; },
+                let read_res = std::io::Read::read(&mut pty_file, &mut buffer);
+                match read_res {
+                    Ok(0) => {
+                        crate::utils::android_log(crate::utils::LogPriority::WARN, "[IO_THREAD] Received EOF (0 bytes) from PTY. Process likely exited.");
+                        break;
+                    },
                     Ok(n) => {
+                        // 正常读取，不打印高频日志以防刷屏
                         let (events, pending_responses, callback_obj) = {
                             let mut engine = context.lock.write().unwrap();
                             engine.process_bytes(&buffer[..n]);

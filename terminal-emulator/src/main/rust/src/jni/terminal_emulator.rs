@@ -962,8 +962,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
 
             coordinator.bind_pid(session_id, pid);
 
-            crate::utils::android_log(crate::utils::LogPriority::DEBUG, "[TRACE_SESSION] 5.3. Creating TerminalEngine");
+            crate::utils::android_log(crate::utils::LogPriority::DEBUG, "[TRACE_SESSION] 5.3. Creating TerminalEngine... memory allocation start");
             let mut engine = TerminalEngine::new(cols, rows, transcript_rows, cw, ch);
+            crate::utils::android_log(crate::utils::LogPriority::DEBUG, "[TRACE_SESSION] 5.3.1. TerminalEngine created successfully");
             if let Some(ref cb) = callback_ref {
                 engine.state.java_callback_obj = Some(cb.clone());
             }
