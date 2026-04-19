@@ -26,6 +26,7 @@ public class RustConsistencyTest extends TestCase {
 
     static class MockTerminalSessionClient implements TerminalSessionClient {
         @Override public void onTextChanged(TerminalSession session) {}
+        @Override public void onSessionStateChanged(TerminalSession session) {}
         @Override public void onTitleChanged(TerminalSession session) {}
         @Override public void reportTitleChange(String title) {}
         @Override public void onSessionFinished(TerminalSession session) {}

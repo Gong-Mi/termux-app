@@ -136,6 +136,21 @@ public class TermuxTerminalSessionActivityClient extends TermuxTerminalSessionCl
     }
 
     @Override
+    public void onSessionStateChanged(@NonNull TerminalSession session) {
+        if (!mActivity.isVisible()) return;
+
+        if (mActivity.getCurrentSession() == session) {
+            // 当 Session 状态改变（如变为 READY）时，确保 UI 同步
+            mActivity.runOnUiThread(() -> {
+                mActivity.getTerminalView().onScreenUpdated();
+                // 也可以在这里触发列表刷新等
+                mRefreshHandler.removeCallbacks(mRefreshRunnable);
+                mRefreshHandler.post(mRefreshRunnable);
+            });
+        }
+    }
+
+    @Override
     public void onTitleChanged(@NonNull TerminalSession updatedSession) {
         if (!mActivity.isVisible()) return;
 
