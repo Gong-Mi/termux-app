@@ -221,9 +221,13 @@ pub fn create_subprocess_with_data(
                     crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY_EXEC] Attempting to exec: {} in {}", cmd_str, cwd_str));
                     libc::execvp(c_cmd.as_ptr(), ptr_args.as_ptr());
                     
-                    // 如果执行到这里，说明 execvp 失败了
+                    // --- 救命逻辑：首选 Shell 失败，回退到系统 Shell ---
                     let err = *libc::__errno();
-                    crate::utils::android_log(crate::utils::LogPriority::ERROR, &format!("[PTY_EXEC] execvp FAILED! errno: {}, path: {}", err, cmd_str));
+                    crate::utils::android_log(crate::utils::LogPriority::ERROR, &format!("[PTY_EXEC] execvp FAILED! errno: {}. FORCING FALLBACK TO /system/bin/sh", err));
+                    
+                    let fallback_sh = CString::new("/system/bin/sh").unwrap();
+                    let fallback_args = [fallback_sh.as_ptr(), std::ptr::null()];
+                    libc::execvp(fallback_sh.as_ptr(), fallback_args.as_ptr());
                 }
                 libc::_exit(1);
             }
