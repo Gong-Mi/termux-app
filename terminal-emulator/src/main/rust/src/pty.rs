@@ -217,8 +217,13 @@ pub fn create_subprocess_with_data(
                 
                 let ptr_args: Vec<_> = c_args.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
                 if !cmd_str.is_empty() {
-                    let c_cmd = CString::new(cmd_str).unwrap();
+                    let c_cmd = CString::new(cmd_str.clone()).unwrap();
+                    crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY_EXEC] Attempting to exec: {} in {}", cmd_str, cwd_str));
                     libc::execvp(c_cmd.as_ptr(), ptr_args.as_ptr());
+                    
+                    // 如果执行到这里，说明 execvp 失败了
+                    let err = *libc::__errno();
+                    crate::utils::android_log(crate::utils::LogPriority::ERROR, &format!("[PTY_EXEC] execvp FAILED! errno: {}, path: {}", err, cmd_str));
                 }
                 libc::_exit(1);
             }
