@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use skia_safe::{Canvas, Paint, Color, Font, Rect, PaintStyle, FontMgr, FontStyle, TextBlob, TextBlobBuilder};
 use std::sync::Arc;
 use std::collections::HashMap;

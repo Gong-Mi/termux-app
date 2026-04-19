@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::vte_parser::Params;
 
 /// Sixel 颜色寄存器格式

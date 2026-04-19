@@ -2,7 +2,7 @@
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::os::fd::FromRawFd;
-use jni::objects::JValue;
+
 
 use crate::vte_parser::Parser;
 use crate::engine::state::ScreenState;
@@ -146,7 +146,7 @@ impl TerminalContext {
                             }
                         }
 
-                        if let Some(obj) = (callback_obj as Option<jni::objects::GlobalRef>) {
+                        if let Some(obj) = callback_obj as Option<jni::objects::GlobalRef> {
                             if !obj.as_obj().is_null() {
                                 let _ = env.with_local_frame(16, |env: &mut jni::JNIEnv| -> Result<(), jni::errors::Error> {
                                     for event in events {
