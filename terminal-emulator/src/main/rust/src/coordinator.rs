@@ -48,17 +48,22 @@ pub struct SessionCoordinator {
     session_counter: AtomicUsize,
     /// Session 状态表
     session_states: Mutex<HashMap<usize, SessionState>>,
+    /// PID 到 Session ID 的映射
+    pid_map: Mutex<HashMap<i32, usize>>,
 }
 
 impl SessionCoordinator {
     /// 获取全局协调器实例
     pub fn get() -> &'static Self {
-        SESSION_COORDINATOR.get_or_init(|| SessionCoordinator {
+        let instance = SESSION_COORDINATOR.get_or_init(|| SessionCoordinator {
             pkg_lock: AtomicBool::new(false),
             pkg_lock_owner: AtomicUsize::new(0),
             session_counter: AtomicUsize::new(0),
             session_states: Mutex::new(HashMap::new()),
-        })
+            pid_map: Mutex::new(HashMap::new()),
+        });
+        instance.ensure_monitor_started();
+        instance
     }
     
     /// 注册新 Session
@@ -191,6 +196,60 @@ impl SessionCoordinator {
             .map(|states| states.values().any(|&s| s == SessionState::WaitingLock))
             .unwrap_or(false)
     }
+
+    /// 启动全局进程监控线程（单例）
+    pub fn ensure_monitor_started(&'static self) {
+        static START: std::sync::Once = std::sync::Once::new();
+        START.call_once(|| {
+            std::thread::spawn(move || {
+                android_log(LogPriority::INFO, "CHECKPOINT: Global Process Monitor STARTED");
+                loop {
+                    let mut status: i32 = 0;
+                    // 使用 WNOHANG | WUNTRACED 以防阻塞
+                    // 或者干脆阻塞式等待，直到有子进程变动
+                    let pid = unsafe { libc::waitpid(-1, &mut status, 0) };
+                    
+                    if pid > 0 {
+                        let mut exit_code = 0;
+                        let mut signaled = false;
+                        
+                        if unsafe { libc::WIFEXITED(status) } {
+                            exit_code = unsafe { libc::WEXITSTATUS(status) };
+                        } else if unsafe { libc::WIFSIGNALED(status) } {
+                            exit_code = -unsafe { libc::WTERMSIG(status) };
+                            signaled = true;
+                        }
+
+                        // 查找这个 PID 属于哪个 Session
+                        let mut pid_map = self.pid_map.lock().unwrap();
+                        if let Some(&session_id) = pid_map.get(&pid) {
+                            android_log(
+                                LogPriority::WARN,
+                                &format!("[Monitor] Child {} (Session {}) exited with code {}{}", 
+                                    pid, session_id, exit_code, if signaled { " (signaled)" } else { "" })
+                            );
+                            self.update_session_state(session_id, SessionState::Finished);
+                            pid_map.remove(&pid);
+                        } else {
+                            android_log(LogPriority::DEBUG, &format!("[Monitor] Unknown child {} exited", pid));
+                        }
+                    } else {
+                        // 如果没有子进程了，稍微睡一下防止死循环空转
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                    }
+                }
+            });
+        });
+    }
+
+    /// 关联 PID 和 Session
+    pub fn bind_pid(&self, session_id: usize, pid: i32) {
+        let mut pid_map = self.pid_map.lock().unwrap();
+        pid_map.insert(pid, session_id);
+        self.update_session_state(session_id, SessionState::Running);
+        android_log(LogPriority::DEBUG, &format!("[SessionCoordinator] Session {} linked to PID {}", session_id, pid));
+    }
+
 }
 
 // ============================================================================
@@ -310,4 +369,16 @@ pub extern "system" fn Java_com_termux_terminal_JNI_getAllSessionStates(
         Ok(j_str) => j_str.into_raw(),
         Err(_) => std::ptr::null_mut(),
     }
+}
+
+/// 关联 PID 和 Session ID
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_JNI_linkPidToSession(
+    _env: JNIEnv,
+    _class: JClass,
+    session_id: jint,
+    pid: jint,
+) {
+    let coordinator = SessionCoordinator::get();
+    coordinator.bind_pid(session_id as usize, pid);
 }
