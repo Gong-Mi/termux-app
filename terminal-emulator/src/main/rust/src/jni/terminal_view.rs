@@ -9,7 +9,7 @@ use crate::vulkan_context::VulkanContext;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     surface: JObject,
 ) {
@@ -78,16 +78,22 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeUpdateRenderParam
     _class: JClass,
     scale: jfloat,
     scroll_offset: jfloat,
-    _top_row: jint,
-    _sel_x1: jint,
-    _sel_y1: jint,
-    _sel_x2: jint,
-    _sel_y2: jint,
-    _sel_active: jboolean,
+    top_row: jint,
+    sel_x1: jint,
+    sel_y1: jint,
+    sel_x2: jint,
+    sel_y2: jint,
+    sel_active: jboolean,
 ) {
     if let Ok(mut params) = crate::render_thread::get_render_params().lock() {
         params.scale = scale;
         params.scroll_offset = scroll_offset;
+        params.top_row = top_row;
+        params.sel_x1 = sel_x1;
+        params.sel_y1 = sel_y1;
+        params.sel_x2 = sel_x2;
+        params.sel_y2 = sel_y2;
+        params.sel_active = sel_active != 0;
     }
     crate::render_thread::get_screen_dirty().store(true, Ordering::SeqCst);
 }

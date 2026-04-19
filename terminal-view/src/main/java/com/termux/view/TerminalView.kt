@@ -783,7 +783,7 @@ class TerminalView @JvmOverloads constructor(
         get() = mEmulator?.getSelectedText(0, mTopRow, mEmulator!!.getCols(), mTopRow + mEmulator!!.getRows()) ?: ""
 
     fun getCursorX(x: Float): Int = (x / getFontWidth()).toInt()
-    fun getCursorY(y: Float): Int = ((y - 40f) / getFontLineSpacing()).toInt() + mTopRow
+    fun getCursorY(y: Float): Int = (y / getFontLineSpacing()).toInt() + mTopRow
 
     fun getPointX(cx: Int): Int {
         var c = cx

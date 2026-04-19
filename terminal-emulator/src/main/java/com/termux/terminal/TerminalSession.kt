@@ -300,18 +300,8 @@ class TerminalSession(
                 return
             }
 
-            var totalBytesRead = 0
-            var bytesRead = 0
-            while (mEmulator?.isAlive() == true &&
-                   mProcessToTerminalIOQueue.read(mReceiveBuffer, false).also { bytesRead = it } > 0) {
-                mEmulator!!.append(mReceiveBuffer, bytesRead)
-                totalBytesRead += bytesRead
-                if (totalBytesRead > 32 * 1024) {
-                    if (!hasMessages(MSG_NEW_INPUT)) sendEmptyMessage(MSG_NEW_INPUT)
-                    break
-                }
-            }
-            if (totalBytesRead > 0) notifyScreenUpdate()
+            // --- 这里的旧代码（读取 mProcessToTerminalIOQueue）已被移除 ---
+            // 所有 IO 逻辑现在完全在 Rust 后台线程中处理
 
             if (msg.what == MSG_PROCESS_EXITED) {
                 val exitCode = msg.obj as? Int ?: 0
