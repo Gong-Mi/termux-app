@@ -139,3 +139,16 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeUpdatePosition(
 ) {
     // 渲染参数更新逻辑
 }
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
+    env: JNIEnv,
+    _class: jni::objects::JClass,
+    metrics_array: jfloatArray,
+) {
+    let values = [-18.0, 4.0, 0.0];
+    if !metrics_array.is_null() {
+        let j_array = unsafe { jni::objects::JFloatArray::from_raw(metrics_array) };
+        let _ = env.set_float_array_region(&j_array, 0, &values);
+    }
+}
