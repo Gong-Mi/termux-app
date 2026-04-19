@@ -174,3 +174,34 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeUpdateRenderParam
     // 标记屏幕脏，触发重绘
     crate::render_thread::get_screen_dirty().store(true, std::sync::atomic::Ordering::SeqCst);
 }
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetEnginePointer(
+    _env: JNIEnv,
+    _class: jni::objects::JClass,
+    ptr: jlong,
+) {
+    android_log(LogPriority::INFO, &format!("nativeSetEnginePointer: engine_ptr={}", ptr));
+    if let Ok(mut engine_ptr) = crate::render_thread::get_engine_pointer().lock() {
+        *engine_ptr = ptr;
+    }
+    crate::render_thread::get_engine_ready().store(ptr != 0, std::sync::atomic::Ordering::SeqCst);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_view_TerminalView_nativeOnPause(
+    _env: JNIEnv,
+    _class: jni::objects::JClass,
+) {
+    android_log(LogPriority::INFO, "nativeOnPause: Pausing render thread");
+    crate::render_thread::get_render_thread_running().store(false, std::sync::atomic::Ordering::SeqCst);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_view_TerminalView_nativeOnResume(
+    _env: JNIEnv,
+    _class: jni::objects::JClass,
+) {
+    android_log(LogPriority::INFO, "nativeOnResume: Resuming render thread");
+    crate::render_thread::get_render_thread_running().store(true, std::sync::atomic::Ordering::SeqCst);
+}
