@@ -127,7 +127,7 @@ impl SessionCoordinator {
 
     pub fn set_engine_data(&self, session_id: usize, data: SessionEngineData) {
         let mut map = self.engine_data_map.lock().unwrap();
-        map.insert(session_id, data);
+        map.insert(session_id, data); android_log(LogPriority::INFO, &format!("[Coordinator] DATA_STORE: session_id={} ptr={}", session_id, data.ptr));
     }
 
     pub fn take_engine_data(&self, session_id: usize) -> Option<SessionEngineData> {
