@@ -2,6 +2,7 @@ package com.termux.terminal
 
 import android.annotation.SuppressLint
 import android.os.Handler
+import android.os.Looper
 import android.os.Message
 import android.system.ErrnoException
 import android.system.Os

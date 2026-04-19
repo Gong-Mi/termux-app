@@ -3,8 +3,6 @@ use jni::objects::{JClass, JString, JObject, JValue};
 use jni::sys::{jint, jlong, jbyteArray, jboolean, jintArray, jstring};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::os::fd::FromRawFd;
-use std::io::Read;
 
 use crate::utils::{android_log, LogPriority};
 use crate::engine::{TerminalEngine, TerminalContext, TerminalEvent};
@@ -12,7 +10,6 @@ use crate::terminal::colors::TerminalColors;
 use crate::terminal::modes::*;
 use crate::coordinator::SessionCoordinator;
 use crate::render_thread;
-use crate::JavaVM;
 
 /// 将事件刷新到 Java 侧
 pub fn flush_events_to_java(env: &mut JNIEnv, callback_obj: &Option<jni::objects::GlobalRef>, events: Vec<TerminalEvent>) {

@@ -1,6 +1,5 @@
 /// 屏幕状态管理
 use std::cmp::{max, min};
-use jni::objects::JValue;
 use jni::JNIEnv;
 
 use crate::terminal::style::*;
