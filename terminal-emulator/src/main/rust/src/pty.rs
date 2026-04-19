@@ -144,7 +144,7 @@ pub fn create_subprocess_with_data(
 
     // 2. 打开 PTM
     use std::os::fd::IntoRawFd;
-    let ptm = match open("/dev/ptmx", OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::empty()) {
+    let ptm = match open("/dev/ptmx", OFlag::O_RDWR, Mode::empty()) {
         Ok(fd) => fd.into_raw_fd(),
         Err(_) => return Err(()),
     };

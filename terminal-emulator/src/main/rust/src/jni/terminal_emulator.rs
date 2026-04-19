@@ -962,9 +962,8 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
 
             coordinator.bind_pid(session_id, pid);
 
-            crate::utils::android_log(crate::utils::LogPriority::DEBUG, "[TRACE_SESSION] 5.3. Creating TerminalEngine... memory allocation start");
+            crate::utils::android_log(crate::utils::LogPriority::DEBUG, "[TRACE_SESSION] 5.3. Creating TerminalEngine");
             let mut engine = TerminalEngine::new(cols, rows, transcript_rows, cw, ch);
-            crate::utils::android_log(crate::utils::LogPriority::DEBUG, "[TRACE_SESSION] 5.3.1. TerminalEngine created successfully");
             if let Some(ref cb) = callback_ref {
                 engine.state.java_callback_obj = Some(cb.clone());
             }
@@ -973,7 +972,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
             let context_ptr = Arc::into_raw(context.clone());
 
             crate::utils::android_log(crate::utils::LogPriority::DEBUG, "[TRACE_SESSION] 5.4. Starting IO thread");
-            // 使用 dup 确保 IO 线程持有独立的 FD 引用，防止被过早关闭\n            let dup_fd = unsafe { libc::dup(pty_fd) };\n            TerminalContext::start_io_thread(context.clone(), dup_fd);
+            // 使用 dup 确保 IO 线程持有独立的 FD 引用
+            let dup_fd = unsafe { libc::dup(pty_fd) };
+            TerminalContext::start_io_thread(Arc::clone(&context), dup_fd);
 
             coordinator.set_engine_data(session_id, crate::coordinator::SessionEngineData {
                 ptr: context_ptr as jlong,

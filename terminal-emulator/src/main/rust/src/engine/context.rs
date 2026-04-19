@@ -114,8 +114,14 @@ impl TerminalContext {
                 let read_res = std::io::Read::read(&mut pty_file, &mut buffer);
                 match read_res {
                     Ok(0) => {
-                        crate::utils::android_log(crate::utils::LogPriority::WARN, "[IO_THREAD] Received EOF from PTY.");
-                        break;
+                        // 抗抖动逻辑：可能是 execvp 切换瞬间，等待 100ms
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                        let retry_res = std::io::Read::read(&mut pty_file, &mut buffer);
+                        if let Ok(0) = retry_res {
+                            crate::utils::android_log(crate::utils::LogPriority::WARN, "[IO_THREAD] Permanent EOF from PTY. Exiting.");
+                            break;
+                        }
+                        continue;
                     },
                     Ok(n) => {
                         let (events, pending_responses, callback_obj) = {
