@@ -155,33 +155,30 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeUpdateRenderParams(
-    _env: JNIEnv,
+    _env: jni::JNIEnv,
     _class: jni::objects::JClass,
-    scale: jfloat,
-    scroll_offset: jfloat,
-    visible_rows: jint,
-    visible_cols: jint,
-    top_row: jint,
-    cursor_x: jint,
-    cursor_y: jint,
-    cursor_visible: jboolean,
+    scale: jni::sys::jfloat,
+    scroll_offset: jni::sys::jfloat,
+    _visible_rows: jni::sys::jint,
+    _visible_cols: jni::sys::jint,
+    _top_row: jni::sys::jint,
+    _cursor_x: jni::sys::jint,
+    _cursor_y: jni::sys::jint,
+    _cursor_visible: jni::sys::jboolean,
 ) {
     if let Ok(mut params) = crate::render_thread::get_render_params().lock() {
         params.scale = scale;
         params.scroll_offset = scroll_offset;
-        // 同步其他物理参数到渲染器
     }
-    // 标记屏幕脏，触发重绘
     crate::render_thread::get_screen_dirty().store(true, std::sync::atomic::Ordering::SeqCst);
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetEnginePointer(
-    _env: JNIEnv,
+    _env: jni::JNIEnv,
     _class: jni::objects::JClass,
-    ptr: jlong,
+    ptr: jni::sys::jlong,
 ) {
-    android_log(LogPriority::INFO, &format!("nativeSetEnginePointer: engine_ptr={}", ptr));
     if let Ok(mut engine_ptr) = crate::render_thread::get_engine_pointer().lock() {
         *engine_ptr = ptr;
     }
@@ -190,18 +187,16 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetEnginePointer(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeOnPause(
-    _env: JNIEnv,
+    _env: jni::JNIEnv,
     _class: jni::objects::JClass,
 ) {
-    android_log(LogPriority::INFO, "nativeOnPause: Pausing render thread");
     crate::render_thread::get_render_thread_running().store(false, std::sync::atomic::Ordering::SeqCst);
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeOnResume(
-    _env: JNIEnv,
+    _env: jni::JNIEnv,
     _class: jni::objects::JClass,
 ) {
-    android_log(LogPriority::INFO, "nativeOnResume: Resuming render thread");
     crate::render_thread::get_render_thread_running().store(true, std::sync::atomic::Ordering::SeqCst);
 }
