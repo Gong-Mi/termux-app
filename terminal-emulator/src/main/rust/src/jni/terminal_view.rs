@@ -5,7 +5,6 @@ use jni::sys::{jint, jlong, jfloat, jfloatArray};
 
 use crate::utils::{android_log, LogPriority};
 use crate::vulkan_context::VulkanContext;
-use crate::render_thread;
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurfaceScale(
@@ -87,7 +86,10 @@ pub unsafe extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface
         crate::render_thread::get_surface_ready().store(false, Ordering::SeqCst);
     } else {
         android_log(LogPriority::DEBUG, "nativeSetSurface: Non-null surface received");
+        #[cfg(target_os = "android")]
         let window = ndk_sys::ANativeWindow_fromSurface(env.get_native_interface(), surface.as_raw());
+        #[cfg(not(target_os = "android"))]
+        let window: *mut std::ffi::c_void = std::ptr::null_mut();
         if !window.is_null() {
             let ctx_cell = crate::render_thread::get_vulkan_context();
             if let Some(mutex) = ctx_cell.get() {
