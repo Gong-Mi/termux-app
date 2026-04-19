@@ -184,7 +184,7 @@ pub fn create_subprocess_with_data(
                 let _ = setsid();
                 
                 // 降低子进程优先级 (Nice 19)，减少对系统负载的冲击，从而规避 Phantom Killer
-                unsafe { libc::setpriority(libc::PRIO_PROCESS, 0, 19); }
+                libc::setpriority(libc::PRIO_PROCESS, 0, 19);
 
                 let c_devname = CString::new(devname).unwrap();
                 let pts = libc::open(c_devname.as_ptr(), libc::O_RDWR);

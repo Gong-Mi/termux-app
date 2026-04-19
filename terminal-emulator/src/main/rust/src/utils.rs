@@ -1,3 +1,4 @@
+#[cfg(target_os = "android")]
 use std::ffi::CString;
 
 
