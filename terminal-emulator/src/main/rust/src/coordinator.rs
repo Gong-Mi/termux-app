@@ -99,10 +99,10 @@ impl SessionCoordinator {
                     let pid = unsafe { libc::waitpid(-1, &mut status, 0) };
                     if pid > 0 {
                         let mut exit_code = 0;
-                        if unsafe { libc::WIFEXITED(status) } {
-                            exit_code = unsafe { libc::WEXITSTATUS(status) };
-                        } else if unsafe { libc::WIFSIGNALED(status) } {
-                            exit_code = -unsafe { libc::WTERMSIG(status) };
+                        if libc::WIFEXITED(status) {
+                            exit_code = libc::WEXITSTATUS(status);
+                        } else if libc::WIFSIGNALED(status) {
+                            exit_code = -libc::WTERMSIG(status);
                         }
 
                         let mut pid_map = self.pid_map.lock().unwrap();

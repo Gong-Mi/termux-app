@@ -6,6 +6,7 @@ use std::ffi::CStr;
 use crate::utils::{android_log, LogPriority};
 
 pub struct VulkanContext {
+    pub entry: Entry,
     // 依赖对象最先声明，以便最先销毁
     pub context: Option<DirectContext>,
     
@@ -280,6 +281,7 @@ impl VulkanContext {
         android_log(LogPriority::INFO, "VulkanContext::new: Skia context created and optimized");
 
         let mut ctx = Self {
+            entry,
             context: Some(context),
             pipeline_cache,
             image_available_semaphore,
@@ -440,7 +442,8 @@ impl VulkanContext {
     }
 
     /// 为现有的上下文重新关联新 Surface
-    pub unsafe fn recreate_surface(&mut self, entry: &Entry, window: *mut std::ffi::c_void) -> bool {
+    pub unsafe fn recreate_surface(&mut self, window: *mut std::ffi::c_void) -> bool {
+        let entry = &self.entry;
         android_log(LogPriority::INFO, "VulkanContext: Reattaching to new window");
         
         let android_surface_loader = ash::khr::android_surface::Instance::new(entry, &self.instance);

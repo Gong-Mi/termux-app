@@ -1,5 +1,6 @@
 use std::ffi::CString;
 
+
 pub enum LogPriority {
     VERBOSE = 2,
     DEBUG = 3,

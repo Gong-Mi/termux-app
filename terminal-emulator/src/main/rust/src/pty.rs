@@ -206,7 +206,7 @@ pub fn create_subprocess_with_data(
                 }
 
                 if !cwd_str.is_empty() {
-                    let c_cwd = CString::new(cwd_str).unwrap();
+                    let c_cwd = CString::new(cwd_str.clone()).unwrap();
                     let _ = chdir(c_cwd.as_c_str());
                 }
 
@@ -222,7 +222,7 @@ pub fn create_subprocess_with_data(
                     libc::execvp(c_cmd.as_ptr(), ptr_args.as_ptr());
                     
                     // --- 救命逻辑：首选 Shell 失败，回退到系统 Shell ---
-                    let err = *libc::__errno();
+                    let err = nix::errno::Errno::last_raw();
                     crate::utils::android_log(crate::utils::LogPriority::ERROR, &format!("[PTY_EXEC] execvp FAILED! errno: {}. FORCING FALLBACK TO /system/bin/sh", err));
                     
                     let fallback_sh = CString::new("/system/bin/sh").unwrap();
