@@ -86,19 +86,11 @@ impl TerminalContext {
         }
     }
 
-    pub fn start_io_thread(self: std::sync::Arc<Self>, pty_fd: i32) {
-        self.pty_fd.store(pty_fd, Ordering::SeqCst);
-        let context = self.clone();
-        let dup_fd = unsafe { libc::dup(pty_fd) };
-        if dup_fd < 0 {
-            crate::utils::android_log(crate::utils::LogPriority::ERROR, "IO Thread: dup failed");
-            return;
-        }
+    pub fn start_io_thread(context: std::sync::Arc<Self>, dup_fd: i32) {
         std::thread::spawn(move || {
             crate::utils::android_log(crate::utils::LogPriority::INFO, "CHECKPOINT: IO Thread STARTing [ARCH_REWRITE]");
             let mut buffer = [0u8; 8192];
             let mut pty_file = unsafe { std::fs::File::from_raw_fd(dup_fd) };
-            // 这里的 pty_file 会在循环结束时自动释放 FD，这是正确的
 
             let vm = match crate::JAVA_VM.get() {
                 Some(v) => v,
@@ -122,85 +114,54 @@ impl TerminalContext {
                 let read_res = std::io::Read::read(&mut pty_file, &mut buffer);
                 match read_res {
                     Ok(0) => {
-                        crate::utils::android_log(crate::utils::LogPriority::WARN, "[IO_THREAD] Received EOF (0 bytes) from PTY. Process likely exited.");
+                        crate::utils::android_log(crate::utils::LogPriority::WARN, "[IO_THREAD] Received EOF from PTY.");
                         break;
                     },
                     Ok(n) => {
-                        // 正常读取，不打印高频日志以防刷屏
                         let (events, pending_responses, callback_obj) = {
                             let mut engine = context.lock.write().unwrap();
                             engine.process_bytes(&buffer[..n]);
                             let resps = std::mem::replace(&mut engine.state.pending_responses, Vec::new());
-                            (engine.take_events(), resps, engine.state.java_callback_obj.clone())
+                            let cb = engine.state.java_callback_obj.clone();
+                            (engine.take_events(), resps, cb)
                         };
 
                         let current_pty_fd = context.pty_fd.load(Ordering::Relaxed);
-                        
                         for resp in pending_responses {
+                            let r: String = resp;
                             if current_pty_fd != -1 {
-                                unsafe {
-                                    libc::write(current_pty_fd, resp.as_ptr() as *const libc::c_void, resp.len());
-                                }
+                                unsafe { libc::write(current_pty_fd, r.as_ptr() as *const libc::c_void, r.len()); }
                             }
                         }
-
-                        let mut has_ui_events = false;
 
                         for event in &events {
-                            match event {
-                                TerminalEvent::ScreenUpdated => {
-                                    crate::render_thread::request_render();
-                                }
-                                _ => has_ui_events = true,
+                            if let crate::engine::events::TerminalEvent::ScreenUpdated = event {
+                                crate::render_thread::request_render();
                             }
                         }
 
-                        if has_ui_events {
-                            if let Some(obj) = &callback_obj {
-                                if context.running.load(Ordering::Relaxed) && !obj.as_obj().is_null() {
-                                    let _ = env.with_local_frame(16, |env: &mut jni::JNIEnv| -> Result<(), jni::errors::Error> {
-                                        for event in events {
-                                            match event {
-                                                TerminalEvent::Bell => { let _ = env.call_method(obj.as_obj(), "onBell", "()V", &[]); }
-                                                TerminalEvent::ColorsChanged => { let _ = env.call_method(obj.as_obj(), "onColorsChanged", "()V", &[]); }
-                                                TerminalEvent::CopytoClipboard(text) => {
-                                                    if let Ok(j_text) = env.new_string(&text) {
-                                                        let val = JValue::from(&j_text);
-                                                        let _ = env.call_method(obj.as_obj(), "onCopyTextToClipboard", "(Ljava/lang/String;)V", &[val]);
-                                                    }
+                        if let Some(obj) = (callback_obj as Option<jni::objects::GlobalRef>) {
+                            if !obj.as_obj().is_null() {
+                                let _ = env.with_local_frame(16, |env: &mut jni::JNIEnv| -> Result<(), jni::errors::Error> {
+                                    for event in events {
+                                        match event {
+                                            crate::engine::events::TerminalEvent::Bell => { let _ = env.call_method(obj.as_obj(), "onBell", "()V", &[]); }
+                                            crate::engine::events::TerminalEvent::ColorsChanged => { let _ = env.call_method(obj.as_obj(), "onColorsChanged", "()V", &[]); }
+                                            crate::engine::events::TerminalEvent::CopytoClipboard(text) => {
+                                                if let Ok(j_text) = env.new_string(&text) {
+                                                    let val = jni::objects::JValue::from(&j_text);
+                                                    let _ = env.call_method(obj.as_obj(), "onCopyTextToClipboard", "(Ljava/lang/String;)V", &[val]);
                                                 }
-                                                TerminalEvent::TitleChanged(title) => {
-                                                    if let Ok(j_title) = env.new_string(&title) {
-                                                        let val = JValue::from(&j_title);
-                                                        let _ = env.call_method(obj.as_obj(), "reportTitleChange", "(Ljava/lang/String;)V", &[val]);
-                                                    }
-                                                }
-                                                TerminalEvent::SixelImage { rgba_data, width, height, start_x, start_y } => {
-                                                    if let Ok(j_data) = env.new_byte_array(rgba_data.len() as i32) {
-                                                        let bytes: Vec<i8> = rgba_data.iter().map(|&b| b as i8).collect();
-                                                        let _ = env.set_byte_array_region(&j_data, 0, &bytes);
-                                                        let args = [
-                                                            JValue::from(&j_data),
-                                                            JValue::Int(width),
-                                                            JValue::Int(height),
-                                                            JValue::Int(start_x),
-                                                            JValue::Int(start_y)
-                                                        ];
-                                                        let _ = env.call_method(obj.as_obj(), "onSixelImage", "([BIIII)V", &args);
-                                                    }
-                                                }
-                                                _ => {}
                                             }
-                                            if env.exception_check().unwrap_or(false) {
-                                                let _ = env.exception_clear();
-                                            }
+                                            _ => {}
                                         }
-                                        Ok(())
-                                    });
-                                }
+                                        if env.exception_check().unwrap_or(false) { let _ = env.exception_clear(); }
+                                    }
+                                    Ok(())
+                                });
                             }
                         }
-                    }
+                    },
                     Err(_) => break,
                 }
             }

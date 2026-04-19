@@ -157,7 +157,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_startIoThread(
 ) {
     if ptr == 0 { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
-    context.clone().start_io_thread(pty_fd);
+    TerminalContext::start_io_thread(Arc::clone(&context), pty_fd);
     let _ = Arc::into_raw(context);
 }
 
@@ -973,7 +973,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
             let context_ptr = Arc::into_raw(context.clone());
 
             crate::utils::android_log(crate::utils::LogPriority::DEBUG, "[TRACE_SESSION] 5.4. Starting IO thread");
-            context.start_io_thread(pty_fd);
+            // 使用 dup 确保 IO 线程持有独立的 FD 引用，防止被过早关闭\n            let dup_fd = unsafe { libc::dup(pty_fd) };\n            TerminalContext::start_io_thread(context.clone(), dup_fd);
 
             coordinator.set_engine_data(session_id, crate::coordinator::SessionEngineData {
                 ptr: context_ptr as jlong,
