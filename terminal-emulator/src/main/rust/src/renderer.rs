@@ -950,10 +950,12 @@ impl TerminalRenderer {
             return;
         }
 
-        // 全块
+        // 全块: 即使 fg == bg 也要画，因为可能需要覆盖背景色
         if ch as u32 == 0x2588 {
-            bg_paint.set_color(Color::new(fg_color));
-            canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, cell_h), bg_paint);
+            if fg_color != bg_color {
+                bg_paint.set_color(Color::new(fg_color));
+                canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, cell_h), bg_paint);
+            }
             return;
         }
 
@@ -1016,12 +1018,70 @@ impl TerminalRenderer {
         // 阴影块
         if matches!(ch as u32, 0x2591..=0x2593) {
             let d = match ch as u32 { 0x2591 => 0.25, 0x2592 => 0.50, _ => 0.75 };
-            bg_paint.set_color(Color::new(bg_color));
-            canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, cell_h), bg_paint);
+            // 背景已经在 draw_run_optimized 中画过了，不再重复绘制
             Self::draw_shade_pattern_blob(canvas, x, y_top, cell_w, cell_h, fg_color, d, bg_paint);
             return;
         }
 
+        // 盒绘图 - 圆角 (0x256D-0x2570) 几何对齐
+        if matches!(ch as u32, 0x256D..=0x2570) {
+            bg_paint.set_color(Color::new(fg_color));
+            bg_paint.set_stroke_width(1.0);
+            let (cx, cy) = (x + cell_w / 2.0, y_top + cell_h / 2.0);
+            
+            match ch as u32 {
+                0x256D => { // ╭
+                    canvas.draw_line((cx, y_top + cell_h), (cx, cy), bg_paint);
+                    canvas.draw_line((cx, cy), (x + cell_w, cy), bg_paint);
+                }
+                0x256E => { // ╮
+                    canvas.draw_line((cx, y_top + cell_h), (cx, cy), bg_paint);
+                    canvas.draw_line((cx, cy), (x, cy), bg_paint);
+                }
+                0x256F => { // ╯
+                    canvas.draw_line((cx, y_top), (cx, cy), bg_paint);
+                    canvas.draw_line((cx, cy), (x, cy), bg_paint);
+                }
+                0x2570 => { // ╰
+                    canvas.draw_line((cx, y_top), (cx, cy), bg_paint);
+                    canvas.draw_line((cx, cy), (x + cell_w, cy), bg_paint);
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        // 盒绘图 - 水平线
+        // 盒绘图 - 水平线
+        // 盒绘图 - 圆角 (0x256D-0x2570) 几何对齐
+        if matches!(ch as u32, 0x256D..=0x2570) {
+            bg_paint.set_color(Color::new(fg_color));
+            bg_paint.set_stroke_width(1.0);
+            let (cx, cy) = (x + cell_w / 2.0, y_top + cell_h / 2.0);
+            
+            match ch as u32 {
+                0x256D => { // ╭
+                    canvas.draw_line((cx, y_top + cell_h), (cx, cy), bg_paint);
+                    canvas.draw_line((cx, cy), (x + cell_w, cy), bg_paint);
+                }
+                0x256E => { // ╮
+                    canvas.draw_line((cx, y_top + cell_h), (cx, cy), bg_paint);
+                    canvas.draw_line((cx, cy), (x, cy), bg_paint);
+                }
+                0x256F => { // ╯
+                    canvas.draw_line((cx, y_top), (cx, cy), bg_paint);
+                    canvas.draw_line((cx, cy), (x, cy), bg_paint);
+                }
+                0x2570 => { // ╰
+                    canvas.draw_line((cx, y_top), (cx, cy), bg_paint);
+                    canvas.draw_line((cx, cy), (x + cell_w, cy), bg_paint);
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        // 盒绘图 - 水平线
         // 盒绘图 - 水平线
         if ch as u32 == 0x2500 {
             bg_paint.set_color(Color::new(fg_color));

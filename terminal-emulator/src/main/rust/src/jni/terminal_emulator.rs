@@ -1049,3 +1049,4 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
         )
     }
 }
+

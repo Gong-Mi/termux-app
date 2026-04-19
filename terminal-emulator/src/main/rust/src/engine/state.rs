@@ -41,6 +41,7 @@ pub struct ScreenState {
     pub use_line_drawing_uses_g0: bool,
     pub scroll_counter: i32,
     pub java_callback_obj: Option<jni::objects::GlobalRef>,
+    pub pending_responses: Vec<String>,
 
     // 辅助状态
     pub last_printed_char: Option<char>,
@@ -109,9 +110,10 @@ impl ScreenState {
             title_stack: Vec::new(),
             use_line_drawing_g0: false,
             use_line_drawing_g1: false,
-            use_line_drawing_uses_g0: true,
+            use_line_drawing_uses_g0: false,
             scroll_counter: 0,
             java_callback_obj: None,
+            pending_responses: Vec::new(),
             last_printed_char: None,
             fore_color: COLOR_INDEX_FOREGROUND as u64,
             back_color: COLOR_INDEX_BACKGROUND as u64,
@@ -208,75 +210,20 @@ impl ScreenState {
         }
     }
 
-    pub fn report_title_change(&self, title: &str) {
-        if let Some(obj) = &self.java_callback_obj {
-            if let Some(vm) = crate::JAVA_VM.get() {
-                if let Ok(env) = vm.get_env() {
-                    let mut env: jni::JNIEnv = env;
-                    if let Ok(java_title) = env.new_string(title) {
-                        let _ = env.call_method(obj.as_obj(), "reportTitleChange", "(Ljava/lang/String;)V", &[JValue::from(&java_title)]);
-                    }
-                }
-            }
-        }
+    pub fn report_title_change(&self, _title: &str) {
+        // JNI is now handled by event loop
     }
 
-    pub fn report_sixel_image(&self, callback_obj: &Option<jni::objects::GlobalRef>) {
-        if let Some(obj) = callback_obj {
-            if let Some(vm) = crate::JAVA_VM.get() {
-                if let Ok(env) = vm.get_env() {
-                    let mut env: jni::JNIEnv = env;
-                    let decoder = &self.sixel_decoder;
-                    let rgba_data = decoder.get_image_data();
-                    let width = decoder.width.max(1) as i32;
-                    let height = decoder.height.max(1) as i32;
-                    let start_x = decoder.start_x;
-                    let start_y = decoder.start_y;
-
-                    if let Ok(byte_array) = env.new_byte_array(rgba_data.len() as i32) {
-                        let bytes: Vec<i8> = rgba_data.iter().map(|&b| b as i8).collect();
-                        let _ = env.set_byte_array_region(&byte_array, 0, &bytes);
-
-                        let _ = env.call_method(
-                            obj.as_obj(),
-                            "onSixelImage",
-                            "([BIIII)V",
-                            &[
-                                JValue::from(&byte_array),
-                                JValue::Int(width),
-                                JValue::Int(height),
-                                JValue::Int(start_x),
-                                JValue::Int(start_y),
-                            ]
-                        );
-                    }
-                }
-            }
-        }
+    pub fn report_sixel_image(&self, _callback_obj: &Option<jni::objects::GlobalRef>) {
+        // JNI is now handled by event loop
     }
 
     pub fn report_clear_screen(&self) {
-        if let Some(obj) = &self.java_callback_obj {
-            if let Some(vm) = crate::JAVA_VM.get() {
-                if let Ok(env) = vm.get_env() {
-                    let mut env: JNIEnv = env;
-                    let _ = env.call_method(obj.as_obj(), "onClearScreen", "()V", &[]);
-                }
-            }
-        }
+        // JNI is now handled by event loop
     }
 
-    pub fn report_terminal_response(&self, response: &str) {
-        if let Some(obj) = &self.java_callback_obj {
-            if let Some(vm) = crate::JAVA_VM.get() {
-                if let Ok(env) = vm.get_env() {
-                    let mut env: JNIEnv = env;
-                    if let Ok(java_response) = env.new_string(response) {
-                        let _ = env.call_method(obj.as_obj(), "write", "(Ljava/lang/String;)V", &[JValue::from(&java_response)]);
-                    }
-                }
-            }
-        }
+    pub fn report_terminal_response(&mut self, response: &str) {
+        self.pending_responses.push(response.to_string());
     }
 
     pub fn send_mouse_event(&mut self, button: u32, column: i32, row: i32, pressed: bool) {
@@ -502,17 +449,17 @@ impl ScreenState {
         }
     }
 
-    pub fn handle_osc18(&self) { self.report_terminal_response(&format!("\x1b]18;t={};{}t", self.cols, self.rows)); }
+    pub fn handle_osc18(&mut self) { self.report_terminal_response(&format!("\x1b]18;t={};{}t", self.cols, self.rows)); }
     pub fn clamp_cursor(&mut self) { self.cursor.clamp(self.cols, self.rows); }
     pub fn is_alternate_buffer_active(&self) -> bool { self.use_alternate_buffer }
 
-    pub fn report_focus_gain(&self) {
+    pub fn report_focus_gain(&mut self) {
         if self.send_focus_events {
             self.report_terminal_response("\x1b[I");
         }
     }
 
-    pub fn report_focus_loss(&self) {
+    pub fn report_focus_loss(&mut self) {
         if self.send_focus_events {
             self.report_terminal_response("\x1b[O");
         }
@@ -546,7 +493,7 @@ impl ScreenState {
         // 不再直接调用 Java 回调，由调用者在锁外通过事件机制处理
     }
 
-    pub fn report_color_response(&self, response: &str) {
+    pub fn report_color_response(&mut self, response: &str) {
         self.report_terminal_response(&format!("\x1b]{}\x07", response));
     }
 
