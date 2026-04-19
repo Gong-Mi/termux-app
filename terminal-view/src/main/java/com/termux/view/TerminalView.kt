@@ -392,10 +392,9 @@ class TerminalView @JvmOverloads constructor(
             Log.w("TerminalView-Engine", "onScreenUpdated called but mEmulator is null")
             return
         }
-        if (!mEnginePointerSet) {
-            mEnginePointerSet = true
-            val enginePtr = emu.getNativePointer()
-            Log.i("TerminalView-Engine", ">>> FIRST onScreenUpdated - Calling nativeSetEnginePointer with ptr=$enginePtr")
+        // 终极同步：确保 Rust 始终持有最新的 Engine 指针
+        val enginePtr = emu.getNativePointer()
+        if (enginePtr != 0L) {
             nativeSetEnginePointer(enginePtr)
         }
         val rowsInHistory = emu.getActiveTranscriptRows()
