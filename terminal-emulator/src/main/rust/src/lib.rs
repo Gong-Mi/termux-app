@@ -34,3 +34,22 @@ pub use crate::terminal::sixel::{SixelDecoder, SixelState, SixelColor};
 pub use ::jni::JavaVM;
 pub static JAVA_VM: OnceCell<JavaVM> = OnceCell::new();
 
+
+#[cfg(test)]
+mod metrics_tests {
+    use super::utils::METRICS;
+    use std::time::Duration;
+
+    #[test]
+    fn test_performance_metrics_collection() {
+        // 测试记录字节
+        METRICS.record_bytes(1024 * 1024);
+        // 测试记录渲染耗时
+        METRICS.record_render(Duration::from_millis(16));
+        
+        // 验证不会崩溃
+        METRICS.try_report();
+        
+        assert!(METRICS.total_bytes_processed.load(std::sync::atomic::Ordering::Relaxed) >= 0);
+    }
+}

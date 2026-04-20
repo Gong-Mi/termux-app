@@ -331,15 +331,23 @@ pub fn create_subprocess_with_data(
                     let linker = "/system/bin/linker";
                     
                     if std::path::Path::new(linker).exists() {
+                        let program_name = std::path::Path::new(&final_cmd)
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("sh")
+                            .to_string();
+
                         let mut linker_argv = Vec::new();
+                        // argv[0]: Linker 自身的路径
+                        linker_argv.push(linker.to_string()); 
                         
-                        // 关键修复：Android Linker 直接调用时，参数对齐非常敏感。
-                        // 我们将目标二进制的绝对路径同时作为 argv[0] 和 argv[1] (相对于 Linker)。
-                        // 这样确保了 Linker 无论如何都能找到绝对路径。
-                        linker_argv.push(final_cmd.clone()); // 作为 Linker 看到的 argv[0]
-                        linker_argv.push(final_cmd.clone()); // 作为 Linker 看到的 argv[1] (通常被当作子进程的 argv[0])
+                        // argv[1]: 逻辑程序名 (Linker 协议要求)
+                        linker_argv.push(program_name);
+
+                        // argv[2]: 关键！这是 Linker 真正要加载并运行的二进制绝对路径
+                        linker_argv.push(final_cmd.clone()); 
                         
-                        // argv[2..]: 透传所有解析后的参数（跳过 final_args 中的第一个）
+                        // argv[3..]: 透传所有解析后的参数（跳过 final_args 中的第一个）
                         if final_args.len() > 1 {
                             linker_argv.extend(final_args.iter().skip(1).cloned());
                         }

@@ -141,8 +141,15 @@ impl TerminalContext {
                         }
 
                         for event in &events {
-                            if let crate::engine::events::TerminalEvent::ScreenUpdated = event {
-                                crate::render_thread::request_render();
+                            match event {
+                                crate::engine::events::TerminalEvent::ScreenUpdated => {
+                                    crate::render_thread::request_render();
+                                    // 必须通知 Java 层屏幕已更新，否则 ScrollBar 和选区不会刷新
+                                    if let Some(obj) = &callback_obj {
+                                        let _ = env.call_method(obj.as_obj(), "onScreenUpdated", "()V", &[]);
+                                    }
+                                }
+                                _ => {}
                             }
                         }
 

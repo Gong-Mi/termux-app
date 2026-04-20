@@ -108,6 +108,10 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatch(
                 let len = length as usize;
                 let actual_len = std::cmp::min(len, bytes.len());
                 engine.process_bytes(&bytes[..actual_len]);
+                
+                // 记录吞吐量性能指标
+                crate::utils::METRICS.record_bytes(actual_len as u64);
+                crate::utils::METRICS.try_report();
             }
             (engine.take_events(), engine.state.java_callback_obj.clone())
         };
@@ -489,9 +493,17 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getSelectedText(
 ) -> jstring {
     if ptr == 0 { return std::ptr::null_mut(); }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    
+    // 规范化坐标：确保 (x1, y1) 在 (x2, y2) 之前
+    let (real_x1, real_y1, real_x2, real_y2) = if y1 < y2 || (y1 == y2 && x1 <= x2) {
+        (x1, y1, x2, y2)
+    } else {
+        (x2, y2, x1, y1)
+    };
+
     let text = {
         let engine = context.lock.read().unwrap();
-        engine.state.get_current_screen().get_selected_text(x1, y1, x2, y2)
+        engine.state.get_current_screen().get_selected_text(real_x1, real_y1, real_x2, real_y2)
     };
     let result = if let Ok(j_str) = env.new_string(text) { j_str.into_raw() } else { std::ptr::null_mut() };
     let _ = Arc::into_raw(context);

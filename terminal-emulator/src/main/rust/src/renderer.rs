@@ -451,6 +451,7 @@ impl TerminalRenderer {
     }
 
     pub fn draw_frame(&mut self, canvas: &Canvas, frame: &RenderFrame, _scale: f32, _scroll_offset: f32) {
+        let start_time = std::time::Instant::now();
         // 定期推进代际 (例如每 60 帧推进一代)
         self.frame_count = self.frame_count.wrapping_add(1);
         if self.frame_count % 60 == 0 {
@@ -529,6 +530,25 @@ impl TerminalRenderer {
             let row_text_clone = row_text.clone();
             let row_styles_clone = row_styles.clone();
 
+            // === 渲染选区背景 ===
+            if sel_active && absolute_row >= sy && absolute_row <= ey {
+                let mut sel_paint = Paint::default();
+                sel_paint.set_color(Color::from_argb(128, 173, 214, 255)); // 浅蓝色半透明
+                sel_paint.set_style(PaintStyle::Fill);
+
+                let start_x = if absolute_row == sy { sx } else { 0 };
+                let end_x = if absolute_row == ey { ex } else { cols as i32 - 1 };
+                
+                if start_x <= end_x {
+                    let rect = Rect::new(
+                        start_x as f32 * self.font_width,
+                        r as f32 * self.font_height,
+                        (end_x + 1) as f32 * self.font_width,
+                        (r + 1) as f32 * self.font_height
+                    );
+                    canvas.draw_rect(rect, &sel_paint);
+                }
+            }
 
             let row_sel = &mut self.row_selection_buf[..cols];
             let abs_row = absolute_row;
@@ -655,6 +675,9 @@ impl TerminalRenderer {
                 self.cursor_paint.set_blend_mode(old_blend);
             }
         }
+        
+        crate::utils::METRICS.record_render(start_time.elapsed());
+        crate::utils::METRICS.try_report();
     }
 
     fn draw_run_static(canvas: &Canvas, text: &str, x: f32, y_base: f32, expected_width: f32, font_cache: &FontCache, glyph_cache: &mut GlyphCache, paint: &mut Paint, bg_paint: &mut Paint, underline_paint: &mut Paint, strikethrough_paint: &mut Paint, font_width: f32, font_height: f32, style: u64, palette: &[u32; NUM_INDEXED_COLORS], global_reverse: bool, is_selected: bool) {

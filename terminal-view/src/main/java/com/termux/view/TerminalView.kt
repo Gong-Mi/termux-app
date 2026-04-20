@@ -199,7 +199,7 @@ class TerminalView @JvmOverloads constructor(
                 val emu = mEmulator ?: return true
                 if (!mScroller.isFinished) return true
                 val mouseTracking = emu.isMouseTrackingActive()
-                val SCALE = 0.25f
+                val SCALE = 1.0f // 增加惯性系数，修复“滚动吃力”的问题
                 if (mouseTracking) {
                     mScroller.fling(0, 0, 0, -(velocityY * SCALE).toInt(), 0, 0, -emu.getCols() / 2, emu.getCols() / 2)
                 } else {
@@ -496,6 +496,8 @@ class TerminalView @JvmOverloads constructor(
                 if (!awakenScrollBars()) invalidate()
             }
         }
+        // 关键：滚动完成后必须立即同步参数到 Rust 渲染器，否则画面会卡住
+        updateRenderParamsToRust()
     }
 
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
@@ -752,9 +754,13 @@ class TerminalView @JvmOverloads constructor(
         var selX1 = 0; var selY1 = 0; var selX2 = 0; var selY2 = 0
         if (isSelectingText()) {
             mTextSelectionCursorController?.getSelectors(mSelCoords)
+            // 关键：mSelCoords 中的 Y 已经是相对于整个缓冲区的绝对行（包含历史记录偏移）
+            // 而 Rust 侧的 RenderFrame 也是按照绝对行偏移来获取数据的，所以直接透传即可
             selY1 = mSelCoords[0]; selY2 = mSelCoords[1]; selX1 = mSelCoords[2]; selX2 = mSelCoords[3]
             selActive = true
         }
+        // mTopRow 是负值或0，表示向上滚动的行数。
+        // Rust 的 draw_frame 需要知道当前渲染窗口在缓冲区中的起点。
         nativeUpdateRenderParams(mScaleFactor, mTopRow * getFontLineSpacing(), mTopRow,
             selX1, selY1, selX2, selY2, selActive)
     }
@@ -783,7 +789,10 @@ class TerminalView @JvmOverloads constructor(
         get() = mEmulator?.getSelectedText(0, mTopRow, mEmulator!!.getCols(), mTopRow + mEmulator!!.getRows()) ?: ""
 
     fun getCursorX(x: Float): Int = (x / getFontWidth()).toInt()
-    fun getCursorY(y: Float): Int = (y / getFontLineSpacing()).toInt() + mTopRow
+    fun getCursorY(y: Float): Int {
+        // 恢复 40f 偏移量以对齐触摸位置与文本行（解决无法选择文本的问题）
+        return ((y - 40f) / getFontLineSpacing()).toInt() + mTopRow
+    }
 
     fun getPointX(cx: Int): Int {
         var c = cx
