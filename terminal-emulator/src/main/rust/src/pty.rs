@@ -237,7 +237,7 @@ pub fn create_subprocess_with_data(
 
                 // 4. 基础变量
                 if !final_envp.iter().any(|s| s.starts_with("TERM=")) { final_envp.push("TERM=xterm-256color".to_string()); }
-                if !final_envp.iter().any(|s| s.starts_with("HOME=")) { final_envp.push(format!("{}/home", termux_files)); }
+                if !final_envp.iter().any(|s| s.starts_with("HOME=")) { final_envp.push(format!("HOME={}/home", termux_files)); }
                 if !final_envp.iter().any(|s| s.starts_with("PREFIX=")) { final_envp.push(format!("PREFIX={}", termux_prefix)); }
 
                 libc::clearenv();
@@ -255,15 +255,18 @@ pub fn create_subprocess_with_data(
                 let mut final_cmd = cmd_str.clone();
                 let mut final_args = argv.clone();
                 
-                // 自动纠正 Login Shell: 如果目标是 bash/zsh 且 argv[0] 不带 -，尝试添加
-                if final_args.is_empty() {
-                    let name = std::path::Path::new(&final_cmd)
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("sh");
-                    final_args.push(format!("-{}", name));
-                } else if !final_args[0].starts_with('-') {
-                    final_args[0] = format!("-{}", final_args[0]);
+                // 只有目标是常见的 shell 时，才自动纠正为 Login Shell (argv[0] 带 -)
+                let is_shell = ["sh", "bash", "zsh", "dash", "fish"].iter().any(|&s| final_cmd.ends_with(s));
+                if is_shell {
+                    if final_args.is_empty() {
+                        let name = std::path::Path::new(&final_cmd)
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("sh");
+                        final_args.push(format!("-{}", name));
+                    } else if !final_args[0].starts_with('-') {
+                        final_args[0] = format!("-{}", final_args[0]);
+                    }
                 }
 
                 // Parse ELF / Shebang
@@ -280,7 +283,14 @@ pub fn create_subprocess_with_data(
                                 if !interpreter_line.is_empty() {
                                     let parts: Vec<&str> = interpreter_line.split_whitespace().collect();
                                     if !parts.is_empty() {
-                                        let interpreter = parts[0].to_string();
+                                        let mut interpreter = parts[0].to_string();
+                                        
+                                        // 关键修复：将相对路径或系统路径转换为 Termux 绝对路径
+                                        if interpreter.starts_with("/usr/bin/") || interpreter.starts_with("/bin/") {
+                                            let binary_name = std::path::Path::new(&interpreter).file_name().and_then(|s| s.to_str()).unwrap_or("");
+                                            interpreter = format!("{}/bin/{}", termux_prefix, binary_name);
+                                        }
+
                                         let old_cmd = final_cmd.clone();
                                         final_cmd = interpreter;
                                         
@@ -312,7 +322,8 @@ pub fn create_subprocess_with_data(
                 }
 
                 // W^X Bypass for Android 10+
-                // Correct Linker invocation: execv(linker, [process_name, abs_path, original_args...])
+                // Standard Termux pattern: linker [prog_name] [abs_path] [args...]
+                // We must ensure abs_path is ALWAYS at argv[1] for the linker to load it.
                 if final_cmd.contains("/com.termux/") || final_cmd.starts_with("/data/data/") {
                     #[cfg(target_pointer_width = "64")]
                     let linker = "/system/bin/linker64";
@@ -320,19 +331,14 @@ pub fn create_subprocess_with_data(
                     let linker = "/system/bin/linker";
                     
                     if std::path::Path::new(linker).exists() {
-                        let process_name = final_args.get(0).cloned().unwrap_or_else(|| {
-                            std::path::Path::new(&final_cmd)
-                                .file_name()
-                                .and_then(|n| n.to_str())
-                                .unwrap_or("sh")
-                                .to_string()
-                        });
-
                         let mut linker_argv = Vec::new();
-                        linker_argv.push(process_name);     // argv[0]: 进程名称
-                        linker_argv.push(final_cmd.clone()); // argv[1]: Linker 真正要加载的目标路径
+                        // argv[0]: Linker 自身的路径 (标准做法)
+                        linker_argv.push(linker.to_string()); 
                         
-                        // 修正点：应该透传已经解析好的 final_args 之后的参数，而不是原始 argv
+                        // argv[1]: 关键！这是 Linker 真正要加载并运行的二进制绝对路径
+                        linker_argv.push(final_cmd.clone()); 
+                        
+                        // argv[2..]: 透传所有解析后的参数（跳过 final_args 中的第一个，通常是二进制名）
                         if final_args.len() > 1 {
                             linker_argv.extend(final_args.iter().skip(1).cloned());
                         }
@@ -350,7 +356,8 @@ pub fn create_subprocess_with_data(
                 let ptr_args: Vec<_> = c_args.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
                 if !final_cmd.is_empty() {
                     let c_cmd = CString::new(final_cmd.clone()).unwrap();
-                    crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY_EXEC] Android 11+ Exec: {} (Target: {})", final_cmd, final_args.get(1).unwrap_or(&"".to_string())));
+                    crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY_EXEC] Final Linker Exec: {} -> argv[0]={:?}, argv[1]={:?}", 
+                        final_cmd, final_args.get(0).unwrap_or(&"NONE".to_string()), final_args.get(1).unwrap_or(&"NONE".to_string())));
                     
                     libc::execv(c_cmd.as_ptr(), ptr_args.as_ptr());
                     
