@@ -982,6 +982,25 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
                 pid: pid as i32,
             });
             crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[TRACE_SESSION] 5.5. Engine data registered for session {}. SUCCESS.", session_id));
+
+            // 主动回调 Java 通知初始化完成
+            if let Some(ref cb) = callback_ref {
+                if let Some(vm) = crate::JAVA_VM.get() {
+                    if let Ok(mut env) = vm.attach_current_thread() {
+                        let _ = env.call_method(
+                            cb.as_obj(),
+                            "onEngineInitialized",
+                            "(JII)V",
+                            &[
+                                jni::objects::JValue::Long(context_ptr as jlong),
+                                jni::objects::JValue::Int(pty_fd as i32),
+                                jni::objects::JValue::Int(pid as i32),
+                            ],
+                        );
+                        crate::utils::android_log(crate::utils::LogPriority::INFO, "[TRACE_SESSION] 5.6. Java onEngineInitialized callback executed.");
+                    }
+                }
+            }
         });
 
         if let Err(e) = result {

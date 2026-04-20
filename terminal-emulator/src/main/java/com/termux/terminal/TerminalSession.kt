@@ -113,30 +113,6 @@ class TerminalSession(
             val sessionId = JNI.registerSession()
             android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 5. Calling JNI.createSessionAsync (SessionID=$sessionId)")
             
-            // 开启轮询：每 100ms 检查一次 Rust 是否准备好
-            val pollHandler = Handler(Looper.getMainLooper())
-            var pollCount = 0
-            val pollRunnable = object : Runnable {
-                override fun run() {
-                    val data = JNI.pollEngineData(sessionId)
-                    pollCount++
-                    if (data != null) {
-                        android.util.Log.i("TermuxTrace", "[TRACE_SESSION] 6. pollEngineData SUCCESS after ${pollCount*100}ms (pid=${data[2]})")
-                        onEngineInitialized(data[0], data[1].toInt(), data[2].toInt())
-                    } else {
-                        if (mSessionState == SessionState.INITIALIZING) {
-                            if (pollCount % 10 == 0) { // 每秒打印一次重试日志
-                                android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 5.x Retrying pollEngineData for SessionID=$sessionId (state=$mSessionState)")
-                            }
-                            pollHandler.postDelayed(this, 100)
-                        } else {
-                            android.util.Log.w("TermuxTrace", "[TRACE_SESSION] 5.x Polling ABORTED: state changed to $mSessionState")
-                        }
-                    }
-                }
-            }
-            pollHandler.post(pollRunnable)
-
             JNI.createSessionAsync(
                 sessionId,
                 shellPath, cwd ?: "", args, env, rows, columns, cellWidthPixels, cellHeightPixels,
@@ -149,7 +125,6 @@ class TerminalSession(
             mEmulator = TerminalEmulator(this, columns, rows, cellWidthPixels, cellHeightPixels, transcriptRows, mTerminalFileDescriptor, mClient)
             mSessionState = SessionState.READY
             mClient.setTerminalShellPid(this, mShellPid)
-            android.util.Log.d("TermuxTrace", "[TRACE_SESSION] JNI libraries not loaded, using mock")
         }
     }
 
