@@ -198,30 +198,34 @@ pub fn create_subprocess_with_data(
                 if pts > 2 { libc::close(pts); }
                 libc::close(ptm);
 
-                // 确保至少有基础环境变量，否则 shell 无法正常工作 (MOTD, PATH 等)
+                // 彻底确保 Termux 的核心环境变量
+                let termux_prefix = "/data/data/com.termux/files/usr";
+                let termux_bin = format!("{}/bin", termux_prefix);
+                let termux_lib = format!("{}/lib", termux_prefix);
+                
                 let mut final_envp = envp.clone();
                 
-                // 彻底确保 Termux 的 PATH 在最前面
-                let termux_bin = "/data/data/com.termux/files/usr/bin";
+                // 1. PATH
                 let default_path = format!("PATH={}:/system/bin:/system/xbin", termux_bin);
                 if let Some(pos) = final_envp.iter().position(|s| s.starts_with("PATH=")) {
                     let old_path = final_envp[pos].split('=').nth(1).unwrap_or("");
-                    if !old_path.contains(termux_bin) {
+                    if !old_path.contains(&termux_bin) {
                         final_envp[pos] = format!("PATH={}:{}", termux_bin, old_path);
                     }
                 } else {
                     final_envp.push(default_path);
                 }
 
-                if !final_envp.iter().any(|s| s.starts_with("TERM=")) {
-                    final_envp.push("TERM=xterm-256color".to_string());
+                // 2. LD_PRELOAD (关键：确保子进程 W^X 绕过)
+                let preload_val = format!("{}/libtermux-exec.so", termux_lib);
+                if !final_envp.iter().any(|s| s.starts_with("LD_PRELOAD=")) {
+                    final_envp.push(format!("LD_PRELOAD={}", preload_val));
                 }
-                if !final_envp.iter().any(|s| s.starts_with("HOME=")) {
-                    final_envp.push("HOME=/data/data/com.termux/files/home".to_string());
-                }
-                if !final_envp.iter().any(|s| s.starts_with("PREFIX=")) {
-                    final_envp.push("PREFIX=/data/data/com.termux/files/usr".to_string());
-                }
+
+                // 3. 基础变量
+                if !final_envp.iter().any(|s| s.starts_with("TERM=")) { final_envp.push("TERM=xterm-256color".to_string()); }
+                if !final_envp.iter().any(|s| s.starts_with("HOME=")) { final_envp.push("HOME=/data/data/com.termux/files/home".to_string()); }
+                if !final_envp.iter().any(|s| s.starts_with("PREFIX=")) { final_envp.push(format!("PREFIX={}", termux_prefix)); }
 
                 libc::clearenv();
                 for env_var in final_envp {
@@ -261,36 +265,42 @@ pub fn create_subprocess_with_data(
                             if let Ok(shebang) = std::str::from_utf8(&buf[2..bytes_read]) {
                                 let interpreter_line = shebang.lines().next().unwrap_or("").trim();
                                 if !interpreter_line.is_empty() {
-                                    let mut parts = interpreter_line.split_whitespace();
-                                    if let Some(interpreter) = parts.next() {
+                                    let parts: Vec<&str> = interpreter_line.split_whitespace().collect();
+                                    if !parts.is_empty() {
+                                        let interpreter = parts[0].to_string();
                                         let old_cmd = final_cmd.clone();
-                                        final_cmd = interpreter.to_string();
-                                        if !final_args.is_empty() {
-                                            final_args.insert(1, old_cmd);
-                                        } else {
-                                            final_args.push(old_cmd.clone());
-                                            final_args.push(old_cmd);
+                                        final_cmd = interpreter;
+                                        
+                                        // 构造新的 argv: [interpreter, interpreter_args..., script_path, original_script_args...]
+                                        let mut new_argv = Vec::new();
+                                        new_argv.push(final_cmd.clone()); // argv[0] for interpreter
+                                        for p in parts.iter().skip(1) { new_argv.push(p.to_string()); }
+                                        new_argv.push(old_cmd); // script path
+                                        if argv.len() > 1 {
+                                            new_argv.extend(argv.iter().skip(1).cloned());
                                         }
+                                        final_args = new_argv;
                                     }
                                 }
                             }
                         } else {
                             // Not ELF and no shebang, default to Termux sh
                             let old_cmd = final_cmd.clone();
-                            final_cmd = "/data/data/com.termux/files/usr/bin/sh".to_string();
-                            if !final_args.is_empty() {
-                                final_args.insert(1, old_cmd);
-                            } else {
-                                final_args.push(old_cmd.clone());
-                                final_args.push(old_cmd);
+                            final_cmd = format!("{}/bin/sh", termux_prefix);
+                            let mut new_argv = Vec::new();
+                            new_argv.push(final_cmd.clone());
+                            new_argv.push(old_cmd);
+                            if argv.len() > 1 {
+                                new_argv.extend(argv.iter().skip(1).cloned());
                             }
+                            final_args = new_argv;
                         }
                     }
                 }
 
                 // W^X Bypass for Android 10+
-                // Correct Linker invocation: execv(linker, [process_name, abs_path, original_args...])
-                if final_cmd.contains("/files/usr/") || final_cmd.starts_with("/data/data/") {
+                // Detect if the target binary is in data partition
+                if final_cmd.contains("/com.termux/") || final_cmd.starts_with("/data/data/") {
                     #[cfg(target_pointer_width = "64")]
                     let linker = "/system/bin/linker64";
                     #[cfg(target_pointer_width = "32")]

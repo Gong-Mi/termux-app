@@ -1,12 +1,16 @@
-Usage: /data/data/com.termux/files/usr/bin/sh [--list] PROGRAM [ARGS-FOR-PROGRAM...]
-       /data/data/com.termux/files/usr/bin/sh [--list] path.zip!/PROGRAM [ARGS-FOR-PROGRAM...]
+$ ls
+SpaceCompany  SpaceCompany-React  crash_log_backup.md  gemini-cli  hello  hello.c  lib_fix  llama.cpp  stress_pty  stress_pty.cpp  terminal-emulator  termux-app  termux-app-official  test_dir  test_exec.sh  verify_width  verify_width.rs  wx_test  wx_test.c
+$ gemini
+error: expected absolute path: "--max-old-space-size=7499"
+$
 
-A helper program for linking dynamic executables. Typically, the kernel loads
-this program because it's the PT_INTERP of a dynamic executable.
 
-This program can also be run directly to load and run a dynamic executable. The
-executable can be inside a zip file if it's stored uncompressed and at a
-page-aligned offset.
 
-The --list option gives behavior equivalent to ldd(1) on other systems.
+
+
+
+
+
+
+
 
