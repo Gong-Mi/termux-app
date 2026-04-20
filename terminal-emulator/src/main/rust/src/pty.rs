@@ -312,7 +312,7 @@ pub fn create_subprocess_with_data(
                 }
 
                 // W^X Bypass for Android 10+
-                // Detect if the target binary is in data partition
+                // Correct Linker invocation: execv(linker, [process_name, abs_path, original_args...])
                 if final_cmd.contains("/com.termux/") || final_cmd.starts_with("/data/data/") {
                     #[cfg(target_pointer_width = "64")]
                     let linker = "/system/bin/linker64";
@@ -320,7 +320,7 @@ pub fn create_subprocess_with_data(
                     let linker = "/system/bin/linker";
                     
                     if std::path::Path::new(linker).exists() {
-                        let process_name = argv.get(0).cloned().unwrap_or_else(|| {
+                        let process_name = final_args.get(0).cloned().unwrap_or_else(|| {
                             std::path::Path::new(&final_cmd)
                                 .file_name()
                                 .and_then(|n| n.to_str())
@@ -332,8 +332,9 @@ pub fn create_subprocess_with_data(
                         linker_argv.push(process_name);     // argv[0]: 进程名称
                         linker_argv.push(final_cmd.clone()); // argv[1]: Linker 真正要加载的目标路径
                         
-                        if argv.len() > 1 {
-                            linker_argv.extend(argv.iter().skip(1).cloned());
+                        // 修正点：应该透传已经解析好的 final_args 之后的参数，而不是原始 argv
+                        if final_args.len() > 1 {
+                            linker_argv.extend(final_args.iter().skip(1).cloned());
                         }
                         
                         final_args = linker_argv;
