@@ -971,6 +971,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
             let context = Arc::new(TerminalContext::new(engine));
             let context_ptr = Arc::into_raw(context.clone());
 
+            // 关键修复：必须存储 pty_fd，否则 processInput 无法写入输入
+            context.pty_fd.store(pty_fd as i32, Ordering::SeqCst);
+
             crate::utils::android_log(crate::utils::LogPriority::DEBUG, "[TRACE_SESSION] 5.4. Starting IO thread");
             // 使用 dup 确保 IO 线程持有独立的 FD 引用
             let dup_fd = unsafe { libc::dup(pty_fd) };

@@ -200,13 +200,27 @@ pub fn create_subprocess_with_data(
 
                 // 确保至少有基础环境变量，否则 shell 无法正常工作 (MOTD, PATH 等)
                 let mut final_envp = envp.clone();
-                let has_path = final_envp.iter().any(|s| s.starts_with("PATH="));
-                if !has_path {
-                    final_envp.push("PATH=/data/data/com.termux/files/usr/bin:/system/bin:/system/xbin".to_string());
+                
+                // 彻底确保 Termux 的 PATH 在最前面
+                let termux_bin = "/data/data/com.termux/files/usr/bin";
+                let default_path = format!("PATH={}:/system/bin:/system/xbin", termux_bin);
+                if let Some(pos) = final_envp.iter().position(|s| s.starts_with("PATH=")) {
+                    let old_path = final_envp[pos].split('=').nth(1).unwrap_or("");
+                    if !old_path.contains(termux_bin) {
+                        final_envp[pos] = format!("PATH={}:{}", termux_bin, old_path);
+                    }
+                } else {
+                    final_envp.push(default_path);
                 }
-                let has_term = final_envp.iter().any(|s| s.starts_with("TERM="));
-                if !has_term {
+
+                if !final_envp.iter().any(|s| s.starts_with("TERM=")) {
                     final_envp.push("TERM=xterm-256color".to_string());
+                }
+                if !final_envp.iter().any(|s| s.starts_with("HOME=")) {
+                    final_envp.push("HOME=/data/data/com.termux/files/home".to_string());
+                }
+                if !final_envp.iter().any(|s| s.starts_with("PREFIX=")) {
+                    final_envp.push("PREFIX=/data/data/com.termux/files/usr".to_string());
                 }
 
                 libc::clearenv();
