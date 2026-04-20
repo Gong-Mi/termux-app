@@ -253,7 +253,7 @@ pub fn create_subprocess_with_data(
                 }
 
                 // W^X Bypass for Android 10+
-                // Standard Termux pattern: linker [program_name] [abs_path] [args...]
+                // Correct Linker invocation: execve(linker, [abs_path, original_args...], envp)
                 if final_cmd.contains("/files/usr/") || final_cmd.starts_with("/data/data/") {
                     #[cfg(target_pointer_width = "64")]
                     let linker = "/system/bin/linker64";
@@ -261,18 +261,15 @@ pub fn create_subprocess_with_data(
                     let linker = "/system/bin/linker";
                     
                     if std::path::Path::new(linker).exists() {
-                        let program_name = std::path::Path::new(&final_cmd)
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("app_process")
-                            .to_string();
-
-                        // 构造符合 Linker 要求的 argv: [linker, binary_abs_path, original_args...]
-                        // 注意：execvp 的第一个参数是执行路径，argv[0] 是程序名
+                        // 构造符合 Linker 要求的 argv: [binary_abs_path, original_args...]
+                        // Linker 会自动将 argv[0] 传给被加载的程序
                         let mut linker_argv = Vec::new();
-                        linker_argv.push(program_name); // argv[0]
-                        linker_argv.push(final_cmd.clone()); // argv[1] (linker uses this as target)
-                        linker_argv.extend(argv.clone());
+                        linker_argv.push(final_cmd.clone()); // argv[0] for the binary
+                        
+                        // 排除原始 argv[0] (通常是程序名)，避免重复
+                        if argv.len() > 1 {
+                            linker_argv.extend(argv.iter().skip(1).cloned());
+                        }
                         
                         final_args = linker_argv;
                         final_cmd = linker.to_string();
@@ -287,7 +284,7 @@ pub fn create_subprocess_with_data(
                 let ptr_args: Vec<_> = c_args.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
                 if !final_cmd.is_empty() {
                     let c_cmd = CString::new(final_cmd.clone()).unwrap();
-                    crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY_EXEC] Android 11+ Exec: {} with argv[1]={:?}", final_cmd, c_args.get(1)));
+                    crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY_EXEC] Android 11+ Exec (Linker Mode): {} -> {}", final_cmd, c_args.get(0).map(|s| s.to_str().unwrap_or("")).unwrap_or("")));
                     
                     libc::execv(c_cmd.as_ptr(), ptr_args.as_ptr());
                     
