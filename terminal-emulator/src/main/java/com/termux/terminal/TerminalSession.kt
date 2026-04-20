@@ -133,6 +133,8 @@ class TerminalSession(
         android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 6. onEngineInitialized callback received (pid=$pid)")
         mMainThreadHandler.post {
             android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 7. Running onEngineInitialized logic on MainThread")
+            
+            // 必须在创建 Emulator 之前先设为 READY，否则 init 块里的 write 调用会被拦截
             mSessionState = SessionState.READY
             mTerminalFileDescriptor = ptyFd
             mShellPid = pid
@@ -141,7 +143,7 @@ class TerminalSession(
             mClient.setTerminalShellPid(this, mShellPid)
             android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 8. Emulator instance created and READY")
 
-            // 唤醒 UI 关键点
+            // 唤醒 UI
             mClient.onSessionStateChanged(this)
             mClient.onTextChanged(this)
             notifyScreenUpdate()

@@ -198,8 +198,19 @@ pub fn create_subprocess_with_data(
                 if pts > 2 { libc::close(pts); }
                 libc::close(ptm);
 
+                // 确保至少有基础环境变量，否则 shell 无法正常工作 (MOTD, PATH 等)
+                let mut final_envp = envp.clone();
+                let has_path = final_envp.iter().any(|s| s.starts_with("PATH="));
+                if !has_path {
+                    final_envp.push("PATH=/data/data/com.termux/files/usr/bin:/system/bin:/system/xbin".to_string());
+                }
+                let has_term = final_envp.iter().any(|s| s.starts_with("TERM="));
+                if !has_term {
+                    final_envp.push("TERM=xterm-256color".to_string());
+                }
+
                 libc::clearenv();
-                for env_var in envp {
+                for env_var in final_envp {
                     if let Ok(c_env) = CString::new(env_var) {
                         libc::putenv(c_env.into_raw());
                     }
@@ -213,6 +224,17 @@ pub fn create_subprocess_with_data(
                 let mut final_cmd = cmd_str.clone();
                 let mut final_args = argv.clone();
                 
+                // 自动纠正 Login Shell: 如果目标是 bash/zsh 且 argv[0] 不带 -，尝试添加
+                if final_args.is_empty() {
+                    let name = std::path::Path::new(&final_cmd)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("sh");
+                    final_args.push(format!("-{}", name));
+                } else if !final_args[0].starts_with('-') {
+                    final_args[0] = format!("-{}", final_args[0]);
+                }
+
                 // Parse ELF / Shebang
                 if let Ok(mut f) = std::fs::File::open(&final_cmd) {
                     use std::io::Read;
