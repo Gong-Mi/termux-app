@@ -252,8 +252,28 @@ pub fn create_subprocess_with_data(
                     let _ = chdir(c_cwd.as_c_str());
                 }
 
+                let termux_data = "/data/data/com.termux";
+                let termux_files = format!("{}/files", termux_data);
+                let termux_prefix = format!("{}/usr", termux_files);
+                let termux_bin = format!("{}/bin", termux_prefix);
+                let termux_lib = format!("{}/lib", termux_prefix);
+
                 let mut final_cmd = cmd_str.clone();
+                // 关键修复：确保 final_cmd 是绝对路径
+                if !final_cmd.starts_with('/') {
+                    let resolved = format!("{}/{}", termux_bin, final_cmd);
+                    if std::path::Path::new(&resolved).exists() {
+                        final_cmd = resolved;
+                    }
+                }
+                
                 let mut final_args = argv.clone();
+                if !final_args.is_empty() && !final_args[0].starts_with('/') && !final_args[0].starts_with('-') {
+                    let resolved = format!("{}/{}", termux_bin, final_args[0]);
+                    if std::path::Path::new(&resolved).exists() {
+                        final_args[0] = resolved;
+                    }
+                }
                 
                 // 只有目标是常见的 shell 时，才自动纠正为 Login Shell (argv[0] 带 -)
                 let is_shell = ["sh", "bash", "zsh", "dash", "fish"].iter().any(|&s| final_cmd.ends_with(s));
@@ -324,30 +344,32 @@ pub fn create_subprocess_with_data(
                 // W^X Bypass for Android 10+
                 // Standard Termux pattern: linker [prog_name] [abs_path] [args...]
                 // We must ensure abs_path is ALWAYS at argv[1] for the linker to load it.
-                if final_cmd.contains("/com.termux/") || final_cmd.starts_with("/data/data/") {
+                
+                // 增强：获取规范化路径以处理软链接
+                let canonical_cmd = std::fs::canonicalize(&final_cmd).unwrap_or_else(|_| std::path::PathBuf::from(&final_cmd));
+                let canonical_str = canonical_cmd.to_string_lossy();
+                
+                let needs_linker = final_cmd.contains("/com.termux/") || 
+                                  final_cmd.starts_with("/data/data/") ||
+                                  canonical_str.contains("/com.termux/") ||
+                                  canonical_str.starts_with("/data/data/");
+
+                if needs_linker {
                     #[cfg(target_pointer_width = "64")]
                     let linker = "/system/bin/linker64";
                     #[cfg(target_pointer_width = "32")]
                     let linker = "/system/bin/linker";
                     
                     if std::path::Path::new(linker).exists() {
-                        let program_name = std::path::Path::new(&final_cmd)
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("sh")
-                            .to_string();
-
                         let mut linker_argv = Vec::new();
-                        // argv[0]: Linker 自身的路径
-                        linker_argv.push(linker.to_string()); 
                         
-                        // argv[1]: 逻辑程序名 (Linker 协议要求)
-                        linker_argv.push(program_name);
-
-                        // argv[2]: 关键！这是 Linker 真正要加载并运行的二进制绝对路径
-                        linker_argv.push(final_cmd.clone()); 
+                        // 核心修复：Android Linker 报错 "expected absolute path: sh" 
+                        // 说明它看到的 argv[1] 是逻辑名 "sh"。
+                        // 我们将 argv[0] 和 argv[1] 全部强制设为绝对路径。
+                        linker_argv.push(final_cmd.clone()); // argv[0]
+                        linker_argv.push(final_cmd.clone()); // argv[1] (Linker 加载路径，必须绝对)
                         
-                        // argv[3..]: 透传所有解析后的参数（跳过 final_args 中的第一个）
+                        // 透传剩余参数
                         if final_args.len() > 1 {
                             linker_argv.extend(final_args.iter().skip(1).cloned());
                         }
@@ -365,9 +387,16 @@ pub fn create_subprocess_with_data(
                 let ptr_args: Vec<_> = c_args.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
                 if !final_cmd.is_empty() {
                     let c_cmd = CString::new(final_cmd.clone()).unwrap();
-                    let args_preview = final_args.iter().take(4).cloned().collect::<Vec<_>>().join(", ");
-                    crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY_EXEC] Final Linker Exec: {} -> argv={:?}...", 
-                        final_cmd, args_preview));
+                    
+                    // 调试：打印所有参数以定位 "sh" 的来源
+                    for (i, arg) in final_args.iter().enumerate() {
+                        crate::utils::android_log(crate::utils::LogPriority::DEBUG, &format!("[PTY_DEBUG] argv[{}] = '{}'", i, arg));
+                    }
+
+                    crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY_EXEC] Final Linker Exec: {} -> argv[0]={}, argv[1]={}", 
+                        final_cmd, 
+                        final_args.get(0).unwrap_or(&"NONE".to_string()),
+                        final_args.get(1).unwrap_or(&"NONE".to_string())));
                     
                     libc::execv(c_cmd.as_ptr(), ptr_args.as_ptr());
                     
