@@ -253,7 +253,7 @@ pub fn create_subprocess_with_data(
                 }
 
                 // W^X Bypass for Android 10+
-                // Correct Linker invocation: execve(linker, [abs_path, original_args...], envp)
+                // Correct Linker invocation: execv(linker, [process_name, abs_path, original_args...])
                 if final_cmd.contains("/files/usr/") || final_cmd.starts_with("/data/data/") {
                     #[cfg(target_pointer_width = "64")]
                     let linker = "/system/bin/linker64";
@@ -261,12 +261,18 @@ pub fn create_subprocess_with_data(
                     let linker = "/system/bin/linker";
                     
                     if std::path::Path::new(linker).exists() {
-                        // 构造符合 Linker 要求的 argv: [binary_abs_path, original_args...]
-                        // Linker 会自动将 argv[0] 传给被加载的程序
+                        let process_name = argv.get(0).cloned().unwrap_or_else(|| {
+                            std::path::Path::new(&final_cmd)
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("sh")
+                                .to_string()
+                        });
+
                         let mut linker_argv = Vec::new();
-                        linker_argv.push(final_cmd.clone()); // argv[0] for the binary
+                        linker_argv.push(process_name);     // argv[0]: 进程名称
+                        linker_argv.push(final_cmd.clone()); // argv[1]: Linker 真正要加载的目标路径
                         
-                        // 排除原始 argv[0] (通常是程序名)，避免重复
                         if argv.len() > 1 {
                             linker_argv.extend(argv.iter().skip(1).cloned());
                         }
@@ -277,14 +283,14 @@ pub fn create_subprocess_with_data(
                 }
 
                 let mut c_args = Vec::new();
-                for arg in final_args {
-                    if let Ok(ca) = CString::new(arg) { c_args.push(ca); }
+                for arg in &final_args {
+                    if let Ok(ca) = CString::new(arg.clone()) { c_args.push(ca); }
                 }
                 
                 let ptr_args: Vec<_> = c_args.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
                 if !final_cmd.is_empty() {
                     let c_cmd = CString::new(final_cmd.clone()).unwrap();
-                    crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY_EXEC] Android 11+ Exec (Linker Mode): {} -> {}", final_cmd, c_args.get(0).map(|s| s.to_str().unwrap_or("")).unwrap_or("")));
+                    crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY_EXEC] Android 11+ Exec: {} (Target: {})", final_cmd, final_args.get(1).unwrap_or(&"".to_string())));
                     
                     libc::execv(c_cmd.as_ptr(), ptr_args.as_ptr());
                     
