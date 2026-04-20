@@ -278,14 +278,16 @@ pub fn create_subprocess_with_data(
                 // 只有目标是常见的 shell 时，才自动纠正为 Login Shell (argv[0] 带 -)
                 let is_shell = ["sh", "bash", "zsh", "dash", "fish"].iter().any(|&s| final_cmd.ends_with(s));
                 if is_shell {
+                    let shell_name = std::path::Path::new(&final_cmd)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("sh");
+                    
                     if final_args.is_empty() {
-                        let name = std::path::Path::new(&final_cmd)
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("sh");
-                        final_args.push(format!("-{}", name));
+                        final_args.push(format!("-{}", shell_name));
                     } else if !final_args[0].starts_with('-') {
-                        final_args[0] = format!("-{}", final_args[0]);
+                        // 优化：模仿 Google Play 版，只对文件名部分加 -
+                        final_args[0] = format!("-{}", shell_name);
                     }
                 }
 
