@@ -15,6 +15,8 @@ use crate::engine::events::TerminalEvent;
 pub struct ScreenState {
     pub rows: i32,
     pub cols: i32,
+    pub session_id: i32,
+    pub initial_input: Vec<u8>,
 
     // 缓冲区对
     pub main_screen: Screen,
@@ -81,7 +83,7 @@ impl Drop for ScreenState {
 }
 
 impl ScreenState {
-    pub fn new(cols: i32, rows: i32, total_rows: i32, _cw: i32, _ch: i32) -> Self {
+    pub fn new(session_id: i32, cols: i32, rows: i32, total_rows: i32, _cw: i32, _ch: i32) -> Self {
         let mut tab_stops = vec![false; cols as usize];
         for i in (8..cols as usize).step_by(8) { tab_stops[i] = true; }
 
@@ -90,6 +92,8 @@ impl ScreenState {
 
         Self {
             rows, cols,
+            session_id,
+            initial_input: Vec::new(),
             main_screen: Screen::new(cols, rows, total_rows),
             alt_screen: Screen::new(cols, rows, rows),
             use_alternate_buffer: false,
@@ -217,7 +221,7 @@ impl ScreenState {
         // JNI is now handled by event loop
     }
 
-    pub fn report_clear_screen(&self) {
+    pub fn report_screen_update(&self) {
         // JNI is now handled by event loop
     }
 
@@ -279,9 +283,8 @@ impl ScreenState {
         if mode == 3 { self.scroll_counter = 0; }
 
         if mode == 2 {
-            // ESC[2J - 清空整个可见屏幕，清除 Sixel 状态并通知 Java
+            // ESC[2J - 清空整个可见屏幕，清除 Sixel 状态
             self.sixel_decoder.reset();
-            self.report_clear_screen();
             crate::render_thread::request_render();
         } else if mode == 3 {
             // ESC[3J - 仅清除滚动历史，可见内容不变，保留 Sixel 图像
@@ -337,12 +340,6 @@ impl ScreenState {
     }
 
     pub fn set_cursor_style(&mut self, style: i32) {
-        // 0, 1 -> blinking block
-        // 2 -> steady block
-        // 3 -> blinking underline
-        // 4 -> steady underline
-        // 5 -> blinking bar
-        // 6 -> steady bar
         self.cursor.style = match style {
             0 | 1 | 2 => 0,
             3 | 4 => 1,
@@ -406,7 +403,6 @@ impl ScreenState {
     }
 
     pub fn decstr_soft_reset(&mut self) {
-        // 重置所有应该在软复位时恢复的模式
         self.modes.reset(DECSET_BIT_ORIGIN_MODE);
         self.modes.reset(MODE_LNM);
         self.modes.reset(MODE_INSERT);
@@ -489,7 +485,14 @@ impl ScreenState {
     }
 
     pub fn report_colors_changed(&self) {
-        // 不再直接调用 Java 回调，由调用者在锁外通过事件机制处理
+        if let Some(obj) = &self.java_callback_obj {
+            if let Some(vm) = crate::JAVA_VM.get() {
+                if let Ok(env) = vm.get_env() {
+                    let mut env: JNIEnv = env;
+                    let _ = env.call_method(obj.as_obj(), "onColorsChanged", "()V", &[]);
+                }
+            }
+        }
     }
 
     pub fn report_color_response(&mut self, response: &str) {
@@ -523,12 +526,8 @@ impl ScreenState {
         for param in params.iter() {
             for &p in param.iter() {
                 match p {
-                    4 => {
-                        if set { self.modes.set(MODE_INSERT); } else { self.modes.reset(MODE_INSERT); }
-                    },
-                    20 => {
-                        if set { self.modes.set(MODE_LNM); } else { self.modes.reset(MODE_LNM); }
-                    },
+                    4 => { if set { self.modes.set(MODE_INSERT); } else { self.modes.reset(MODE_INSERT); } },
+                    20 => { if set { self.modes.set(MODE_LNM); } else { self.modes.reset(MODE_LNM); } },
                     _ => {}
                 }
             }
@@ -540,21 +539,8 @@ impl ScreenState {
         self.right_margin = max(self.left_margin + 1, min(right, self.cols));
     }
 
-    pub fn back_index_scroll(&mut self) {
-        if self.cursor.x == self.left_margin {
-            // Not implemented
-        } else {
-            self.cursor.x -= 1;
-        }
-    }
-
-    pub fn forward_index_scroll(&mut self) {
-        if self.cursor.x == self.right_margin - 1 {
-            // Not implemented
-        } else {
-            self.cursor.x += 1;
-        }
-    }
+    pub fn back_index_scroll(&mut self) { self.cursor.x = max(self.left_margin, self.cursor.x - 1); }
+    pub fn forward_index_scroll(&mut self) { self.cursor.x = min(self.right_margin - 1, self.cursor.x + 1); }
 
     pub fn report_bell(&self) {
         if let Some(obj) = &self.java_callback_obj {
@@ -567,18 +553,7 @@ impl ScreenState {
         }
     }
 
-    /// 获取调试信息（用于 toString() 方法）
     pub fn get_debug_info(&self) -> String {
-        format!(
-            "TerminalEngine[cursor=({},{}),style={},size={}x{},rows={},cols={},alt={}]",
-            self.cursor.y,
-            self.cursor.x,
-            self.cursor.style,
-            self.rows,
-            self.cols,
-            self.main_screen.rows,
-            self.main_screen.cols,
-            self.use_alternate_buffer
-        )
+        format!("TerminalEngine[cursor=({},{}),style={},size={}x{},alt={}]", self.cursor.y, self.cursor.x, self.cursor.style, self.rows, self.cols, self.use_alternate_buffer)
     }
 }

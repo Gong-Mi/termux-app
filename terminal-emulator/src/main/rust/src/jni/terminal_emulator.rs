@@ -79,7 +79,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_createEngine(
     callback: JObject,
 ) -> jlong {
     android_log(LogPriority::DEBUG, &format!("JNI: createEngine ({}x{})", cols, rows));
-    let mut engine = TerminalEngine::new(cols, rows, total_rows, cw, ch);
+    let mut engine = TerminalEngine::new(0, cols, rows, total_rows, cw, ch);
     if !callback.is_null() {
         if let Ok(global_ref) = env.new_global_ref(callback) {
             engine.state.java_callback_obj = Some(global_ref);
@@ -975,7 +975,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
             coordinator.bind_pid(session_id, pid);
 
             crate::utils::android_log(crate::utils::LogPriority::DEBUG, "[TRACE_SESSION] 5.3. Creating TerminalEngine");
-            let mut engine = TerminalEngine::new(cols, rows, transcript_rows, cw, ch);
+            let mut engine = TerminalEngine::new(session_id as i32, cols, rows, transcript_rows, cw, ch);
             if let Some(ref cb) = callback_ref {
                 engine.state.java_callback_obj = Some(cb.clone());
             }
@@ -1024,6 +1024,67 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
     });
 }
 
+/// 创建子进程 (JNI.java 同步调用版)
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
+    mut env: JNIEnv,
+    _class: JClass,
+    cmd: jstring,
+    cwd: jstring,
+    args: jni::sys::jobjectArray,
+    env_vars: jni::sys::jobjectArray,
+    process_id_array: jni::sys::jintArray,
+    rows: jint,
+    cols: jint,
+    cw: jint,
+    ch: jint,
+) -> jint {
+    let cmd_str = if !cmd.is_null() {
+        env.get_string(&unsafe { JString::from_raw(cmd) }).map(|s| s.into()).unwrap_or_default()
+    } else { String::new() };
+
+    let cwd_str = if !cwd.is_null() {
+        env.get_string(&unsafe { JString::from_raw(cwd) }).map(|s| s.into()).unwrap_or_default()
+    } else { String::new() };
+
+    let mut argv = Vec::new();
+    let args_obj = unsafe { jni::objects::JObjectArray::from_raw(args) };
+    if !args_obj.is_null() {
+        if let Ok(len) = env.get_array_length(&args_obj) {
+            for i in 0..len {
+                if let Ok(arg_obj) = env.get_object_array_element(&args_obj, i) {
+                    let arg_java: JString = arg_obj.into();
+                    if let Ok(s) = env.get_string(&arg_java) { argv.push(String::from(s)); }
+                }
+            }
+        }
+    }
+
+    let mut envp = Vec::new();
+    let env_vars_obj = unsafe { jni::objects::JObjectArray::from_raw(env_vars) };
+    if !env_vars_obj.is_null() {
+        if let Ok(len) = env.get_array_length(&env_vars_obj) {
+            for i in 0..len {
+                if let Ok(env_obj) = env.get_object_array_element(&env_vars_obj, i) {
+                    let env_java: JString = env_obj.into();
+                    if let Ok(s) = env.get_string(&env_java) { envp.push(String::from(s)); }
+                }
+            }
+        }
+    }
+
+    let pty_res = crate::pty::create_subprocess_with_data(cmd_str, cwd_str, argv, envp, rows, cols, cw, ch);
+    match pty_res {
+        Ok((pty_fd, pid)) => {
+            let p_pid = [pid as jint];
+            let array = unsafe { jni::objects::JIntArray::from_raw(process_id_array) };
+            let _ = env.set_int_array_region(&array, 0, &p_pid);
+            pty_fd as jint
+        }
+        Err(_) => -1,
+    }
+}
+
 /// 等待进程
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_JNI_waitFor(
@@ -1042,35 +1103,4 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_close(
     fd: jint,
 ) {
     unsafe { libc::close(fd); }
-}
-
-/// 创建子进程
-#[unsafe(no_mangle)]
-pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
-    env: JNIEnv,
-    _class: JClass,
-    cmd: jstring,
-    cwd: jstring,
-    args: jni::sys::jobjectArray,
-    env_vars: jni::sys::jobjectArray,
-    process_id_array: jintArray,
-    rows: jint,
-    cols: jint,
-    cw: jint,
-    ch: jint,
-) -> jint {
-    unsafe {
-        crate::pty::create_subprocess(
-            env.get_native_interface(),
-            cmd,
-            cwd,
-            args,
-            env_vars,
-            process_id_array,
-            rows,
-            cols,
-            cw,
-            ch,
-        )
-    }
 }

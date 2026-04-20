@@ -23,10 +23,10 @@ impl Drop for TerminalEngine {
 }
 
 impl TerminalEngine {
-    pub fn new(cols: i32, rows: i32, total_rows: i32, cw: i32, ch: i32) -> Self {
+    pub fn new(session_id: i32, cols: i32, rows: i32, total_rows: i32, cw: i32, ch: i32) -> Self {
         Self {
             parser: Parser::new(),
-            state: ScreenState::new(cols, rows, total_rows, cw, ch),
+            state: ScreenState::new(session_id, cols, rows, total_rows, cw, ch),
             events: Vec::with_capacity(16),
         }
     }
