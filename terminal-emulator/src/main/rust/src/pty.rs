@@ -253,19 +253,28 @@ pub fn create_subprocess_with_data(
                 }
 
                 // W^X Bypass for Android 10+
-                if final_cmd.starts_with("/data/") {
+                // Standard Termux pattern: linker [program_name] [abs_path] [args...]
+                if final_cmd.contains("/files/usr/") || final_cmd.starts_with("/data/data/") {
                     #[cfg(target_pointer_width = "64")]
                     let linker = "/system/bin/linker64";
                     #[cfg(target_pointer_width = "32")]
                     let linker = "/system/bin/linker";
                     
                     if std::path::Path::new(linker).exists() {
-                        if !final_args.is_empty() {
-                            final_args.insert(1, final_cmd.clone());
-                        } else {
-                            final_args.push(final_cmd.clone());
-                            final_args.push(final_cmd.clone());
-                        }
+                        let program_name = std::path::Path::new(&final_cmd)
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("app_process")
+                            .to_string();
+
+                        // 构造符合 Linker 要求的 argv: [linker, binary_abs_path, original_args...]
+                        // 注意：execvp 的第一个参数是执行路径，argv[0] 是程序名
+                        let mut linker_argv = Vec::new();
+                        linker_argv.push(program_name); // argv[0]
+                        linker_argv.push(final_cmd.clone()); // argv[1] (linker uses this as target)
+                        linker_argv.extend(argv.clone());
+                        
+                        final_args = linker_argv;
                         final_cmd = linker.to_string();
                     }
                 }
@@ -278,16 +287,18 @@ pub fn create_subprocess_with_data(
                 let ptr_args: Vec<_> = c_args.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
                 if !final_cmd.is_empty() {
                     let c_cmd = CString::new(final_cmd.clone()).unwrap();
-                    crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY_EXEC] Attempting to exec: {} with {:?} in {}", final_cmd, ptr_args, cwd_str));
-                    libc::execvp(c_cmd.as_ptr(), ptr_args.as_ptr());
+                    crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY_EXEC] Android 11+ Exec: {} with argv[1]={:?}", final_cmd, c_args.get(1)));
                     
-                    // --- 救命逻辑：首选 Shell 失败，回退到系统 Shell ---
+                    libc::execv(c_cmd.as_ptr(), ptr_args.as_ptr());
+                    
+                    // --- 救命逻辑：如果 Linker 方式也失败，尝试最后的 Fallback ---
                     let err = nix::errno::Errno::last_raw();
-                    crate::utils::android_log(crate::utils::LogPriority::ERROR, &format!("[PTY_EXEC] execvp FAILED! errno: {}. FORCING FALLBACK TO /system/bin/sh", err));
+                    crate::utils::android_log(crate::utils::LogPriority::ERROR, &format!("[PTY_EXEC] execv FAILED! errno: {}. Fallback to /system/bin/sh", err));
                     
                     let fallback_sh = CString::new("/system/bin/sh").unwrap();
-                    let fallback_args = [fallback_sh.as_ptr(), std::ptr::null()];
-                    libc::execvp(fallback_sh.as_ptr(), fallback_args.as_ptr());
+                    let sh_name = CString::new("sh").unwrap();
+                    let fallback_args = [sh_name.as_ptr(), std::ptr::null()];
+                    libc::execv(fallback_sh.as_ptr(), fallback_args.as_ptr());
                 }
                 libc::_exit(1);
             }
