@@ -199,7 +199,9 @@ pub fn create_subprocess_with_data(
                 libc::close(ptm);
 
                 // 彻底确保 Termux 的核心环境变量
-                let termux_prefix = "/data/data/com.termux/files/usr";
+                let termux_data = "/data/data/com.termux";
+                let termux_files = format!("{}/files", termux_data);
+                let termux_prefix = format!("{}/usr", termux_files);
                 let termux_bin = format!("{}/bin", termux_prefix);
                 let termux_lib = format!("{}/lib", termux_prefix);
                 
@@ -222,9 +224,20 @@ pub fn create_subprocess_with_data(
                     final_envp.push(format!("LD_PRELOAD={}", preload_val));
                 }
 
-                // 3. 基础变量
+                // 3. libtermux-exec 必须的上下文变量
+                if !final_envp.iter().any(|s| s.starts_with("TERMUX_APP__DATA_DIR=")) {
+                    final_envp.push(format!("TERMUX_APP__DATA_DIR={}", termux_data));
+                }
+                if !final_envp.iter().any(|s| s.starts_with("TERMUX__PREFIX=")) {
+                    final_envp.push(format!("TERMUX__PREFIX={}", termux_prefix));
+                }
+                if !final_envp.iter().any(|s| s.starts_with("LD_LIBRARY_PATH=")) {
+                    final_envp.push(format!("LD_LIBRARY_PATH={}", termux_lib));
+                }
+
+                // 4. 基础变量
                 if !final_envp.iter().any(|s| s.starts_with("TERM=")) { final_envp.push("TERM=xterm-256color".to_string()); }
-                if !final_envp.iter().any(|s| s.starts_with("HOME=")) { final_envp.push("HOME=/data/data/com.termux/files/home".to_string()); }
+                if !final_envp.iter().any(|s| s.starts_with("HOME=")) { final_envp.push(format!("{}/home", termux_files)); }
                 if !final_envp.iter().any(|s| s.starts_with("PREFIX=")) { final_envp.push(format!("PREFIX={}", termux_prefix)); }
 
                 libc::clearenv();
