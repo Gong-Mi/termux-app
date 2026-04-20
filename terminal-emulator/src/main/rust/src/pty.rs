@@ -332,13 +332,14 @@ pub fn create_subprocess_with_data(
                     
                     if std::path::Path::new(linker).exists() {
                         let mut linker_argv = Vec::new();
-                        // argv[0]: Linker 自身的路径 (标准做法)
-                        linker_argv.push(linker.to_string()); 
                         
-                        // argv[1]: 关键！这是 Linker 真正要加载并运行的二进制绝对路径
-                        linker_argv.push(final_cmd.clone()); 
+                        // 关键修复：Android Linker 直接调用时，参数对齐非常敏感。
+                        // 我们将目标二进制的绝对路径同时作为 argv[0] 和 argv[1] (相对于 Linker)。
+                        // 这样确保了 Linker 无论如何都能找到绝对路径。
+                        linker_argv.push(final_cmd.clone()); // 作为 Linker 看到的 argv[0]
+                        linker_argv.push(final_cmd.clone()); // 作为 Linker 看到的 argv[1] (通常被当作子进程的 argv[0])
                         
-                        // argv[2..]: 透传所有解析后的参数（跳过 final_args 中的第一个，通常是二进制名）
+                        // argv[2..]: 透传所有解析后的参数（跳过 final_args 中的第一个）
                         if final_args.len() > 1 {
                             linker_argv.extend(final_args.iter().skip(1).cloned());
                         }
@@ -356,8 +357,9 @@ pub fn create_subprocess_with_data(
                 let ptr_args: Vec<_> = c_args.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
                 if !final_cmd.is_empty() {
                     let c_cmd = CString::new(final_cmd.clone()).unwrap();
-                    crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY_EXEC] Final Linker Exec: {} -> argv[0]={:?}, argv[1]={:?}", 
-                        final_cmd, final_args.get(0).unwrap_or(&"NONE".to_string()), final_args.get(1).unwrap_or(&"NONE".to_string())));
+                    let args_preview = final_args.iter().take(4).cloned().collect::<Vec<_>>().join(", ");
+                    crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY_EXEC] Final Linker Exec: {} -> argv={:?}...", 
+                        final_cmd, args_preview));
                     
                     libc::execv(c_cmd.as_ptr(), ptr_args.as_ptr());
                     
