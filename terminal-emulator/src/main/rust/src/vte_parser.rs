@@ -340,9 +340,46 @@ impl Parser {
     
     /// 处理输入字节
     pub fn advance<P: Perform>(&mut self, handler: &mut P, data: &[u8]) {
-        let text = String::from_utf8_lossy(data);
-        for c in text.chars() {
-            self.process_char(handler, c);
+        let mut pos = 0;
+        let len = data.len();
+
+        while pos < len {
+            // SVE 快速路径：当不在转义序列中时，快速跳过纯文本
+            if self.escape_state == ESC_NONE {
+                #[cfg(target_arch = "aarch64")]
+                {
+                    if crate::vte_sve::has_sve_support() {
+                        let fast_len = unsafe { crate::vte_sve::find_first_control_sve(&data[pos..]) };
+                        if fast_len > 0 {
+                            let text = String::from_utf8_lossy(&data[pos..pos + fast_len]);
+                            for c in text.chars() {
+                                handler.print(c);
+                            }
+                            pos += fast_len;
+                            if pos >= len { break; }
+                        }
+                    }
+                }
+            }
+
+            // 慢速路径：逐字节/逐字符处理
+            // 为了正确处理 UTF-8，我们从当前位置尝试转换一个字符
+            let remaining = &data[pos..];
+            
+            // 简单处理：如果是 ASCII，直接走 process_char
+            if remaining[0] < 128 {
+                self.process_char(handler, remaining[0] as char);
+                pos += 1;
+            } else {
+                // 如果是多字节，我们需要找到完整的字符边界
+                let text = String::from_utf8_lossy(remaining);
+                if let Some(c) = text.chars().next() {
+                    self.process_char(handler, c);
+                    pos += c.len_utf8();
+                } else {
+                    pos += 1; // 理论上不会发生
+                }
+            }
         }
     }
     
