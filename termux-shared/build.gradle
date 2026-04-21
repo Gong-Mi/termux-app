@@ -35,12 +35,6 @@ android {
         minSdk project.properties.minSdkVersion.toInteger()
         targetSdk project.properties.targetSdkVersion.toInteger()
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        externalNativeBuild {
-            ndkBuild {
-                cppFlags ''
-                arguments "APP_LDFLAGS=-Wl,-z,max-page-size=16384"
-            }
-        }
     }
 
     buildTypes {
@@ -56,12 +50,6 @@ android {
 
         sourceCompatibility JavaVersion.VERSION_21
         targetCompatibility JavaVersion.VERSION_21
-    }
-
-    externalNativeBuild {
-        ndkBuild {
-            path file('src/main/cpp/Android.mk')
-        }
     }
 
     publishing {
