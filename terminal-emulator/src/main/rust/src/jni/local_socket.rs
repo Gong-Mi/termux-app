@@ -132,9 +132,15 @@ pub unsafe extern "system" fn Java_com_termux_shared_net_socket_local_LocalSocke
     fd: jint,
 ) -> jobject {
     let mut available = 0i32;
-    const FIONREAD: libc::c_int = 0x541B;
     unsafe {
-        if libc::ioctl(fd, FIONREAD, &mut available) == -1 {
+        #[cfg(target_os = "linux")]
+        let request = libc::FIONREAD;
+        #[cfg(target_os = "android")]
+        let request = libc::FIONREAD;
+        #[cfg(not(any(target_os = "linux", target_os = "android")))]
+        let request = 0x541B;
+
+        if libc::ioctl(fd, request as _, &mut available) == -1 {
             let e = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
             return get_jni_result(&mut env, &log_title, -1, e, "ioctl FIONREAD failed", 0).into_raw();
         }
