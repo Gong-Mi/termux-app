@@ -4,9 +4,6 @@ use jni::JNIEnv;
 use jni::objects::{JObject, JString, JClass};
 use jni::sys::{jint, jlong, jfloat, jfloatArray, jboolean};
 
-use crate::utils::{android_log, LogPriority};
-use crate::vulkan_context::VulkanContext;
-
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
     env: JNIEnv,
