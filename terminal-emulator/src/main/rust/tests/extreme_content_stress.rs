@@ -13,7 +13,7 @@ fn get_row_text(engine: &TerminalEngine, row: i32) -> String {
 fn test_massive_50000_rows_stress() {
     // 1. 初始化最大容量引擎 (50,000 行)
     let max_rows = 50000;
-    let mut engine = TerminalEngine::new(80, 24, max_rows, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, max_rows, 10, 20);
     
     println!("--- Step 1: Writing 45,000 lines of complex content ---");
     let start = Instant::now();

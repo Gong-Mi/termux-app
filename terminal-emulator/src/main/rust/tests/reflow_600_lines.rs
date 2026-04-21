@@ -11,7 +11,7 @@ fn get_row_text(engine: &TerminalEngine, row: i32) -> String {
 fn test_reflow_stress_600_lines() {
     // 1. 初始化一个足够大的引擎，总行数 5000
     // 因为 600 个长行在 15 宽时约占 3600 物理行
-    let mut engine = TerminalEngine::new(80, 24, 5000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 5000, 10, 20);
     
     println!("--- Step 1: Writing 600 lines of numbered content ---");
     for i in 1..=600 {

@@ -2,7 +2,7 @@ mod terminal_engine;
 use terminal_engine::TerminalEngine;
 
 fn main() {
-    let mut engine = TerminalEngine::new(80, 24);
+    let mut engine = TerminalEngine::new(0, 80, 24, 2000, 10, 20);
     
     // 发送带有 ANSI 颜色序列的测试数据
     // \x1b[31m 为红色, \x1b[32m 为绿色

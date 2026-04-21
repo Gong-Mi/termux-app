@@ -11,7 +11,7 @@ fn get_row_text(engine: &TerminalEngine, row: i32) -> String {
 #[test]
 fn test_content_goes_beyond_screen() {
     // 创建一个 80x24 的终端，总缓冲区 1000 行
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
     
     println!("Initial state:");
     println!("  cols={}, rows={}, active_transcript={}", 
@@ -77,7 +77,7 @@ fn test_content_goes_beyond_screen() {
 #[test]
 fn test_resize_preserves_history() {
     // 创建一个 80x24 的终端
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
     
     // 写入 50 行
     for i in 1..=50 {

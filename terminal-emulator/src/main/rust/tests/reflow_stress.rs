@@ -9,7 +9,7 @@ fn get_row_text(engine: &TerminalEngine, row: i32) -> String {
 
 #[test]
 fn test_extreme_shrinking_reflow() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     let line = "This is a long line that will be wrapped many times when the screen is shrunk extreme.";
     engine.process_bytes(line.as_bytes());
     
@@ -22,7 +22,7 @@ fn test_extreme_shrinking_reflow() {
 
 #[test]
 fn test_wide_char_reflow_stress() {
-    let mut engine = TerminalEngine::new(20, 10, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 20, 10, 100, 10, 20);
     engine.process_bytes("你好世界".as_bytes());
     
     engine.state.resize(5, 10);
@@ -39,7 +39,7 @@ fn test_wide_char_reflow_stress() {
 
 #[test]
 fn test_rapid_resize_bounce() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     engine.process_bytes(b"Consistent Content");
     
     // 多次随机缩放
@@ -57,7 +57,7 @@ fn test_rapid_resize_bounce() {
 #[test]
 fn test_reflow_with_full_scrollback() {
     // 100 行总容量
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     
     // 写入超过容量的内容，使缓冲区充满
     for i in 0..150 {
@@ -76,7 +76,7 @@ fn test_reflow_with_full_scrollback() {
 #[test]
 fn test_realistic_reflow_with_history() {
     // 缩小规模以便调试：100 行容量
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     
     // 写入 50 行
     for i in 0..50 {
@@ -108,7 +108,7 @@ fn test_realistic_reflow_with_history() {
 
 #[test]
 fn test_reflow_empty_lines() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     engine.process_bytes(b"Start\r\n\r\n\r\n\r\nEnd");
     
     engine.state.resize(10, 24);

@@ -6,7 +6,7 @@ use termux_rust::engine::TerminalEngine;
 fn test_data_integrity_java_to_rust() {
     println!("=== 测试 Java 到 Rust 数据传递完整性 ===\n");
 
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
     
     // 1. 测试小包传递
     println!("1. 测试小包传递 (每次 1 字节):");
@@ -21,7 +21,7 @@ fn test_data_integrity_java_to_rust() {
     
     // 2. 测试 UTF-8 多字节字符
     println!("\n2. 测试 UTF-8 多字节字符:");
-    engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
     let utf8_line = "Hello UTF-8\r\n";
     engine.process_bytes(utf8_line.as_bytes());
     
@@ -32,7 +32,7 @@ fn test_data_integrity_java_to_rust() {
     
     // 3. 测试 ANSI 序列分割
     println!("\n3. 测试 ANSI 序列分割:");
-    engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
     
     // 分割 ESC 序列
     let esc_seq = b"\x1b[3";
@@ -47,7 +47,7 @@ fn test_data_integrity_java_to_rust() {
     
     // 4. 测试大数据块
     println!("\n4. 测试大数据块 (64KB):");
-    engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
     
     let mut large_data = Vec::new();
     for i in 0..1000 {

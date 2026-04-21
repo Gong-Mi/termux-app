@@ -7,7 +7,7 @@ fn test_screen_expand_content_loss() {
     println!("=== 测试屏幕扩大时内容丢失问题 ===\n");
 
     // 1. 创建 80x24 屏幕
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
     println!("1. 创建 80x24 屏幕");
 
     // 2. 写入 100 行内容

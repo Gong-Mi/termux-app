@@ -1162,7 +1162,7 @@ mod tests {
 
     #[test]
     fn test_cursor_visibility_logic() {
-        let mut engine = crate::engine::TerminalEngine::new(80, 24, 100, 10, 20);
+        let mut engine = crate::engine::TerminalEngine::new(0, 80, 24, 100, 10, 20);
         
         // 1. 默认状态：光标启用，不闪烁 -> 应可见
         engine.state.cursor_enabled = true;
@@ -1191,7 +1191,7 @@ mod tests {
     #[test]
     fn test_selection_pipeline_invalidation() {
         // 1. 初始化引擎和渲染器
-        let mut engine = crate::engine::TerminalEngine::new(80, 24, 100, 10, 20);
+        let mut engine = crate::engine::TerminalEngine::new(0, 80, 24, 100, 10, 20);
         let mut renderer = TerminalRenderer::new(&[], 12.0, None);
         let mut surface = skia_safe::surfaces::raster(&skia_safe::ImageInfo::new_n32_premul((800, 600), None), None, None).unwrap();
         let canvas = surface.canvas();

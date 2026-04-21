@@ -16,7 +16,7 @@ fn get_row_text(engine: &TerminalEngine, row: i32) -> String {
 
 #[test]
 fn test_lnm_basic_works() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 默认 LNM 关闭: \n 只换行，不回车
     engine.process_bytes(b"ABCDEFGHIJ"); // x=10, y=0
@@ -53,7 +53,7 @@ fn test_lnm_basic_works() {
 
 #[test]
 fn test_decstr_does_not_reset_lnm_bug() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 确认初始状态 LNM 关闭
     assert_eq!(engine.state.cursor.x, 0);
@@ -103,7 +103,7 @@ fn test_decstr_does_not_reset_lnm_bug() {
 
 #[test]
 fn test_lnm_private_mode_ignored() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 先写几个字符
     engine.process_bytes(b"ABCDEFGHIJ");
@@ -137,7 +137,7 @@ fn test_lnm_private_mode_ignored() {
 
 #[test]
 fn test_lnm_affects_vt_and_ff() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // LNM 关闭
     engine.process_bytes(b"ABCDEFGHIJ");
@@ -194,7 +194,7 @@ fn test_lnm_affects_vt_and_ff() {
 
 #[test]
 fn test_decstr_soft_reset_mode_effects() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 启用多种模式
     engine.process_bytes(b"\x1b[?1h");   // application cursor keys (DECSET 1)
@@ -257,7 +257,7 @@ fn test_decstr_soft_reset_mode_effects() {
 
 #[test]
 fn test_insert_mode_actually_works() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 写入一行内容
     engine.process_bytes(b"ABCDEFGHIJ");
@@ -296,7 +296,7 @@ fn test_insert_mode_actually_works() {
 
 #[test]
 fn test_lnm_with_origin_mode() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 设置滚动区域: 第 2-10 行 (1-indexed: 2..10, 0-indexed: 1..9)
     engine.process_bytes(b"\x1b[2;10r");
@@ -335,7 +335,7 @@ fn test_lnm_with_origin_mode() {
 
 #[test]
 fn test_lnm_scroll_on_bottom_margin() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 把光标移到底部 margin
     engine.process_bytes(b"\x1b[24;1H"); // y=23 (0-indexed)

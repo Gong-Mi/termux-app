@@ -4,7 +4,7 @@
 use termux_rust::TerminalEngine;
 
 fn setup_engine_with_content(cols: i32, rows: i32) -> TerminalEngine {
-    let mut engine = TerminalEngine::new(cols, rows, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, cols, rows, 100, 10, 20);
 
     // 写入 30 行测试内容
     for i in 1..=30 {
@@ -109,7 +109,7 @@ fn test_history_management_during_zoom() {
 fn test_wide_char_during_zoom() {
     println!("\n=== 测试 4: CJK 字符缩放 ===");
     
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     
     // 写入 CJK 字符（每个占 2 列）
     let cjk_text = "你好世界测试内容";
@@ -133,7 +133,7 @@ fn test_wide_char_during_zoom() {
 fn test_cursor_position_during_zoom() {
     println!("\n=== 测试 5: 光标位置在缩放时 ===");
     
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     
     // 移动光标到特定位置
     engine.process_bytes(b"Hello World\r\n");
@@ -193,7 +193,7 @@ fn test_extreme_zoom_cycle() {
 fn test_column_change_reflow() {
     println!("\n=== 测试 7: 列变化时的内容重排 ===");
     
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     
     // 写入长行内容
     let long_line = "A".repeat(70);

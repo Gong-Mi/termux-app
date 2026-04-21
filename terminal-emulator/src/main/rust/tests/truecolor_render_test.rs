@@ -13,7 +13,7 @@ fn get_row_text(engine: &TerminalEngine, row: i32) -> String {
 /// Verify truecolor foreground sequences are parsed and stored
 #[test]
 fn test_truecolor_fg_parsed() {
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
 
     // \x1b[38;2;255;128;64m = truecolor foreground RGB(255,128,64)
     engine.process_bytes(b"\x1b[38;2;255;128;64mHello");
@@ -36,7 +36,7 @@ fn test_truecolor_fg_parsed() {
 /// Verify truecolor background sequences are parsed and stored
 #[test]
 fn test_truecolor_bg_parsed() {
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
 
     // \x1b[48;2;0;128;255m = truecolor background RGB(0,128,255)
     engine.process_bytes(b"\x1b[48;2;0;128;255mWorld");
@@ -58,7 +58,7 @@ fn test_truecolor_bg_parsed() {
 /// Verify 256-color palette sequences work
 #[test]
 fn test_256_color_palette() {
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
 
     // \x1b[38;5;196m = red in 256-color palette
     engine.process_bytes(b"\x1b[38;5;196mRed");
@@ -76,7 +76,7 @@ fn test_256_color_palette() {
 /// Verify truecolor + bold don't corrupt the color
 #[test]
 fn test_truecolor_with_bold() {
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
 
     // \x1b[1;38;2;255;0;0m = bold + truecolor red
     engine.process_bytes(b"\x1b[1;38;2;255;0;0mBOLD");
@@ -98,7 +98,7 @@ fn test_truecolor_with_bold() {
 /// Verify text content is stored correctly with truecolor
 #[test]
 fn test_truecolor_text_content() {
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
 
     engine.process_bytes(b"\x1b[38;2;100;200;150mColored Text\x1b[0m");
 
@@ -111,7 +111,7 @@ fn test_truecolor_text_content() {
 /// Verify resetting colors works
 #[test]
 fn test_truecolor_reset() {
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
 
     // Set truecolor, write text, reset, write more text
     engine.process_bytes(b"\x1b[38;2;255;0;0mRed\x1b[0mNormal");
@@ -130,7 +130,7 @@ fn test_truecolor_reset() {
 /// Verify combined foreground + background truecolor in a single SGR sequence
 #[test]
 fn test_truecolor_fg_and_bg() {
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
 
     // \x1b[38;2;255;255;255;48;2;0;0m = white on black in one sequence
     engine.process_bytes(b"\x1b[38;2;255;255;255;48;2;0;0mWhiteOnBlack");

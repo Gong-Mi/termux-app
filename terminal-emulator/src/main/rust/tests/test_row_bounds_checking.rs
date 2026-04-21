@@ -7,7 +7,7 @@ fn test_get_row_bounds_checking() {
     println!("=== 测试 get_row 边界检查 ===\n");
 
     // 1. 创建 80x24 屏幕，写入 50 行内容
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
     
     for i in 1..=50 {
         let line = format!("Line {}\r\n", i);

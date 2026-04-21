@@ -8,7 +8,7 @@ use skia_safe::{surfaces};
 #[test]
 fn test_logo_render_displacement_repro() {
     // 1. 初始化引擎 (80x10)
-    let mut engine = TerminalEngine::new(80, 10, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 10, 100, 10, 20);
 
     // 2. 模拟 gemini-cli 的 Logo 输出片段
     // 场景：在第 5 列开始绘制一个带真彩色的 "▗" (U+2597)

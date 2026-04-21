@@ -10,7 +10,7 @@ fn test_inverse_video_basic() {
     println!("\n=== 反色功能基础测试 ===\n");
 
     // 创建 80x24 终端
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 测试 1: 初始状态应该没有反色效果
     println!("测试 1: 初始状态");
@@ -43,7 +43,7 @@ fn test_inverse_video_basic() {
 
     // 测试 4: 发送 SGR 0 (重置所有效果)
     println!("测试 4: 发送 SGR 7 然后 SGR 0 (重置)");
-    let mut engine_reset = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine_reset = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     engine_reset.process_bytes(b"\x1b[7m\x1b[0m");
     let effect_after_0 = engine_reset.state.effect;
     let has_reverse_after_0 = (effect_after_0 & EFFECT_REVERSE) != 0;
@@ -57,7 +57,7 @@ fn test_inverse_video_basic() {
 fn test_inverse_video_in_text() {
     println!("\n=== 反色文本应用测试 ===\n");
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     
     // 先写一些普通文本
     engine.process_bytes(b"Normal text");
@@ -88,7 +88,7 @@ fn test_inverse_video_in_text() {
 #[test]
 fn test_all_sgr_effects() {
     println!("\n=== 所有 SGR 效果测试 ===\n");
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     
     // 测试粗体
     engine.process_bytes(b"\x1b[1m");
@@ -145,7 +145,7 @@ fn test_all_sgr_effects() {
 #[test]
 fn test_decset5_reverse_video() {
     println!("\n=== DECSET 5 全局反色模式测试 ===\n");
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     
     // 初始状态
     let initial_reverse_video = engine.state.modes.is_enabled(DECSET_BIT_REVERSE_VIDEO as i32);

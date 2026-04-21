@@ -9,7 +9,7 @@ fn get_row_text(engine: &TerminalEngine, row: i32) -> String {
 
 #[test]
 fn test_vt100_core_compatibility() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     
     // 1. 测试游标定位与基本文本 (CUP)
     engine.process_bytes(b"\x1b[5;10HVT100");
@@ -31,7 +31,7 @@ fn test_vt100_core_compatibility() {
 
 #[test]
 fn test_vt200_editing_compatibility() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     engine.process_bytes(b"Line1\r\nLine2\r\nLine3");
     
     // 1. 测试删除行 (DL)
@@ -56,7 +56,7 @@ fn test_vt200_editing_compatibility() {
 
 #[test]
 fn test_vt300_features_compatibility() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     
     // 1. 测试颜色设置 (SGR 256/TrueColor)
     // 虽然 SGR 是 ANSI 标，但在 VT300 时代得到了极大加强
@@ -76,7 +76,7 @@ fn test_vt300_features_compatibility() {
 
 #[test]
 fn test_mode_switching_compatibility() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     
     // 1. 测试进入备用屏幕 (DECSET 1049)
     engine.process_bytes(b"\x1b[?1049h");

@@ -9,7 +9,7 @@ const ITERATIONS: usize = 1000;
 const TEST_ROWS: i32 = 30;
 
 fn setup_engine(cols: i32, rows: i32) -> TerminalEngine {
-    let mut engine = TerminalEngine::new(cols, rows, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, cols, rows, 100, 10, 20);
     
     // 写入测试内容
     for i in 0..TEST_ROWS {

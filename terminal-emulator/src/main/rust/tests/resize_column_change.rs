@@ -8,7 +8,7 @@ fn test_column_change_history_loss() {
     println!("\n=== 列变化导致历史丢失测试 ===");
     
     // 1. 创建 80x24 引擎，写入 30 行
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     for i in 1..=30 {
         let line = format!("Line {:02}\r\n", i);
         engine.process_bytes(line.as_bytes());
@@ -51,7 +51,7 @@ fn test_row_only_vs_column_change() {
     println!("\n=== 仅行变化 vs 列变化对比 ===");
     
     // 测试 1: 仅行变化（快路径）
-    let mut engine1 = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine1 = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     for i in 1..=30 {
         let line = format!("Line {:02}\r\n", i);
         engine1.process_bytes(line.as_bytes());
@@ -67,7 +67,7 @@ fn test_row_only_vs_column_change() {
     assert_eq!(initial1, final1, "快路径应该保留历史");
     
     // 测试 2: 列变化（慢路径）
-    let mut engine2 = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine2 = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     for i in 1..=30 {
         let line = format!("Line {:02}\r\n", i);
         engine2.process_bytes(line.as_bytes());

@@ -8,7 +8,7 @@ fn test_expand_shows_content_below_viewport() {
     println!("=== 测试屏幕扩大时下方内容显示 ===\n");
 
     // 1. 创建 80x10 小屏幕
-    let mut engine = TerminalEngine::new(80, 10, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 10, 1000, 10, 20);
     println!("1. 创建 80x10 屏幕");
 
     // 2. 写入 20 行内容（超过屏幕高度）

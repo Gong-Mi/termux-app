@@ -24,7 +24,7 @@ fn get_row_text(engine: &TerminalEngine, row: i32) -> String {
 /// 验证 CJK 宽字符后的占位符 \0 不被计入空间使用
 #[test]
 fn test_get_space_used_ignores_null_placeholder() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 写入一个 CJK 宽字符 "你" (占 2 列，第二列是 \0 占位符)
     // UTF-8 bytes for "你": 0xE4 0xBD 0xA0
@@ -51,7 +51,7 @@ fn test_get_space_used_ignores_null_placeholder() {
 /// 验证多个 CJK 字符的占位符处理
 #[test]
 fn test_get_space_used_multiple_cjk() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 写入 "你好" (两个 CJK 宽字符)
     // UTF-8: 你 = 0xE4 0xBD 0xA0, 好 = 0xE5 0xA5 0xBD
@@ -77,7 +77,7 @@ fn test_get_space_used_multiple_cjk() {
 /// 验证混合 ASCII 和 CJK 的空间计算
 #[test]
 fn test_get_space_used_mixed_ascii_cjk() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 写入 "Hi 你" (2 ASCII + 1 space + 1 CJK)
     // UTF-8: 你 = 0xE4 0xBD 0xA0
@@ -108,7 +108,7 @@ fn test_get_space_used_mixed_ascii_cjk() {
 /// 验证 clear_all() 清空整行
 #[test]
 fn test_clear_all() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 先写入一些内容
     engine.process_bytes(b"Hello World");
@@ -130,7 +130,7 @@ fn test_clear_all() {
 /// 验证 clear_all() 不重置 line_wrap (对齐 Java)
 #[test]
 fn test_clear_all_preserves_line_wrap() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 写入超过 80 列的内容强制换行
     let long_text = "A".repeat(100);
@@ -157,7 +157,7 @@ fn test_clear_all_preserves_line_wrap() {
 /// 验证缩小屏幕时的内容重排
 #[test]
 fn test_resize_shrink_reflow() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 写入一行 80 字符
     let line = "A".repeat(80);
@@ -183,7 +183,7 @@ fn test_resize_shrink_reflow() {
 /// 验证放大屏幕时的内容重排
 #[test]
 fn test_resize_expand_reflow() {
-    let mut engine = TerminalEngine::new(40, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 40, 24, 100, 10, 20);
 
     // 写入两行 40 字符
     let a_line = "A".repeat(40);
@@ -211,7 +211,7 @@ fn test_resize_expand_reflow() {
 /// 验证 resize 时光标位置追踪
 #[test]
 fn test_resize_cursor_tracking() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 写入内容
     engine.process_bytes(b"Hello World");
@@ -235,7 +235,7 @@ fn test_resize_cursor_tracking() {
 /// 验证 skipped_blank_lines 逻辑 (Java 对齐)
 #[test]
 fn test_resize_skipped_blank_lines() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 写入内容后跟空行
     engine.process_bytes(b"Line 1\r\n");
@@ -260,7 +260,7 @@ fn test_resize_skipped_blank_lines() {
 /// 验证 CJK 字符在行尾的换行
 #[test]
 fn test_cjk_wrap_at_line_end() {
-    let mut engine = TerminalEngine::new(5, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 5, 24, 100, 10, 20);
 
     // 屏幕只有 5 列，写入 "AB 你" (2 + 2 = 4 列，应该能放下)
     // UTF-8: 你 = 0xE4 0xBD 0xA0
@@ -281,7 +281,7 @@ fn test_cjk_wrap_at_line_end() {
 /// 验证 CJK 字符跨行换行
 #[test]
 fn test_cjk_wrap_across_lines() {
-    let mut engine = TerminalEngine::new(5, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 5, 24, 100, 10, 20);
 
     // 屏幕只有 5 列，写入 "AB 你好" (2 + 2 + 2 = 6 列，"好" 应该换行)
     // UTF-8: 你 = 0xE4 0xBD 0xA0, 好 = 0xE5 0xA5 0xBD
@@ -310,7 +310,7 @@ fn test_cjk_wrap_across_lines() {
 fn test_combining_char_space_calculation() {
     // 注意：Rust 侧目前不直接处理 combining chars
     // 这个测试验证基础行为
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 写入普通字符
     engine.process_bytes(b"e\xcc\x81"); // e + combining acute accent = é
@@ -331,7 +331,7 @@ fn test_combining_char_space_calculation() {
 /// 复杂场景：CJK + resize + 光标追踪
 #[test]
 fn test_complex_cjk_resize_cursor() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 写入混合内容
     // "Hello 世界！" - UTF-8: 世 = 0xE4 0xB8 96, 界 = 0xE7 0x95 8C, ！ = 0xEF 0xBC 0x81
@@ -369,7 +369,7 @@ fn test_complex_cjk_resize_cursor() {
 /// 边界情况：极窄屏幕 resize
 #[test]
 fn test_extreme_narrow_resize() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     engine.process_bytes(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ");
     

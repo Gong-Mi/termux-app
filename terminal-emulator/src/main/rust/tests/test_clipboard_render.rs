@@ -7,7 +7,7 @@ fn test_clipboard_and_rendering() {
     println!("=== 测试剪贴板和渲染问题 ===\n");
 
     // 1. 创建 80x24 屏幕
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
     
     // 2. 写入带 MD5 哈希的内容
     for i in 1..=50 {

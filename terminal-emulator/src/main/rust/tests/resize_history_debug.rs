@@ -38,7 +38,7 @@ fn dump_screen_state(engine: &TerminalEngine, label: &str) {
 fn test_fast_path_history() {
     println!("\n========== 快路径测试 ==========");
     
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     
     // 写入 30 行
     for i in 1..=30 {
@@ -65,7 +65,7 @@ fn test_fast_path_history() {
 fn test_slow_path_history() {
     println!("\n========== 慢路径测试 ==========");
     
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     
     // 写入 30 行
     for i in 1..=30 {
@@ -99,7 +99,7 @@ fn test_slow_path_history() {
 fn test_slow_path_content_check() {
     println!("\n========== 慢路径内容检查 ==========");
     
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     
     // 写入特定内容方便验证
     for i in 1..=30 {

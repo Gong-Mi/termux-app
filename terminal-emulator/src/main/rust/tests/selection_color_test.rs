@@ -28,7 +28,7 @@ fn test_reverse_colors_basic() {
 /// does NOT cause text to become invisible
 #[test]
 fn test_truecolor_fg_selected_reverses_correctly() {
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
 
     // Set truecolor foreground: RGB(255, 100, 50)
     engine.process_bytes(b"\x1b[38;2;255;100;50mHello");
@@ -65,7 +65,7 @@ fn test_truecolor_fg_selected_reverses_correctly() {
 /// does NOT cause text to become invisible
 #[test]
 fn test_truecolor_bg_selected_reverses_correctly() {
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
 
     // Set truecolor background: RGB(0, 100, 200), default foreground
     engine.process_bytes(b"\x1b[48;2;0;100;200mWorld");
@@ -115,7 +115,7 @@ fn test_selection_invisibility_bug_scenario() {
     //   - bg_color_val = palette[256] = default FG color
     //   → text is now the original truecolor, background is default FG = visible!
 
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
 
     // Default FG + Truecolor BG (RGB=50, 100, 150)
     engine.process_bytes(b"\x1b[48;2;50;100;150mTest");
@@ -159,7 +159,7 @@ fn test_selection_invisibility_bug_scenario() {
 /// Verify that both FG and BG can be truecolor and selection reverses correctly
 #[test]
 fn test_both_truecolor_selected() {
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
 
     // Truecolor FG (red) + Truecolor BG (blue)
     engine.process_bytes(b"\x1b[38;2;255;0;0;48;2;0;0;255mBoth");
@@ -192,7 +192,7 @@ fn test_both_truecolor_selected() {
 /// Verify index color selection reversal (the normal case, no truecolor)
 #[test]
 fn test_index_color_selection_reversal() {
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
 
     // Index color FG (red, index 1) + Index color BG (blue, index 4)
     engine.process_bytes(b"\x1b[38;5;1;48;5;4mIndex");
@@ -224,7 +224,7 @@ fn test_index_color_selection_reversal() {
 /// Verify that default foreground + default background selection reversal works
 #[test]
 fn test_default_colors_selection_reversal() {
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
 
     // Default colors (no SGR set)
     engine.process_bytes(b"Default");
@@ -256,7 +256,7 @@ fn test_default_colors_selection_reversal() {
 /// distinct foreground and background color values.
 #[test]
 fn test_selection_never_invisible_after_fix() {
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
 
     // Test matrix: all color combinations
     let test_cases = [
@@ -271,7 +271,7 @@ fn test_selection_never_invisible_after_fix() {
     ];
 
     for (fg_seq, bg_seq, desc) in test_cases {
-        let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+        let mut engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
         engine.process_bytes(format!("{}{}X", fg_seq, bg_seq).as_bytes());
 
         let style = engine.state.main_screen.get_row(0).styles[0];

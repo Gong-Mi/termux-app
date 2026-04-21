@@ -20,7 +20,7 @@ fn get_screen_as_text(engine: &TerminalEngine) -> Vec<String> {
 /// Gemini 发送 \x1b[>4;2m (键盘协议)，Rust 引擎却把它当成了“下划线”样式
 #[test]
 fn proof_sgr_pollution() {
-    let mut engine = TerminalEngine::new(80, 10, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 10, 100, 10, 20);
     
     // 初始状态下不应有下划线效果
     assert!((engine.state.effect & EFFECT_UNDERLINE) == 0, "Initial state should not have underline");
@@ -42,7 +42,7 @@ fn proof_sgr_pollution() {
 /// Gemini 的清理序列只清除了当前行，导致下方旧内容可见
 #[test]
 fn proof_content_leak() {
-    let mut engine = TerminalEngine::new(80, 10, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 10, 100, 10, 20);
     
     // 写入两行旧内容
     engine.process_bytes(b"OLD LINE 1\r\nOLD LINE 2");
@@ -68,7 +68,7 @@ fn proof_content_leak() {
 /// Gemini 请求次级设备属性，我们却给了初级的格式
 #[test]
 fn proof_da_response_invalid() {
-    let mut engine = TerminalEngine::new(80, 10, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 10, 100, 10, 20);
     
     // 模拟应用请求 CSI > c
     engine.process_bytes(b"\x1b[>c");

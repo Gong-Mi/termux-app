@@ -12,7 +12,7 @@ fn test_flat_buffer_size_equals_total_rows() {
     let screen_rows = 24;
     let total_rows = 2000; // 滚动历史 + 屏幕
 
-    let engine = TerminalEngine::new(cols, screen_rows, total_rows, 10, 20);
+    let engine = TerminalEngine::new(0, cols, screen_rows, total_rows, 10, 20);
 
     // 验证 flat_buffer 已创建
     assert!(engine.state.flat_buffer.is_some(), "flat_buffer should be created");
@@ -60,7 +60,7 @@ fn test_shared_buffer_size() {
     let screen_rows = 24;
     let total_rows = 2000;
 
-    let mut engine = TerminalEngine::new(cols, screen_rows, total_rows, 10, 20);
+    let mut engine = TerminalEngine::new(0, cols, screen_rows, total_rows, 10, 20);
 
     // 创建共享缓冲区
     let shared_ptr = engine.state.flat_buffer.as_mut().unwrap().create_shared_buffer();
@@ -94,7 +94,7 @@ fn test_sync_all_rows_to_shared_buffer() {
     let screen_rows = 24;
     let total_rows = 100; // 使用较小的值以便测试
 
-    let mut engine = TerminalEngine::new(cols, screen_rows, total_rows, 10, 20);
+    let mut engine = TerminalEngine::new(0, cols, screen_rows, total_rows, 10, 20);
 
     // 在所有行上写入不同的内容
     for row in 0..screen_rows {
@@ -152,7 +152,7 @@ fn test_scrollback_rows_access() {
     let screen_rows = 24;
     let total_rows = 100;
 
-    let mut engine = TerminalEngine::new(cols, screen_rows, total_rows, 10, 20);
+    let mut engine = TerminalEngine::new(0, cols, screen_rows, total_rows, 10, 20);
 
     // 生成超过屏幕行数的内容，触发滚动
     for i in 0..50 {
@@ -194,7 +194,7 @@ fn test_alternate_buffer_does_not_affect_flat_buffer_size() {
     let screen_rows = 24;
     let total_rows = 2000;
 
-    let mut engine = TerminalEngine::new(cols, screen_rows, total_rows, 10, 20);
+    let mut engine = TerminalEngine::new(0, cols, screen_rows, total_rows, 10, 20);
 
     // 记录主缓冲区的 flat_buffer 大小
     let main_flat_buffer_rows = engine.state.flat_buffer.as_ref().unwrap().rows;

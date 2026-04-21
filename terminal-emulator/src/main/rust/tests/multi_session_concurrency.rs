@@ -12,7 +12,7 @@ fn test_dual_session_concurrency() {
 
     // 1. 并发创建两个会话
     let handle1 = thread::spawn(move || {
-        let engine = TerminalEngine::new(cols, rows, transcript, 10, 20);
+        let engine = TerminalEngine::new(0, cols, rows, transcript, 10, 20);
         let context = Arc::new(TerminalContext::new(engine));
         
         // 模拟 PTY 创建逻辑 (在测试环境下可能无法 fork，我们手动模拟数据输入)
@@ -20,7 +20,7 @@ fn test_dual_session_concurrency() {
     });
 
     let handle2 = thread::spawn(move || {
-        let engine = TerminalEngine::new(cols, rows, transcript, 10, 20);
+        let engine = TerminalEngine::new(0, cols, rows, transcript, 10, 20);
         let context = Arc::new(TerminalContext::new(engine));
         context.clone()
     });

@@ -87,7 +87,7 @@ fn char_wc_width_test(ucs: u32) -> usize {
 /// Verify block elements are stored correctly in screen buffer
 #[test]
 fn test_block_elements_in_screen_buffer() {
-    let mut engine = TerminalEngine::new(10, 5, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 10, 5, 1000, 10, 20);
 
     // Write block elements using UTF-8
     let text = "\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}\u{2580}";
@@ -104,7 +104,7 @@ fn test_block_elements_in_screen_buffer() {
 /// Verify full block fills correctly
 #[test]
 fn test_full_block_rendering() {
-    let mut engine = TerminalEngine::new(5, 3, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 5, 3, 1000, 10, 20);
 
     let full_block = "\u{2588}";
     // Fill 3 lines, no scrolling yet
@@ -122,7 +122,7 @@ fn test_full_block_rendering() {
 /// Verify half blocks (used by neofetch, cava, etc.)
 #[test]
 fn test_half_block_pattern() {
-    let mut engine = TerminalEngine::new(10, 3, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 10, 3, 1000, 10, 20);
 
     let lower = "\u{2584}";
     engine.process_bytes(lower.repeat(10).as_bytes());
@@ -136,7 +136,7 @@ fn test_half_block_pattern() {
 /// Verify shade characters ( ░▒▓ )
 #[test]
 fn test_shade_characters() {
-    let mut engine = TerminalEngine::new(10, 3, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 10, 3, 1000, 10, 20);
 
     engine.process_bytes(b"\xe2\x96\x91\xe2\x96\x92\xe2\x96\x93\xe2\x96\x91\xe2\x96\x92\xe2\x96\x93\xe2\x96\x91\xe2\x96\x92\xe2\x96\x93");
 
@@ -149,7 +149,7 @@ fn test_shade_characters() {
 /// Verify box drawing forms a proper box
 #[test]
 fn test_box_drawing_form_box() {
-    let mut engine = TerminalEngine::new(6, 5, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 6, 5, 1000, 10, 20);
 
     // Use \r\n for each line to advance cursor (5 rows to avoid scrolling)
     engine.process_bytes(b"\xe2\x94\x8c\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x90\r\n");
@@ -178,7 +178,7 @@ fn test_box_drawing_form_box() {
 /// Verify Braille patterns (U+2800-U+28FF) - commonly used by braille-image tools
 #[test]
 fn test_braille_patterns() {
-    let mut engine = TerminalEngine::new(5, 2, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 5, 2, 1000, 10, 20);
 
     // ⣿ = \xe2\xa3\xbf
     engine.process_bytes(b"\xe2\xa3\xbf\xe2\xa3\xbf\xe2\xa3\xbf\xe2\xa3\xbf\xe2\xa3\xbf");
@@ -218,7 +218,7 @@ fn test_block_element_font_selection() {
 /// Verify block elements survive scroll operations
 #[test]
 fn test_block_elements_survive_scroll() {
-    let mut engine = TerminalEngine::new(10, 5, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 10, 5, 1000, 10, 20);
 
     let full = "\u{2588}".repeat(10);
     let upper = "\u{2580}".repeat(10);
@@ -250,7 +250,7 @@ fn test_block_elements_survive_scroll() {
 /// Verify that a common neofetch-style output renders correctly
 #[test]
 fn test_neofetch_style_output() {
-    let mut engine = TerminalEngine::new(20, 10, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 20, 10, 1000, 10, 20);
 
     // Simulate a neofetch-like output using half blocks for color blocks
     engine.process_bytes(b"\x1b[31m\xe2\x96\x88\xe2\x96\x88\xe2\x96\x88\xe2\x96\x88\x1b[0m\x1b[32m\xe2\x96\x88\xe2\x96\x88\xe2\x96\x88\xe2\x96\x88\x1b[0m\x1b[34m\xe2\x96\x88\xe2\x96\x88\xe2\x96\x88\xe2\x96\x88\x1b[0m\r\n");
@@ -272,7 +272,7 @@ fn test_neofetch_style_output() {
 /// Verify the eighth-block characters (fine-grained blocks)
 #[test]
 fn test_eighth_block_characters() {
-    let mut engine = TerminalEngine::new(8, 2, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 8, 2, 1000, 10, 20);
 
     // ▏▎▍▌▋▊▉█ = U+258F U+258E U+258D U+258C U+258B U+258A U+2589 U+2588
     engine.process_bytes(b"\xe2\x96\x8f\xe2\x96\x8e\xe2\x96\x8d\xe2\x96\x8c\xe2\x96\x8b\xe2\x96\x8a\xe2\x96\x89\xe2\x96\x88");

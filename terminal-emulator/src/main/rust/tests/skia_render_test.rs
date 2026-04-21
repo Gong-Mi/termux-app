@@ -589,7 +589,7 @@ fn test_cursor_rendering_visual_correctness() {
     renderer.font_width = font_width;
     renderer.font_height = font_height;
 
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
     
     // 场景：光标在第 2 行，但我们向上滚动了 5 行 (top_row = -5)
     // 视觉上，光标应该出现在屏幕的第 7 行 (index 7)

@@ -30,7 +30,7 @@ fn get_cursor_position(engine: &TerminalEngine) -> (i32, i32) {
 /// 验证 UP 键生成正确的转义序列
 #[test]
 fn test_up_arrow_key() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 写入提示符和命令
     engine.process_bytes(b"$ ");
@@ -52,7 +52,7 @@ fn test_up_arrow_key() {
 /// 验证 DOWN 键处理
 #[test]
 fn test_down_arrow_key() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 按 DOWN 键
     engine.state.send_key_event(20, None, 0); // KEYCODE_DPAD_DOWN = 20
@@ -63,7 +63,7 @@ fn test_down_arrow_key() {
 /// 验证 LEFT 和 RIGHT 键处理
 #[test]
 fn test_left_right_arrow_keys() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 按 LEFT 键
     engine.state.send_key_event(21, None, 0); // KEYCODE_DPAD_LEFT = 21
@@ -88,7 +88,7 @@ fn test_left_right_arrow_keys() {
 /// 3. 验证转义序列被处理（通过光标位置不变来间接验证，因为序列已发送到 PTY）
 #[test]
 fn test_continuous_up_arrow_history_navigation() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 模拟 shell 提示符和多条命令的显示
     // 注意：这只是"显示"在屏幕上，不是真正的 shell 历史
@@ -129,7 +129,7 @@ fn test_continuous_up_arrow_history_navigation() {
 /// 验证 UP 和 DOWN 键交替使用
 #[test]
 fn test_up_down_alternating() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 模拟一些输入
     engine.process_bytes(b"$ cmd1\r\n$ cmd2\r\n$ ");
@@ -150,7 +150,7 @@ fn test_up_down_alternating() {
 /// 验证 Shift+UP 键
 #[test]
 fn test_shift_up_arrow() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // Shift+UP: meta_state = 1 (KEYMOD_SHIFT)
     // 应该生成 ^[[1;2A
@@ -162,7 +162,7 @@ fn test_shift_up_arrow() {
 /// 验证 Alt+UP 键
 #[test]
 fn test_alt_up_arrow() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // Alt+UP: meta_state = 2 (KEYMOD_ALT)
     // 应该生成 ^[[1;3A
@@ -174,7 +174,7 @@ fn test_alt_up_arrow() {
 /// 验证 Ctrl+UP 键
 #[test]
 fn test_ctrl_up_arrow() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // Ctrl+UP: meta_state = 4 (KEYMOD_CTRL)
     // 应该生成 ^[[1;5A
@@ -186,7 +186,7 @@ fn test_ctrl_up_arrow() {
 /// 验证 Ctrl+Alt+Shift 组合键
 #[test]
 fn test_combined_modifier_keys() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // Ctrl+Alt+Shift: meta_state = 7 (1+2+4)
     engine.state.send_key_event(19, None, 7);
@@ -201,7 +201,7 @@ fn test_combined_modifier_keys() {
 /// 验证 F1-F4 键（特殊模式）
 #[test]
 fn test_f1_to_f4_keys() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // F1: ^[[OP (正常模式) 或 ^[[1;1P (修饰模式)
     engine.state.send_key_event(131, None, 0); // KEYCODE_F1 = 131
@@ -218,7 +218,7 @@ fn test_f1_to_f4_keys() {
 /// 验证 F5-F12 键
 #[test]
 fn test_f5_to_f12_keys() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // F5-F12 使用 ^[[NN~ 格式
     engine.state.send_key_event(135, None, 0); // F5: ^[[15~
@@ -240,7 +240,7 @@ fn test_f5_to_f12_keys() {
 /// 验证 HOME/END 键
 #[test]
 fn test_home_end_keys() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // HOME: ^[[H (正常) 或 ^[[OH (光标应用模式)
     engine.state.send_key_event(122, None, 0); // KEYCODE_MOVE_HOME = 122
@@ -253,7 +253,7 @@ fn test_home_end_keys() {
 /// 验证 PGUP/PGDN 键
 #[test]
 fn test_page_up_down_keys() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // PGUP: ^[[5~
     engine.state.send_key_event(92, None, 0); // KEYCODE_PAGE_UP = 92
@@ -266,7 +266,7 @@ fn test_page_up_down_keys() {
 /// 验证 DEL/INS 键
 #[test]
 fn test_delete_insert_keys() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // DEL: ^[[3~
     engine.state.send_key_event(112, None, 0); // KEYCODE_FORWARD_DEL = 112
@@ -279,7 +279,7 @@ fn test_delete_insert_keys() {
 /// 验证 ENTER/TAB/ESC 键
 #[test]
 fn test_enter_tab_escape_keys() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // ENTER: ^[[\r
     engine.state.send_key_event(66, None, 0); // KEYCODE_ENTER = 66
@@ -298,7 +298,7 @@ fn test_enter_tab_escape_keys() {
 /// 验证光标应用模式下的方向键
 #[test]
 fn test_cursor_application_mode_arrows() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 启用光标应用模式 (DECSET 1)
     engine.process_bytes(b"\x1b[?1h");
@@ -319,7 +319,7 @@ fn test_cursor_application_mode_arrows() {
 /// 大量连续按键测试
 #[test]
 fn test_rapid_key_presses_stress() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 快速连续按 100 次 UP 键
     for _ in 0..100 {
@@ -336,7 +336,7 @@ fn test_rapid_key_presses_stress() {
 /// 混合按键序列测试
 #[test]
 fn test_mixed_key_sequence() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 混合各种按键
     let key_sequence = vec![

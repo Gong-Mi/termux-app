@@ -105,7 +105,7 @@ mod tests {
 
     #[test]
     fn test_sgr_simple_colors() {
-        let mut state = ScreenState::new(80, 24, 1000, 10, 20);
+        let mut state = ScreenState::new(0, 80, 24, 1000, 10, 20);
         // CSI 31;42m -> Red FG, Green BG
         let params = create_params(&[31, 42]);
         state.handle_sgr(&params);
@@ -115,7 +115,7 @@ mod tests {
 
     #[test]
     fn test_sgr_truecolor_fg() {
-        let mut state = ScreenState::new(80, 24, 1000, 10, 20);
+        let mut state = ScreenState::new(0, 80, 24, 1000, 10, 20);
         // CSI 38;2;255;128;64m
         let params = create_params(&[38, 2, 255, 128, 64]);
         state.handle_sgr(&params);
@@ -124,7 +124,7 @@ mod tests {
 
     #[test]
     fn test_sgr_mixed_malformed_consumption() {
-        let mut state = ScreenState::new(80, 24, 1000, 10, 20);
+        let mut state = ScreenState::new(0, 80, 24, 1000, 10, 20);
         // 模拟一个错误：38 后面没有跟着 2 或 5，而是跟着 1 (Bold)
         // CSI 38;1;32m
         let params = create_params(&[38, 1, 32]);
@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn test_sgr_parameter_skipping_bug() {
-        let mut state = ScreenState::new(80, 24, 1000, 10, 20);
+        let mut state = ScreenState::new(0, 80, 24, 1000, 10, 20);
         // CSI 1;38;5;42;4m  -> Bold, 256-color(42), Underline
         // 这是一个标准的多参数序列
         let params = create_params(&[1, 38, 5, 42, 4]);
@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn test_sgr_subparameters_fail() {
-        let mut state = ScreenState::new(80, 24, 1000, 10, 20);
+        let mut state = ScreenState::new(0, 80, 24, 1000, 10, 20);
         // 模拟子参数情况
         let params = create_params(&[38, 2, 255, 255, 255]);
         state.handle_sgr(&params);

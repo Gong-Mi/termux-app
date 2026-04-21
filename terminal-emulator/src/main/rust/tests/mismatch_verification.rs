@@ -47,7 +47,7 @@ fn get_active_transcript_rows(engine: &TerminalEngine) -> usize {
 fn test_ring_buffer_indexing() {
     println!("\n=== Test 1: Ring Buffer Indexing ===");
     
-    let mut engine = TerminalEngine::new(80, 5, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 5, 100, 10, 20);
     
     // 写入超过屏幕行数的内容，触发滚动
     for i in 0..10 {
@@ -86,7 +86,7 @@ fn test_ring_buffer_indexing() {
 fn test_resize_fast_vs_slow_path() {
     println!("\n=== Test 2: Resize Fast vs Slow Path ===");
     
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     
     // 写入一些内容
     for i in 0..30 {
@@ -118,7 +118,7 @@ fn test_resize_fast_vs_slow_path() {
 fn test_resize_columns_change() {
     println!("\n=== Test 2b: Resize Columns Change ===");
     
-    let mut engine = TerminalEngine::new(80, 10, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 10, 100, 10, 20);
     
     // 写入长行
     let long_line = "A".repeat(100);
@@ -152,7 +152,7 @@ fn test_resize_columns_change() {
 fn test_full_screen_scrolling() {
     println!("\n=== Test 3: Full Screen Scrolling ===");
     
-    let mut engine = TerminalEngine::new(80, 5, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 5, 100, 10, 20);
     
     // 写入超过屏幕行数的内容
     for i in 0..10 {
@@ -178,7 +178,7 @@ fn test_full_screen_scrolling() {
 fn test_partial_scrolling() {
     println!("\n=== Test 3b: Partial Scrolling (Scroll Region) ===");
     
-    let mut engine = TerminalEngine::new(80, 10, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 10, 100, 10, 20);
     
     // 设置滚动区域（行 2-8）
     engine.process_bytes(b"\x1b[2;8r");
@@ -220,7 +220,7 @@ fn test_unicode_width() {
     ];
     
     for (text, expected_width) in test_cases {
-        let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+        let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
         engine.process_bytes(text.as_bytes());
         
         let actual_width = engine.state.cursor.x;
@@ -241,7 +241,7 @@ fn test_combining_characters() {
     
     // e + ́ = é (组合字符)
     let combining = "e\u{0301}";
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     engine.process_bytes(combining.as_bytes());
     
     println!("  'e+combining acute' -> cursor_x={}", engine.state.cursor.x);
@@ -266,7 +266,7 @@ fn test_combining_characters() {
 fn test_newline_style_check() {
     println!("\n=== Test 5: Newline Style Check ===");
     
-    let mut engine = TerminalEngine::new(40, 5, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 40, 5, 100, 10, 20);
     
     // 写入带样式的文本和尾部空格
     engine.process_bytes(b"\x1b[31mRed Text   \x1b[0m\r\n");
@@ -294,7 +294,7 @@ fn test_newline_style_check() {
 fn test_cursor_after_resize() {
     println!("\n=== Test 6: Cursor After Resize ===");
     
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     
     // 写入内容并移动光标
     engine.process_bytes(b"\x1b[10;20HText at 10,20");
@@ -320,7 +320,7 @@ fn test_cursor_after_resize() {
 fn test_cursor_not_reset_to_origin() {
     println!("\n=== Test 6b: Cursor Not Reset To Origin ===");
     
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     
     // 写入多行内容
     for i in 0..20 {
@@ -358,7 +358,7 @@ fn test_cursor_not_reset_to_origin() {
 fn test_blank_line_skipping() {
     println!("\n=== Test 7: Blank Line Skipping ===");
     
-    let mut engine = TerminalEngine::new(80, 10, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 10, 100, 10, 20);
     
     // 写入一些空行和内容
     engine.process_bytes(b"Line 1\r\n");
@@ -380,7 +380,7 @@ fn test_blank_line_skipping() {
 fn test_blank_lines_during_resize() {
     println!("\n=== Test 7b: Blank Lines During Resize ===");
     
-    let mut engine = TerminalEngine::new(80, 20, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 20, 100, 10, 20);
     
     // 写入内容，中间有空行
     for i in 0..15 {
@@ -411,7 +411,7 @@ fn test_blank_lines_during_resize() {
 fn test_stress_comprehensive() {
     println!("\n=== Test 8: Comprehensive Stress Test ===");
     
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     
     // 模拟 vim 编辑会话
     let session = vec![
@@ -441,7 +441,7 @@ fn test_stress_comprehensive() {
 fn test_resize_stress() {
     println!("\n=== Test 8b: Resize Stress Test ===");
     
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     
     // 写入内容
     for i in 0..50 {
@@ -477,7 +477,7 @@ fn test_resize_stress() {
 fn test_resize_fast_path_rows_only() {
     println!("\n=== Test 9: Resize Fast Path (Rows Only) ===");
     
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     
     // 写入内容
     for i in 0..30 {
@@ -525,7 +525,7 @@ fn test_resize_fast_vs_slow_consistency() {
     println!("\n=== Test 9b: Fast vs Slow Path Consistency ===");
     
     // 测试 1: 快速路径（仅行数变化）
-    let mut engine_fast = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine_fast = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     for i in 0..30 {
         let line = format!("Line {:02}\r\n", i);
         engine_fast.process_bytes(line.as_bytes());
@@ -533,7 +533,7 @@ fn test_resize_fast_vs_slow_consistency() {
     engine_fast.state.resize(80, 12);  // 快速路径
     
     // 测试 2: 慢速路径（列数也变化）
-    let mut engine_slow = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine_slow = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     for i in 0..30 {
         let line = format!("Line {:02}\r\n", i);
         engine_slow.process_bytes(line.as_bytes());

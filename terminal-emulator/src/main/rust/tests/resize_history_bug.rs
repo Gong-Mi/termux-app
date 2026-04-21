@@ -8,7 +8,7 @@ fn test_history_bug_explicit() {
     println!("\n=== 历史管理问题详细分析 ===");
     
     // 1. 创建 80x24 引擎，写入 30 行
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     for i in 1..=30 {
         let line = format!("Line {:02}\r\n", i);
         engine.process_bytes(line.as_bytes());

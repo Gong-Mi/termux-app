@@ -30,7 +30,7 @@ fn main() -> io::Result<()> {
     let (cols, rows) = terminal::size()?;
 
     // 创建终端引擎
-    let mut engine = TerminalEngine::new(cols as i32, rows as i32);
+    let mut engine = TerminalEngine::new(0, cols as i32, rows as i32, 2000, 10, 20);
 
     // 启动 PTY 子进程（优先使用 Termux 环境下的 shell）
     let shell = std::env::var("SHELL").unwrap_or_else(|_| {

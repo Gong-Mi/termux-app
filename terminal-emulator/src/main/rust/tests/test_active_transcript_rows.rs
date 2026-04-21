@@ -15,7 +15,7 @@ fn test_active_transcript_rows_increment_on_scroll() {
     println!("=== Test 1: active_transcript_rows 增量维护 ===\n");
     
     // 创建 80x10 的终端，缓冲区大小为 20 行（10 行屏幕 + 10 行历史）
-    let mut engine = TerminalEngine::new(80, 10, 20, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 10, 20, 10, 20);
     
     // 初始状态：没有历史
     assert_eq!(engine.state.main_screen.active_transcript_rows, 0, "初始 active_transcript_rows 应为 0");
@@ -60,7 +60,7 @@ fn test_active_transcript_rows_max_limit() {
     println!("=== Test 2: active_transcript_rows 最大限制 ===\n");
     
     // 创建 80x5 的终端，缓冲区大小为 10 行（5 行屏幕 + 5 行历史最大）
-    let mut engine = TerminalEngine::new(80, 5, 10, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 5, 10, 10, 20);
     
     // 写入 20 行内容，触发 15 次滚动
     for i in 0..20 {
@@ -96,7 +96,7 @@ fn test_active_transcript_rows_on_resize() {
     println!("=== Test 3: Resize 时 active_transcript_rows 更新 ===\n");
     
     // 创建 80x10 的终端，缓冲区大小为 20 行
-    let mut engine = TerminalEngine::new(80, 10, 20, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 10, 20, 10, 20);
     
     // 写入 14 行内容（9 行 + 1 行换行触发滚动 + 4 行 = 滚动 5 次）
     for i in 0..9 {
@@ -139,7 +139,7 @@ fn test_active_transcript_rows_on_resize() {
 fn test_active_transcript_rows_alt_screen() {
     println!("=== Test 4: 备用屏幕 active_transcript_rows 重置 ===\n");
     
-    let mut engine = TerminalEngine::new(80, 10, 20, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 10, 20, 10, 20);
     
     // 写入一些内容到主屏幕（9 行 + 1 行换行触发滚动 + 4 行 = 滚动 5 次）
     for i in 0..9 {
@@ -188,7 +188,7 @@ fn test_active_transcript_rows_java_comparison() {
     // 3. Resize 快路径：mActiveTranscriptRows = max(0, mActiveTranscriptRows + shiftDownOfTopRow)
     // 4. Resize 慢路径：mActiveTranscriptRows = 0 (然后重新累积)
     
-    let mut engine = TerminalEngine::new(80, 10, 20, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 10, 20, 10, 20);
     
     // 模拟 Java 测试场景
     // 写入 25 行内容

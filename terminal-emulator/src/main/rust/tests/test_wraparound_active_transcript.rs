@@ -7,7 +7,7 @@ fn test_active_transcript_rows_wraparound() {
     println!("=== 测试环形缓冲区绕回时的 active_transcript_rows ===\n");
 
     // 1. 创建小缓冲区测试绕回
-    let mut engine = TerminalEngine::new(80, 10, 100, 10, 20);  // 只有 100 行缓冲区
+    let mut engine = TerminalEngine::new(0, 80, 10, 100, 10, 20);  // 只有 100 行缓冲区
     
     // 2. 写入超过缓冲区大小的内容，强制绕回
     let mut scroll_count = 0;

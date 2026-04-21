@@ -34,7 +34,7 @@ impl StateSnapshot {
 
 #[test]
 fn test_gemini_session_lifecycle_soak() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     
     // 初始基准状态
     let baseline = StateSnapshot::capture(&engine);
@@ -85,7 +85,7 @@ fn test_gemini_session_lifecycle_soak() {
 
 #[test]
 fn test_style_pollution_edge_cases() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
     
     println!("Step 1: CSI c (DA1)");
     engine.process_bytes(b"\x1b[c");

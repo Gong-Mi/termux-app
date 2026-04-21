@@ -11,7 +11,7 @@ unsafe impl Sync for SendSyncEngine {}
 
 #[test]
 fn test_sixel_extended_parsing() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 发送带有参数的 Sixel 开始序列: DCS 100;100;1 q
     // 100x100 像素，透明背景
@@ -36,7 +36,7 @@ fn test_sixel_extended_parsing() {
 
 #[test]
 fn test_unicode_boundary_conditions() {
-    let mut engine = TerminalEngine::new(10, 5, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 10, 5, 100, 10, 20);
 
     // 在行尾测试宽字符自动换行
     engine.process_bytes("123456789测试".as_bytes());
@@ -83,7 +83,7 @@ fn test_concurrent_read_write_stress() {
 
 #[test]
 fn test_osc_malformed_sequences() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 测试未闭合的 OSC 序列
     engine.process_bytes(b"\x1b]0;Broken Title");

@@ -16,7 +16,7 @@ fn get_row_text(engine: &TerminalEngine, row: i32) -> String {
 
 #[test]
 fn test_decstr_resets_lnm() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 启用 LNM
     engine.process_bytes(b"\x1b[20h");
@@ -41,7 +41,7 @@ fn test_decstr_resets_lnm() {
 
 #[test]
 fn test_decstr_resets_all_modes() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 启用各种模式
     engine.process_bytes(b"\x1b[?1h");    // application cursor keys
@@ -84,7 +84,7 @@ fn test_decstr_resets_all_modes() {
 
 #[test]
 fn test_decstr_resets_charset() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 改变字符集选择
     engine.process_bytes(b"\x1b(0"); // G0 = line drawing
@@ -108,7 +108,7 @@ fn test_decstr_resets_charset() {
 
 #[test]
 fn test_lnm_private_mode_compatibility() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     engine.process_bytes(b"ABCDEFGHIJ");
     assert_eq!(engine.state.cursor.x, 10);
@@ -132,7 +132,7 @@ fn test_lnm_private_mode_compatibility() {
 
 #[test]
 fn test_lnm_standard_mode() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 标准 ANSI 模式: CSI 20 h
     engine.process_bytes(b"\x1b[20h");
@@ -155,7 +155,7 @@ fn test_lnm_standard_mode() {
 
 #[test]
 fn test_lnm_all_control_chars() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 启用 LNM
     engine.process_bytes(b"\x1b[20h");
@@ -188,7 +188,7 @@ fn test_lnm_all_control_chars() {
 
 #[test]
 fn test_lnm_with_margins() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 设置滚动区域: 第 3-8 行 (0-indexed: 2-7)
     engine.process_bytes(b"\x1b[3;8r");
@@ -228,7 +228,7 @@ fn test_lnm_with_margins() {
 
 #[test]
 fn test_insert_mode_single_char() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 写入一行
     engine.process_bytes(b"ABCDEFGHIJ");
@@ -258,7 +258,7 @@ fn test_insert_mode_single_char() {
 
 #[test]
 fn test_insert_mode_multiple_chars() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 写入一行
     engine.process_bytes(b"1234567890");
@@ -280,7 +280,7 @@ fn test_insert_mode_multiple_chars() {
 
 #[test]
 fn test_insert_mode_off_overwrites() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 写入一行
     engine.process_bytes(b"ABCDEFGHIJ");
@@ -305,7 +305,7 @@ fn test_insert_mode_off_overwrites() {
 
 #[test]
 fn test_insert_mode_disabled_by_decstr() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 写入 + 启用 Insert
     engine.process_bytes(b"ABCDEFGHIJ");
@@ -331,7 +331,7 @@ fn test_insert_mode_disabled_by_decstr() {
 
 #[test]
 fn test_insert_mode_scroll_at_end() {
-    let mut engine = TerminalEngine::new(10, 5, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 10, 5, 100, 10, 20);
 
     // 填满一行
     engine.process_bytes(b"1234567890");
@@ -360,7 +360,7 @@ fn test_insert_mode_scroll_at_end() {
 
 #[test]
 fn test_lnm_survives_resize() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 启用 LNM
     engine.process_bytes(b"\x1b[20h");
@@ -383,7 +383,7 @@ fn test_lnm_survives_resize() {
 
 #[test]
 fn test_decstr_full_cycle() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 设置一个复杂的终端状态
     engine.process_bytes(b"\x1b[?1h");    // cursor app mode
@@ -430,7 +430,7 @@ fn test_decstr_full_cycle() {
 
 #[test]
 fn test_decstr_then_reenable_lnm() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 启用 LNM
     engine.process_bytes(b"\x1b[20h");
@@ -551,7 +551,7 @@ fn test_key_event_tab_shift() {
 
 #[test]
 fn test_full_terminal_session() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 模拟真实 shell 会话
     engine.process_bytes(b"\x1b[?1h");        // vim 启用 cursor app mode
@@ -594,7 +594,7 @@ fn test_full_terminal_session() {
 
 #[test]
 fn test_nvim_like_sequence() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 模拟 nvim 启动时的序列
     engine.process_bytes(b"\x1b[?1h");     // cursor app
@@ -631,7 +631,7 @@ fn test_nvim_like_sequence() {
 
 #[test]
 fn test_rapid_decstr_toggle() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     for i in 0..100 {
         // 启用各种模式
@@ -657,7 +657,7 @@ fn test_rapid_decstr_toggle() {
 
 #[test]
 fn test_alternate_buffer_with_decstr() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 写入主缓冲区
     engine.process_bytes(b"Main buffer");
