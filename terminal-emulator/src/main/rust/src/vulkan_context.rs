@@ -381,12 +381,23 @@ impl VulkanContext {
 
     pub fn acquire_next_image(&mut self) -> Option<u32> {
         unsafe {
-            self.swapchain_loader.acquire_next_image(
+            // 严禁使用 u64::MAX。在系统进入后台或 Surface 失效时，
+            // MAX 会导致线程永久挂起。改为 100ms 超时。
+            match self.swapchain_loader.acquire_next_image(
                 self.swapchain,
-                u64::MAX,
+                100_000_000, // 100ms (单位纳秒)
                 self.image_available_semaphore,
                 ash_vk::Fence::null()
-            ).ok().map(|(idx, _)| idx)
+            ) {
+                Ok((idx, _)) => Some(idx),
+                Err(e) => {
+                    // 如果是因为超时或 Surface 丢失导致的失败，返回 None
+                    if e != ash_vk::Result::NOT_READY && e != ash_vk::Result::TIMEOUT {
+                        android_log(LogPriority::WARN, &format!("Vulkan: acquire_next_image critical error: {:?}", e));
+                    }
+                    None
+                }
+            }
         }
     }
 
@@ -443,29 +454,30 @@ impl VulkanContext {
 
     /// 为现有的上下文重新关联新 Surface
     pub unsafe fn recreate_surface(&mut self, window: *mut std::ffi::c_void) -> bool {
-        let entry = &self.entry;
         android_log(LogPriority::INFO, "VulkanContext: Reattaching to new window");
         
-        let android_surface_loader = ash::khr::android_surface::Instance::new(entry, &self.instance);
-        let surface = unsafe { 
+        // 1. 彻底清理旧的 Surface 资源
+        self.abandon_surface();
+
+        // 2. 创建新 Surface
+        let android_surface_loader = ash::khr::android_surface::Instance::new(&self.entry, &self.instance);
+        let surface_result = unsafe { 
             android_surface_loader.create_android_surface(
                 &ash_vk::AndroidSurfaceCreateInfoKHR { window, ..Default::default() }, 
                 None
             ) 
         };
 
-        match surface {
+        match surface_result {
             Ok(s) => {
-                // 关键：销毁旧 Surface 句柄
-                if self.surface != ash_vk::SurfaceKHR::null() {
-                    unsafe { self.surface_loader.destroy_surface(self.surface, None); }
-                }
                 self.surface = s;
                 let caps = unsafe { self.surface_loader.get_physical_device_surface_capabilities(self.pdevice, self.surface).ok() };
                 if let Some(c) = caps {
                     self.extent = c.current_extent;
+                    android_log(LogPriority::INFO, &format!("VulkanContext: Re-associated surface size {}x{}", self.extent.width, self.extent.height));
                     self.recreate_swapchain(self.extent.width, self.extent.height)
                 } else {
+                    android_log(LogPriority::ERROR, "VulkanContext: Failed to get new surface capabilities");
                     false
                 }
             }

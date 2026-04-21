@@ -38,13 +38,23 @@ pub unsafe extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface
             if !window.is_null() {
                 let ctx_cell = crate::render_thread::get_vulkan_context();
                 if let Some(mutex) = ctx_cell.get() {
-                    if let Ok(mut guard) = mutex.lock() {
-                        let ctx_opt: &mut Option<VulkanContext> = &mut *guard;
-                        if let Some(ctx) = ctx_opt.as_mut() {
-                            unsafe { ctx.recreate_surface(window as _); }
-                        } else if let Some(new_ctx) = unsafe { VulkanContext::new(window as _) } {
-                            *ctx_opt = Some(new_ctx);
+                    // 关键修复：不要直接 lock()，防止主线程死等挂掉的渲染线程导致 ANR
+                    let mut locked = false;
+                    for _ in 0..10 { // 最多尝试 10 次 (共约 100ms)
+                        if let Ok(mut guard) = mutex.try_lock() {
+                            let ctx_opt: &mut Option<VulkanContext> = &mut *guard;
+                            if let Some(ctx) = ctx_opt.as_mut() {
+                                unsafe { ctx.recreate_surface(window as _); }
+                            } else if let Some(new_ctx) = unsafe { VulkanContext::new(window as _) } {
+                                *ctx_opt = Some(new_ctx);
+                            }
+                            locked = true;
+                            break;
                         }
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
+                    if !locked {
+                        android_log(LogPriority::ERROR, "CRITICAL: nativeSetSurface failed to get lock! Render thread may be hung.");
                     }
                 } else {
                     let _ = ctx_cell.get_or_init(|| {
