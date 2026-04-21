@@ -117,6 +117,15 @@ fn spawn_render_thread(engine_ptr: jlong) {
             // let mut last_log_time = std::time::Instant::now(); // 已移动到条件日志中
 
             while RENDER_THREAD_RUNNING.load(Ordering::SeqCst) {
+                // 0. 核心检查：如果 Surface 没准备好，渲染线程必须进入高效睡眠
+                if !SURFACE_READY.load(Ordering::SeqCst) {
+                    if frame_count % 60 == 0 {
+                        android_log(LogPriority::DEBUG, "RenderThread: Surface not ready, parking...");
+                    }
+                    std::thread::park(); // 永久等待，直到 nativeSetSurface(Some) 调用 unpark
+                    continue;
+                }
+
                 // 1. 检查是否需要重建 swapchain
                 if SURFACE_SIZE_CHANGED.load(Ordering::SeqCst) {
                     let new_width = *SURFACE_NEW_WIDTH.lock().unwrap();

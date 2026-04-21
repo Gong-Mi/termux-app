@@ -28,6 +28,10 @@ pub unsafe extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface
                 }
             }
             crate::render_thread::get_surface_ready().store(false, Ordering::SeqCst);
+            // 唤醒线程，让其意识到 surface_ready 变为 false 并进入 park
+            if let Some(handle) = crate::render_thread::get_render_thread_handle().lock().unwrap().as_ref() {
+                handle.thread().unpark();
+            }
         } else {
             android_log(LogPriority::DEBUG, "nativeSetSurface: Attaching new surface");
             let window = unsafe { ndk_sys::ANativeWindow_fromSurface(env.get_native_interface(), surface.as_raw()) };
@@ -49,6 +53,10 @@ pub unsafe extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface
                     });
                 }
                 crate::render_thread::get_surface_ready().store(true, Ordering::SeqCst);
+                // 唤醒线程，开始渲染新 surface
+                if let Some(handle) = crate::render_thread::get_render_thread_handle().lock().unwrap().as_ref() {
+                    handle.thread().unpark();
+                }
             }
         }
     }
