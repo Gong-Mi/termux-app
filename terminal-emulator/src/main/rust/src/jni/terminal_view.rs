@@ -138,7 +138,32 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
     _class: JClass,
     metrics_array: jfloatArray,
 ) {
-    let values = [-18.0, 4.0, 0.0];
+    let mut font_width = 0.0f32;
+    let mut font_height = 0.0f32;
+    let mut font_ascent = 0.0f32;
+
+    // 1. 尝试从已存在的 TerminalRenderer 读取真实字体指标
+    if let Some(mutex) = crate::render_thread::get_terminal_renderer().get() {
+        if let Ok(guard) = mutex.lock() {
+            if let Some(renderer) = guard.as_ref() {
+                font_width = renderer.font_width;
+                font_height = renderer.font_height;
+                font_ascent = renderer.font_ascent();
+            }
+        }
+    }
+
+    // 2. Renderer 尚未创建时，根据当前 font_size 创建临时 FontCache 计算
+    if font_width <= 0.0 {
+        let font_size = *crate::render_thread::get_render_font_size().lock().unwrap();
+        let font_path = crate::render_thread::get_render_font_path();
+        let cache = crate::renderer::FontCache::new(font_size, font_path.as_deref());
+        font_width = cache.font_width;
+        font_height = cache.font_height;
+        font_ascent = cache.font_ascent;
+    }
+
+    let values = [font_width, font_height, font_ascent];
     if !metrics_array.is_null() {
         let j_array = unsafe { jni::objects::JFloatArray::from_raw(metrics_array) };
         let _ = env.set_float_array_region(&j_array, 0, &values);

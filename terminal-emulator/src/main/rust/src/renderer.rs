@@ -100,16 +100,16 @@ pub fn is_special_render_char(ch: char) -> bool {
 }
 
 /// 预计算的字体和指标
-struct FontCache {
+pub struct FontCache {
     font_mono: Font,
     font_bold: Font,
     font_italic: Font,
     font_bold_italic: Font,
     font_fallback: Font,
     font_fallback_bold: Font,
-    font_width: f32,
-    font_height: f32,
-    font_ascent: f32,
+    pub font_width: f32,
+    pub font_height: f32,
+    pub font_ascent: f32,
     font_mgr: Arc<FontMgr>,
     /// 动态备用字体缓存：存储由系统匹配到的特定 Unicode 字符字体
     dynamic_fonts: std::sync::RwLock<std::collections::HashMap<u32, Font>>,
@@ -119,7 +119,7 @@ unsafe impl Send for FontCache {}
 unsafe impl Sync for FontCache {}
 
 impl FontCache {
-    fn new(font_size: f32, custom_font_path: Option<&str>) -> Self {
+    pub fn new(font_size: f32, custom_font_path: Option<&str>) -> Self {
         let font_mgr = Arc::new(FontMgr::new());
         let custom_typeface = custom_font_path.and_then(|path| {
             std::fs::read(path).ok().and_then(|data| {
@@ -411,6 +411,10 @@ impl TerminalRenderer {
 
     pub fn clear_selection(&mut self) {
         self.selection.active = false;
+    }
+
+    pub fn font_ascent(&self) -> f32 {
+        self.font_cache.font_ascent
     }
 
     #[inline]
