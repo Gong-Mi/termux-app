@@ -104,3 +104,4 @@ pub fn map_line_drawing(c: u8) -> char {
 pub fn get_char_width(ucs: u32) -> usize {
     crate::wcwidth::wcwidth(ucs)
 }
+pub mod local_socket;

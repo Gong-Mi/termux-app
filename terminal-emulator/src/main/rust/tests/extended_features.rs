@@ -49,7 +49,7 @@ fn test_unicode_boundary_conditions() {
 #[test]
 fn test_concurrent_read_write_stress() {
     let engine = Arc::new(std::sync::RwLock::new(SendSyncEngine(TerminalEngine::new(
-        80, 24, 2000, 10, 20,
+        0, 80, 24, 2000, 10, 20,
     ))));
 
     let engine_write = Arc::clone(&engine);

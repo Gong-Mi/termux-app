@@ -1,0 +1,78 @@
+
+
+Docs:       https://termux.dev/docs
+Donate:     https://termux.dev/donate
+Community:  https://termux.dev/community
+
+Working with packages:
+
+ - Search:  pkg search <query>
+ - Install: pkg install <package>
+ - Upgrade: pkg upgrade
+
+Subscribing to additional repositories:
+
+ - Root:    pkg install root-repo
+ - X11:     pkg install x11-repo
+
+For fixing any repository issues,
+try 'termux-change-repo' command.
+
+Report issues at https://termux.dev/issues
+Starting fallback run of termux bootstrap second stage
+[*] Running termux bootstrap second stage
+[*] Running postinst maintainer scripts
+[*] Running 'coreutils' package postinst
+update-alternatives: using /data/data/com.termux/files/usr/libexec/coreutils/cat to provide /data/data/com.termux/files/usr/bin/pager (pager) in auto mode
+update-alternatives: warning: skipping updating manpage database as 'makewhatis' command from 'mandoc' package is not installed
+[*] Running 'less' package postinst
+update-alternatives: using /data/data/com.termux/files/usr/bin/less to provide /data/data/com.termux/files/usr/bin/pager (pager) in auto mode
+update-alternatives: warning: skipping updating manpage database as 'makewhatis' command from 'mandoc' package is not installed
+[*] Running 'nano' package postinst
+update-alternatives: using /data/data/com.termux/files/usr/bin/nano to provide /data/data/com.termux/files/usr/bin/editor (editor) in auto mode
+update-alternatives: warning: skipping updating manpage database as 'makewhatis' command from 'mandoc' package is not installed
+[*] Running 'termux-exec' package postinst
+termux-exec.postinst: Start
+termux-exec.postinst: android_build_version_sdk: '36'
+termux-exec: Setting primary Termux '$LD_PRELOAD' library in 'libtermux-exec-ld-preload.so' to '/data/data/com.termux/files/usr/lib/libtermux-exec-direct-ld-preload.so'
+termux-exec.postinst: End
+[*] Running 'util-linux' package postinst
+[*] The termux bootstrap second stage completed successfully
+~ $
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

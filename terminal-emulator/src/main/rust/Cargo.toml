@@ -14,11 +14,12 @@ path = "standalone/src/main.rs"
 [dependencies]
 jni = "0.21.1"
 unicode-width = "0.2.2"
-nix = { version = "0.31.2", features = ["process", "signal", "term", "ioctl", "fs", "user"] }
+nix = { version = "0.31.2", features = ["process", "signal", "term", "ioctl", "fs", "user", "socket", "net", "uio"] }
 libc = "0.2"
 rayon = "1.11.0"
 simdutf8 = "0.1.4"
 base64 = "0.22.1"
+bytemuck = "1.16.0"
 zip = "8.2.0"
 once_cell = "1.19.0"
 crossterm = "0.28.1"
