@@ -42,7 +42,7 @@ fn default_cell() -> Cell {
 }
 
 impl TerminalEngine {
-    pub fn new(cols: i32, rows: i32) -> Self {
+    pub fn new(_session_id: i32, cols: i32, rows: i32, _total_rows: i32, _cw: i32, _ch: i32) -> Self {
         let cells = vec![vec![default_cell(); cols as usize]; rows as usize];
         
         Self {
