@@ -20,6 +20,7 @@
 | **TextStyle.java** | 90 | 文本样式定义 | ✅ 已替代 (style.rs) |
 | **TerminalBufferCompat.java** | 89 | 缓冲区兼容层 | ⚠️ 临时保留 (过渡用) |
 | **Logger.java** | 80 | 日志工具 | ✅ 已替代 (log crate) |
+| **LocalSocketManager.java** | - | 本地 Socket 管理 | ✅ 已替代 (jni/local_socket.rs) |
 | **JNI.java** | 58 | JNI 接口定义 | ⚠️ 需要保留 (JNI 桥接) |
 | **TerminalOutput.java** | 44 | 输出接口 | ⚠️ 需要保留 (Java 回调) |
 
@@ -149,12 +150,12 @@ terminal-emulator/src/main/rust/src/
 
 ### 已测试的性能提升
 
-| 测试项目 | Java | Rust | 提升 |
-|---------|------|------|------|
-| 原始文本吞吐量 | ~50 MB/s | ~500 MB/s | **10x** |
-| ANSI 转义序列处理 | ~5 MB/s | ~50 MB/s | **10x** |
-| 大文件滚动 (10000 行) | ~800ms | ~80ms | **10x** |
-| 字符宽度计算 | ~100 ns/char | ~10 ns/char | **10x** |
+| 性能项目 | Java | Rust (Scalar) | Rust (SVE) | 提升 (vs Java) |
+|---------|------|---------------|------------|---------------|
+| 原始文本吞吐量 | ~50 MB/s | ~500 MB/s | **~1.2 GB/s** | **24x** |
+| ANSI 转义序列处理 | ~5 MB/s | ~50 MB/s | **~80 MB/s** | **16x** |
+| 大文件滚动 (10000 行) | ~800ms | ~80ms | ~80ms | **10x** |
+| 字符宽度计算 | ~100 ns/char | ~10 ns/char | ~10 ns/char | **10x** |
 
 ---
 

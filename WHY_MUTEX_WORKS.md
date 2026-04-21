@@ -237,4 +237,48 @@ coordinator.try_acquire_pkg_lock(session_id);
 
 ---
 
-**一句话总结:** 互锁机制不是"修复 bug"，而是"架构升级"带来的附加价值！🎉
+---
+
+## 🛡️ 新增：JNI 侧非阻塞锁与 ANR 防护 (2026-04 更新)
+
+在最新的开发迭代中，我们利用 Rust 的灵活性解决了 Android JNI 开发中最臭名昭著的问题：**UI 线程死锁导致 ANR**。
+
+### 问题：为什么传统 `lock()` 在 JNI 中很危险？
+
+1. **场景**：渲染线程（Rust）持有 `VULKAN_CONTEXT` 的互斥锁正在进行 GPU 提交。
+2. **冲突**：用户突然切回应用，主线程（Java）通过 JNI 调用 `nativeSetSurface`，尝试获取同一个锁。
+3. **死锁**：如果渲染线程因为驱动层异常（如小米系统的 `FrameInsert` 错误）卡死，主线程也会永久阻塞在 `lock()` 调用上。
+4. **结果**：Android 系统监控到 UI 线程无响应超过 5 秒，直接杀掉整个进程（ANR）。
+
+### 解决方案：带有重试机制的 `try_lock()`
+
+我们弃用了阻塞式的同步方式，改用如下架构：
+
+```rust
+// JNI 线程 (主线程)
+let mut locked = false;
+for _ in 0..10 { 
+    if let Ok(mut guard) = mutex.try_lock() {
+        // 成功获取锁，安全执行 Surface 重建
+        ctx.recreate_surface(window);
+        locked = true;
+        break;
+    }
+    // 没拿到锁？不准死等！睡 10ms 把 CPU 让给渲染线程
+    std::thread::sleep(Duration::from_millis(10));
+}
+
+if !locked {
+    // 保护性撤退：渲染线程真的卡死了，但主线程绝不陪葬
+    android_log(LogPriority::ERROR, "Render thread hung, skipping lock to avoid ANR");
+}
+```
+
+### 价值总结
+
+- **保活能力**：通过“保护性撤退”策略，确保即便底层图形驱动崩溃，Termux 的 Java 界面依然能存活并记录错误日志。
+- **用户体验**：消除了“切后台回来概率闪退”的疑难杂症，将“进程被杀”降级为“单帧延迟”。
+
+---
+
+**一句话总结:** 互锁机制不仅用于并发控制，更是 **JNI 系统稳定性** 的护城河！🛡️
