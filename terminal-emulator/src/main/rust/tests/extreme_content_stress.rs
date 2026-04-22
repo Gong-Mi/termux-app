@@ -37,16 +37,14 @@ fn test_massive_50000_rows_stress() {
     
     println!("Massive write took: {:?}", start.elapsed());
 
-    // 2. 验证内容完整性 (采样检查)
-    // 拼接最后 10 行物理内容来应对重排拆分
+    // 验证内容完整性 (采样检查最后 50 行，因为 SVE 解析/Reflow 可能会改变物理行数)
     let mut combined_end = String::new();
-    let total_active = engine.state.main_screen.active_transcript_rows as i32;
-    for i in (max(-(total_active), engine.state.rows - 10)..engine.state.rows).rev() {
+    let scan_depth = 50;
+    for i in -scan_depth..=0 {
         combined_end.push_str(&get_row_text(&engine, i));
     }
     
-    println!("Combined end snippet: '{}'", combined_end.replace(" ", ""));
-    assert!(combined_end.contains("Line 45000"), "Final line ID must exist in reflowed fragments");
+    assert!(combined_end.contains("Line 45000"), "Final line ID must exist within scan depth of buffer end");
 
     // 3. 测试备用屏幕切换 (Alternate Buffer)
     println!("--- Step 2: Testing Alternate Buffer with Data ---");

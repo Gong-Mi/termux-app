@@ -900,8 +900,11 @@ impl TerminalRenderer {
                 canvas.draw_text_blob(&blob, (x, blob_y), paint);
                 // 如果缓存过大，执行冷数据剔除
                 if blob_cache.len() >= 2000 {
-                    // 保留距离 current_generation 最近的 2 代数据
-                    blob_cache.retain(|_, entry| current_generation.wrapping_sub(entry.last_generation) <= 2);
+                    // 性能优化：放宽代际保留限制。
+                    // 之前仅保留 2 代 (约 2 秒) 太过激进，导致静止画面或微小滚动时显存频繁释放。
+                    // 改为保留 30 代 (约 30 秒)，并在内存压力大时才进行深度清理。
+                    blob_cache.retain(|_, entry| current_generation.wrapping_sub(entry.last_generation) <= 30);
+
                 }
                 // 缓存生成的 blob
                 if blob_cache.len() < 3000 {

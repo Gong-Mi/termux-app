@@ -17,7 +17,7 @@ fn benchmark_vte_parser_throughput() {
     let base_text = "This is a line of normal text that should be processed very fast by SVE. ".repeat(10);
     let escape_seq = "\x1b[31mRed\x1b[0m\x1b[1mBold\x1b[0m\n";
     let chunk = (base_text + escape_seq).into_bytes();
-    let data = chunk.repeat(1000); // 约 10MB
+    let data = chunk.repeat(150000); // 约 100MB
     
     println!("Data size: {:.2} MB", data.len() as f64 / 1024.0 / 1024.0);
 
