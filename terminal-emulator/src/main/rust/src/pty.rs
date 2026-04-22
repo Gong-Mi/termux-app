@@ -218,15 +218,19 @@ pub fn create_subprocess_with_data(
                     final_envp.push(default_path);
                 }
 
-                // 2. LD_LIBRARY_PATH（供动态链接器搜索库，不是 LD_PRELOAD）
+                // 2. LD_LIBRARY_PATH（供动态链接器搜索库）
                 if !final_envp.iter().any(|s| s.starts_with("LD_LIBRARY_PATH=")) {
                     final_envp.push(format!("LD_LIBRARY_PATH={}", termux_lib));
                 }
 
-                // NOTE: 我们**不**设置 LD_PRELOAD、TERMUX_APP__DATA_DIR、TERMUX__PREFIX。
-                // Rust PTY 引擎自己处理所有 shebang 解析和 linker bypass。
-                // 如果 shell 内部的 exec 后续遇到 W^X 错误，说明该命令没有经过 Rust，
-                // 这是已知限制（因为没有 libtermux-exec.so 持续拦截）。
+                // 3. LD_PRELOAD — 让 libtermux-exec.so 拦截 shell 内所有子进程 exec，
+                // 绕过 Android W^X 限制。Rust 引擎只能拦截初始启动，管不到 shell 内置 exec。
+                let termux_exec_path = format!("{}/lib/libtermux-exec.so", termux_prefix);
+                if std::path::Path::new(&termux_exec_path).exists() {
+                    if !final_envp.iter().any(|s| s.starts_with("LD_PRELOAD=")) {
+                        final_envp.push(format!("LD_PRELOAD={}", termux_exec_path));
+                    }
+                }
 
                 // 3. 基础变量
                 if !final_envp.iter().any(|s| s.starts_with("TERM=")) { final_envp.push("TERM=xterm-256color".to_string()); }

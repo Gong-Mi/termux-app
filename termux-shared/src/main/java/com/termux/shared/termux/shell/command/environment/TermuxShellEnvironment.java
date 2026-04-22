@@ -89,10 +89,9 @@ public class TermuxShellEnvironment extends AndroidShellEnvironment {
                 // Termux binaries on Android 7+ rely on DT_RUNPATH, so LD_LIBRARY_PATH should be unset by default
                 environment.put(ENV_PATH, TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH);
                 environment.remove(ENV_LD_LIBRARY_PATH);
-                // NOTE: LD_PRELOAD for libtermux-exec.so is intentionally NOT set here.
-                // The Rust PTY engine handles all shebang parsing and linker bypass
-                // for the initial session. Shell-internal exec will rely on the
-                // kernel's PT_INTERP or manual linker invocation.
+                // LD_PRELOAD is set by the Rust PTY engine at session creation time.
+                // libtermux-exec.so intercepts all exec() calls within the shell
+                // to bypass Android W^X restrictions via /system/bin/linker64.
             }
         }
 
