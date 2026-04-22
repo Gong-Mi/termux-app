@@ -281,4 +281,42 @@ if !locked {
 
 ---
 
+---
+
+## ⚠️ 代码审查补充：ANR 防护未覆盖的崩溃路径 (2026-04-22)
+
+`try_lock()` 策略成功解决了**主线程死锁导致 ANR** 的问题，但后续审查发现以下崩溃路径不在本文档防护范围内：
+
+### 1. 渲染线程裸指针 UAF（非 ANR，直接 SIGSEGV）
+
+**位置**: `render_thread.rs:189`
+
+```rust
+let term_ctx = unsafe { &*(current_engine_ptr as *const TerminalContext) };
+```
+
+**问题**: 渲染线程直接解引用裸指针，未通过 `Arc` 增加引用计数。若用户在后台期间关闭 Session（Java 调用 `destroyEngine` 释放 `Arc`），渲染线程切回前台时访问已释放内存，触发段错误。
+
+**与本文档 ANR 防护的区别**：
+- ANR 防护解决的是"主线程等锁 → 系统杀进程"
+- UAF 问题是"Rust 层内存不安全 → 直接崩溃"
+
+### 2. RwLock Poison 级联崩溃
+
+全代码中大量使用 `context.lock.write().unwrap()`。若某 JNI 函数在持有写锁时 panic，锁被标记为 poison，此后所有 `unwrap()` 都会再次 panic，导致：
+- IO 线程死亡（PTY 不再读取）
+- Java 层 JNI 调用全面崩溃
+
+**修复方向**: 将 `unwrap()` 替换为 `match` + `poisoned.into_inner()` 恢复策略。
+
+### 修正声明
+
+本文档所述的 `try_lock()` 机制确实**消除了 ANR**，但尚不能宣称"彻底杜绝闪退"。完整的稳定性需要叠加：
+1. ✅ `try_lock()` 防 ANR（本文档已覆盖）
+2. ⏳ `Arc` 生命周期管理防 UAF（待修复）
+3. ⏳ Poison 恢复防级联崩溃（待修复）
+
+---
+
 **一句话总结:** 互锁机制不仅用于并发控制，更是 **JNI 系统稳定性** 的护城河！🛡️
+但护城河之外，仍需修补内存安全与异常恢复的围墙。

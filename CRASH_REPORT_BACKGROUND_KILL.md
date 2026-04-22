@@ -53,3 +53,40 @@
 3. **`jni_boundary_safety`**：验证底层文件描述符非法及数据流破损时的自愈能力。
 
 以上测试均已 `PASS`，修复验证闭环完成。
+
+---
+
+## 5. 后续代码审查补充 (2026-04-22)
+
+在针对 `render_thread.rs` 和 `terminal_view.rs` 的深入审查中，发现与后台生命周期相关的**两个遗留缺陷**尚未在上述修复中覆盖：
+
+### 5.1 Vulkan Present 缺失 GPU 同步信号量
+
+**位置**: `render_thread.rs:271-278`
+
+当前 `queue_present` 的 `PresentInfoKHR` 设置为：
+```rust
+wait_semaphore_count: 0,
+p_wait_semaphores: std::ptr::null(),
+```
+
+**风险**: 即使生命周期状态机修复了线程阻塞问题，GPU 渲染与上屏之间仍无 semaphore 同步。当应用从后台返回前台时，若 GPU 尚未完成 Skia 绘制即执行 present，可能产生：
+- 画面撕裂
+- 不完整帧上屏（表现为"黑屏闪烁"或"残影"）
+- 在部分 Adreno 驱动上触发 `VK_ERROR_OUT_OF_DATE_KHR`
+
+**修复方向**: 在 `flush_and_submit()` 后将 Skia 的 GPU completion semaphore 关联到 `PresentInfoKHR` 的 `p_wait_semaphores`。
+
+### 5.2 渲染线程裸指针解引用（UAF 风险）
+
+**位置**: `render_thread.rs:189`
+```rust
+let term_ctx = unsafe { &*(current_engine_ptr as *const TerminalContext) };
+```
+
+**风险**: 渲染线程直接借用裸指针，未通过 `Arc` 增加引用计数。若用户在后台期间关闭 Session（Java 调用 `destroyEngine`），`TerminalContext` 内存被释放，渲染线程切回前台时访问悬空指针，导致 `SIGSEGV`。
+
+**这与本文档第 2 节描述的 ANR 不同**：此前修复解决了"主线程被阻塞导致系统杀进程"的问题，但此缺陷是"Rust 层直接内存不安全导致的段错误"。
+
+**修复方向**: 将 `ENGINE_POINTER` 改为 `Arc<TerminalContext>` 管理，渲染线程内通过 `Arc::clone()` 确保生命周期安全。
+

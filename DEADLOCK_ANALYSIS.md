@@ -289,3 +289,27 @@ Session 2: try_acquire_pkg_lock() → ✗ 失败 → 等待
 
 **一句话:** 没有互锁 → 死锁 → ANR → 崩溃/卡死  
 **解决方案:** Session 协调器 + 事件机制 + 锁外回调
+
+---
+
+## ⚠️ 后续审查补充：RwLock Poison 风险
+
+上述修复解决了**单次死锁**问题，但代码中大量使用 `context.lock.write().unwrap()` 和 `read().unwrap()`，存在**锁中毒 (Poison)** 的二次崩溃风险：
+
+### 场景
+1. 某 JNI 函数在持有写锁时 panic（例如 `processBatch` 闭包内发生 panic）
+2. `catch_unwind` 捕获 panic 后，RwLock 被标记为 **poisoned**
+3. 此后任何线程调用 `.unwrap()` 都会再次 panic
+4. IO 线程（`context.rs:128`）因 `unwrap()` 直接死亡 → PTY 不再读取 → 终端冻结
+5. Java 层后续所有 JNI 调用都 panic → 应用彻底无响应
+
+### 修复建议
+对引擎锁统一使用 `write()` 并恢复 poison，而非 `unwrap()`：
+```rust
+let mut engine = match context.lock.write() {
+    Ok(g) => g,
+    Err(poisoned) => poisoned.into_inner(), // 恢复数据，继续运行
+};
+```
+
+**结论**: 事件机制消除了死锁成因，但 `unwrap()` 模式使得单点 panic 仍能级联摧毁整个终端。建议全面替换为 poison 恢复策略。

@@ -165,9 +165,31 @@ cargo test --lib terminal::colors
 - 性能提升：4-5x
 - 代码质量：类型安全、线程安全
 
+## 代码审查补充 (2026-04-22)
+
+在审查 `terminal_emulator.rs` 的 JNI 边界时，发现颜色模块存在一处实现缺陷：
+
+### `getColors` 中的 `transmute` 未定义行为
+
+**位置**: `terminal_emulator.rs:672-673`
+
+```rust
+unsafe {
+    let _ = env.set_int_array_region(&j_array, 0,
+        std::mem::transmute::<&[u32], &[i32]>(&colors));
+}
+```
+
+**问题**: 虽然颜色数据本身逻辑正确，但将 `&[u32]` `transmute` 为 `&[i32]` 属于 **Rust 未定义行为**（违反类型别名规则）。项目中已依赖 `bytemuck` crate，应改用 `bytemuck::cast_slice(&colors)` 进行安全转换。
+
+**影响**: 该问题不破坏功能，但在未来 Rust 编译器优化升级后可能导致异常行为。
+
+---
+
 **建议下一步**：
 1. ✅ 完成 Rust 实现
 2. ✅ 添加单元测试
 3. ✅ 集成到 Java 层
 4. ⏳ 进行集成测试
-5. ⏳ 在确认稳定后可考虑删除 Java 文件
+5. ⏳ 修复 `getColors` 中的 `transmute`（改用 `bytemuck::cast_slice`）
+6. ⏳ 在确认稳定后可考虑删除 Java 文件
