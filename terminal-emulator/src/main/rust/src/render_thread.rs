@@ -260,9 +260,12 @@ fn spawn_render_thread(engine_ptr: jlong) {
 
                 // 4. 呈现图像
                 // 关键点：在呈现前再次检查运行状态，防止向已销毁的 surface 提交
-                if !RENDER_THREAD_RUNNING.load(Ordering::SeqCst) || !SURFACE_READY.load(Ordering::SeqCst) {
-                    android_log(LogPriority::WARN, "RenderThread: Surface invalidated before present, dropping frame");
+                if !RENDER_THREAD_RUNNING.load(Ordering::SeqCst) {
                     break;
+                }
+                if !SURFACE_READY.load(Ordering::SeqCst) {
+                    android_log(LogPriority::WARN, "RenderThread: Surface invalidated before present, dropping frame");
+                    continue;
                 }
 
                 let present_info = ash::vk::PresentInfoKHR {
@@ -292,8 +295,9 @@ fn spawn_render_thread(engine_ptr: jlong) {
             }
             android_log(LogPriority::INFO, &format!("Render thread stopped after {} frames", frame_count));
             
-            // 线程退出前彻底清除 SURFACE_READY 标志
+            // 线程退出前彻底清除标志
             SURFACE_READY.store(false, Ordering::SeqCst);
+            RENDER_THREAD_RUNNING.store(false, Ordering::SeqCst);
         })
         .expect("Failed to spawn render thread");
 

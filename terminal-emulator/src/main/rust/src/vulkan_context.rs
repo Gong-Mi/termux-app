@@ -380,6 +380,10 @@ impl VulkanContext {
     }
 
     pub fn acquire_next_image(&mut self) -> Option<u32> {
+        if self.swapchain == ash_vk::SwapchainKHR::null() {
+            return None;
+        }
+
         unsafe {
             // 严禁使用 u64::MAX。在系统进入后台或 Surface 失效时，
             // MAX 会导致线程永久挂起。改为 100ms 超时。
@@ -447,6 +451,7 @@ impl VulkanContext {
                 self.swapchain_loader.destroy_swapchain(self.swapchain, None);
                 self.swapchain = ash_vk::SwapchainKHR::null();
             }
+            self.swapchain_images.clear();
             self.surface_loader.destroy_surface(self.surface, None);
             self.surface = ash_vk::SurfaceKHR::null();
         }
