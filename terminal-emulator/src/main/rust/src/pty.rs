@@ -151,93 +151,32 @@ pub fn create_subprocess_with_data(
                 if pts > 2 { libc::close(pts); }
                 libc::close(ptm);
 
-                libc::clearenv();
-                for env_var in envp {
-                    if let Ok(c_env) = CString::new(env_var) {
-                        libc::putenv(c_env.into_raw());
+                // === 环境变量兜底（从 termux-app-rust 迁移） ===
+                // Java 层传过来的 envp 可能不完整，Rust 层必须做兜底补充。
+                let termux_data = "/data/data/com.termux";
+                let termux_files = format!("{}/files", termux_data);
+                let termux_prefix = format!("{}/usr", termux_files);
+                let termux_bin = format!("{}/bin", termux_prefix);
+                let termux_lib = format!("{}/lib", termux_prefix);
+                
+                let mut final_envp = envp;
+                
+                // 1. PATH
+                if let Some(pos) = final_envp.iter().position(|s| s.starts_with("PATH=")) {
+                    let old_path = final_envp[pos].split('=').nth(1).unwrap_or("");
+                    if !old_path.contains(&termux_bin) {
+                        final_envp[pos] = format!("PATH={}:{}", termux_bin, old_path);
                     }
+                } else {
+                    final_envp.push(format!("PATH={}:/system/bin:/system/xbin", termux_bin));
                 }
-
-                if !cwd_str.is_empty() {
-                    let c_cwd = CString::new(cwd_str).unwrap();
-                    let _ = chdir(c_cwd.as_c_str());
+                
+                // 2. LD_LIBRARY_PATH
+                if !final_envp.iter().any(|s| s.starts_with("LD_LIBRARY_PATH=")) {
+                    final_envp.push(format!("LD_LIBRARY_PATH={}", termux_lib));
                 }
-
-                // === Android 12+ W^X Bypass ===
-                // Binaries in app data directory cannot be directly executed due to
-                // W^X (Write XOR Execute) restrictions. Use system linker to load ELF files,
-                // or /system/bin/sh for shebang scripts.
-                let mut final_cmd = cmd_str.clone();
-                let mut final_args = argv.clone();
-
-                let needs_linker = final_cmd.starts_with("/data/data/")
-                    || final_cmd.contains("/com.termux/");
-
-                if needs_linker {
-                    // Check if the file is an ELF binary or a shebang script.
-                    // linker64 can only load ELF files, not scripts.
-                    let is_elf = if !final_cmd.is_empty() {
-                        std::fs::read(&final_cmd)
-                            .map(|bytes| bytes.len() >= 4 && &bytes[..4] == b"\x7fELF")
-                            .unwrap_or(false)
-                    } else {
-                        false
-                    };
-
-                    if is_elf {
-                        let linker = if std::path::Path::new("/system/bin/linker64").exists() {
-                            "/system/bin/linker64"
-                        } else {
-                            "/system/bin/linker"
-                        };
-
-                        // Preserve original argv[0] (e.g., "-bash" for login shells)
-                        let prog_name = if !final_args.is_empty() {
-                            final_args[0].clone()
-                        } else {
-                            std::path::Path::new(&final_cmd)
-                                .file_name()
-                                .and_then(|s| s.to_str())
-                                .map(|s| s.to_string())
-                                .unwrap_or_else(|| final_cmd.clone())
-                        };
-
-                        let mut linker_argv = vec![prog_name, final_cmd];
-                        if final_args.len() > 1 {
-                            linker_argv.extend_from_slice(&final_args[1..]);
-                        }
-
-                        final_cmd = linker.to_string();
-                        final_args = linker_argv;
-                    } else {
-                        // Shebang script: use /system/bin/sh as interpreter
-                        let prog_name = if !final_args.is_empty() {
-                            final_args[0].clone()
-                        } else {
-                            std::path::Path::new(&final_cmd)
-                                .file_name()
-                                .and_then(|s| s.to_str())
-                                .map(|s| s.to_string())
-                                .unwrap_or_else(|| final_cmd.clone())
-                        };
-
-                        let mut sh_argv = vec![prog_name, final_cmd];
-                        if final_args.len() > 1 {
-                            sh_argv.extend_from_slice(&final_args[1..]);
-                        }
-
-                        final_cmd = "/system/bin/sh".to_string();
-                        final_args = sh_argv;
-                    }
-                }
-
-                // Inject LD_PRELOAD to enable libtermux-exec.so interception.
-                // Note: There are multiple variants of libtermux-exec. The "linker-ld-preload"
-                // variant contains the system_linker_exec W^X bypass, while the plain
-                // "ld-preload" / "direct-ld-preload" variants only do shebang path rewriting.
-                // We must use the linker variant, otherwise all child exec() calls fail
-                // with Permission denied on Android 12+.
-                let termux_lib_dir = "/data/data/com.termux/files/usr/lib";
+                
+                // 3. LD_PRELOAD — 必须使用 linker-ld-preload 变体（含 W^X bypass）
                 let termux_exec_candidates = [
                     "libtermux-exec-linker-ld-preload.so",
                     "libtermux-exec.so",
@@ -245,28 +184,200 @@ pub fn create_subprocess_with_data(
                 ];
                 let mut exec_path = String::new();
                 for candidate in &termux_exec_candidates {
-                    let path = format!("{}/{}", termux_lib_dir, candidate);
+                    let path = format!("{}/{}", termux_lib, candidate);
                     if std::path::Path::new(&path).exists() {
                         exec_path = path;
                         break;
                     }
                 }
-                if !exec_path.is_empty() {
-                    let preload = format!("LD_PRELOAD={}", exec_path);
-                    if let Ok(c_preload) = CString::new(preload) {
-                        libc::putenv(c_preload.into_raw());
+                if !exec_path.is_empty() && !final_envp.iter().any(|s| s.starts_with("LD_PRELOAD=")) {
+                    final_envp.push(format!("LD_PRELOAD={}", exec_path));
+                }
+                
+                // 4. 基础变量兜底
+                if !final_envp.iter().any(|s| s.starts_with("TERM=")) {
+                    final_envp.push("TERM=xterm-256color".to_string());
+                }
+                if !final_envp.iter().any(|s| s.starts_with("HOME=")) {
+                    final_envp.push(format!("HOME={}/home", termux_files));
+                }
+                if !final_envp.iter().any(|s| s.starts_with("PREFIX=")) {
+                    final_envp.push(format!("PREFIX={}", termux_prefix));
+                }
+                
+                libc::clearenv();
+                for env_var in final_envp {
+                    if let Ok(c_env) = CString::new(env_var) {
+                        libc::putenv(c_env.into_raw());
                     }
                 }
-
+                
+                if !cwd_str.is_empty() {
+                    let c_cwd = CString::new(cwd_str).unwrap();
+                    let _ = chdir(c_cwd.as_c_str());
+                }
+                
+                // === 命令解析与 W^X Bypass（从 termux-app-rust 迁移） ===
+                let mut final_cmd = cmd_str.clone();
+                let mut final_args = argv.clone();
+                
+                // 相对路径解析：如果 cmd 不是绝对路径，在 $PREFIX/bin 下查找
+                if !final_cmd.starts_with('/') {
+                    let resolved = format!("{}/{}", termux_bin, final_cmd);
+                    if std::path::Path::new(&resolved).exists() {
+                        final_cmd = resolved;
+                    }
+                }
+                
+                // Login shell 处理：确保 argv[0] 以 '-' 开头（如 -bash）
+                let is_shell = ["sh", "bash", "zsh", "dash", "fish"].iter().any(|&s| final_cmd.ends_with(s));
+                if is_shell {
+                    let shell_name = std::path::Path::new(&final_cmd)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("sh");
+                    if final_args.is_empty() {
+                        final_args.push(format!("-{}", shell_name));
+                    } else if !final_args[0].starts_with('-') {
+                        final_args[0] = format!("-{}", shell_name);
+                    }
+                }
+                
+                // Shebang 解析：读取脚本 shebang 行，找到解释器
+                let mut is_elf = false;
+                let mut has_shebang = false;
+                let mut shebang_interpreter = String::new();
+                let mut shebang_args: Vec<String> = Vec::new();
+                
+                if let Ok(mut f) = std::fs::File::open(&final_cmd) {
+                    use std::io::Read;
+                    let mut buf = [0u8; 256];
+                    if let Ok(bytes_read) = f.read(&mut buf) {
+                        if bytes_read > 4 && buf[0] == 0x7F && buf[1] == b'E' && buf[2] == b'L' && buf[3] == b'F' {
+                            is_elf = true;
+                        } else if bytes_read > 2 && buf[0] == b'#' && buf[1] == b'!' {
+                            has_shebang = true;
+                            if let Ok(shebang) = std::str::from_utf8(&buf[2..bytes_read]) {
+                                let interpreter_line = shebang.lines().next().unwrap_or("").trim();
+                                if !interpreter_line.is_empty() {
+                                    let parts: Vec<&str> = interpreter_line.split_whitespace().collect();
+                                    if !parts.is_empty() {
+                                        shebang_interpreter = parts[0].to_string();
+                                        for p in parts.iter().skip(1) {
+                                            shebang_args.push(p.to_string());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                if has_shebang && !shebang_interpreter.is_empty() {
+                    let mut interpreter = shebang_interpreter.clone();
+                    // 路径转换：/usr/bin/xxx /bin/xxx -> $PREFIX/bin/xxx
+                    if interpreter.starts_with("/usr/bin/") || interpreter.starts_with("/bin/") {
+                        let binary_name = std::path::Path::new(&interpreter)
+                            .file_name()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("");
+                        interpreter = format!("{}/bin/{}", termux_prefix, binary_name);
+                    }
+                    
+                    let old_cmd = final_cmd.clone();
+                    final_cmd = interpreter;
+                    
+                    // 构造新的 argv: [prog_name, interpreter_args..., script_path, original_args...]
+                    let mut new_argv = Vec::new();
+                    new_argv.push(if !final_args.is_empty() && (final_args[0].starts_with('-') || final_args[0].starts_with('/')) {
+                        final_args[0].clone()
+                    } else {
+                        final_cmd.clone()
+                    });
+                    for a in &shebang_args { new_argv.push(a.clone()); }
+                    new_argv.push(old_cmd);
+                    if argv.len() > 1 {
+                        new_argv.extend(argv.iter().skip(1).cloned());
+                    }
+                    final_args = new_argv;
+                } else if !is_elf && !has_shebang {
+                    // 既不是 ELF 也没有 shebang，默认用 Termux sh 执行
+                    let old_cmd = final_cmd.clone();
+                    final_cmd = format!("{}/bin/sh", termux_prefix);
+                    let mut new_argv = Vec::new();
+                    new_argv.push(final_cmd.clone());
+                    new_argv.push(old_cmd);
+                    if argv.len() > 1 {
+                        new_argv.extend(argv.iter().skip(1).cloned());
+                    }
+                    final_args = new_argv;
+                }
+                
+                // W^X Bypass: 决定是否使用 system linker
+                let canonical_cmd = std::fs::canonicalize(&final_cmd).unwrap_or_else(|_| std::path::PathBuf::from(&final_cmd));
+                let canonical_str = canonical_cmd.to_string_lossy();
+                
+                let needs_linker = final_cmd.contains("/com.termux/") || 
+                                  final_cmd.starts_with("/data/data/") ||
+                                  canonical_str.contains("/com.termux/") ||
+                                  canonical_str.starts_with("/data/data/");
+                
+                if needs_linker {
+                    #[cfg(target_pointer_width = "64")]
+                    let linker = "/system/bin/linker64";
+                    #[cfg(target_pointer_width = "32")]
+                    let linker = "/system/bin/linker";
+                    
+                    if std::path::Path::new(linker).exists() {
+                        let mut linker_argv = Vec::new();
+                        let prog_name = if !final_args.is_empty() {
+                            final_args[0].clone()
+                        } else {
+                            final_cmd.clone()
+                        };
+                        linker_argv.push(prog_name);
+                        linker_argv.push(final_cmd.clone());
+                        if final_args.len() > 1 {
+                            linker_argv.extend(final_args.iter().skip(1).cloned());
+                        }
+                        final_args = linker_argv;
+                        final_cmd = linker.to_string();
+                    }
+                }
+                
+                // 构建 C 字符串参数列表并 exec
                 let mut c_args = Vec::new();
-                for arg in final_args {
-                    if let Ok(ca) = CString::new(arg) { c_args.push(ca); }
+                for arg in &final_args {
+                    if let Ok(ca) = CString::new(arg.clone()) { c_args.push(ca); }
                 }
                 
                 let ptr_args: Vec<_> = c_args.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
+                
                 if !final_cmd.is_empty() {
-                    let c_cmd = CString::new(final_cmd).unwrap();
-                    libc::execvp(c_cmd.as_ptr(), ptr_args.as_ptr());
+                    let c_cmd = CString::new(final_cmd.clone()).unwrap();
+                    libc::execv(c_cmd.as_ptr(), ptr_args.as_ptr());
+                    
+                    // execv 失败，记录关键错误信息
+                    let err = nix::errno::Errno::last_raw();
+                    let err_name = match err {
+                        1 => "EPERM", 2 => "ENOENT", 13 => "EACCES", 8 => "ENOEXEC", 14 => "EFAULT", _ => "UNKNOWN",
+                    };
+                    crate::utils::android_log(
+                        crate::utils::LogPriority::ERROR,
+                        &format!("[PTY] execv FAILED! errno={} ({}) cmd='{}' argv={:?}", err, err_name, final_cmd, final_args)
+                    );
+                    
+                    // W^X 典型错误回退到系统 shell
+                    if err == 13 || err == 8 {
+                        crate::utils::android_log(
+                            crate::utils::LogPriority::WARN,
+                            "[PTY] Fallback to /system/bin/sh"
+                        );
+                        let fallback_sh = CString::new("/system/bin/sh").unwrap();
+                        let sh_name = CString::new("sh").unwrap();
+                        let fallback_args = [sh_name.as_ptr(), std::ptr::null()];
+                        libc::execv(fallback_sh.as_ptr(), fallback_args.as_ptr());
+                    }
                 }
                 libc::_exit(1);
             }
