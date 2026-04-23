@@ -417,9 +417,7 @@ impl Screen {
         // Create new buffer with sufficient capacity
         let mut new_buffer: Vec<TerminalRow> = Vec::with_capacity(new_total_rows);
         for _ in 0..new_total_rows {
-            let mut row = TerminalRow::new(n_cols);
-            row.clear_all(current_style);
-            new_buffer.push(row);
+            new_buffer.push(TerminalRow::new(n_cols));
         }
 
         let mut new_cursor_x: i32 = 0;
@@ -527,10 +525,9 @@ impl Screen {
 
                 // Line wrap as necessary (check if the entire unit fits)
                 if output_col + unit_width > n_cols {
-                    if output_row < new_buffer.len() {
-                        let idx = row_idx(screen_first_row, output_row, new_total_rows);
-                        new_buffer[idx].line_wrap = true;
-                    }
+                    let current_idx = row_idx(screen_first_row, output_row, new_total_rows);
+                    new_buffer[current_idx].line_wrap = true;
+
                     if output_row >= screen_rows - 1 {
                         if cursor_placed && new_cursor_y > 0 { new_cursor_y -= 1; }
                         do_scroll(&mut screen_first_row, &mut new_active_transcript_rows, screen_rows, current_style, new_total_rows, max_transcript_rows, &mut new_buffer);
@@ -538,6 +535,10 @@ impl Screen {
                         output_row += 1;
                     }
                     output_col = 0;
+                    
+                    // 关键修复：被拆分出的新行应继承原行的 line_wrap 属性
+                    let next_idx = row_idx(screen_first_row, output_row, new_total_rows);
+                    new_buffer[next_idx].line_wrap = old_line.line_wrap;
                 }
 
                 // Set character unit in new buffer
