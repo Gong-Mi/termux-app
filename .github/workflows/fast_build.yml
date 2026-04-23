@@ -11,20 +11,10 @@ on:
     branches:
       - feature/rust-integration
       - fix/android-12-compat
-    paths:
-      - 'terminal-emulator/**'
-      - 'terminal-view/**'
-      - 'app/**'
-      - '.github/workflows/fast_build.yml'
   pull_request:
     branches:
       - feature/rust-integration
       - fix/android-12-compat
-    paths:
-      - 'terminal-emulator/**'
-      - 'terminal-view/**'
-      - 'app/**'
-      - '.github/workflows/fast_build.yml'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
