@@ -260,8 +260,9 @@ impl ScreenState {
         self.left_margin = 0;
         self.right_margin = cols;
 
-        self.cursor.x = new_cx;
-        self.cursor.y = new_cy;
+        // 关键修复：resize 后必须通过 set_position 重置光标，以清除 about_to_wrap。
+        // 如果直接赋值 x/y，about_to_wrap 会保留旧状态，导致缩放/旋转后下一字符错误换行。
+        self.cursor.set_position(new_cx, new_cy);
 
         self.flat_buffer = Some(FlatScreenBuffer::new(cols as usize, self.main_screen.buffer.len()));
         self.cursor.clamp(cols, rows);
