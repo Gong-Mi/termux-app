@@ -165,7 +165,8 @@ pub fn create_subprocess_with_data(
 
                 // === Android 12+ W^X Bypass ===
                 // Binaries in app data directory cannot be directly executed due to
-                // W^X (Write XOR Execute) restrictions. Use system linker to load them.
+                // W^X (Write XOR Execute) restrictions. Use system linker to load ELF files,
+                // or /system/bin/sh for shebang scripts.
                 let mut final_cmd = cmd_str.clone();
                 let mut final_args = argv.clone();
 
@@ -173,30 +174,61 @@ pub fn create_subprocess_with_data(
                     || final_cmd.contains("/com.termux/");
 
                 if needs_linker {
-                    let linker = if std::path::Path::new("/system/bin/linker64").exists() {
-                        "/system/bin/linker64"
+                    // Check if the file is an ELF binary or a shebang script.
+                    // linker64 can only load ELF files, not scripts.
+                    let is_elf = if !final_cmd.is_empty() {
+                        std::fs::read(&final_cmd)
+                            .map(|bytes| bytes.len() >= 4 && &bytes[..4] == b"\x7fELF")
+                            .unwrap_or(false)
                     } else {
-                        "/system/bin/linker"
+                        false
                     };
 
-                    // Preserve original argv[0] (e.g., "-bash" for login shells)
-                    let prog_name = if !final_args.is_empty() {
-                        final_args[0].clone()
-                    } else {
-                        std::path::Path::new(&final_cmd)
-                            .file_name()
-                            .and_then(|s| s.to_str())
-                            .map(|s| s.to_string())
-                            .unwrap_or_else(|| final_cmd.clone())
-                    };
+                    if is_elf {
+                        let linker = if std::path::Path::new("/system/bin/linker64").exists() {
+                            "/system/bin/linker64"
+                        } else {
+                            "/system/bin/linker"
+                        };
 
-                    let mut linker_argv = vec![prog_name, final_cmd];
-                    if final_args.len() > 1 {
-                        linker_argv.extend_from_slice(&final_args[1..]);
+                        // Preserve original argv[0] (e.g., "-bash" for login shells)
+                        let prog_name = if !final_args.is_empty() {
+                            final_args[0].clone()
+                        } else {
+                            std::path::Path::new(&final_cmd)
+                                .file_name()
+                                .and_then(|s| s.to_str())
+                                .map(|s| s.to_string())
+                                .unwrap_or_else(|| final_cmd.clone())
+                        };
+
+                        let mut linker_argv = vec![prog_name, final_cmd];
+                        if final_args.len() > 1 {
+                            linker_argv.extend_from_slice(&final_args[1..]);
+                        }
+
+                        final_cmd = linker.to_string();
+                        final_args = linker_argv;
+                    } else {
+                        // Shebang script: use /system/bin/sh as interpreter
+                        let prog_name = if !final_args.is_empty() {
+                            final_args[0].clone()
+                        } else {
+                            std::path::Path::new(&final_cmd)
+                                .file_name()
+                                .and_then(|s| s.to_str())
+                                .map(|s| s.to_string())
+                                .unwrap_or_else(|| final_cmd.clone())
+                        };
+
+                        let mut sh_argv = vec![prog_name, final_cmd];
+                        if final_args.len() > 1 {
+                            sh_argv.extend_from_slice(&final_args[1..]);
+                        }
+
+                        final_cmd = "/system/bin/sh".to_string();
+                        final_args = sh_argv;
                     }
-
-                    final_cmd = linker.to_string();
-                    final_args = linker_argv;
                 }
 
                 // Inject LD_PRELOAD to enable libtermux-exec.so interception
