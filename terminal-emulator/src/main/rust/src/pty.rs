@@ -231,10 +231,28 @@ pub fn create_subprocess_with_data(
                     }
                 }
 
-                // Inject LD_PRELOAD to enable libtermux-exec.so interception
-                let termux_exec_path = "/data/data/com.termux/files/usr/lib/libtermux-exec.so";
-                if std::path::Path::new(termux_exec_path).exists() {
-                    let preload = format!("LD_PRELOAD={}", termux_exec_path);
+                // Inject LD_PRELOAD to enable libtermux-exec.so interception.
+                // Note: There are multiple variants of libtermux-exec. The "linker-ld-preload"
+                // variant contains the system_linker_exec W^X bypass, while the plain
+                // "ld-preload" / "direct-ld-preload" variants only do shebang path rewriting.
+                // We must use the linker variant, otherwise all child exec() calls fail
+                // with Permission denied on Android 12+.
+                let termux_lib_dir = "/data/data/com.termux/files/usr/lib";
+                let termux_exec_candidates = [
+                    "libtermux-exec-linker-ld-preload.so",
+                    "libtermux-exec.so",
+                    "libtermux-exec-ld-preload.so",
+                ];
+                let mut exec_path = String::new();
+                for candidate in &termux_exec_candidates {
+                    let path = format!("{}/{}", termux_lib_dir, candidate);
+                    if std::path::Path::new(&path).exists() {
+                        exec_path = path;
+                        break;
+                    }
+                }
+                if !exec_path.is_empty() {
+                    let preload = format!("LD_PRELOAD={}", exec_path);
                     if let Ok(c_preload) = CString::new(preload) {
                         libc::putenv(c_preload.into_raw());
                     }
