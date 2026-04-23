@@ -7,7 +7,6 @@ on:
       - master
       - 'github-releases/**'
       - feature/rust-integration
-      - fix/android-12-compat
   pull_request:
     branches:
       - master
