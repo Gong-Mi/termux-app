@@ -10,6 +10,7 @@ on:
   push:
     branches:
       - feature/rust-integration
+      - fix/android-12-compat
     paths:
       - 'terminal-emulator/**'
       - 'terminal-view/**'
@@ -18,6 +19,7 @@ on:
   pull_request:
     branches:
       - feature/rust-integration
+      - fix/android-12-compat
     paths:
       - 'terminal-emulator/**'
       - 'terminal-view/**'

@@ -163,14 +163,59 @@ pub fn create_subprocess_with_data(
                     let _ = chdir(c_cwd.as_c_str());
                 }
 
+                // === Android 12+ W^X Bypass ===
+                // Binaries in app data directory cannot be directly executed due to
+                // W^X (Write XOR Execute) restrictions. Use system linker to load them.
+                let mut final_cmd = cmd_str.clone();
+                let mut final_args = argv.clone();
+
+                let needs_linker = final_cmd.starts_with("/data/data/")
+                    || final_cmd.contains("/com.termux/");
+
+                if needs_linker {
+                    let linker = if std::path::Path::new("/system/bin/linker64").exists() {
+                        "/system/bin/linker64"
+                    } else {
+                        "/system/bin/linker"
+                    };
+
+                    // Preserve original argv[0] (e.g., "-bash" for login shells)
+                    let prog_name = if !final_args.is_empty() {
+                        final_args[0].clone()
+                    } else {
+                        std::path::Path::new(&final_cmd)
+                            .file_name()
+                            .and_then(|s| s.to_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| final_cmd.clone())
+                    };
+
+                    let mut linker_argv = vec![prog_name, final_cmd];
+                    if final_args.len() > 1 {
+                        linker_argv.extend_from_slice(&final_args[1..]);
+                    }
+
+                    final_cmd = linker.to_string();
+                    final_args = linker_argv;
+                }
+
+                // Inject LD_PRELOAD to enable libtermux-exec.so interception
+                let termux_exec_path = "/data/data/com.termux/files/usr/lib/libtermux-exec.so";
+                if std::path::Path::new(termux_exec_path).exists() {
+                    let preload = format!("LD_PRELOAD={}", termux_exec_path);
+                    if let Ok(c_preload) = CString::new(preload) {
+                        libc::putenv(c_preload.into_raw());
+                    }
+                }
+
                 let mut c_args = Vec::new();
-                for arg in argv {
+                for arg in final_args {
                     if let Ok(ca) = CString::new(arg) { c_args.push(ca); }
                 }
                 
                 let ptr_args: Vec<_> = c_args.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
-                if !cmd_str.is_empty() {
-                    let c_cmd = CString::new(cmd_str).unwrap();
+                if !final_cmd.is_empty() {
+                    let c_cmd = CString::new(final_cmd).unwrap();
                     libc::execvp(c_cmd.as_ptr(), ptr_args.as_ptr());
                 }
                 libc::_exit(1);

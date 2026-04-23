@@ -71,13 +71,16 @@ class TerminalEmulator(
 
     init {
         if (session is TerminalSession) mRustCallback.setSession(session)
-        mEnginePtr = RustTerminal.createEngine(
-            columns, rows, cellWidthPixels, cellHeightPixels,
-            transcriptRows ?: DEFAULT_TERMINAL_TRANSCRIPT_ROWS,
-            mRustCallback
-        )
-        if (mEnginePtr != 0L && ptyFd != -1) {
-            RustTerminal.startIoThread(mEnginePtr, ptyFd)
+        // 避免从 Rust 异步回调路径（次构造函数）重复创建引擎
+        if (columns != 0 || rows != 0) {
+            mEnginePtr = RustTerminal.createEngine(
+                columns, rows, cellWidthPixels, cellHeightPixels,
+                transcriptRows ?: DEFAULT_TERMINAL_TRANSCRIPT_ROWS,
+                mRustCallback
+            )
+            if (mEnginePtr != 0L && ptyFd != -1) {
+                RustTerminal.startIoThread(mEnginePtr, ptyFd)
+            }
         }
     }
 
