@@ -310,8 +310,6 @@ impl VulkanContext {
 
     pub fn recreate_swapchain(&mut self, width: u32, height: u32) -> bool {
         unsafe {
-            self.extent = ash_vk::Extent2D { width, height };
-
             let surface_formats = self.surface_loader.get_physical_device_surface_formats(self.pdevice, self.surface)
                 .unwrap_or_default();
             let present_modes = self.surface_loader.get_physical_device_surface_present_modes(self.pdevice, self.surface)
@@ -340,8 +338,25 @@ impl VulkanContext {
                     min_image_count: 2,
                     max_image_count: u32::MAX,
                     current_extent: ash_vk::Extent2D { width, height },
+                    min_image_extent: ash_vk::Extent2D { width: 1, height: 1 },
+                    max_image_extent: ash_vk::Extent2D { width, height },
                     ..Default::default()
                 });
+
+            // 关键修复：根据 Vulkan 规范，如果 currentExtent 是具体值（非 0xFFFFFFFF），
+            // 则 swapchain 的 imageExtent 必须与之匹配，否则会导致画布大小与显示大小不一致。
+            let final_width = if caps.current_extent.width != u32::MAX {
+                caps.current_extent.width
+            } else {
+                width.clamp(caps.min_image_extent.width, caps.max_image_extent.width)
+            };
+            let final_height = if caps.current_extent.height != u32::MAX {
+                caps.current_extent.height
+            } else {
+                height.clamp(caps.min_image_extent.height, caps.max_image_extent.height)
+            };
+
+            self.extent = ash_vk::Extent2D { width: final_width, height: final_height };
 
             // Triple buffering with max count validation
             let mut min_image_count = caps.min_image_count.max(3);
@@ -371,9 +386,10 @@ impl VulkanContext {
                 }
                 self.swapchain = new_swapchain;
                 self.swapchain_images = self.swapchain_loader.get_swapchain_images(self.swapchain).unwrap_or_default();
-                android_log(LogPriority::INFO, &format!("Vulkan: Swapchain created with {} images", self.swapchain_images.len()));
+                android_log(LogPriority::INFO, &format!("Vulkan: Swapchain created {}x{} with {} images", final_width, final_height, self.swapchain_images.len()));
                 true
             } else {
+                android_log(LogPriority::ERROR, &format!("Vulkan: create_swapchain FAILED for {}x{}", final_width, final_height));
                 false
             }
         }

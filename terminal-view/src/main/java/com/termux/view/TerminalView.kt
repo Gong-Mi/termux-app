@@ -118,6 +118,10 @@ class TerminalView @JvmOverloads constructor(
     private var mInvalidatePending = false
     private var mLastUpdateSizeTime = 0L
 
+    /// Surface 最新尺寸（优先用于计算行列，确保与 Rust swapchain 一致）
+    private var mSurfaceWidth = 0
+    private var mSurfaceHeight = 0
+
     /// 自定义字体文件路径（同步到 Rust 侧）
     private var mFontFilePath: String? = null
 
@@ -716,8 +720,9 @@ class TerminalView @JvmOverloads constructor(
     }
 
     private fun updateSizeInternal() {
-        val viewWidth = width
-        val viewHeight = height
+        // 优先使用 Surface 尺寸，确保行列数与 Rust swapchain 完全匹配
+        val viewWidth = if (mSurfaceWidth > 0) mSurfaceWidth else width
+        val viewHeight = if (mSurfaceHeight > 0) mSurfaceHeight else height
         val session = mTermSession
         if (viewWidth == 0 || viewHeight == 0 || session == null) return
 
@@ -817,8 +822,13 @@ class TerminalView @JvmOverloads constructor(
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
         Log.i("TerminalView-Surface", ">>> surfaceChanged: ${width}x${height}")
+        // 保存 Surface 最新尺寸，确保后续行列计算与 Rust swapchain 一致
+        mSurfaceWidth = width
+        mSurfaceHeight = height
         try { nativeOnSizeChanged(width, height) }
         catch (e: Exception) { Log.e("TerminalView-Surface", "!!! surfaceChanged: ${e.message}", e) }
+        // 关键修复：Surface 尺寸变化时必须重新计算行列数，否则画布与显示大小不一致
+        updateSize()
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
@@ -826,6 +836,9 @@ class TerminalView @JvmOverloads constructor(
         // 关键修复：进入后台时必须重置 mEnginePointerSet，
         // 否则回到前台时不会调用 nativeSetEnginePointer()，导致渲染线程使用旧的 engine 指针
         mEnginePointerSet = false
+        // 清理 Surface 尺寸缓存，防止恢复时误用旧值
+        mSurfaceWidth = 0
+        mSurfaceHeight = 0
         try { nativeSetSurface(null) }
         catch (e: Exception) { Log.e("TerminalView-Surface", "!!! surfaceDestroyed: ${e.message}", e) }
     }
