@@ -119,6 +119,7 @@ fn extract_zip_to_dir(
         // 处理目录
         if file.is_dir() {
             dir_count += 1;
+            extracted_count += 1;
             create_dir_all(&out_path)?;
             eprintln!("[Rust Extract] [{}] Created directory: {}", i, path_str);
             continue;
@@ -204,8 +205,47 @@ fn extract_zip_to_dir(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use std::io::Write;
+
     #[test]
-    fn test_extract_zip() {
-        assert!(true);
+    fn test_extract_zip_with_empty_dir() {
+        let target_dir_path = "test_extract";
+        // 清理旧目录
+        let _ = std::fs::remove_dir_all(target_dir_path);
+        std::fs::create_dir_all(target_dir_path).unwrap();
+
+        // 创建一个内存中的 zip，包含一个空目录和一个文件
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+            
+            // 添加空目录 (注意末尾的斜杠)
+            zip.add_directory("empty_dir/", zip::write::SimpleFileOptions::default()).unwrap();
+            
+            // 添加文件
+            zip.start_file("test.txt", zip::write::SimpleFileOptions::default()).unwrap();
+            zip.write_all(b"hello").unwrap();
+            
+            zip.finish().unwrap();
+        }
+
+        let count = extract_zip_to_dir(&buf, target_dir_path).unwrap();
+        assert_eq!(count, 2);
+
+        // 验证目录是否创建
+        let empty_dir_path = std::path::Path::new(target_dir_path).join("empty_dir");
+        assert!(empty_dir_path.exists(), "Empty directory should exist at {:?}", empty_dir_path);
+        assert!(empty_dir_path.is_dir(), "{:?} should be a directory", empty_dir_path);
+
+        // 验证文件是否创建
+        let file_path = std::path::Path::new(target_dir_path).join("test.txt");
+        assert!(file_path.exists());
+        let mut content = String::new();
+        File::open(file_path).unwrap().read_to_string(&mut content).unwrap();
+        assert_eq!(content, "hello");
+
+        // 清理
+        let _ = std::fs::remove_dir_all(target_dir_path);
     }
 }

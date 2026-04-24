@@ -251,10 +251,10 @@ impl SixelDecoder {
             let p2 = self.params[3] as u32;
             let p3 = self.params.get(4).copied().unwrap_or(0) as u32;
             
-            let (r, g, b) = if color_space == 1 {
+            let (r, g, b) = if color_space == 2 {
                 // RGB 空间：值 0-100 百分比
                 ((p1 * 255 / 100).min(255) as u8, (p2 * 255 / 100).min(255) as u8, (p3 * 255 / 100).min(255) as u8)
-            } else if color_space == 2 {
+            } else if color_space == 1 {
                 // HLS 空间
                 hls_to_rgb(p1, p2, p3)
             } else {
@@ -451,5 +451,68 @@ pub fn index_to_default_color(index: usize) -> (u8, u8, u8) {
         // 其他索引使用灰色渐变
         let gray = ((index % 24) * 10 + 20) as u8;
         (gray, gray, gray)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sixel_basic_decoding() {
+        let mut decoder = SixelDecoder::new();
+        // Sixel data: ~ (63+63=126) which is all 6 bits set
+        decoder.process_data(b"~");
+        assert_eq!(decoder.width, 1);
+        assert_eq!(decoder.height, 6);
+        // color index 0 maps to pixel value 1
+        assert_eq!(decoder.pixel_data[0][0], 1);
+        assert_eq!(decoder.pixel_data[5][0], 1);
+    }
+
+    #[test]
+    fn test_sixel_rle_decoding() {
+        let mut decoder = SixelDecoder::new();
+        // ! 5 ~ -> repeat ~ 5 times
+        decoder.process_data(b"!5~");
+        assert_eq!(decoder.width, 5);
+        for i in 0..5 {
+            assert_eq!(decoder.pixel_data[0][i], 1);
+        }
+    }
+
+    #[test]
+    fn test_sixel_newline() {
+        let mut decoder = SixelDecoder::new();
+        // ~ - ~ -> one pixel, next line (6 pixels down), one pixel
+        decoder.process_data(b"~-~");
+        assert_eq!(decoder.height, 12);
+        assert_eq!(decoder.pixel_data[0][0], 1);
+        assert_eq!(decoder.pixel_data[6][0], 1);
+    }
+
+    #[test]
+    fn test_sixel_color_select() {
+        let mut decoder = SixelDecoder::new();
+        // #1;2;100;0;0 -> color 1 = RGB 100%,0%,0% (Red)
+        decoder.process_data(b"#1;2;100;0;0#1~");
+        assert_eq!(decoder.current_color, 1);
+        let color = decoder.color_registers[1].as_ref().unwrap();
+        assert_eq!(color.r, 255);
+        assert_eq!(color.g, 0);
+        assert_eq!(color.b, 0);
+        assert_eq!(decoder.pixel_data[0][0], 2); // index+1
+    }
+
+    #[test]
+    fn test_sixel_fragmented_data() {
+        let mut decoder = SixelDecoder::new();
+        // Data split across chunks
+        decoder.process_data(b"!");
+        decoder.process_data(b"1");
+        decoder.process_data(b"0");
+        decoder.process_data(b"~");
+        assert_eq!(decoder.width, 10);
+        assert_eq!(decoder.pixel_data[0][9], 1);
     }
 }
