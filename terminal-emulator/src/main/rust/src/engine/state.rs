@@ -138,7 +138,7 @@ impl ScreenState {
         let bottom = self.bottom_margin;
         let style = self.current_style;
         self.get_current_screen_mut().scroll_up(top, bottom, style);
-        if !self.use_alternate_buffer && top == 0 && bottom == self.rows {
+        if !self.use_alternate_buffer && top == 0 && bottom == self.rows && !self.auto_scroll_disabled {
             self.scroll_counter += 1;
         }
     }
