@@ -8,7 +8,7 @@
 
 use termux_rust::TerminalEngine;
 
-fn get_row_text(engine: &TerminalEngine, row: i32) -> String {
+fn get_row_text(engine: &TerminalEngine, row: i64) -> String {
     let cols = engine.state.cols as usize;
     let mut text = vec![0u16; cols];
     engine.state.copy_row_text(row, &mut text);
@@ -391,7 +391,7 @@ fn test_resize_preserves_history() {
 
     // 放大后历史内容应该减少，但不应该丢失
     // 关键验证：第一行历史内容应该还能访问
-    let min_row = -(expanded_active_transcript as i32);
+    let min_row = -(expanded_active_transcript as i64);
     let first_history_row = engine.state.main_screen.get_row(min_row);
     let text: String = first_history_row.text.iter().take(10).collect();
     eprintln!("First history row: '{}'", text.trim());

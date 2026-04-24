@@ -595,6 +595,17 @@ impl ScreenState {
         )
     }
 
+    pub fn saved_decset_flags(&self) -> i32 { self.cursor.saved_state.decset_flags }
+    pub fn decset_flags(&self) -> i32 { self.modes.flags }
+
+    pub fn copy_row_text(&self, row: i64, dest: &mut [u16]) {
+        let screen = self.get_current_screen();
+        let r = screen.get_row(row);
+        for i in 0..min(dest.len(), r.text.len()) {
+            dest[i] = r.text[i] as u16;
+        }
+    }
+
     pub fn copy_row_codepoints(&self, row: i64, dest: &mut [i32]) {
         let screen = self.get_current_screen();
         let r = screen.get_row(row);
