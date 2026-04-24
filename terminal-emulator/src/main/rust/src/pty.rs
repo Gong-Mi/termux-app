@@ -330,16 +330,22 @@ pub fn create_subprocess_with_data(
                     
                     if std::path::Path::new(linker).exists() {
                         let mut linker_argv = Vec::new();
+                        
+                        // 关键：保留原始 argv[0]（如 -bash），linker 把它传给子进程作为 progname
                         let prog_name = if !final_args.is_empty() {
                             final_args[0].clone()
                         } else {
                             final_cmd.clone()
                         };
-                        linker_argv.push(prog_name);
-                        linker_argv.push(final_cmd.clone());
+                        
+                        linker_argv.push(prog_name);        // argv[0] - 程序名 (Internal to the child)
+                        linker_argv.push(final_cmd.clone()); // argv[1] - linker 必须加载的绝对路径
+                        
+                        // 透传剩余参数（跳过原来的 argv[0]，因为我们已经用它作为 prog_name）
                         if final_args.len() > 1 {
                             linker_argv.extend(final_args.iter().skip(1).cloned());
                         }
+                        
                         final_args = linker_argv;
                         final_cmd = linker.to_string();
                     }
@@ -353,6 +359,11 @@ pub fn create_subprocess_with_data(
                 
                 let ptr_args: Vec<_> = c_args.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
                 
+                crate::utils::android_log(
+                    crate::utils::LogPriority::INFO,
+                    &format!("[PTY] final_exec cmd='{}' argv={:?}", final_cmd, final_args)
+                );
+
                 if !final_cmd.is_empty() {
                     let c_cmd = CString::new(final_cmd.clone()).unwrap();
                     libc::execv(c_cmd.as_ptr(), ptr_args.as_ptr());
