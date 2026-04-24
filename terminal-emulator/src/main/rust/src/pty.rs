@@ -138,6 +138,9 @@ pub fn create_subprocess_with_data(
             }
             Ok(ForkResult::Child) => {
                 let _ = setsid();
+                
+                // 降低子进程优先级 (Nice 19)，减少对系统负载的冲击
+                libc::setpriority(libc::PRIO_PROCESS, 0, 19);
 
                 let c_devname = CString::new(devname).unwrap();
                 let pts = libc::open(c_devname.as_ptr(), libc::O_RDWR);
@@ -151,65 +154,67 @@ pub fn create_subprocess_with_data(
                 if pts > 2 { libc::close(pts); }
                 libc::close(ptm);
 
-                // === 环境变量兜底（从 termux-app-rust 迁移） ===
-                // Java 层传过来的 envp 可能不完整，Rust 层必须做兜底补充。
-                let termux_data = "/data/data/com.termux";
-                let termux_files = format!("{}/files", termux_data);
-                let termux_prefix = format!("{}/usr", termux_files);
+                // === 动态 Prefix 检测与环境变量补全 ===
+                // 不再硬编码 com.termux，而是从现有环境或当前进程推断
+                let mut termux_prefix = String::from("/data/data/com.termux/files/usr");
+                if let Ok(exe) = std::env::current_exe() {
+                    let path_str = exe.to_string_lossy();
+                    if let Some(pos) = path_str.find("/files/") {
+                        termux_prefix = format!("{}/files/usr", &path_str[..pos]);
+                    }
+                }
+                
                 let termux_bin = format!("{}/bin", termux_prefix);
                 let termux_lib = format!("{}/lib", termux_prefix);
+                let termux_home = termux_prefix.replace("/usr", "/home");
+
+                // 准备注入的环境变量
+                let mut vars_to_set = Vec::new();
                 
-                let mut final_envp = envp;
-                
-                // 1. PATH
-                if let Some(pos) = final_envp.iter().position(|s| s.starts_with("PATH=")) {
-                    let old_path = final_envp[pos].split('=').nth(1).unwrap_or("");
-                    if !old_path.contains(&termux_bin) {
-                        final_envp[pos] = format!("PATH={}:{}", termux_bin, old_path);
-                    }
-                } else {
-                    final_envp.push(format!("PATH={}:/system/bin:/system/xbin", termux_bin));
+                // 1. PATH (Prepend)
+                let old_path = std::env::var("PATH").unwrap_or_else(|_| "/system/bin:/system/xbin".to_string());
+                if !old_path.contains(&termux_bin) {
+                    vars_to_set.push(("PATH", format!("{}:{}", termux_bin, old_path)));
                 }
                 
                 // 2. LD_LIBRARY_PATH
-                if !final_envp.iter().any(|s| s.starts_with("LD_LIBRARY_PATH=")) {
-                    final_envp.push(format!("LD_LIBRARY_PATH={}", termux_lib));
-                }
+                vars_to_set.push(("LD_LIBRARY_PATH", termux_lib.clone()));
                 
-                // 3. LD_PRELOAD — 必须使用 linker-ld-preload 变体（含 W^X bypass）
+                // 3. LD_PRELOAD (核心：SDK 36 兼容)
                 let termux_exec_candidates = [
                     "libtermux-exec-direct-ld-preload.so",
                     "libtermux-exec-linker-ld-preload.so",
                     "libtermux-exec.so",
                     "libtermux-exec-ld-preload.so",
                 ];
-                let mut exec_path = String::new();
                 for candidate in &termux_exec_candidates {
                     let path = format!("{}/{}", termux_lib, candidate);
                     if std::path::Path::new(&path).exists() {
-                        exec_path = path;
+                        vars_to_set.push(("LD_PRELOAD", path));
                         break;
                     }
                 }
-                if !exec_path.is_empty() && !final_envp.iter().any(|s| s.starts_with("LD_PRELOAD=")) {
-                    final_envp.push(format!("LD_PRELOAD={}", exec_path));
+                
+                // 4. 基础变量
+                vars_to_set.push(("TERM", "xterm-256color".to_string()));
+                vars_to_set.push(("HOME", termux_home));
+                vars_to_set.push(("PREFIX", termux_prefix.clone()));
+
+                // 批量设置（不再使用 clearenv，保留 Android 系统变量）
+                for (key, value) in vars_to_set {
+                    if let (Ok(ck), Ok(cv)) = (CString::new(key), CString::new(value)) {
+                        libc::setenv(ck.as_ptr(), cv.as_ptr(), 1);
+                    }
                 }
                 
-                // 4. 基础变量兜底
-                if !final_envp.iter().any(|s| s.starts_with("TERM=")) {
-                    final_envp.push("TERM=xterm-256color".to_string());
-                }
-                if !final_envp.iter().any(|s| s.starts_with("HOME=")) {
-                    final_envp.push(format!("HOME={}/home", termux_files));
-                }
-                if !final_envp.iter().any(|s| s.starts_with("PREFIX=")) {
-                    final_envp.push(format!("PREFIX={}", termux_prefix));
-                }
-                
-                libc::clearenv();
-                for env_var in final_envp {
-                    if let Ok(c_env) = CString::new(env_var) {
-                        libc::putenv(c_env.into_raw());
+                // 处理传入的自定义环境变量
+                for env_var in envp {
+                    if let Some(pos) = env_var.find('=') {
+                        let key = &env_var[..pos];
+                        let value = &env_var[pos+1..];
+                        if let (Ok(ck), Ok(cv)) = (CString::new(key), CString::new(value)) {
+                            libc::setenv(ck.as_ptr(), cv.as_ptr(), 1);
+                        }
                     }
                 }
                 
