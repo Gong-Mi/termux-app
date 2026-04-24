@@ -111,7 +111,13 @@ impl TerminalContext {
 
             while context.running.load(Ordering::Relaxed) {
                 match std::io::Read::read(&mut pty_file, &mut buffer) {
-                    Ok(0) => break,
+                    Ok(0) => {
+                        // 抗抖动逻辑：可能是 execvp 切换瞬间，等待 100ms
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                        let retry_res = std::io::Read::read(&mut pty_file, &mut buffer);
+                        if let Ok(0) = retry_res { break; }
+                        continue;
+                    },
                     Ok(n) => {
                         let (events, callback_obj) = {
                             let mut engine = context.lock.write().unwrap();

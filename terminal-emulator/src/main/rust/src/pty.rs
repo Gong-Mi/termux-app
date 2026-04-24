@@ -178,6 +178,7 @@ pub fn create_subprocess_with_data(
                 
                 // 3. LD_PRELOAD — 必须使用 linker-ld-preload 变体（含 W^X bypass）
                 let termux_exec_candidates = [
+                    "libtermux-exec-direct-ld-preload.so",
                     "libtermux-exec-linker-ld-preload.so",
                     "libtermux-exec.so",
                     "libtermux-exec-ld-preload.so",
