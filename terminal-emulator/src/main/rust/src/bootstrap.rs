@@ -113,10 +113,14 @@ fn extract_zip_to_dir(
         let file_path = file.enclosed_name().ok_or("Invalid file path")?;
         let path_str = file_path.to_string_lossy().to_string();
 
-        // 跳过目录
+        // 构建目标路径
+        let out_path = Path::new(target_dir).join(&file_path);
+
+        // 处理目录
         if file.is_dir() {
             dir_count += 1;
-            eprintln!("[Rust Extract] [{}] Skip directory: {}", i, path_str);
+            create_dir_all(&out_path)?;
+            eprintln!("[Rust Extract] [{}] Created directory: {}", i, path_str);
             continue;
         }
 
