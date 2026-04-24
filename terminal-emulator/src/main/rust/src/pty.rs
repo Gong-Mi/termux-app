@@ -154,33 +154,40 @@ pub fn create_subprocess_with_data(
                 if pts > 2 { libc::close(pts); }
                 libc::close(ptm);
 
-                // === 动态 Prefix 检测与环境变量补全 ===
-                // 不再硬编码 com.termux，而是从现有环境或当前进程推断
-                let mut termux_prefix = String::from("/data/data/com.termux/files/usr");
-                if let Ok(exe) = std::env::current_exe() {
-                    let path_str = exe.to_string_lossy();
-                    if let Some(pos) = path_str.find("/files/") {
-                        termux_prefix = format!("{}/files/usr", &path_str[..pos]);
+                // === 动态真实身份检测与路径重排 ===
+                let mut real_pkg = String::from("com.termux");
+                if let Ok(cmdline) = std::fs::read_to_string("/proc/self/cmdline") {
+                    if let Some(pkg) = cmdline.split('\0').next() {
+                        if !pkg.is_empty() && pkg.contains('.') {
+                            real_pkg = pkg.to_string();
+                        }
                     }
                 }
                 
+                let real_data_root = format!("/data/data/{}", real_pkg);
+                let termux_prefix = format!("{}/files/usr", real_data_root);
                 let termux_bin = format!("{}/bin", termux_prefix);
                 let termux_lib = format!("{}/lib", termux_prefix);
-                let termux_home = termux_prefix.replace("/usr", "/home");
+                let termux_home = format!("{}/files/home", real_data_root);
 
-                // 准备注入的环境变量
+                // 辅助函数：将任何路径中的 com.termux 修正为当前真实包名
+                let fix_path = |s: &str| -> String {
+                    s.replace("/data/data/com.termux", &real_data_root)
+                     .replace("/data/user/0/com.termux", &real_data_root)
+                };
+
+                // 1. 准备注入的环境变量
                 let mut vars_to_set = Vec::new();
                 
-                // 1. PATH (Prepend)
+                // PATH (Prepend & Fix)
                 let old_path = std::env::var("PATH").unwrap_or_else(|_| "/system/bin:/system/xbin".to_string());
-                if !old_path.contains(&termux_bin) {
-                    vars_to_set.push(("PATH", format!("{}:{}", termux_bin, old_path)));
-                }
+                let fixed_old_path = fix_path(&old_path);
+                vars_to_set.push(("PATH", format!("{}:{}", termux_bin, fixed_old_path)));
                 
-                // 2. LD_LIBRARY_PATH
+                // LD_LIBRARY_PATH
                 vars_to_set.push(("LD_LIBRARY_PATH", termux_lib.clone()));
                 
-                // 3. LD_PRELOAD (核心：SDK 36 兼容)
+                // LD_PRELOAD (核心：SDK 36 兼容)
                 let termux_exec_candidates = [
                     "libtermux-exec-direct-ld-preload.so",
                     "libtermux-exec-linker-ld-preload.so",
@@ -195,37 +202,35 @@ pub fn create_subprocess_with_data(
                     }
                 }
                 
-                // 4. 基础变量
                 vars_to_set.push(("TERM", "xterm-256color".to_string()));
                 vars_to_set.push(("HOME", termux_home));
                 vars_to_set.push(("PREFIX", termux_prefix.clone()));
 
-                // 批量设置（不再使用 clearenv，保留 Android 系统变量）
                 for (key, value) in vars_to_set {
                     if let (Ok(ck), Ok(cv)) = (CString::new(key), CString::new(value)) {
                         libc::setenv(ck.as_ptr(), cv.as_ptr(), 1);
                     }
                 }
                 
-                // 处理传入的自定义环境变量
                 for env_var in envp {
                     if let Some(pos) = env_var.find('=') {
                         let key = &env_var[..pos];
-                        let value = &env_var[pos+1..];
+                        let value = fix_path(&env_var[pos+1..]);
                         if let (Ok(ck), Ok(cv)) = (CString::new(key), CString::new(value)) {
                             libc::setenv(ck.as_ptr(), cv.as_ptr(), 1);
                         }
                     }
                 }
-                
+
                 if !cwd_str.is_empty() {
-                    let c_cwd = CString::new(cwd_str).unwrap();
+                    let fixed_cwd = fix_path(&cwd_str);
+                    let c_cwd = CString::new(fixed_cwd).unwrap();
                     let _ = chdir(c_cwd.as_c_str());
                 }
                 
-                // === 命令解析与 W^X Bypass（从 termux-app-rust 迁移） ===
-                let mut final_cmd = cmd_str.clone();
-                let mut final_args = argv.clone();
+                // === 命令解析与路径修正 ===
+                let mut final_cmd = fix_path(&cmd_str);
+                let mut final_args: Vec<String> = argv.iter().map(|a| fix_path(a)).collect();
                 
                 // 相对路径解析：如果 cmd 不是绝对路径，在 $PREFIX/bin 下查找
                 if !final_cmd.starts_with('/') {
