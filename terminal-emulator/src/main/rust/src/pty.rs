@@ -169,6 +169,7 @@ pub fn create_subprocess_with_data(
                 let termux_bin = format!("{}/bin", termux_prefix);
                 let termux_lib = format!("{}/lib", termux_prefix);
                 let termux_home = format!("{}/files/home", real_data_root);
+                let termux_tmp = format!("{}/tmp", termux_prefix);
 
                 // 辅助函数：将任何路径中的 com.termux 修正为当前真实包名
                 let fix_path = |s: &str| -> String {
@@ -176,18 +177,27 @@ pub fn create_subprocess_with_data(
                      .replace("/data/user/0/com.termux", &real_data_root)
                 };
 
-                // 1. 准备注入的环境变量
+                // 1. 准备注入的环境变量矩阵 (完全接管 Java 侧职责)
                 let mut vars_to_set = Vec::new();
                 
-                // PATH (Prepend & Fix)
+                // 核心路径
                 let old_path = std::env::var("PATH").unwrap_or_else(|_| "/system/bin:/system/xbin".to_string());
                 let fixed_old_path = fix_path(&old_path);
                 vars_to_set.push(("PATH", format!("{}:{}", termux_bin, fixed_old_path)));
                 
-                // LD_LIBRARY_PATH
+                vars_to_set.push(("PREFIX", termux_prefix.clone()));
+                vars_to_set.push(("HOME", termux_home));
+                vars_to_set.push(("TMPDIR", termux_tmp));
+                
+                // 运行库环境
                 vars_to_set.push(("LD_LIBRARY_PATH", termux_lib.clone()));
                 
-                // LD_PRELOAD (核心：SDK 36 兼容)
+                // 终端特性
+                vars_to_set.push(("TERM", "xterm-256color".to_string()));
+                vars_to_set.push(("COLORTERM", "truecolor".to_string()));
+                vars_to_set.push(("LANG", "en_US.UTF-8".to_string()));
+                
+                // LD_PRELOAD (核心：SDK 36 W^X Bypass)
                 let termux_exec_candidates = [
                     "libtermux-exec-direct-ld-preload.so",
                     "libtermux-exec-linker-ld-preload.so",
@@ -202,10 +212,7 @@ pub fn create_subprocess_with_data(
                     }
                 }
                 
-                vars_to_set.push(("TERM", "xterm-256color".to_string()));
-                vars_to_set.push(("HOME", termux_home));
-                vars_to_set.push(("PREFIX", termux_prefix.clone()));
-
+                // 批量设置（使用 setenv，确保 Android 系统必需变量不丢失）
                 for (key, value) in vars_to_set {
                     if let (Ok(ck), Ok(cv)) = (CString::new(key), CString::new(value)) {
                         libc::setenv(ck.as_ptr(), cv.as_ptr(), 1);
