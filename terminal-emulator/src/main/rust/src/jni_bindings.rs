@@ -5,7 +5,7 @@
 /// - TerminalEmulator JNI 函数
 
 use jni::JNIEnv;
-use jni::objects::{JClass, JString, JObject};
+use jni::objects::{JClass, JString, JObject, JValue};
 use jni::sys::{jint, jlong, jbyteArray, jboolean, jintArray, jstring, jfloat};
 use std::sync::Arc;
 use std::os::fd::FromRawFd;
@@ -88,7 +88,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetFontPath(
 /// 获取字体指标
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _obj: JObject,
     metrics_array: jni::sys::jfloatArray,
 ) {
@@ -133,7 +133,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
 /// 设置 Surface
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _obj: JObject,
     surface: JObject,
 ) {
@@ -290,17 +290,17 @@ fn flush_events_to_java(env: &mut JNIEnv, callback_obj: &Option<jni::objects::Gl
             }
             TerminalEvent::CopytoClipboard(text) => {
                 if let Ok(j_text) = env.new_string(text) {
-                    let _ = env.call_method(obj, "onCopyTextToClipboard", "(Ljava/lang/String;)V", &[(&j_text).into()]);
+                    let _ = env.call_method(obj, "onCopyTextToClipboard", "(Ljava/lang/String;)V", &[JValue::Object(&j_text.into())]);
                 }
             }
             TerminalEvent::TitleChanged(title) => {
                 if let Ok(j_title) = env.new_string(title) {
-                    let _ = env.call_method(obj, "reportTitleChange", "(Ljava/lang/String;)V", &[(&j_title).into()]);
+                    let _ = env.call_method(obj, "reportTitleChange", "(Ljava/lang/String;)V", &[JValue::Object(&j_title.into())]);
                 }
             }
             TerminalEvent::TerminalResponse(resp) => {
                 if let Ok(j_resp) = env.new_string(resp) {
-                    let _ = env.call_method(obj, "write", "(Ljava/lang/String;)V", &[(&j_resp).into()]);
+                    let _ = env.call_method(obj, "write", "(Ljava/lang/String;)V", &[JValue::Object(&j_resp.into())]);
                 }
             }
             TerminalEvent::SixelImage { rgba_data, width, height, start_x, start_y } => {
@@ -309,11 +309,11 @@ fn flush_events_to_java(env: &mut JNIEnv, callback_obj: &Option<jni::objects::Gl
                         let _ = env.set_byte_array_region(&j_data, 0, std::mem::transmute::<&[u8], &[i8]>(&rgba_data));
                     }
                     let _ = env.call_method(obj, "onSixelImage", "([BIIII)V", &[
-                        (&j_data).into(),
-                        width.into(),
-                        height.into(),
-                        start_x.into(),
-                        start_y.into(),
+                        JValue::Object(&j_data.into()),
+                        JValue::Int(width as i32),
+                        JValue::Int(height as i32),
+                        JValue::Int(start_x as i32),
+                        JValue::Int(start_y as i32),
                     ]);
                 }
             }
@@ -334,7 +334,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_createEngine(
     callback: JObject,
 ) -> jlong {
     android_log(LogPriority::DEBUG, &format!("JNI: createEngine ({}x{})", cols, rows));
-    let mut engine = TerminalEngine::new(cols, rows, total_rows, cw, ch);
+    let mut engine = TerminalEngine::new(cols as i64, rows as i64, total_rows as i64, cw, ch);
     if !callback.is_null() {
         if let Ok(global_ref) = env.new_global_ref(callback) {
             engine.state.java_callback_obj = Some(global_ref);
@@ -488,7 +488,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_resize(
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let (events, cb) = {
         let mut engine = context.lock.write().unwrap();
-        engine.state.resize(cols, rows);
+        engine.state.resize(cols as i64, rows as i64);
         engine.events.push(TerminalEvent::ScreenUpdated);
         (engine.take_events(), engine.state.java_callback_obj.clone())
     };
@@ -722,8 +722,8 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_readRow(
         let cols = engine.state.cols as usize;
         let mut text_buf = vec![0i32; cols];
         let mut style_buf = vec![0i64; cols];
-        engine.state.copy_row_codepoints(row, &mut text_buf);
-        engine.state.copy_row_styles_i64(row, &mut style_buf);
+        engine.state.copy_row_codepoints(row as i64, &mut text_buf);
+        engine.state.copy_row_styles_i64(row as i64, &mut style_buf);
         (text_buf, style_buf)
     };
 
@@ -745,7 +745,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getSelectedText(
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let text = {
         let engine = context.lock.read().unwrap();
-        engine.state.get_current_screen().get_selected_text(x1, y1, x2, y2)
+        engine.state.get_current_screen().get_selected_text(x1 as i64, y1 as i64, x2 as i64, y2 as i64)
     };
     let result = if let Ok(j_str) = env.new_string(text) { j_str.into_raw() } else { std::ptr::null_mut() };
     let _ = Arc::into_raw(context);
@@ -761,7 +761,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getWordAtLocation(
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let text = {
         let engine = context.lock.read().unwrap();
-        engine.state.get_current_screen().get_row(y).get_word_at(x as usize)
+        engine.state.get_current_screen().get_row(y as i64).get_word_at(x as u64)
     };
     let result = if let Ok(j_str) = env.new_string(text) { j_str.into_raw() } else { std::ptr::null_mut() };
     let _ = Arc::into_raw(context);
@@ -831,7 +831,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_sendMouseEvent(mut 
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let (events, cb) = {
         let mut engine = context.lock.write().unwrap();
-        engine.state.send_mouse_event(button as u32, col, row, pressed != 0);
+        engine.state.send_mouse_event(button as u32, col as i64, row as i64, pressed != 0);
         (engine.take_events(), engine.state.java_callback_obj.clone())
     };
     flush_events_to_java(&mut env, &cb, events);
@@ -1127,7 +1127,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getDebugInfo(
 // PTY 处理 (JNI.java)
 // ============================================================================
 
-/// 设置 PTY 窗口大小
+/// 设置 PTY窗口大小
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_JNI_setPtyWindowSize(
     _env: JNIEnv,
@@ -1227,7 +1227,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
         };
 
         android_log(LogPriority::DEBUG, "[TRACE_SESSION] Creating TerminalEngine");
-        let mut engine = TerminalEngine::new(cols, rows, transcript_rows, cw, ch);
+        let mut engine = TerminalEngine::new(cols as i64, rows as i64, transcript_rows as i64, cw, ch);
         if let Some(ref cb) = callback_ref {
             engine.state.java_callback_obj = Some(cb.clone());
         }

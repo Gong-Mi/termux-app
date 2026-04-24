@@ -4,8 +4,8 @@ use std::cmp::{max, min};
 
 #[derive(Clone, Copy)]
 pub struct CursorState {
-    pub x: i32,
-    pub y: i32,
+    pub x: i64,
+    pub y: i64,
     pub style: u64,
     pub about_to_wrap: bool,
     pub decset_flags: i32,
@@ -17,8 +17,8 @@ pub struct CursorState {
 }
 
 pub struct Cursor {
-    pub x: i32,
-    pub y: i32,
+    pub x: i64,
+    pub y: i64,
     pub about_to_wrap: bool,
     pub style: i32, // 0=block, 1=underline, 2=bar
     pub blinking_enabled: bool,
@@ -53,18 +53,18 @@ impl Cursor {
         }
     }
 
-    pub fn set_position(&mut self, x: i32, y: i32) {
+    pub fn set_position(&mut self, x: i64, y: i64) {
         self.x = x;
         self.y = y;
         self.about_to_wrap = false;
     }
 
-    pub fn clamp(&mut self, cols: i32, rows: i32) {
+    pub fn clamp(&mut self, cols: i64, rows: i64) {
         self.x = max(0, min(cols - 1, self.x));
         self.y = max(0, min(rows - 1, self.y));
     }
 
-    pub fn move_relative(&mut self, dx: i32, dy: i32, cols: i32, rows: i32) {
+    pub fn move_relative(&mut self, dx: i64, dy: i64, cols: i64, rows: i64) {
         self.x = max(0, min(cols - 1, self.x + dx));
         self.y = max(0, min(rows - 1, self.y + dy));
         self.about_to_wrap = false;

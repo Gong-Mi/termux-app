@@ -36,8 +36,8 @@ pub fn handle_osc(state: &mut ScreenState, events: &mut Vec<TerminalEvent>, opco
         "14" => { state.handle_osc14(); }
         "18" => { state.handle_osc18(); }
         "19" => { state.handle_osc19(); }
-        "22" => { state.push_title(opcode); }
-        "23" => { state.pop_title(opcode); }
+        "22" => { state.push_title(); }
+        "23" => { state.pop_title(); }
         "52" => {
             if params.len() > 2 {
                 if let Ok(base64_data) = std::str::from_utf8(params[2]) {

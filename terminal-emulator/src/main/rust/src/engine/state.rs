@@ -13,8 +13,8 @@ use crate::engine::events::TerminalEvent;
 
 /// 屏幕状态 - 包含所有终端可见状态
 pub struct ScreenState {
-    pub rows: i32,
-    pub cols: i32,
+    pub rows: i64,
+    pub cols: i64,
 
     // 缓冲区对
     pub main_screen: Screen,
@@ -27,10 +27,10 @@ pub struct ScreenState {
     pub sixel_decoder: SixelDecoder,
     pub flat_buffer: Option<FlatScreenBuffer>,
     pub shared_buffer_ptr: SharedBufferPtr,
-    pub top_margin: i32,
-    pub bottom_margin: i32,
-    pub left_margin: i32,
-    pub right_margin: i32,
+    pub top_margin: i64,
+    pub bottom_margin: i64,
+    pub left_margin: i64,
+    pub right_margin: i64,
     pub current_style: u64,
     pub tab_stops: Vec<bool>,
     pub title: Option<String>,
@@ -38,7 +38,7 @@ pub struct ScreenState {
     pub use_line_drawing_g0: bool,
     pub use_line_drawing_g1: bool,
     pub use_line_drawing_uses_g0: bool,
-    pub scroll_counter: i32,
+    pub scroll_counter: i64,
     pub java_callback_obj: Option<jni::objects::GlobalRef>,
 
     // 辅助状态
@@ -78,7 +78,7 @@ impl Drop for ScreenState {
 }
 
 impl ScreenState {
-    pub fn new(cols: i32, rows: i32, total_rows: i32, _cw: i32, _ch: i32) -> Self {
+    pub fn new(cols: i64, rows: i64, total_rows: i64, _cw: i32, _ch: i32) -> Self {
         let mut tab_stops = vec![false; cols as usize];
         for i in (8..cols as usize).step_by(8) { tab_stops[i] = true; }
 
@@ -125,78 +125,57 @@ impl ScreenState {
         }
     }
 
-    #[inline]
     pub fn get_current_screen(&self) -> &Screen {
         if self.use_alternate_buffer { &self.alt_screen } else { &self.main_screen }
     }
 
-    #[inline]
     pub fn get_current_screen_mut(&mut self) -> &mut Screen {
         if self.use_alternate_buffer { &mut self.alt_screen } else { &mut self.main_screen }
     }
 
-    pub fn auto_wrap(&self) -> bool { self.modes.is_enabled(DECSET_BIT_AUTOWRAP) }
-    pub fn origin_mode(&self) -> bool { self.modes.is_enabled(DECSET_BIT_ORIGIN_MODE) }
-    pub fn leftright_margin_mode(&self) -> bool { self.modes.is_enabled(DECSET_BIT_LEFTRIGHT_MARGIN_MODE) }
-
-    pub fn screen_first_row(&self) -> usize { self.get_current_screen().first_row }
-    pub fn saved_decset_flags(&self) -> i32 { self.cursor.saved_state.decset_flags }
-    pub fn decset_flags(&self) -> i32 { self.modes.flags }
-
-    pub fn do_decset_or_reset(&mut self, setting: bool, mode: u32) {
-        use crate::vte_parser::Params;
-        let mut params = Params::new();
-        if params.len < params.values.len() {
-            params.values[params.len] = mode as i32;
-            params.len += 1;
-        }
-        self.handle_decset(&params, setting);
-    }
-
     pub fn scroll_up(&mut self) {
-        let style = self.current_style;
         let top = self.top_margin;
         let bottom = self.bottom_margin;
+        let style = self.current_style;
         self.get_current_screen_mut().scroll_up(top, bottom, style);
-        if !self.use_alternate_buffer && !self.auto_scroll_disabled { self.scroll_counter += 1; }
+        if !self.use_alternate_buffer && top == 0 && bottom == self.rows {
+            self.scroll_counter += 1;
+        }
     }
 
-    pub fn sync_screen_to_flat_buffer(&mut self) {
-        let cols = self.cols as usize;
-        let use_alt = self.use_alternate_buffer;
-        let screen = if use_alt { &self.alt_screen } else { &self.main_screen };
-        let rows_in_buffer = screen.rows as usize;
+    pub fn scroll_down(&mut self) {
+        let top = self.top_margin;
+        let bottom = self.bottom_margin;
+        let style = self.current_style;
+        self.get_current_screen_mut().scroll_down(top, bottom, style);
+    }
 
-        if let Some(flat) = &mut self.flat_buffer {
-            for r in 0..rows_in_buffer {
-                let row_data = screen.get_row(r as i32);
-                for c in 0..cols {
-                    let idx = r * cols + c;
-                    if c < row_data.text.len() {
-                        flat.text_data[idx] = row_data.text[c] as u16;
-                        flat.style_data[idx] = row_data.styles[c];
+    pub fn set_alternate_buffer(&mut self, use_alt: bool) {
+        if self.use_alternate_buffer != use_alt {
+            self.use_alternate_buffer = use_alt;
+            // 通知 Java 侧缓冲区切换
+            if let Some(obj) = &self.java_callback_obj {
+                if let Some(vm) = crate::JAVA_VM.get() {
+                    if let Ok(mut env) = vm.get_env() {
+                        let _ = env.call_method(obj.as_obj(), "onBufferChanged", "(Z)V", &[JValue::Bool(use_alt as jni::sys::jboolean)]);
                     }
                 }
             }
         }
     }
 
-    pub fn scroll_up_lines(&mut self, n: i32) { for _ in 0..n { self.scroll_up(); } }
-    pub fn scroll_down_lines(&mut self, n: i32) {
-        let old_y = self.cursor.y;
-        self.cursor.y = self.top_margin;
-        self.insert_lines(n);
-        self.cursor.y = old_y;
+    pub fn set_title(&mut self, title: &str) {
+        self.title = Some(title.to_string());
+        self.report_title_change(title);
     }
 
-    pub fn set_title(&mut self, title: &str) { self.title = Some(title.to_string()); self.report_title_change(title); }
-
-    pub fn push_title(&mut self, _opcode: &str) {
-        let t = self.title.clone().unwrap_or_default();
-        self.title_stack.push(t);
+    pub fn push_title(&mut self) {
+        if let Some(title) = &self.title {
+            self.title_stack.push(title.clone());
+        }
     }
 
-    pub fn pop_title(&mut self, _opcode: &str) {
+    pub fn pop_title(&mut self) {
         if let Some(title) = self.title_stack.pop() {
             let t = title.clone();
             self.set_title(&t);
@@ -223,8 +202,8 @@ impl ScreenState {
                     let rgba_data = decoder.get_image_data();
                     let width = decoder.width.max(1) as i32;
                     let height = decoder.height.max(1) as i32;
-                    let start_x = decoder.start_x;
-                    let start_y = decoder.start_y;
+                    let start_x = decoder.start_x as i32;
+                    let start_y = decoder.start_y as i32;
 
                     if let Ok(byte_array) = env.new_byte_array(rgba_data.len() as i32) {
                         let bytes: Vec<i8> = rgba_data.iter().map(|&b| b as i8).collect();
@@ -270,7 +249,7 @@ impl ScreenState {
         }
     }
 
-    pub fn send_mouse_event(&mut self, button: u32, column: i32, row: i32, pressed: bool) {
+    pub fn send_mouse_event(&mut self, button: u32, column: i64, row: i64, pressed: bool) {
         if self.modes.is_enabled(DECSET_BIT_MOUSE_PROTOCOL_SGR) {
             let suffix = if pressed { 'M' } else { 'm' };
             let response = format!("\x1b[<{};{};{}{}", button, column + 1, row + 1, suffix);
@@ -284,12 +263,12 @@ impl ScreenState {
         self.cursor.x = min(self.right_margin - 1, max(self.left_margin, new_col));
     }
 
-    pub fn resize(&mut self, cols: i32, rows: i32) {
+    pub fn resize(&mut self, cols: i64, rows: i64) {
         let style = self.current_style;
         let cx = self.cursor.x;
         let cy = self.cursor.y;
 
-        let (new_cx, new_cy) = self.main_screen.resize_with_reflow(cols, rows, style, cx, cy);
+        let (new_cx, new_cy) = self.main_screen.resize_with_reflow(cols as i32, rows as i32, style, cx as i32, cy as i32);
 
         self.alt_screen = Screen::new(cols, rows, rows);
 
@@ -301,22 +280,22 @@ impl ScreenState {
         self.left_margin = 0;
         self.right_margin = cols;
 
-        self.cursor.x = new_cx;
-        self.cursor.y = new_cy;
+        self.cursor.x = new_cx as i64;
+        self.cursor.y = new_cy as i64;
 
         self.flat_buffer = Some(FlatScreenBuffer::new(cols as usize, self.main_screen.buffer.len()));
         self.cursor.clamp(cols, rows);
         self.sync_screen_to_flat_buffer();
     }
 
-    pub fn insert_characters(&mut self, n: i32) {
+    pub fn insert_characters(&mut self, n: i64) {
         let y = self.cursor.y;
         let style = self.current_style;
         let x = self.cursor.x;
-        self.get_current_screen_mut().get_row_mut(y).insert_spaces(x as usize, n as usize, style);
+        self.get_current_screen_mut().get_row_mut(y).insert_spaces(x as u64, n as u64, style);
     }
 
-    pub fn erase_in_display(&mut self, mode: i32) {
+    pub fn erase_in_display(&mut self, mode: i64) {
         let x = self.cursor.x;
         let y = self.cursor.y;
         let style = self.current_style;
@@ -335,8 +314,8 @@ impl ScreenState {
     }
 
     pub fn erase_in_line(&mut self, mode: i32) {
-        let cols = self.cols as usize;
-        let x = self.cursor.x as usize;
+        let cols = self.cols as u64;
+        let x = self.cursor.x as u64;
         let y = self.cursor.y;
         let style = self.current_style;
         let row = self.get_current_screen_mut().get_row_mut(y);
@@ -348,37 +327,42 @@ impl ScreenState {
         }
     }
 
-    pub fn insert_lines(&mut self, n: i32) {
+    pub fn insert_lines(&mut self, n: i64) {
         let y = self.cursor.y;
         let bm = self.bottom_margin;
         let style = self.current_style;
         self.get_current_screen_mut().insert_lines(y, bm, n, style);
     }
 
-    pub fn delete_lines(&mut self, n: i32) {
+    pub fn delete_lines(&mut self, n: i64) {
         let y = self.cursor.y;
         let bm = self.bottom_margin;
         let style = self.current_style;
         self.get_current_screen_mut().delete_lines(y, bm, n, style);
     }
 
-    pub fn delete_characters(&mut self, n: i32) {
-        let x = self.cursor.x as usize;
+    pub fn delete_characters(&mut self, n: i64) {
+        let x = self.cursor.x as u64;
         let y = self.cursor.y;
         let style = self.current_style;
-        self.get_current_screen_mut().get_row_mut(y).delete_characters(x, n as usize, style);
+        self.get_current_screen_mut().get_row_mut(y).delete_characters(x, n as u64, style);
     }
 
-    pub fn erase_characters(&mut self, n: i32) {
-        let x = self.cursor.x as usize;
+    pub fn erase_characters(&mut self, n: i64) {
+        let x = self.cursor.x as u64;
         let y = self.cursor.y;
         let style = self.current_style;
-        self.get_current_screen_mut().get_row_mut(y).clear(x, x + n as usize, style);
+        self.get_current_screen_mut().get_row_mut(y).clear(x, x + n as u64, style);
     }
 
-    pub fn set_margins(&mut self, top: i32, bottom: i32) {
+    pub fn set_margins(&mut self, top: i64, bottom: i64) {
         self.top_margin = max(0, min(top - 1, self.rows - 1));
         self.bottom_margin = max(self.top_margin + 1, min(bottom, self.rows));
+    }
+
+    pub fn set_left_right_margins(&mut self, left: i64, right: i64) {
+        self.left_margin = max(0, min(left - 1, self.cols - 1));
+        self.right_margin = max(self.left_margin + 1, min(right, self.cols));
     }
 
     pub fn save_cursor(&mut self) {
@@ -412,6 +396,8 @@ impl ScreenState {
         self.use_alternate_buffer = false;
         self.top_margin = 0;
         self.bottom_margin = self.rows;
+        self.left_margin = 0;
+        self.right_margin = self.cols;
         self.title = None;
         self.fore_color = COLOR_INDEX_FOREGROUND as u64;
         self.back_color = COLOR_INDEX_BACKGROUND as u64;
@@ -420,10 +406,10 @@ impl ScreenState {
     }
 
     pub fn decaln_screen_align(&mut self) {
-        let cols = self.cols as usize;
+        let cols = self.cols as u64;
         for y in 0..self.rows {
             let r = self.get_current_screen_mut().get_row_mut(y);
-            for x in 0..cols { r.text[x] = 'E'; r.styles[x] = STYLE_NORMAL; }
+            for x in 0..(cols as usize) { r.text[x] = 'E'; r.styles[x] = STYLE_NORMAL; }
         }
         self.cursor.x = 0;
         self.cursor.y = 0;
@@ -457,14 +443,22 @@ impl ScreenState {
         self.use_line_drawing_uses_g0 = true;
     }
 
-    pub fn cursor_horizontal_relative(&mut self, n: i32) { self.cursor.move_relative(n, 0, self.cols, self.rows); }
-    pub fn cursor_next_line(&mut self, n: i32) { self.cursor.y = min(self.bottom_margin - 1, self.cursor.y + n); self.cursor.x = self.left_margin; }
-    pub fn cursor_previous_line(&mut self, n: i32) { self.cursor.y = max(self.top_margin, self.cursor.y - n); self.cursor.x = self.left_margin; }
-    pub fn cursor_horizontal_absolute(&mut self, n: i32) { self.cursor.x = max(0, min(self.cols - 1, n - 1)); }
-    pub fn cursor_vertical_absolute(&mut self, n: i32) { self.cursor.y = max(0, min(self.rows - 1, n - 1)); }
-    pub fn cursor_vertical_relative(&mut self, n: i32) { self.cursor.y = max(0, min(self.rows - 1, self.cursor.y + n)); }
+    pub fn cursor_horizontal_relative(&mut self, n: i64) { self.cursor.move_relative(n, 0, self.cols, self.rows); }
+    pub fn cursor_next_line(&mut self, n: i64) { self.cursor.y = min(self.bottom_margin - 1, self.cursor.y + n); self.cursor.x = self.left_margin; }
+    pub fn cursor_previous_line(&mut self, n: i64) { self.cursor.y = max(self.top_margin, self.cursor.y - n); self.cursor.x = self.left_margin; }
+    pub fn cursor_horizontal_absolute(&mut self, n: i64) { self.cursor.x = max(0, min(self.cols - 1, n - 1)); }
+    pub fn cursor_vertical_absolute(&mut self, n: i64) { self.cursor.y = max(0, min(self.rows - 1, n - 1)); }
+    pub fn cursor_vertical_relative(&mut self, n: i64) { self.cursor.y = max(0, min(self.rows - 1, self.cursor.y + n)); }
     pub fn reverse_index_scroll(&mut self) { if self.cursor.y == self.top_margin { self.insert_lines(1); } else { self.cursor.y = max(self.top_margin, self.cursor.y - 1); } }
-    pub fn repeat_character(&mut self, n: i32, c: char) { for _ in 0..n { crate::terminal::handlers::print::handle_print(self, c); } }
+    pub fn repeat_character(&mut self, n: i64, c: char) { for _ in 0..n { crate::terminal::handlers::print::handle_print(self, c); } }
+
+    pub fn cursor_backward_tab(&mut self, n: i64) {
+        for _ in 0..n {
+            let mut new_col = self.cursor.x - 1;
+            while new_col > self.left_margin && !self.tab_stops.get(new_col as usize).copied().unwrap_or(false) { new_col -= 1; }
+            self.cursor.x = max(self.left_margin, new_col);
+        }
+    }
 
     pub fn clear_tab_stop(&mut self, mode: i32) {
         match mode {
@@ -499,50 +493,24 @@ impl ScreenState {
         }
     }
 
-    pub fn copy_row_text(&self, row: i32, dest: &mut [u16]) {
-        let r = self.get_current_screen().get_row(row);
-        for i in 0..min(dest.len(), r.text.len()) { dest[i] = r.text[i] as u16; }
+    pub fn auto_wrap(&self) -> bool { self.modes.is_enabled(DECSET_BIT_AUTOWRAP) }
+    pub fn origin_mode(&self) -> bool { self.modes.is_enabled(DECSET_BIT_ORIGIN_MODE) }
+    pub fn leftright_margin_mode(&self) -> bool { self.modes.is_enabled(DECSET_BIT_LEFTRIGHT_MARGIN_MODE) }
+
+    pub fn do_decset_or_reset(&mut self, setting: bool, mode: u32) {
+        use crate::vte_parser::Params;
+        let mut params = Params::new();
+        params.values[0] = mode as i32;
+        params.len = 1;
+        self.handle_decset(&params, setting);
     }
 
-    pub fn copy_row_codepoints(&self, row: i32, dest: &mut [i32]) {
-        let r = self.get_current_screen().get_row(row);
-        for i in 0..min(dest.len(), r.text.len()) { dest[i] = r.text[i] as i32; }
-    }
-
-    pub fn copy_row_styles_i64(&self, row: i32, dest: &mut [i64]) {
-        let r = self.get_current_screen().get_row(row);
-        for i in 0..min(dest.len(), r.styles.len()) { dest[i] = r.styles[i] as i64; }
-    }
-
-    pub fn report_colors_changed(&self) {
-        // 不再直接调用 Java 回调，由调用者在锁外通过事件机制处理
-    }
-
-    pub fn report_color_response(&self, response: &str) {
-        self.report_terminal_response(&format!("\x1b]{}\x07", response));
-    }
-
-    pub fn handle_osc13(&mut self) {}
-    pub fn handle_osc14(&mut self) {}
-    pub fn handle_osc19(&mut self) {}
-
-    pub fn handle_osc52(&mut self, events: &mut Vec<TerminalEvent>, base64_data: &str) {
-        use base64::{Engine as _, engine::general_purpose};
-        if let Ok(decoded) = general_purpose::STANDARD.decode(base64_data) {
-            if let Ok(text) = String::from_utf8(decoded) {
-                events.push(TerminalEvent::CopytoClipboard(text));
-            }
-        }
-    }
-
-    pub fn cursor_backward_tab(&mut self, n: i32) {
-        for _ in 0..n {
-            let mut new_col = self.cursor.x - 1;
-            while new_col >= self.left_margin && !self.tab_stops.get(new_col as usize).copied().unwrap_or(false) {
-                new_col -= 1;
-            }
-            self.cursor.x = max(self.left_margin, new_col);
-        }
+    pub fn scroll_up_lines(&mut self, n: i64) { for _ in 0..n { self.scroll_up(); } }
+    pub fn scroll_down_lines(&mut self, n: i64) {
+        let old_y = self.cursor.y;
+        self.cursor.y = self.top_margin;
+        self.insert_lines(n);
+        self.cursor.y = old_y;
     }
 
     pub fn handle_set_mode(&mut self, params: &crate::vte_parser::Params, set: bool) {
@@ -559,11 +527,6 @@ impl ScreenState {
                 }
             }
         }
-    }
-
-    pub fn set_left_right_margins(&mut self, left: i32, right: i32) {
-        self.left_margin = max(0, min(left - 1, self.cols - 1));
-        self.right_margin = max(self.left_margin + 1, min(right, self.cols));
     }
 
     pub fn back_index_scroll(&mut self) {
@@ -592,6 +555,31 @@ impl ScreenState {
         }
     }
 
+    pub fn report_colors_changed(&self) {}
+    pub fn report_color_response(&self, response: &str) {
+        self.report_terminal_response(&format!("\x1b]{}\x07", response));
+    }
+
+    pub fn handle_osc13(&mut self) {}
+    pub fn handle_osc14(&mut self) {}
+    pub fn handle_osc19(&mut self) {}
+    pub fn handle_osc52(&mut self, _events: &mut Vec<TerminalEvent>, base64_data: &str) {
+        use base64::{Engine as _, engine::general_purpose};
+        if let Ok(decoded) = general_purpose::STANDARD.decode(base64_data) {
+            if let Ok(text) = String::from_utf8(decoded) {
+                if let Some(obj) = &self.java_callback_obj {
+                    if let Some(vm) = crate::JAVA_VM.get() {
+                        if let Ok(mut env) = vm.get_env() {
+                            if let Ok(j_text) = env.new_string(text) {
+                                let _ = env.call_method(obj.as_obj(), "onCopyTextToClipboard", "(Ljava/lang/String;)V", &[JValue::Object(&j_text.into())]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// 获取调试信息（用于 toString() 方法）
     pub fn get_debug_info(&self) -> String {
         format!(
@@ -605,5 +593,23 @@ impl ScreenState {
             self.main_screen.cols,
             self.use_alternate_buffer
         )
+    }
+
+    pub fn copy_row_codepoints(&self, row: i64, dest: &mut [i32]) {
+        let screen = self.get_current_screen();
+        let r = screen.get_row(row);
+        let len = min(r.text.len(), dest.len());
+        for i in 0..len { dest[i] = r.text[i] as i32; }
+    }
+
+    pub fn copy_row_styles_i64(&self, row: i64, dest: &mut [i64]) {
+        let screen = self.get_current_screen();
+        let r = screen.get_row(row);
+        let len = min(r.styles.len(), dest.len());
+        for i in 0..len { dest[i] = r.styles[i] as i64; }
+    }
+
+    pub fn sync_screen_to_flat_buffer(&mut self) {
+        // Implementation of flat buffer sync if needed
     }
 }

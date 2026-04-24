@@ -187,6 +187,7 @@ class TerminalView @JvmOverloads constructor(
                 if (mEmulator == null || isSelectingText()) return true
                 mScaleFactor *= scale
                 mScaleFactor = mClient?.onScale(mScaleFactor) ?: mScaleFactor
+                updateRenderParamsToRust()
                 invalidate()
                 return true
             }
@@ -414,6 +415,10 @@ class TerminalView @JvmOverloads constructor(
             mTopRow = 0
         }
         emu.clearScrollCounter()
+        
+        // 关键修复：即使 onDraw 不被调用（如小窗模式），也要同步渲染参数并请求重绘
+        updateRenderParamsToRust()
+        
         invalidate()
         if (mAccessibilityEnabled) contentDescription = text
     }
@@ -490,6 +495,7 @@ class TerminalView @JvmOverloads constructor(
                 handleKeyCode(if (up) KeyEvent.KEYCODE_DPAD_UP else KeyEvent.KEYCODE_DPAD_DOWN, 0)
             } else {
                 mTopRow = Math.min(0, Math.max(-emu.getActiveTranscriptRows(), mTopRow + if (up) -1 else 1))
+                updateRenderParamsToRust()
                 if (!awakenScrollBars()) invalidate()
             }
         }
@@ -730,6 +736,7 @@ class TerminalView @JvmOverloads constructor(
             mTerminalCursorBlinkerRunnable?.setEmulator(mEmulator)
             mTopRow = 0
             scrollTo(0, 0)
+            updateRenderParamsToRust()
             invalidate()
         }
     }

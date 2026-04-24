@@ -11,52 +11,52 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
     match action {
         '@' => {
             // ICH - Insert Character (默认 1)
-            let n = params.get_arg0(1);
+            let n = params.get_arg0(1) as i64;
             state.cursor.about_to_wrap = false;
             state.insert_characters(n);
         }
         'A' => {
             // CUU - Cursor Up (默认 1)
-            let dist = params.get_arg0(1);
+            let dist = params.get_arg0(1) as i64;
             state.cursor.y = max(state.top_margin, state.cursor.y - dist);
             state.cursor.about_to_wrap = false;
         }
         'B' => {
             // CUD - Cursor Down (默认 1)
-            let dist = params.get_arg0(1);
+            let dist = params.get_arg0(1) as i64;
             state.cursor.y = min(state.bottom_margin - 1, state.cursor.y + dist);
             state.cursor.about_to_wrap = false;
         }
         'C' | 'a' => {
             // CUF - Cursor Forward (默认 1)
-            let dist = params.get_arg0(1);
+            let dist = params.get_arg0(1) as i64;
             state.cursor_horizontal_relative(dist);
         }
         'D' => {
             // CUB - Cursor Backward (默认 1)
-            let dist = params.get_arg0(1);
+            let dist = params.get_arg0(1) as i64;
             state.cursor.x = max(state.left_margin, state.cursor.x - dist);
             state.cursor.about_to_wrap = false;
         }
         'E' => {
             // CNL - Cursor Next Line (默认 1)
-            let n = params.get_arg0(1);
+            let n = params.get_arg0(1) as i64;
             state.cursor_next_line(n);
         }
         'F' => {
             // CPL - Cursor Previous Line (默认 1)
-            let n = params.get_arg0(1);
+            let n = params.get_arg0(1) as i64;
             state.cursor_previous_line(n);
         }
         'G' | '`' => {
             // CHA - Cursor Horizontal Absolute (默认 1)
-            let n = params.get_arg0(1);
+            let n = params.get_arg0(1) as i64;
             state.cursor_horizontal_absolute(n);
         }
         'H' | 'f' => {
             // CUP - Cursor Position (默认 row=1, col=1)
-            let row = params.get_arg0(1);
-            let col = params.get_arg1(1);
+            let row = params.get_arg0(1) as i64;
+            let col = params.get_arg1(1) as i64;
             if state.origin_mode() {
                 state.cursor.y = max(state.top_margin, min(state.bottom_margin - 1, state.top_margin + row - 1));
             } else {
@@ -67,12 +67,12 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
         }
         'I' => {
             // CHT - Cursor Horizontal Tab (默认 1)
-            let n = params.get_arg0(1);
+            let n = params.get_arg0(1) as i64;
             for _ in 0..n { state.cursor_forward_tab(); }
         }
         'J' => {
             // ED - Erase in Display (默认 0)
-            let mode = params.get_arg0(0);
+            let mode = params.get_arg0(0) as i64;
             state.cursor.about_to_wrap = false;
             state.erase_in_display(mode);
         }
@@ -84,48 +84,48 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
         }
         'L' => {
             // IL - Insert Line (默认 1)
-            let n = params.get_arg0(1);
+            let n = params.get_arg0(1) as i64;
             state.cursor.about_to_wrap = false;
             state.insert_lines(n);
         }
         'M' => {
             // DL - Delete Line (默认 1)
-            let n = params.get_arg0(1);
+            let n = params.get_arg0(1) as i64;
             state.cursor.about_to_wrap = false;
             state.delete_lines(n);
         }
         'P' => {
             // DCH - Delete Character (默认 1)
-            let n = params.get_arg0(1);
+            let n = params.get_arg0(1) as i64;
             state.cursor.about_to_wrap = false;
             state.delete_characters(n);
         }
         'S' => {
             // SU - Scroll Up (默认 1)
-            let n = params.get_arg0(1);
+            let n = params.get_arg0(1) as i64;
             state.cursor.about_to_wrap = false;
             state.scroll_up_lines(n);
         }
         'T' => {
             // SD - Scroll Down (默认 1)
-            let n = params.get_arg0(1);
+            let n = params.get_arg0(1) as i64;
             state.cursor.about_to_wrap = false;
             state.scroll_down_lines(n);
         }
         'X' => {
             // ECH - Erase Character (默认 1)
-            let n = params.get_arg0(1);
+            let n = params.get_arg0(1) as i64;
             state.cursor.about_to_wrap = false;
             state.erase_characters(n);
         }
         'Z' => {
             // CBT - Cursor Backward Tab (默认 1)
-            let n = params.get_arg0(1);
+            let n = params.get_arg0(1) as i64;
             state.cursor_backward_tab(n);
         }
         'b' => {
             // REP - Repeat (默认 1)
-            let n = params.get_arg0(1);
+            let n = params.get_arg0(1) as i64;
             if let Some(c) = state.last_printed_char {
                 state.repeat_character(n, c);
             }
@@ -136,12 +136,12 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
         }
         'd' => {
             // VPA - Vertical Position Absolute (默认 1)
-            let n = params.get_arg0(1);
+            let n = params.get_arg0(1) as i64;
             state.cursor_vertical_absolute(n);
         }
         'e' => {
             // VPR - Vertical Position Relative (默认 1)
-            let n = params.get_arg0(1);
+            let n = params.get_arg0(1) as i64;
             state.cursor_vertical_relative(n);
         }
         'g' => {
@@ -177,15 +177,15 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
         'p' => { if is_bang { state.decstr_soft_reset(); } }
         'r' => {
             // DECSTBM - Set Top and Bottom Margins (默认 top=1, bottom=rows)
-            let top = params.get_arg0(1);
-            let bottom = params.get_arg1(state.rows as i32);
+            let top = params.get_arg0(1) as i64;
+            let bottom = params.get_arg1(state.rows as i32) as i64;
             state.set_margins(top, bottom);
         }
         's' => {
             if state.leftright_margin_mode() {
                 // DECSLRM - Set Left and Right Margins (默认 left=1, right=cols)
-                let left = params.get_arg0(1);
-                let right = params.get_arg1(state.cols as i32);
+                let left = params.get_arg0(1) as i64;
+                let right = params.get_arg1(state.cols as i32) as i64;
                 state.set_left_right_margins(left, right);
             } else {
                 state.save_cursor();

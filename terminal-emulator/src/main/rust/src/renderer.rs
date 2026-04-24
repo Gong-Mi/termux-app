@@ -40,7 +40,7 @@ impl RenderFrame {
 
         for r in top_row..(top_row + rows as i32) {
             if r >= start_row && r < end_row {
-                let row = screen.get_row(r);
+                let row = screen.get_row(r as i64);
                 row_data.push((row.text.clone(), row.styles.clone()));
             } else {
                 // 逻辑之外的行返回空白
@@ -53,8 +53,8 @@ impl RenderFrame {
             cols,
             palette: state.colors.current_colors,
             use_alternate_buffer: state.use_alternate_buffer,
-            cursor_x: state.cursor.x,
-            cursor_y: state.cursor.y,
+            cursor_x: state.cursor.x as i32,
+            cursor_y: state.cursor.y as i32,
             cursor_style: state.cursor.style,
             cursor_enabled: state.cursor_enabled,
             reverse_video: state.modes.is_enabled(crate::terminal::modes::DECSET_BIT_REVERSE_VIDEO),
@@ -441,7 +441,7 @@ impl TerminalRenderer {
         // 先绘制文本行 - 使用 get_row() 处理环形缓冲区映射
         for r in 0..rows as i32 {
             let absolute_row = top_row + r;
-            let row_data = screen.get_row(r);
+            let row_data = screen.get_row(absolute_row as i64);
             let y_base = (r as f32 + 1.0) * self.font_height;
 
             let mut c = 0;

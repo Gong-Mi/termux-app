@@ -17,7 +17,7 @@ pub struct TerminalEngine {
 }
 
 impl TerminalEngine {
-    pub fn new(cols: i32, rows: i32, total_rows: i32, cw: i32, ch: i32) -> Self {
+    pub fn new(cols: i64, rows: i64, total_rows: i64, cw: i32, ch: i32) -> Self {
         Self {
             parser: Parser::new(),
             state: ScreenState::new(cols, rows, total_rows, cw, ch),
@@ -118,6 +118,9 @@ impl TerminalContext {
                             engine.process_bytes(&buffer[..n]);
                             (engine.take_events(), engine.state.java_callback_obj.clone())
                         };
+
+                        // 关键修复：直接通知渲染线程有新数据，不依赖 Java 层的 invalidate/onDraw 回调
+                        crate::render_thread::request_render();
 
                         if !events.is_empty() {
                             if let Some(obj) = &callback_obj {

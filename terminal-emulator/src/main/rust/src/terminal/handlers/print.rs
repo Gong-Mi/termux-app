@@ -34,7 +34,7 @@ fn handle_print_internal(state: &mut ScreenState, c: char) {
     };
 
     let ucs = c as u32;
-    let char_width = crate::utils::get_char_width(ucs) as i32;
+    let char_width = crate::utils::get_char_width(ucs) as i64;
     if char_width <= 0 {
         return;
     }
@@ -92,7 +92,7 @@ fn handle_print_internal(state: &mut ScreenState, c: char) {
         let row = &mut screen.buffer[y_internal];
         
         // 如果是宽字符，且会超出右边界，则不打印（或截断）
-        if char_width == 2 && (x as i32) >= right_margin - 1 {
+        if char_width == 2 && (x as i64) >= right_margin - 1 {
             // 在 Java 版中，这会强制触发换行，我们这里的逻辑已在上方处理
         }
 
@@ -117,4 +117,3 @@ fn handle_print_internal(state: &mut ScreenState, c: char) {
         state.cursor.about_to_wrap = false;
     }
 }
-

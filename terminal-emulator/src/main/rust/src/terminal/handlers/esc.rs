@@ -62,8 +62,8 @@ pub fn handle_esc(state: &mut ScreenState, intermediates: &[u8], byte: u8) {
                 state.reverse_index_scroll();
             }
         }
-        (&[], b'=') => { state.cursor.saved_state.decset_flags |= 1 << 5; /* DECKPAM */ }
-        (&[], b'>') => { state.cursor.saved_state.decset_flags &= !(1 << 5); /* DECKPNM */ }
+        (&[], b'=') => { state.modes.set(1 << 5); /* DECKPAM */ }
+        (&[], b'>') => { state.modes.reset(1 << 5); /* DECKPNM */ }
         _ => {}
     }
 }
