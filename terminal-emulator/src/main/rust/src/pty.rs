@@ -332,13 +332,16 @@ pub fn create_subprocess_with_data(
                 }
                 
                 // W^X Bypass: 决定是否使用 system linker
+                // 在 SDK 31+ (Android 12+) 以后，必须通过 linker 启动数据目录下的二进制
                 let canonical_cmd = std::fs::canonicalize(&final_cmd).unwrap_or_else(|_| std::path::PathBuf::from(&final_cmd));
                 let canonical_str = canonical_cmd.to_string_lossy();
                 
-                let needs_linker = final_cmd.contains("/com.termux/") || 
-                                  final_cmd.starts_with("/data/data/") ||
-                                  canonical_str.contains("/com.termux/") ||
-                                  canonical_str.starts_with("/data/data/");
+                // 只要路径在 /data/data 下，或者包含当前包名，就必须强制走 linker
+                let needs_linker = final_cmd.contains("/data/data/") || 
+                                  final_cmd.contains("/data/user/0/") ||
+                                  final_cmd.contains(&real_pkg) ||
+                                  canonical_str.contains("/data/data/") ||
+                                  canonical_str.contains(&real_pkg);
                 
                 if needs_linker {
                     #[cfg(target_pointer_width = "64")]
