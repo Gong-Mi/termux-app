@@ -313,22 +313,25 @@ pub fn create_subprocess_with_data(
                     libc::sigfillset(&mut signals_to_unblock);
                     libc::sigprocmask(libc::SIG_UNBLOCK, &signals_to_unblock, std::ptr::null_mut());
 
-                    // 2. 关闭多余句柄 (FD > 2)
-                    if let Ok(entries) = std::fs::read_dir("/proc/self/fd") {
-                        for entry in entries.filter_map(|e| e.ok()) {
-                            if let Ok(fd_str) = entry.file_name().into_string() {
-                                if let Ok(fd) = fd_str.parse::<i32>() {
-                                    if fd > 2 { libc::close(fd); }
-                                }
-                            }
+                    // 2. 打印调试日志 (在关闭 FD 之前，确保 Logcat Socket 还在)
+                    crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY] CHILD_EXECUTE: pid={} cmd='{}' ld_preload='{}'", libc::getpid(), final_cmd, preloader));
+
+                    // 3. 关闭多余句柄 (FD > 2)
+                    if let Ok(dir) = std::fs::read_dir("/proc/self/fd") {
+                        // 注意：必须先收集所有要关闭的 FD，否则在遍历过程中关闭 dir 的 FD 会导致中断
+                        let fds_to_close: Vec<i32> = dir.filter_map(|e| e.ok())
+                            .filter_map(|entry| entry.file_name().into_string().ok())
+                            .filter_map(|fd_str| fd_str.parse::<i32>().ok())
+                            .filter(|&fd| fd > 2)
+                            .collect();
+                        
+                        for fd in fds_to_close {
+                            libc::close(fd);
                         }
                     }
                 }
 
-                // 打印调试日志
-                crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY] FINAL_EXECUTE: cmd='{}' ld_preload='{}'", final_cmd, preloader));
-
-                // 准备指针
+                // 准备环境与参数指针
                 let mut c_envs = Vec::new();
                 for e in &final_env { if let Ok(ce) = CString::new(e.clone()) { c_envs.push(ce); } }
                 let ptr_envs: Vec<_> = c_envs.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
@@ -345,7 +348,11 @@ pub fn create_subprocess_with_data(
                     crate::utils::android_log(crate::utils::LogPriority::ERROR, &format!("[PTY] execve FAILED! errno={} cmd={}", err, final_cmd));
                 }
                 libc::_exit(1);
-                }            Err(_) => Err(()),
+            }
+            Err(e) => {
+                crate::utils::android_log(crate::utils::LogPriority::ERROR, &format!("[PTY] fork FAILED: {:?}", e));
+                Err(())
+            }
         }
     }
 }
