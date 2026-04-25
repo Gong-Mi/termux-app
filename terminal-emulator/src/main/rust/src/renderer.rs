@@ -294,7 +294,6 @@ pub struct TerminalRenderer {
     bg_paint: Paint,
     underline_paint: Paint,
     strikethrough_paint: Paint,
-    selection_bg_paint: Paint,
     cursor_paint: Paint,
     /// 复用 run 缓冲区，避免每帧分配
     run_buf: String,
@@ -332,11 +331,6 @@ impl TerminalRenderer {
         strikethrough_paint.set_anti_alias(false);
         strikethrough_paint.set_stroke_width(1.0);
 
-        // 选区高亮背景
-        let mut selection_bg_paint = Paint::default();
-        selection_bg_paint.set_style(PaintStyle::Fill);
-        selection_bg_paint.set_blend_mode(BlendMode::SrcOver);
-
         // 光标绘制
         let mut cursor_paint = Paint::default();
         cursor_paint.set_style(PaintStyle::Fill);
@@ -351,7 +345,6 @@ impl TerminalRenderer {
             bg_paint,
             underline_paint,
             strikethrough_paint,
-            selection_bg_paint,
             cursor_paint,
             font_width,
             font_height,

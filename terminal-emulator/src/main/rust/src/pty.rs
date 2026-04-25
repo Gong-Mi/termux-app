@@ -171,24 +171,29 @@ pub fn create_subprocess_with_data(
                     if let Some(pos) = p.find("/files/") {
                         let root = &p[..pos];
                         if let Some(pkg_pos) = root.rfind('/') { real_pkg = root[pkg_pos+1..].to_string(); }
-                        termux_prefix = format!("{}/files/usr", root);
+                        
+                        // 修复：识别并保留 usr-staging 状态，否则解压阶段的 LD_PRELOAD 会因为找不到库而失效
+                        if p.contains("/usr-staging/") {
+                            termux_prefix = format!("{}/files/usr-staging", root);
+                        } else {
+                            termux_prefix = format!("{}/files/usr", root);
+                        }
                         break;
                     }
                 }
                 
                 // 强制规范化为 /data/user/0 (SDK 36 必需)
                 let canonical_prefix = termux_prefix.replace("/data/data/", "/data/user/0/");
-                let real_data_root = canonical_prefix.replace("/files/usr", "");
+                let real_data_root = canonical_prefix.replace("/files/usr", "").replace("-staging", "");
                 let termux_bin = format!("{}/bin", canonical_prefix);
                 let termux_lib = format!("{}/lib", canonical_prefix);
-                let termux_home = format!("{}/home", canonical_prefix.replace("/usr", ""));
+                let termux_home = format!("{}/home", canonical_prefix.replace("/usr", "").replace("-staging", ""));
                 let termux_tmp = format!("{}/tmp", canonical_prefix);
 
                 let fix_canonical = |s: &str| -> String {
                     // 先替换完整包路径，避免对非目标路径误替换
                     let s = s.replace("/data/data/com.termux", &real_data_root)
                              .replace("/data/user/0/com.termux", &real_data_root);
-                    // 只有 still 包含 /data/data/ 前缀（且不是已规范化的）才做通用替换
                     if s.starts_with("/data/data/") {
                         s.replacen("/data/data/", "/data/user/0/", 1)
                     } else {
@@ -196,7 +201,7 @@ pub fn create_subprocess_with_data(
                     }
                 };
 
-                // 1. 设置环境变量
+                // 1. 设置环境变量 (优先设置基础环境)
                 let old_path = std::env::var("PATH").unwrap_or_else(|_| "/system/bin:/system/xbin".to_string());
                 libc::setenv(CString::new("PATH").unwrap().as_ptr(), CString::new(format!("{}:{}", termux_bin, fix_canonical(&old_path))).unwrap().as_ptr(), 1);
                 libc::setenv(CString::new("PREFIX").unwrap().as_ptr(), CString::new(canonical_prefix.clone()).unwrap().as_ptr(), 1);
@@ -207,7 +212,17 @@ pub fn create_subprocess_with_data(
                 libc::setenv(CString::new("COLORTERM").unwrap().as_ptr(), CString::new("truecolor").unwrap().as_ptr(), 1);
                 libc::setenv(CString::new("LANG").unwrap().as_ptr(), CString::new("en_US.UTF-8").unwrap().as_ptr(), 1);
                 
-                // LD_PRELOAD
+                // 2. 注入 Java 传来的环境变量 (可能会覆盖上面的基础设置)
+                for env_var in envp {
+                    if let Some(pos) = env_var.find('=') {
+                        let k = &env_var[..pos];
+                        let v = fix_canonical(&env_var[pos+1..]);
+                        if k == "LD_PRELOAD" && v.is_empty() { continue; } // 禁止 Java 传入空 preload
+                        if let (Ok(ck), Ok(cv)) = (CString::new(k), CString::new(v)) { libc::setenv(ck.as_ptr(), cv.as_ptr(), 1); }
+                    }
+                }
+
+                // 3. 核心修复：最后时刻设置 LD_PRELOAD，确保它具有最高优先级且路径正确
                 let termux_exec_candidates = [
                     "libtermux-exec-linker-ld-preload.so",
                     "libtermux-exec.so",
@@ -215,17 +230,14 @@ pub fn create_subprocess_with_data(
                 ];
                 for candidate in &termux_exec_candidates {
                     let preloader = format!("{}/{}", termux_lib, candidate);
-                    if std::path::Path::new(&preloader).exists() {
-                        libc::setenv(CString::new("LD_PRELOAD").unwrap().as_ptr(), CString::new(preloader).unwrap().as_ptr(), 1);
-                        break;
-                    }
-                }
-                
-                for env_var in envp {
-                    if let Some(pos) = env_var.find('=') {
-                        let k = &env_var[..pos];
-                        let v = fix_canonical(&env_var[pos+1..]);
-                        if let (Ok(ck), Ok(cv)) = (CString::new(k), CString::new(v)) { libc::setenv(ck.as_ptr(), cv.as_ptr(), 1); }
+                    // 在安装阶段，如果是在 usr-staging 下，或者即便文件还不存在也要尝试设置
+                    // 这样 bash 进程起来后，环境块里会有这个变量，当它调用子进程时，重命名可能已经完成了
+                    if std::path::Path::new(&preloader).exists() || canonical_prefix.contains("staging") {
+                        if let Ok(c_preload) = CString::new(preloader.clone()) {
+                            libc::setenv(CString::new("LD_PRELOAD").unwrap().as_ptr(), c_preload.as_ptr(), 1);
+                            crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY] Injected LD_PRELOAD={}", preloader));
+                            break;
+                        }
                     }
                 }
 
@@ -358,5 +370,62 @@ pub fn wait_for(pid: i32) -> jint {
         if libc::WIFEXITED(status) { libc::WEXITSTATUS(status) }
         else if libc::WIFSIGNALED(status) { -libc::WTERMSIG(status) }
         else { 0 }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_prefix_resolution_staging() {
+        let cmd = "/data/user/0/com.termux/files/usr-staging/bin/login";
+        let cwd = "/data/user/0/com.termux/files/home";
+        
+        let mut real_pkg = String::from("com.termux");
+        let mut termux_prefix = String::from("/data/user/0/com.termux/files/usr");
+        
+        let paths_to_check = [cmd, cwd];
+        for p in paths_to_check {
+            if let Some(pos) = p.find("/files/") {
+                let root = &p[..pos];
+                if let Some(pkg_pos) = root.rfind('/') { real_pkg = root[pkg_pos+1..].to_string(); }
+                if p.contains("/usr-staging/") {
+                    termux_prefix = format!("{}/files/usr-staging", root);
+                } else {
+                    termux_prefix = format!("{}/files/usr", root);
+                }
+                break;
+            }
+        }
+        
+        assert!(termux_prefix.contains("usr-staging"));
+        assert_eq!(real_pkg, "com.termux");
+    }
+
+    #[test]
+    fn test_prefix_resolution_normal() {
+        let cmd = "/data/data/com.termux/files/usr/bin/bash";
+        let cwd = "/data/data/com.termux/files/home";
+        
+        let mut real_pkg = String::from("com.termux");
+        let mut termux_prefix = String::from("/data/user/0/com.termux/files/usr");
+        
+        let paths_to_check = [cmd, cwd];
+        for p in paths_to_check {
+            if let Some(pos) = p.find("/files/") {
+                let root = &p[..pos];
+                if let Some(pkg_pos) = root.rfind('/') { real_pkg = root[pkg_pos+1..].to_string(); }
+                if p.contains("/usr-staging/") {
+                    termux_prefix = format!("{}/files/usr-staging", root);
+                } else {
+                    termux_prefix = format!("{}/files/usr", root);
+                }
+                break;
+            }
+        }
+        
+        assert!(!termux_prefix.contains("usr-staging"));
+        assert_eq!(real_pkg, "com.termux");
     }
 }
