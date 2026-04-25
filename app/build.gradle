@@ -48,7 +48,7 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.termux.rust"
+        applicationId "com.termux"
         minSdk project.properties.minSdkVersion.toInteger()
         targetSdk project.properties.targetSdkVersion.toInteger()
         versionCode 118
