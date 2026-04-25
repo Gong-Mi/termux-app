@@ -214,7 +214,7 @@ pub fn create_subprocess_with_data(
                     // 使用 access 确认可读
                     if unsafe { libc::access(c_path.as_ptr(), libc::R_OK) } == 0 {
                         // 关键：获取真实路径 (realpath)，消除符号链接对 Linker 的干扰
-                        let mut resolved = [0i8; 4096];
+                        let mut resolved = [0 as libc::c_char; 4096];
                         let res_ptr = unsafe { libc::realpath(c_path.as_ptr(), resolved.as_mut_ptr()) };
                         if !res_ptr.is_null() {
                             let resolved_str = unsafe { std::ffi::CStr::from_ptr(res_ptr) }.to_string_lossy().into_owned();
