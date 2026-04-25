@@ -51,13 +51,6 @@ pub unsafe fn create_subprocess(
         Err(_) => return -1,
     };
 
-    let cmd_str = if !cmd.is_null() {
-        let js = unsafe { JString::from_raw(cmd) };
-        env.get_string(&js).map(|s| s.into()).unwrap_or_default()
-    } else {
-        String::new()
-    };
-
     let cwd_str = if !cwd.is_null() {
         let js = unsafe { JString::from_raw(cwd) };
         env.get_string(&js).map(|s| s.into()).unwrap_or_default()
