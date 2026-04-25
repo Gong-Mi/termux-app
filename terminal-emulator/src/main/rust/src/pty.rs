@@ -300,7 +300,7 @@ pub fn create_subprocess_with_data(
                     let mut interpreter = shebang_interpreter;
                     if interpreter.starts_with("/usr/bin/") || interpreter.starts_with("/bin/") || interpreter.starts_with("/data/data/com.termux/files/usr/bin/") {
                         if let Some(name) = std::path::Path::new(&interpreter).file_name().and_then(|n| n.to_str()) {
-                            interpreter = format!("{}/bin/{}", canonical_prefix, name);
+                            interpreter = format!("{}/bin/{}", termux_prefix, name);
                         }
                     }
                     let old_cmd = final_cmd.clone();
@@ -313,7 +313,7 @@ pub fn create_subprocess_with_data(
                     final_args = new_argv;
                 } else if !is_elf && !has_shebang {
                     let old_cmd = final_cmd.clone();
-                    final_cmd = format!("{}/bin/sh", canonical_prefix);
+                    final_cmd = format!("{}/bin/sh", termux_prefix);
                     let mut new_argv = Vec::new();
                     new_argv.push(if !final_args.is_empty() { final_args[0].clone() } else { final_cmd.clone() });
                     new_argv.push(old_cmd);
