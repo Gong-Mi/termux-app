@@ -333,10 +333,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_createEngine(
     total_rows: jint,
     callback: JObject,
 ) -> jlong {
-    android_log(LogPriority::DEBUG, &format!("JNI: createEngine ({}x{}) - Initializing staggering...", cols, rows));
-    
-    // 降温处理：防止启动瞬间 CPU 爆发导致系统误杀
-    std::thread::sleep(std::time::Duration::from_millis(50));
+    android_log(LogPriority::DEBUG, &format!("JNI: createEngine ({}x{})", cols, rows));
     
     let mut engine = TerminalEngine::new(cols as i64, rows as i64, total_rows as i64, cw, ch);
     if !callback.is_null() {

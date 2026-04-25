@@ -100,43 +100,79 @@ fn handle_client(mut stream: UnixStream) {
 
 /// 核心：通过 JNI 调用 Java 的 Activity Manager 接口
 fn handle_am_command(args: &[&str]) -> (i32, String, String) {
-    // 这里需要获取 Java VM 并调用 Java 方法
-    if let Some(vm) = crate::JAVA_VM.get() {
-        if let Ok(mut env) = vm.attach_current_thread_as_daemon() {
-            // 修正后的类名
-            let class_name = "com/termux/shared/termux/shell/am/RustLocalSocketBridge";
-            if let Ok(cls) = env.find_class(class_name) {
-                // 将 Rust args 转换为 Java StringArray
-                let j_args = env.new_object_array(args.len() as i32, "java/lang/String", env.new_string("").unwrap()).unwrap();
-                for (i, &arg) in args.iter().enumerate() {
-                    let s = env.new_string(arg).unwrap();
-                    env.set_object_array_element(&j_args, i as i32, s).unwrap();
-                }
+    let vm = match crate::JAVA_VM.get() {
+        Some(v) => v,
+        None => return (1, String::new(), "Java VM not initialized".to_string()),
+    };
+    let mut env = match vm.attach_current_thread_as_daemon() {
+        Ok(e) => e,
+        Err(e) => return (1, String::new(), format!("Failed to attach JVM thread: {:?}", e)),
+    };
 
-                // 调用 Java
-                let method = "runAmInternal";
-                let sig = "([Ljava/lang/String;)Lcom/termux/shared/jni/models/JniResult;";
-                
-                match env.call_static_method(cls, method, sig, &[jni::objects::JValue::Object(&j_args)]) {
-                    Ok(result) => {
-                        if let Ok(obj) = result.l() {
-                            // 解析 JniResult
-                            let exit_code: i32 = env.get_field(&obj, "retval", "I").unwrap().i().unwrap();
-                            let stdout_j: jni::objects::JString = env.get_field(&obj, "stdout", "Ljava/lang/String;").unwrap().l().unwrap().into();
-                            let stderr_j: jni::objects::JString = env.get_field(&obj, "stderr", "Ljava/lang/String;").unwrap().l().unwrap().into();
-                            
-                            let stdout: String = env.get_string(&stdout_j).unwrap().into();
-                            let stderr: String = env.get_string(&stderr_j).unwrap().into();
-                            
-                            return (exit_code, stdout, stderr);
-                        }
-                    }
-                    Err(e) => {
-                        return (1, String::new(), format!("JNI Call failed: {:?}", e));
-                    }
-                }
-            }
-        }
+    let class_name = "com/termux/shared/termux/shell/am/RustLocalSocketBridge";
+    let cls = match env.find_class(class_name) {
+        Ok(c) => c,
+        Err(e) => return (1, String::new(), format!("Class {} not found: {:?}", class_name, e)),
+    };
+
+    // 将 Rust args 转换为 Java StringArray
+    let empty_jstring = match env.new_string("") {
+        Ok(s) => s,
+        Err(e) => return (1, String::new(), format!("Failed to create empty string: {:?}", e)),
+    };
+    let j_args = match env.new_object_array(args.len() as i32, "java/lang/String", &empty_jstring) {
+        Ok(a) => a,
+        Err(e) => return (1, String::new(), format!("Failed to create array: {:?}", e)),
+    };
+    for (i, &arg) in args.iter().enumerate() {
+        let s = match env.new_string(arg) {
+            Ok(js) => js,
+            Err(_) => continue,
+        };
+        let _ = env.set_object_array_element(&j_args, i as i32, &s);
     }
-    (1, String::new(), "Java VM not available".to_string())
+
+    let result = match env.call_static_method(
+        &cls,
+        "runAmInternal",
+        "([Ljava/lang/String;)Lcom/termux/shared/jni/models/JniResult;",
+        &[jni::objects::JValue::Object(&j_args)],
+    ) {
+        Ok(r) => r,
+        Err(e) => return (1, String::new(), format!("JNI call failed: {:?}", e)),
+    };
+
+    let obj = match result.l() {
+        Ok(o) => o,
+        Err(e) => return (1, String::new(), format!("Failed to get object: {:?}", e)),
+    };
+
+    // 解析 JniResult
+    let exit_code = env.get_field(&obj, "retval", "I")
+        .and_then(|v| v.i())
+        .unwrap_or(-1);
+
+    let stdout = match env.get_field(&obj, "stdout", "Ljava/lang/String;") {
+        Ok(v) => match v.l() {
+            Ok(o) => {
+                let jstr = jni::objects::JString::from(o);
+                env.get_string(&jstr).map(|s| String::from(s)).unwrap_or_default()
+            }
+            Err(_) => String::new(),
+        },
+        Err(_) => String::new(),
+    };
+
+    let stderr = match env.get_field(&obj, "stderr", "Ljava/lang/String;") {
+        Ok(v) => match v.l() {
+            Ok(o) => {
+                let jstr = jni::objects::JString::from(o);
+                env.get_string(&jstr).map(|s| String::from(s)).unwrap_or_default()
+            }
+            Err(_) => String::new(),
+        },
+        Err(_) => String::new(),
+    };
+
+    (exit_code, stdout, stderr)
 }

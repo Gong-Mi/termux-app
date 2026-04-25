@@ -4,12 +4,32 @@ use jni::sys::{JNINativeInterface_, jint, jintArray, jobjectArray, jstring};
 use nix::unistd::{ForkResult, fork, setsid, chdir};
 use std::ffi::CString;
 
-/// 获取当前 UID 下的总进程数，用于规避 Android 12+ 的 Phantom Killer
-fn get_total_process_count() -> usize {
+/// 获取当前 UID 下的进程数，用于规避 Android 12+ 的 Phantom Killer
+/// Phantom Killer 限制的是同一 UID 的进程数（~32），不是系统总进程数
+fn get_uid_process_count() -> usize {
+    let own_uid = unsafe { libc::getuid() };
     std::fs::read_dir("/proc")
         .map(|dir| {
             dir.filter_map(|entry| entry.ok())
-                .filter(|entry| entry.file_name().to_string_lossy().chars().all(|c| c.is_numeric()))
+                .filter(|entry| {
+                    let file_name = entry.file_name();
+                    let name = file_name.to_string_lossy();
+                    if !name.chars().all(|c| c.is_numeric()) { return false; }
+                    let status_path = format!("/proc/{}/status", name);
+                    if let Ok(content) = std::fs::read_to_string(&status_path) {
+                        for line in content.lines() {
+                            if line.starts_with("Uid:") {
+                                let parts: Vec<&str> = line.split_whitespace().collect();
+                                if parts.len() >= 2 {
+                                    if let Ok(uid) = parts[1].parse::<u32>() {
+                                        return uid == own_uid;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    false
+                })
                 .count()
         })
         .unwrap_or(0)
@@ -27,38 +47,60 @@ pub unsafe fn create_subprocess(
     cw: jint,
     ch: jint,
 ) -> jint {
-    let mut env = JNIEnv::from_raw(env_ptr).unwrap();
+    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
+        Ok(e) => e,
+        Err(_) => return -1,
+    };
 
-    let cmd_str: String = env.get_string(&JString::from_raw(cmd)).unwrap().into();
-    let cwd_str: String = env.get_string(&JString::from_raw(cwd)).unwrap().into();
+    let cmd_str = if !cmd.is_null() {
+        let js = unsafe { JString::from_raw(cmd) };
+        env.get_string(&js).map(|s| s.into()).unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    let cwd_str = if !cwd.is_null() {
+        let js = unsafe { JString::from_raw(cwd) };
+        env.get_string(&js).map(|s| s.into()).unwrap_or_default()
+    } else {
+        String::new()
+    };
 
     let mut argv = Vec::new();
-    let args_obj = JObjectArray::from_raw(args);
+    let args_obj = unsafe { JObjectArray::from_raw(args) };
     if !args_obj.is_null() {
-        let len = env.get_array_length(&args_obj).unwrap();
-        for i in 0..len {
-            let arg_obj = env.get_object_array_element(&args_obj, i).unwrap();
-            let arg_str: String = env.get_string(&JString::from(arg_obj)).unwrap().into();
-            argv.push(arg_str);
+        if let Ok(len) = env.get_array_length(&args_obj) {
+            for i in 0..len {
+                if let Ok(arg_obj) = env.get_object_array_element(&args_obj, i) {
+                    let arg_java: JString = arg_obj.into();
+                    if let Ok(s) = env.get_string(&arg_java) {
+                        argv.push(String::from(s));
+                    }
+                }
+            }
         }
     }
 
     let mut envp = Vec::new();
-    let env_vars_obj = JObjectArray::from_raw(env_vars);
+    let env_vars_obj = unsafe { JObjectArray::from_raw(env_vars) };
     if !env_vars_obj.is_null() {
-        let len = env.get_array_length(&env_vars_obj).unwrap();
-        for i in 0..len {
-            let env_obj = env.get_object_array_element(&env_vars_obj, i).unwrap();
-            let env_str: String = env.get_string(&JString::from(env_obj)).unwrap().into();
-            envp.push(env_str);
+        if let Ok(len) = env.get_array_length(&env_vars_obj) {
+            for i in 0..len {
+                if let Ok(env_obj) = env.get_object_array_element(&env_vars_obj, i) {
+                    let env_java: JString = env_obj.into();
+                    if let Ok(s) = env.get_string(&env_java) {
+                        envp.push(String::from(s));
+                    }
+                }
+            }
         }
     }
 
     match create_subprocess_with_data(cmd_str, cwd_str, argv, envp, rows, cols, cw, ch) {
         Ok((fd, pid)) => {
             let pid_val = [pid as jint];
-            let j_pid_array = JIntArray::from_raw(process_id_array);
-            env.set_int_array_region(&j_pid_array, 0, &pid_val).unwrap();
+            let j_pid_array = unsafe { JIntArray::from_raw(process_id_array) };
+            let _ = env.set_int_array_region(&j_pid_array, 0, &pid_val);
             fd
         }
         Err(_) => -1,
@@ -90,10 +132,10 @@ pub fn create_subprocess_with_data(
         }
         let devname = std::ffi::CStr::from_ptr(devname).to_string_lossy().into_owned();
 
-        // 幻影杀手控制
-        let count = get_total_process_count();
-        if count > 28 {
-            crate::utils::android_log(crate::utils::LogPriority::WARN, &format!("[PTY] High process count ({}), throttling...", count));
+        // Phantom Killer 流控：限制同一 UID 的进程数（Android 12+ 限制约 32）
+        let uid_count = get_uid_process_count();
+        if uid_count > 28 {
+            crate::utils::android_log(crate::utils::LogPriority::WARN, &format!("[PTY] High UID process count ({}), throttling...", uid_count));
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
 
@@ -107,7 +149,10 @@ pub fn create_subprocess_with_data(
                 let _ = setsid();
                 libc::setpriority(libc::PRIO_PROCESS, 0, 19);
 
-                let c_devname = CString::new(devname).unwrap();
+                let c_devname = match CString::new(devname.clone()) {
+                    Ok(c) => c,
+                    Err(_) => { libc::_exit(1); }
+                };
                 let pts = libc::open(c_devname.as_ptr(), libc::O_RDWR);
                 if pts < 0 { libc::_exit(1); }
                 libc::ioctl(pts, libc::TIOCSCTTY as _, 0);
@@ -140,9 +185,15 @@ pub fn create_subprocess_with_data(
                 let termux_tmp = format!("{}/tmp", canonical_prefix);
 
                 let fix_canonical = |s: &str| -> String {
-                    s.replace("/data/data/com.termux", &real_data_root)
-                     .replace("/data/user/0/com.termux", &real_data_root)
-                     .replace("/data/data/", "/data/user/0/")
+                    // 先替换完整包路径，避免对非目标路径误替换
+                    let s = s.replace("/data/data/com.termux", &real_data_root)
+                             .replace("/data/user/0/com.termux", &real_data_root);
+                    // 只有 still 包含 /data/data/ 前缀（且不是已规范化的）才做通用替换
+                    if s.starts_with("/data/data/") {
+                        s.replacen("/data/data/", "/data/user/0/", 1)
+                    } else {
+                        s
+                    }
                 };
 
                 // 1. 设置环境变量
@@ -180,8 +231,9 @@ pub fn create_subprocess_with_data(
 
                 if !cwd_str.is_empty() {
                     let fixed_cwd = fix_canonical(&cwd_str);
-                    let c_cwd = CString::new(fixed_cwd).unwrap();
-                    let _ = chdir(c_cwd.as_c_str());
+                    if let Ok(c_cwd) = CString::new(fixed_cwd) {
+                        let _ = chdir(c_cwd.as_c_str());
+                    }
                 }
                 
                 // === 命令解析 ===
@@ -220,8 +272,9 @@ pub fn create_subprocess_with_data(
                 if has_shebang && !shebang_interpreter.is_empty() {
                     let mut interpreter = shebang_interpreter;
                     if interpreter.starts_with("/usr/bin/") || interpreter.starts_with("/bin/") {
-                        let name = std::path::Path::new(&interpreter).file_name().unwrap().to_str().unwrap();
-                        interpreter = format!("{}/bin/{}", canonical_prefix, name);
+                        if let Some(name) = std::path::Path::new(&interpreter).file_name().and_then(|n| n.to_str()) {
+                            interpreter = format!("{}/bin/{}", canonical_prefix, name);
+                        }
                     }
                     let old_cmd = final_cmd.clone();
                     final_cmd = interpreter;
@@ -279,8 +332,9 @@ pub fn create_subprocess_with_data(
                 crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY] FINAL_EXEC: cmd='{}' argv={:?}", final_cmd, final_args));
 
                 if !final_cmd.is_empty() {
-                    let c_cmd = CString::new(final_cmd.clone()).unwrap();
-                    libc::execv(c_cmd.as_ptr(), ptr_args.as_ptr());
+                    if let Ok(c_cmd) = CString::new(final_cmd.clone()) {
+                        libc::execv(c_cmd.as_ptr(), ptr_args.as_ptr());
+                    }
                     let err = nix::errno::Errno::last_raw();
                     crate::utils::android_log(crate::utils::LogPriority::ERROR, &format!("[PTY] execv FAILED! errno={} cmd={}", err, final_cmd));
                 }
