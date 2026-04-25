@@ -314,8 +314,8 @@ pub fn create_subprocess_with_data(
                     });
                     for a in &shebang_args { new_argv.push(a.clone()); }
                     new_argv.push(old_cmd);
-                    if argv.len() > 1 {
-                        new_argv.extend(argv.iter().skip(1).cloned());
+                    if final_args.len() > 1 {
+                        new_argv.extend(final_args.iter().skip(1).cloned());
                     }
                     final_args = new_argv;
                 } else if !is_elf && !has_shebang {
@@ -325,8 +325,8 @@ pub fn create_subprocess_with_data(
                     let mut new_argv = Vec::new();
                     new_argv.push(final_cmd.clone());
                     new_argv.push(old_cmd);
-                    if argv.len() > 1 {
-                        new_argv.extend(argv.iter().skip(1).cloned());
+                    if final_args.len() > 1 {
+                        new_argv.extend(final_args.iter().skip(1).cloned());
                     }
                     final_args = new_argv;
                 }
