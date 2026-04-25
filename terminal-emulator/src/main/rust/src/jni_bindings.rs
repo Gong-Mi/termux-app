@@ -1394,11 +1394,15 @@ pub extern "system" fn JNI_OnLoad(vm: jni::JavaVM, _reserved: std::ffi::c_void) 
         Err(_) => android_log(LogPriority::WARN, "JNI_OnLoad: JAVA_VM was already set"),
     }
 
-    // 检查点：尝试写入用户指定的路径以验证权限
+    // 检查点：读取用户指定的路径以验证权限和内容
     let checkpoint_path = "/data/user/0/com.termux/files/home/termux-app/t.txt";
-    match std::fs::write(checkpoint_path, "Rust Checkpoint: JNI_OnLoad\n") {
-        Ok(_) => android_log(LogPriority::INFO, &format!("Checkpoint success: {}", checkpoint_path)),
-        Err(e) => android_log(LogPriority::ERROR, &format!("Checkpoint failed: {} - {:?}", checkpoint_path, e)),
+    match std::fs::read_to_string(checkpoint_path) {
+        Ok(content) => android_log(LogPriority::INFO, &format!("Checkpoint Read Success: {} - Content: {}", checkpoint_path, content.trim())),
+        Err(e) => {
+            android_log(LogPriority::ERROR, &format!("Checkpoint Read Failed: {} - {:?}", checkpoint_path, e));
+            // 如果读取失败，尝试写回一个新标记
+            let _ = std::fs::write(checkpoint_path, format!("Rust Write Attempt after Read Fail: {:?}\n", e));
+        }
     }
 
     jni::sys::JNI_VERSION_1_6
