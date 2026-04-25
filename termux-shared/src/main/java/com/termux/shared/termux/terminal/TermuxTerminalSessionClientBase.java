@@ -50,6 +50,10 @@ public class TermuxTerminalSessionClientBase implements TerminalSessionClient {
     }
 
     @Override
+    public void onScreenUpdated() {
+    }
+
+    @Override
     public void onSixelImage(byte[] rgbaData, int width, int height, int startX, int startY) {
     }
 
