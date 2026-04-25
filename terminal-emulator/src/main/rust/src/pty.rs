@@ -195,172 +195,75 @@ pub fn create_subprocess_with_data(
                     s.replace("/data/user/0/", "/data/data/")
                 };
 
-                // 3. 核心修复：深度搜索并通过 realpath 注入 LD_PRELOAD
+                // 3. 核心修复：极致环境对齐 (参考 termux.c / TermuxShellUtils.java)
                 let mut final_env: Vec<String> = Vec::new();
                 let old_path = std::env::var("PATH").unwrap_or_else(|_| "/system/bin:/system/xbin".to_string());
 
-                // 搜索 libtermux-exec.so 并获取真实路径
-                let mut found_preloader = None;
-                let termux_exec_candidates = [
-                    "libtermux-exec-linker-ld-preload.so",
-                    "libtermux-exec.so",
-                    "libtermux-exec-ld-preload.so",
+                // 基础系统变量 (必须包含，Linker 可能依赖)
+                let sys_vars = [
+                    "ANDROID_ART_ROOT", "ANDROID_ASSETS", "ANDROID_DATA", "ANDROID_I18N_ROOT",
+                    "ANDROID_ROOT", "ANDROID_RUNTIME_ROOT", "ANDROID_STORAGE", "ANDROID_TZDATA_ROOT",
+                    "EXTERNAL_STORAGE", "BOOTCLASSPATH", "DEX2OATBOOTCLASSPATH", "SYSTEMSERVERCLASSPATH"
                 ];
-
-                for candidate in &termux_exec_candidates {
-                    let path_str = format!("{}/{}", termux_lib, candidate);
-                    let c_path = CString::new(path_str.clone()).unwrap();
-
-                    // 使用 access 确认可读
-                    if unsafe { libc::access(c_path.as_ptr(), libc::R_OK) } == 0 {
-                        // 关键：获取真实路径 (realpath)，消除符号链接对 Linker 的干扰
-                        let mut resolved = [0 as libc::c_char; 4096];
-                        let res_ptr = unsafe { libc::realpath(c_path.as_ptr(), resolved.as_mut_ptr()) };
-                        if !res_ptr.is_null() {
-                            let resolved_str = unsafe { std::ffi::CStr::from_ptr(res_ptr) }.to_string_lossy().into_owned();
-                            found_preloader = Some(resolved_str);
-                            break;
-                        }
-                    }
+                for var in sys_vars {
+                    if let Ok(val) = std::env::var(var) { final_env.push(format!("{}={}", var, val)); }
                 }
 
-                // 强制基础变量 (统一规范化为 /data/data/ 开头)
+                // Termux 核心环境
                 final_env.push(format!("PATH={}:{}", termux_bin, fix_canonical(&old_path)));
                 final_env.push(format!("PREFIX={}", termux_prefix));
                 final_env.push(format!("HOME={}", termux_home));
                 final_env.push(format!("TMPDIR={}", termux_tmp));
-
-                // 必须恢复 LD_LIBRARY_PATH，否则 libtermux-exec.so 找不到它的依赖库 (如 libandroid-support.so)
-                final_env.push(format!("LD_LIBRARY_PATH={}", termux_lib));
-
                 final_env.push(format!("TERM=xterm-256color"));
                 final_env.push(format!("COLORTERM=truecolor"));
                 final_env.push(format!("LANG=en_US.UTF-8"));
 
-                // 注入 LD_PRELOAD (使用解析后的真实路径)
-                if let Some(ref preloader) = found_preloader {
-                    final_env.push(format!("LD_PRELOAD={}", preloader));
-                    crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY] RESOLVED and INJECTING LD_PRELOAD={}", preloader));
-                } else {
-                    let fallback = format!("{}/libtermux-exec.so", termux_lib);
-                    final_env.push(format!("LD_PRELOAD={}", fallback));
-                    crate::utils::android_log(crate::utils::LogPriority::ERROR, &format!("[PTY] LD_PRELOAD REALPATH FAILED! Using fallback={}", fallback));
-                }
+                // 劫持库注入 (不再使用 realpath，回归标准 /data/data/ 路径)
+                let preloader = format!("{}/libtermux-exec.so", termux_lib);
+                final_env.push(format!("LD_PRELOAD={}", preloader));
 
-                // 注入 Java 环境
+                // 注入 Java 剩余环境
                 for env_var in envp {
                     if let Some(pos) = env_var.find('=') {
                         let k = &env_var[..pos];
-                        if ["PATH", "PREFIX", "HOME", "TMP", "TMPDIR", "LD_LIBRARY_PATH", "LD_PRELOAD"].contains(&k) {
-                            continue; 
-                        }
+                        if ["PATH", "PREFIX", "HOME", "TMP", "TMPDIR", "LD_LIBRARY_PATH", "LD_PRELOAD"].contains(&k) { continue; }
                         final_env.push(format!("{}={}", k, fix_canonical(&env_var[pos+1..])));
                     }
                 }
 
-                // 调试日志：确认最终注入
-                for e in &final_env {
-                    if e.starts_with("LD_PRELOAD") || e.starts_with("LD_LIBRARY_PATH") {
-                        crate::utils::android_log(crate::utils::LogPriority::DEBUG, &format!("[PTY] ENV: {}", e));
-                    }
-                }
-                if !cwd_str.is_empty() {
-                    let fixed_cwd = fix_canonical(&cwd_str);
-                    if let Ok(c_cwd) = CString::new(fixed_cwd) {
-                        let _ = chdir(c_cwd.as_c_str());
-                    }
-                }
-                
-                // === 命令解析 ===
-                let mut final_cmd = fix_canonical(&cmd_str);
-                let mut final_args: Vec<String> = argv.iter().map(|a| fix_canonical(a)).collect();
-                
-                if !final_cmd.starts_with('/') {
-                    let resolved = format!("{}/{}", termux_bin, final_cmd);
-                    if std::path::Path::new(&resolved).exists() { final_cmd = resolved; }
-                }
+                // --- 子进程清理 (关键) ---
+                unsafe {
+                    // 1. 解除信号屏蔽
+                    let mut signals_to_unblock: libc::sigset_t = std::mem::zeroed();
+                    libc::sigfillset(&mut signals_to_unblock);
+                    libc::sigprocmask(libc::SIG_UNBLOCK, &signals_to_unblock, std::ptr::null_mut());
 
-                // ELF/Shebang 逻辑
-                let mut is_elf = false;
-                let mut has_shebang = false;
-                let mut shebang_interpreter = String::new();
-                let mut shebang_args = Vec::new();
-                if let Ok(mut f) = std::fs::File::open(&final_cmd) {
-                    use std::io::Read;
-                    let mut buf = [0u8; 256];
-                    if let Ok(n) = f.read(&mut buf) {
-                        if n > 4 && &buf[..4] == b"\x7fELF" { is_elf = true; }
-                        else if n > 2 && &buf[..2] == b"#!" {
-                            has_shebang = true;
-                            if let Ok(s) = std::str::from_utf8(&buf[2..n]) {
-                                let line = s.lines().next().unwrap_or("").trim();
-                                let parts: Vec<&str> = line.split_whitespace().collect();
-                                if !parts.is_empty() {
-                                    shebang_interpreter = parts[0].to_string();
-                                    shebang_args = parts[1..].iter().map(|&s| s.to_string()).collect();
+                    // 2. 关闭多余句柄 (FD > 2)
+                    if let Ok(entries) = std::fs::read_dir("/proc/self/fd") {
+                        for entry in entries.filter_map(|e| e.ok()) {
+                            if let Ok(fd_str) = entry.file_name().into_string() {
+                                if let Ok(fd) = fd_str.parse::<i32>() {
+                                    if fd > 2 { 
+                                        // 避免关闭 /proc/self/fd 自己的句柄导致遍历中断
+                                        libc::close(fd); 
+                                    }
                                 }
                             }
                         }
                     }
                 }
 
-                if has_shebang && !shebang_interpreter.is_empty() {
-                    let mut interpreter = shebang_interpreter;
-                    if interpreter.starts_with("/usr/bin/") || interpreter.starts_with("/bin/") || interpreter.starts_with("/data/data/com.termux/files/usr/bin/") {
-                        if let Some(name) = std::path::Path::new(&interpreter).file_name().and_then(|n| n.to_str()) {
-                            interpreter = format!("{}/bin/{}", termux_prefix, name);
-                        }
-                    }
-                    let old_cmd = final_cmd.clone();
-                    final_cmd = interpreter;
-                    let mut new_argv = Vec::new();
-                    new_argv.push(if !final_args.is_empty() { final_args[0].clone() } else { final_cmd.clone() });
-                    new_argv.extend(shebang_args);
-                    new_argv.push(old_cmd);
-                    if final_args.len() > 1 { new_argv.extend(final_args.iter().skip(1).cloned()); }
-                    final_args = new_argv;
-                } else if !is_elf && !has_shebang {
-                    let old_cmd = final_cmd.clone();
-                    final_cmd = format!("{}/bin/sh", termux_prefix);
-                    let mut new_argv = Vec::new();
-                    new_argv.push(if !final_args.is_empty() { final_args[0].clone() } else { final_cmd.clone() });
-                    new_argv.push(old_cmd);
-                    if final_args.len() > 1 { new_argv.extend(final_args.iter().skip(1).cloned()); }
-                    final_args = new_argv;
-                }
+                // 打印关键调试日志
+                crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY] FINAL_EXECUTE: cmd='{}' ld_preload='{}'", final_cmd, preloader));
 
-                // === W^X Bypass: 标准 Linker 协议构建 ===
-                let canonical_target = std::fs::canonicalize(&final_cmd).unwrap_or_else(|_| std::path::PathBuf::from(&final_cmd));
-                let c_str = canonical_target.to_string_lossy();
-                
-                if final_cmd.contains("/data/") || c_str.contains("/data/") || final_cmd.contains(&real_pkg) {
-                    #[cfg(target_pointer_width = "64")] let linker = "/system/bin/linker64";
-                    #[cfg(target_pointer_width = "32")] let linker = "/system/bin/linker";
-                    
-                    if std::path::Path::new(linker).exists() {
-                        let mut linker_argv = Vec::new();
-                        let prog_name = if !final_args.is_empty() { final_args[0].clone() } else { final_cmd.clone() };
-                        linker_argv.push(prog_name);         // argv[0]
-                        linker_argv.push(final_cmd.clone()); // argv[1]
-                        if final_args.len() > 1 {
-                            linker_argv.extend(final_args.into_iter().skip(1));
-                        }
-                        final_args = linker_argv;
-                        final_cmd = linker.to_string();
-                    }
-                }
-
-                // 准备环境指针
+                // 准备环境与参数指针
                 let mut c_envs = Vec::new();
                 for e in &final_env { if let Ok(ce) = CString::new(e.clone()) { c_envs.push(ce); } }
                 let ptr_envs: Vec<_> = c_envs.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
 
-                // 准备参数指针
                 let mut c_args = Vec::new();
                 for a in &final_args { if let Ok(ca) = CString::new(a.clone()) { c_args.push(ca); } }
                 let ptr_args: Vec<_> = c_args.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
-
-                crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY] FINAL_EXECUTE: cmd='{}' argv={:?}", final_cmd, final_args));
 
                 if !final_cmd.is_empty() {
                     if let Ok(c_cmd) = CString::new(final_cmd.clone()) {
@@ -370,7 +273,7 @@ pub fn create_subprocess_with_data(
                     crate::utils::android_log(crate::utils::LogPriority::ERROR, &format!("[PTY] execve FAILED! errno={} cmd={}", err, final_cmd));
                 }
                 libc::_exit(1);
-            }
+                }
             Err(_) => Err(()),
         }
     }
