@@ -43,6 +43,16 @@ public class JniResult {
     public int intData;
 
     /**
+     * Optional stdout returned by command execution.
+     */
+    public String stdout;
+
+    /**
+     * Optional stderr returned by command execution.
+     */
+    public String stderr;
+
+    /**
      * Create an new instance of {@link JniResult}.
      *
      * @param retval The {@link #retval} value.

@@ -151,6 +151,39 @@ object RustTerminal {
     @JvmStatic
     external fun clearScrollCounter(enginePtr: Long)
 
+    // --- 本地 Socket 服务器 (Rust 实现) ---
+
+    /** 启动 Rust 侧的本地 Socket 服务器 */
+    @JvmStatic
+    external fun startLocalSocketServer(socketPath: String)
+
+    /** 
+     * 供 Rust 引擎回调：执行 Activity Manager 命令 
+     * 这是一个内部桥接方法，由 Rust 侧的 local_socket 模块调用
+     */
+    @JvmStatic
+    @Keep
+    fun runAmInternal(args: Array<String>): com.termux.shared.jni.models.JniResult {
+        val context = TermuxApplication.getTermuxApplicationContext()
+        val stdout = StringBuilder()
+        val stderr = StringBuilder()
+        
+        val error = com.termux.shared.shell.am.AmSocketServer.runAmCommand(
+            context, args, stdout, stderr, true
+        )
+        
+        val result = com.termux.shared.jni.models.JniResult(
+            if (error == null) 0 else 1,
+            0,
+            error?.minimalErrorString ?: ""
+        )
+        
+        result.stdout = stdout.toString()
+        result.stderr = stderr.toString()
+        
+        return result
+    }
+
     // --- 调试 ---
 
     @JvmStatic

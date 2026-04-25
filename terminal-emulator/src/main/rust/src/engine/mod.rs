@@ -16,6 +16,7 @@ pub mod perform_handler;
 pub mod sgr;
 pub mod decset;
 pub mod key_event;
+pub mod local_socket;
 
 // 重新导出主要类型
 pub use events::TerminalEvent;

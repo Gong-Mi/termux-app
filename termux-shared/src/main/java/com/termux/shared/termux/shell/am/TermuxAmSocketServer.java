@@ -102,10 +102,9 @@ public class TermuxAmSocketServer {
     public static synchronized void start(@NonNull Context context) {
         stop();
 
-        AmSocketServerRunConfig amSocketServerRunConfig = new AmSocketServerRunConfig(TITLE,
-            TermuxConstants.TERMUX_APP.TERMUX_AM_SOCKET_FILE_PATH, new TermuxAmSocketServerClient());
-
-        termuxAmSocketServer = AmSocketServer.start(context, amSocketServerRunConfig);
+        // 迁移到 Rust 实现
+        Logger.logInfo(LOG_TAG, "Starting Rust LocalSocket server for TermuxAm...");
+        com.termux.terminal.RustTerminal.startLocalSocketServer(TermuxConstants.TERMUX_APP.TERMUX_AM_SOCKET_FILE_PATH);
     }
 
     /**

@@ -88,7 +88,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetFontPath(
 /// 获取字体指标
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _obj: JObject,
     metrics_array: jni::sys::jfloatArray,
 ) {
@@ -133,7 +133,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
 /// 设置 Surface
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _obj: JObject,
     surface: JObject,
 ) {
@@ -495,6 +495,19 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_resize(
     render_thread::request_render();
     flush_events_to_java(&mut env, &cb, events);
     let _ = Arc::into_raw(context);
+}
+
+/// 启动 Rust 本地 Socket 服务器
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_startLocalSocketServer(
+    mut env: JNIEnv,
+    _class: JClass,
+    socket_path: JString,
+) {
+    if let Ok(path) = env.get_string(&socket_path) {
+        let path_str: String = path.into();
+        crate::engine::local_socket::start_server(path_str);
+    }
 }
 
 /// 获取标题
