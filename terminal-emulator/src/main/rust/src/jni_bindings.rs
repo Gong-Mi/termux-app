@@ -133,9 +133,9 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
 /// 设置 Surface
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
-    _env: JNIEnv,
+    mut env: JNIEnv,
     _obj: JObject,
-    _surface: JObject,
+    surface: JObject,
 ) {
     #[cfg(target_os = "android")]
     {
@@ -518,13 +518,13 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getTitle(
     _class: JClass,
     ptr: jlong,
 ) -> jstring {
-    if ptr == 0 { return std::ptr::nullmut(); }
+    if ptr == 0 { return std::ptr::null_mut(); }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let title = {
         let engine = context.lock.read().unwrap();
         engine.state.title.clone().unwrap_or_default()
     };
-    let result = if let Ok(j_str) = env.new_string(title) { j_str.into_raw() } else { std::ptr::nullmut() };
+    let result = if let Ok(j_str) = env.new_string(title) { j_str.into_raw() } else { std::ptr::null_mut() };
     let _ = Arc::into_raw(context);
     result
 }
@@ -755,13 +755,13 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_readRow(
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_getSelectedText(
     mut env: JNIEnv, _class: JClass, ptr: jlong, x1: jint, y1: jint, x2: jint, y2: jint,
 ) -> jstring {
-    if ptr == 0 { return std::ptr::nullmut(); }
+    if ptr == 0 { return std::ptr::null_mut(); }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let text = {
         let engine = context.lock.read().unwrap();
         engine.state.get_current_screen().get_selected_text(x1 as i64, y1 as i64, x2 as i64, y2 as i64)
     };
-    let result = if let Ok(j_str) = env.new_string(text) { j_str.into_raw() } else { std::ptr::nullmut() };
+    let result = if let Ok(j_str) = env.new_string(text) { j_str.into_raw() } else { std::ptr::null_mut() };
     let _ = Arc::into_raw(context);
     result
 }
@@ -771,13 +771,13 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getSelectedText(
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_getWordAtLocation(
     mut env: JNIEnv, _class: JClass, ptr: jlong, x: jint, y: jint,
 ) -> jstring {
-    if ptr == 0 { return std::ptr::nullmut(); }
+    if ptr == 0 { return std::ptr::null_mut(); }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let text = {
         let engine = context.lock.read().unwrap();
         engine.state.get_current_screen().get_row(y as i64).get_word_at(x as u64)
     };
-    let result = if let Ok(j_str) = env.new_string(text) { j_str.into_raw() } else { std::ptr::nullmut() };
+    let result = if let Ok(j_str) = env.new_string(text) { j_str.into_raw() } else { std::ptr::null_mut() };
     let _ = Arc::into_raw(context);
     result
 }
@@ -787,13 +787,13 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getWordAtLocation(
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_getTranscriptText(
     mut env: JNIEnv, _class: JClass, ptr: jlong,
 ) -> jstring {
-    if ptr == 0 { return std::ptr::nullmut(); }
+    if ptr == 0 { return std::ptr::null_mut(); }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let text = {
         let engine = context.lock.read().unwrap();
         engine.state.get_current_screen().get_transcript_text()
     };
-    let result = if let Ok(j_str) = env.new_string(text) { j_str.into_raw() } else { std::ptr::nullmut() };
+    let result = if let Ok(j_str) = env.new_string(text) { j_str.into_raw() } else { std::ptr::null_mut() };
     let _ = Arc::into_raw(context);
     result
 }
@@ -857,7 +857,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_sendMouseEvent(mut 
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_sendKeyCode(
     mut env: JNIEnv, _class: JClass, ptr: jlong, key_code: jint, char_str: jstring, meta_state: jint,
 ) -> jstring {
-    if ptr == 0 { return std::ptr::nullmut(); }
+    if ptr == 0 { return std::ptr::null_mut(); }
     let rust_str = if !char_str.is_null() {
         let j_str = unsafe { JString::from_raw(char_str) };
         env.get_string(&j_str).ok().map(|s| String::from(s)).unwrap_or_default()
@@ -873,9 +873,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_sendKeyCode(
     match seq {
         Some(s) => match env.new_string(s) {
             Ok(j_str) => j_str.into_raw(),
-            Err(_) => std::ptr::nullmut(),
+            Err(_) => std::ptr::null_mut(),
         },
-        None => std::ptr::nullmut(),
+        None => std::ptr::null_mut(),
     }
 }
 
@@ -918,7 +918,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getActiveTranscript
 /// 获取颜色
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_getColors(mut env: JNIEnv, _class: JClass, ptr: jlong) -> jintArray {
-    if ptr == 0 { return std::ptr::nullmut(); }
+    if ptr == 0 { return std::ptr::null_mut(); }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let colors = {
         let engine = context.lock.read().unwrap();
@@ -928,7 +928,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getColors(mut env: 
     let result = if let Ok(j_array) = env.new_int_array(colors.len() as jint) {
         unsafe { let _ = env.set_int_array_region(&j_array, 0, std::mem::transmute::<&[u32], &[i32]>(&colors)); }
         j_array.into_raw()
-    } else { std::ptr::nullmut() };
+    } else { std::ptr::null_mut() };
     let _ = Arc::into_raw(context);
     result
 }
@@ -1121,7 +1121,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getDebugInfo(
 ) -> jstring {
     if ptr == 0 {
         let empty = env.new_string("TerminalEmulator[destroyed]").ok();
-        return empty.map_or(std::ptr::nullmut(), |s| s.into_raw());
+        return empty.map_or(std::ptr::null_mut(), |s| s.into_raw());
     }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let debug_info = {
@@ -1131,7 +1131,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getDebugInfo(
     let result = if let Ok(j_str) = env.new_string(debug_info) {
         j_str.into_raw()
     } else {
-        std::ptr::nullmut()
+        std::ptr::null_mut()
     };
     let _ = Arc::into_raw(context);
     result
@@ -1356,7 +1356,7 @@ pub extern "system" fn Java_com_termux_terminal_JNI_getKeyCode(
 
     match result {
         Some(s) => env.new_string(s).unwrap().into_raw(),
-        None => std::ptr::nullmut(),
+        None => std::ptr::null_mut(),
     }
 }
 
@@ -1378,7 +1378,7 @@ pub extern "system" fn Java_com_termux_terminal_JNI_getKeyCodeFromTermcap(
 
     match result {
         Some(s) => env.new_string(s).unwrap().into_raw(),
-        None => std::ptr::nullmut(),
+        None => std::ptr::null_mut(),
     }
 }
 
