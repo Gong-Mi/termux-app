@@ -103,7 +103,6 @@ fn spawn_render_thread(engine_ptr: jlong) {
             android_log(LogPriority::INFO, "Render thread started");
 
             let mut frame_count: u64 = 0;
-            let mut last_log_time = std::time::Instant::now();
 
             while RENDER_THREAD_RUNNING.load(Ordering::SeqCst) {
                 // 1. 检查是否需要重建 swapchain
@@ -176,88 +175,96 @@ fn spawn_render_thread(engine_ptr: jlong) {
                     RenderFrame::from_engine(&engine, engine.state.rows as usize, engine.state.cols as usize, top_row)
                 };
 
-                // 1. 获取下一个交换链图像索引
-                let image_index = match ctx.acquire_next_image() {
-                    Some(idx) => idx,
-                    None => {
-                        std::thread::sleep(std::time::Duration::from_millis(8));
-                        continue;
-                    }
-                };
+                // === 核心渲染过程：包装在 catch_unwind 中防止 Panic 导致 ABORT ===
+                let render_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    // 1. 获取下一个交换链图像索引
+                    let image_index = match ctx.acquire_next_image() {
+                        Some(idx) => idx,
+                        None => return Err("acquire_next_image failed"),
+                    };
 
-                // 2. 获取 Skia Surface
-                let mut sk_surface = match ctx.get_sk_surface(image_index) {
-                    Some(s) => s,
-                    None => {
-                        if frame_count == 0 || last_log_time.elapsed().as_secs() >= 5 {
-                            android_log(LogPriority::WARN, &format!("Render: get_sk_surface returned None (frame {})", frame_count));
-                            last_log_time = std::time::Instant::now();
+                    // 2. 获取 Skia Surface
+                    let mut sk_surface = match ctx.get_sk_surface(image_index) {
+                        Some(s) => s,
+                        None => return Err("get_sk_surface returned None"),
+                    };
+                    let canvas = sk_surface.canvas();
+
+                    // 3. 执行绘制
+                    let renderer_mutex = TERMINAL_RENDERER.get_or_init(|| Mutex::new(None));
+                    let mut renderer_guard = match renderer_mutex.try_lock() {
+                        Ok(g) => g,
+                        Err(_) => return Err("renderer lock contention"),
+                    };
+
+                    let font_size = *RENDER_FONT_SIZE.lock().unwrap();
+                    let font_path = crate::render_thread::get_render_font_path();
+                    let needs_recreate = renderer_guard.as_ref().map_or(true, |r| {
+                        (r.font_size - font_size).abs() > 0.1 || r.font_path != font_path
+                    });
+                    if needs_recreate {
+                        *renderer_guard = Some(TerminalRenderer::new(&[], font_size, font_path.as_deref()));
+                    }
+
+                    if let Some(renderer) = renderer_guard.as_mut() {
+                        let scale = *RENDER_SCALE.lock().unwrap();
+                        let scroll_offset = *RENDER_SCROLL_OFFSET.lock().unwrap();
+                        let sel_active = *RENDER_SEL_ACTIVE.lock().unwrap();
+                        let sel_x1 = *RENDER_SEL_X1.lock().unwrap();
+                        let sel_y1 = *RENDER_SEL_Y1.lock().unwrap();
+                        let sel_x2 = *RENDER_SEL_X2.lock().unwrap();
+                        let sel_y2 = *RENDER_SEL_Y2.lock().unwrap();
+
+                        if sel_active {
+                            renderer.set_selection(sel_x1, sel_y1, sel_x2, sel_y2);
+                        } else {
+                            renderer.clear_selection();
                         }
-                        continue;
-                    }
-                };
-                let canvas = sk_surface.canvas();
 
-                // 3. 执行绘制
-                let renderer_mutex = TERMINAL_RENDERER.get_or_init(|| Mutex::new(None));
-                let mut renderer_guard = match renderer_mutex.try_lock() {
-                    Ok(g) => g,
-                    Err(_) => continue,
-                };
-
-                let font_size = *RENDER_FONT_SIZE.lock().unwrap();
-                let font_path = crate::render_thread::get_render_font_path();
-                let needs_recreate = renderer_guard.as_ref().map_or(true, |r| {
-                    (r.font_size - font_size).abs() > 0.1 || r.font_path != font_path
-                });
-                if needs_recreate {
-                    *renderer_guard = Some(TerminalRenderer::new(&[], font_size, font_path.as_deref()));
-                }
-
-                if let Some(renderer) = renderer_guard.as_mut() {
-                    let scale = *RENDER_SCALE.lock().unwrap();
-                    let scroll_offset = *RENDER_SCROLL_OFFSET.lock().unwrap();
-                    let sel_active = *RENDER_SEL_ACTIVE.lock().unwrap();
-                    let sel_x1 = *RENDER_SEL_X1.lock().unwrap();
-                    let sel_y1 = *RENDER_SEL_Y1.lock().unwrap();
-                    let sel_x2 = *RENDER_SEL_X2.lock().unwrap();
-                    let sel_y2 = *RENDER_SEL_Y2.lock().unwrap();
-
-                    if sel_active {
-                        renderer.set_selection(sel_x1, sel_y1, sel_x2, sel_y2);
-                    } else {
-                        renderer.clear_selection();
+                        renderer.draw_frame(canvas, &frame, scale, scroll_offset);
                     }
 
-                    if frame_count == 0 {
-                        android_log(LogPriority::INFO, &format!(
-                            "Render: First frame - scale={}, scroll_offset={}, font_size={}, rows={}, cols={}",
-                            scale, scroll_offset, font_size, frame.rows, frame.cols
-                        ));
+                    ctx.context.flush_and_submit();
+
+                    // 4. 呈现图像
+                    let present_info = ash::vk::PresentInfoKHR {
+                        swapchain_count: 1,
+                        p_swapchains: &ctx.swapchain,
+                        p_image_indices: &image_index,
+                        ..Default::default()
+                    };
+
+                    unsafe {
+                        match ctx.swapchain_loader.queue_present(ctx.queue, &present_info) {
+                            Ok(_) => Ok(()),
+                            Err(e) => {
+                                // 如果发现交换链由于窗口变化失效，标记为脏以便下帧重建
+                                if e == ash::vk::Result::ERROR_OUT_OF_DATE_KHR || e == ash::vk::Result::SUBOPTIMAL_KHR {
+                                    SURFACE_SIZE_CHANGED.store(true, Ordering::SeqCst);
+                                }
+                                Err("present failed")
+                            }
+                        }
                     }
+                }));
 
-                    renderer.draw_frame(canvas, &frame, scale, scroll_offset);
+                match render_result {
+                    Ok(Ok(_)) => {
+                        frame_count += 1;
+                    }
+                    Ok(Err(msg)) => {
+                        if frame_count % 60 == 0 {
+                            android_log(LogPriority::WARN, &format!("Render Loop Error: {}", msg));
+                        }
+                    }
+                    Err(_) => {
+                        android_log(LogPriority::ERROR, "Render Thread CRITICAL: Caught panic in render loop, attempting recovery...");
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    }
                 }
 
-                ctx.context.flush_and_submit();
-
-                // 4. 呈现图像
-                let present_info = ash::vk::PresentInfoKHR {
-                    swapchain_count: 1,
-                    p_swapchains: &ctx.swapchain,
-                    p_image_indices: &image_index,
-                    ..Default::default()
-                };
-
-                let present_result = unsafe {
-                    ctx.swapchain_loader.queue_present(ctx.queue, &present_info)
-                };
-
-                if frame_count == 0 {
-                    android_log(LogPriority::INFO, &format!("Render: Present completed (result={:?})", present_result));
+                if frame_count % 300 == 0 {
                 }
-
-                frame_count += 1;
             }
             android_log(LogPriority::INFO, &format!("Render thread stopped after {} frames", frame_count));
         })

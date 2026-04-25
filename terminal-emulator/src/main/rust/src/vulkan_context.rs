@@ -374,7 +374,3 @@ impl VulkanContext {
         )
     }
 }
-
-fn load_pipeline_cache() -> Option<Vec<u8>> {
-    None
-}
