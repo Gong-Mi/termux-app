@@ -1,0 +1,73 @@
+uid=10530} ---
+[pid 26024] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26020] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26020] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26020] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26020] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26020] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26024] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+/data/data/com.termux/files/usr/bin/strace: Process 26030 attached
+[pid 26020] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26024] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26030] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26024] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26024] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26020] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26030] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26030] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26030] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26030] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26024] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26020] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26020] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26020] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+/data/data/com.termux/files/usr/bin/strace: Process 26046 attached
+[pid 26029] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26029] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26026] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26027] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26027] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26029] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26029] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26029] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26023] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26029] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26029] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26046] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26046] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26046] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26026] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26029] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26027] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26020] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26020] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+[pid 26020] --- SIGURG {si_signo=SIGURG, si_code=SI_TKILL, si_pid=26020, si_uid=10530} ---
+/data/data/com.termux/files/usr/bin/strace: Process 26104 attached
+[pid 26104] execve("/data/data/com.termux/files/usr/bin/git", ["/data/data/com.termux/files/usr/"..., "-c","credential.https://github.com.he"..., "-c
+
+", "credential.https://github.com.he"..., "clone", "https://github.com/Gong-Mi/termu"...], 0x741ae3d200 /* 61 vars */) = -1 EACCES (Permission denied)
+[pid 26104] +++ exited with 253 +++
+[pid 26021] --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=26104, si_uid=10530, si_status=253, si_utime=0, si_stime=0} ---
+failed to run git: fork/exec /data/data/com.termux/files/usr/bin/git: permission denied
+[pid 26046] +++ exited with 1 +++
+[pid 26030] +++ exited with 1 +++
+[pid 26027] +++ exited with 1 +++
+[pid 26026] +++ exited with 1 +++
+[pid 26025] +++ exited with 1 +++
+[pid 26024] +++ exited with 1 +++
+[pid 26023] +++ exited with 1 +++
+[pid 26022] +++ exited with 1 +++
+[pid 26021] +++ exited with 1 +++
+[pid 26029] +++ exited with 1 +++
++++ exited with 1 +++
+~ $ gh repo clone Gong-Mi/llama.cpp
+failed to run git: fork/exec /data/data/com.termux/files/usr/bin/git: permission denied
+~ $ gemini
+No command gemini found, did you mean:
+ Command remind in package remind
+~ $ npm install -g @google/gemini-cli@nightly
+
+added 2 packages in 22s
+~ $ gemini
+error: expected absolute path: "--max-old-space-size=7499"
+~ $
