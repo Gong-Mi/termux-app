@@ -201,11 +201,48 @@ pub fn create_subprocess_with_data(
                     }
                 };
 
-                // 3. 核心修复：强制注入 LD_PRELOAD
+                // 3. 核心修复：深度搜索并注入 LD_PRELOAD
                 let mut final_env: Vec<String> = Vec::new();
                 let old_path = std::env::var("PATH").unwrap_or_else(|_| "/system/bin:/system/xbin".to_string());
                 
-                // 基础变量
+                // 搜索 libtermux-exec.so
+                let mut found_preloader = None;
+                let termux_exec_candidates = [
+                    "libtermux-exec.so",
+                    "libtermux-exec-linker-ld-preload.so",
+                    "libtermux-exec-ld-preload.so",
+                ];
+                
+                // 搜索顺序：1. 标准 lib/ 2. 递归全目录搜索 (最后手段)
+                for candidate in &termux_exec_candidates {
+                    let path = format!("{}/{}", termux_lib, candidate);
+                    if std::path::Path::new(&path).exists() {
+                        found_preloader = Some(path);
+                        break;
+                    }
+                }
+                
+                if found_preloader.is_none() {
+                    crate::utils::android_log(crate::utils::LogPriority::WARN, "[PTY] LD_PRELOAD not found in lib/, searching files/...");
+                    // 简单搜索：通常在 lib/ 或 lib/abc/ 下
+                    if let Ok(entries) = std::fs::read_dir(&termux_lib) {
+                        for entry in entries.filter_map(|e| e.ok()) {
+                            let p = entry.path();
+                            if p.is_dir() {
+                                for candidate in &termux_exec_candidates {
+                                    let sub_p = p.join(candidate);
+                                    if sub_p.exists() {
+                                        found_preloader = Some(sub_p.to_string_lossy().into_owned());
+                                        break;
+                                    }
+                                }
+                            }
+                            if found_preloader.is_some() { break; }
+                        }
+                    }
+                }
+
+                // 强制基础变量
                 final_env.push(format!("PATH={}:{}", termux_bin, fix_canonical(&old_path)));
                 final_env.push(format!("PREFIX={}", canonical_prefix));
                 final_env.push(format!("HOME={}", termux_home));
@@ -215,22 +252,32 @@ pub fn create_subprocess_with_data(
                 final_env.push(format!("COLORTERM=truecolor"));
                 final_env.push(format!("LANG=en_US.UTF-8"));
                 
-                // 注入 Java 环境
+                // 注入 LD_PRELOAD
+                if let Some(ref preloader) = found_preloader {
+                    final_env.push(format!("LD_PRELOAD={}", preloader));
+                    crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY] FOUND and INJECTING LD_PRELOAD={}", preloader));
+                } else {
+                    // 回退方案：强制注入默认路径，即便 exists() 没看到它
+                    let fallback = format!("{}/libtermux-exec.so", termux_lib);
+                    final_env.push(format!("LD_PRELOAD={}", fallback));
+                    crate::utils::android_log(crate::utils::LogPriority::ERROR, &format!("[PTY] LD_PRELOAD NOT FOUND! Using fallback={}", fallback));
+                }
+                
+                // 注入 Java 环境 (排除敏感变量)
                 for env_var in envp {
                     if let Some(pos) = env_var.find('=') {
                         let k = &env_var[..pos];
                         if k == "PATH" || k == "PREFIX" || k == "HOME" || k == "TMPDIR" || k == "LD_LIBRARY_PATH" || k == "LD_PRELOAD" {
-                            continue; // 跳过，由我们统一控制
+                            continue; 
                         }
                         final_env.push(format!("{}={}", k, fix_canonical(&env_var[pos+1..])));
                     }
                 }
 
-                // 强制设置 LD_PRELOAD
-                let preloader = format!("{}/libtermux-exec.so", termux_lib);
-                final_env.push(format!("LD_PRELOAD={}", preloader));
-                
-                crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY] FINAL_ENV LD_PRELOAD={}", preloader));
+                // 打印完整环境日志用于调试
+                for (i, e) in final_env.iter().enumerate() {
+                    crate::utils::android_log(crate::utils::LogPriority::DEBUG, &format!("[PTY] ENV[{}]: {}", i, e));
+                }
 
                 if !cwd_str.is_empty() {
                     let fixed_cwd = fix_canonical(&cwd_str);
@@ -274,7 +321,7 @@ pub fn create_subprocess_with_data(
 
                 if has_shebang && !shebang_interpreter.is_empty() {
                     let mut interpreter = shebang_interpreter;
-                    if interpreter.starts_with("/usr/bin/") || interpreter.starts_with("/bin/") {
+                    if interpreter.starts_with("/usr/bin/") || interpreter.starts_with("/bin/") || interpreter.starts_with("/data/data/com.termux/files/usr/bin/") {
                         if let Some(name) = std::path::Path::new(&interpreter).file_name().and_then(|n| n.to_str()) {
                             interpreter = format!("{}/bin/{}", canonical_prefix, name);
                         }
@@ -282,7 +329,6 @@ pub fn create_subprocess_with_data(
                     let old_cmd = final_cmd.clone();
                     final_cmd = interpreter;
                     let mut new_argv = Vec::new();
-                    // argv[0] 保持原始名以支持 login shell
                     new_argv.push(if !final_args.is_empty() { final_args[0].clone() } else { final_cmd.clone() });
                     new_argv.extend(shebang_args);
                     new_argv.push(old_cmd);
@@ -319,17 +365,17 @@ pub fn create_subprocess_with_data(
                     }
                 }
 
-                // 准备参数指针
-                let mut c_args = Vec::new();
-                for a in &final_args { if let Ok(ca) = CString::new(a.clone()) { c_args.push(ca); } }
-                let ptr_args: Vec<_> = c_args.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
-
                 // 准备环境指针
                 let mut c_envs = Vec::new();
                 for e in &final_env { if let Ok(ce) = CString::new(e.clone()) { c_envs.push(ce); } }
                 let ptr_envs: Vec<_> = c_envs.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
 
-                crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY] EXECVE: cmd='{}' argv={:?}", final_cmd, final_args));
+                // 准备参数指针
+                let mut c_args = Vec::new();
+                for a in &final_args { if let Ok(ca) = CString::new(a.clone()) { c_args.push(ca); } }
+                let ptr_args: Vec<_> = c_args.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
+
+                crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY] FINAL_EXECUTE: cmd='{}' argv={:?}", final_cmd, final_args));
 
                 if !final_cmd.is_empty() {
                     if let Ok(c_cmd) = CString::new(final_cmd.clone()) {
