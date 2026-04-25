@@ -4,7 +4,7 @@ use jni::sys::{JNINativeInterface_, jint, jintArray, jobjectArray, jstring};
 use nix::unistd::{ForkResult, fork, setsid, chdir};
 use std::ffi::CString;
 
-/// 获取当前 UID 下的总进程数，用于规避 Android 12+ 的 Phantom Killer (限制为 32)
+/// 获取当前 UID 下的总进程数，用于规避 Android 12+ 的 Phantom Killer
 fn get_total_process_count() -> usize {
     std::fs::read_dir("/proc")
         .map(|dir| {
@@ -90,21 +90,16 @@ pub fn create_subprocess_with_data(
         }
         let devname = std::ffi::CStr::from_ptr(devname).to_string_lossy().into_owned();
 
-        // 幻影杀手流控
+        // 幻影杀手控制
         let count = get_total_process_count();
         if count > 28 {
-            crate::utils::android_log(crate::utils::LogPriority::WARN, &format!("[PTY] High process count detected ({}), delaying fork...", count));
+            crate::utils::android_log(crate::utils::LogPriority::WARN, &format!("[PTY] High process count ({}), throttling...", count));
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
 
         match fork() {
             Ok(ForkResult::Parent { child }) => {
-                let sz = libc::winsize {
-                    ws_row: rows as u16,
-                    ws_col: cols as u16,
-                    ws_xpixel: (cols * cw) as u16,
-                    ws_ypixel: (rows * ch) as u16,
-                };
+                let sz = libc::winsize { ws_row: rows as u16, ws_col: cols as u16, ws_xpixel: (cols * cw) as u16, ws_ypixel: (rows * ch) as u16 };
                 libc::ioctl(ptm, libc::TIOCSWINSZ, &sz);
                 Ok((ptm, child.as_raw()))
             }
@@ -122,23 +117,21 @@ pub fn create_subprocess_with_data(
                 if pts > 2 { libc::close(pts); }
                 libc::close(ptm);
 
-                // === 动态身份与 Prefix 检测 ===
+                // === 动态 Prefix 与 规范路径修正 ===
                 let mut real_pkg = String::from("com.termux");
-                let mut termux_prefix = String::from("/data/data/com.termux/files/usr");
+                let mut termux_prefix = String::from("/data/user/0/com.termux/files/usr");
                 
                 let paths_to_check = [&cmd_str, &cwd_str];
                 for p in paths_to_check {
                     if let Some(pos) = p.find("/files/") {
                         let root = &p[..pos];
-                        if let Some(pkg_pos) = root.rfind('/') {
-                            real_pkg = root[pkg_pos+1..].to_string();
-                        }
+                        if let Some(pkg_pos) = root.rfind('/') { real_pkg = root[pkg_pos+1..].to_string(); }
                         termux_prefix = format!("{}/files/usr", root);
                         break;
                     }
                 }
                 
-                // 强制使用规范路径 /data/user/0 (针对 SDK 36 的严格校验)
+                // 强制规范化为 /data/user/0 (SDK 36 必需)
                 let canonical_prefix = termux_prefix.replace("/data/data/", "/data/user/0/");
                 let real_data_root = canonical_prefix.replace("/files/usr", "");
                 let termux_bin = format!("{}/bin", canonical_prefix);
@@ -163,28 +156,17 @@ pub fn create_subprocess_with_data(
                 libc::setenv(CString::new("COLORTERM").unwrap().as_ptr(), CString::new("truecolor").unwrap().as_ptr(), 1);
                 libc::setenv(CString::new("LANG").unwrap().as_ptr(), CString::new("en_US.UTF-8").unwrap().as_ptr(), 1);
                 
-                // LD_PRELOAD 强制注入
-                let termux_exec_candidates = [
-                    "libtermux-exec-direct-ld-preload.so",
-                    "libtermux-exec-linker-ld-preload.so",
-                    "libtermux-exec.so",
-                    "libtermux-exec-ld-preload.so",
-                ];
-                for candidate in &termux_exec_candidates {
-                    let path = format!("{}/{}", termux_lib, candidate);
-                    if std::path::Path::new(&path).exists() {
-                        libc::setenv(CString::new("LD_PRELOAD").unwrap().as_ptr(), CString::new(path).unwrap().as_ptr(), 1);
-                        break;
-                    }
+                // LD_PRELOAD
+                let preloader = format!("{}/libtermux-exec-direct-ld-preload.so", termux_lib);
+                if std::path::Path::new(&preloader).exists() {
+                    libc::setenv(CString::new("LD_PRELOAD").unwrap().as_ptr(), CString::new(preloader).unwrap().as_ptr(), 1);
                 }
                 
                 for env_var in envp {
                     if let Some(pos) = env_var.find('=') {
-                        let key = &env_var[..pos];
-                        let value = fix_canonical(&env_var[pos+1..]);
-                        if let (Ok(ck), Ok(cv)) = (CString::new(key), CString::new(value)) {
-                            libc::setenv(ck.as_ptr(), cv.as_ptr(), 1);
-                        }
+                        let k = &env_var[..pos];
+                        let v = fix_canonical(&env_var[pos+1..]);
+                        if let (Ok(ck), Ok(cv)) = (CString::new(k), CString::new(v)) { libc::setenv(ck.as_ptr(), cv.as_ptr(), 1); }
                     }
                 }
 
@@ -194,7 +176,7 @@ pub fn create_subprocess_with_data(
                     let _ = chdir(c_cwd.as_c_str());
                 }
                 
-                // === 命令解析与加载器包装 ===
+                // === 命令解析 ===
                 let mut final_cmd = fix_canonical(&cmd_str);
                 let mut final_args: Vec<String> = argv.iter().map(|a| fix_canonical(a)).collect();
                 
@@ -203,12 +185,11 @@ pub fn create_subprocess_with_data(
                     if std::path::Path::new(&resolved).exists() { final_cmd = resolved; }
                 }
 
-                // ELF/Shebang 检查
+                // ELF/Shebang 逻辑 (同前)
                 let mut is_elf = false;
                 let mut has_shebang = false;
                 let mut shebang_interpreter = String::new();
                 let mut shebang_args = Vec::new();
-                
                 if let Ok(mut f) = std::fs::File::open(&final_cmd) {
                     use std::io::Read;
                     let mut buf = [0u8; 256];
@@ -218,12 +199,10 @@ pub fn create_subprocess_with_data(
                             has_shebang = true;
                             if let Ok(s) = std::str::from_utf8(&buf[2..n]) {
                                 let line = s.lines().next().unwrap_or("").trim();
-                                if !line.is_empty() {
-                                    let parts: Vec<&str> = line.split_whitespace().collect();
-                                    if !parts.is_empty() {
-                                        shebang_interpreter = parts[0].to_string();
-                                        shebang_args = parts[1..].iter().map(|&s| s.to_string()).collect();
-                                    }
+                                let parts: Vec<&str> = line.split_whitespace().collect();
+                                if !parts.is_empty() {
+                                    shebang_interpreter = parts[0].to_string();
+                                    shebang_args = parts[1..].iter().map(|&s| s.to_string()).collect();
                                 }
                             }
                         }
@@ -239,7 +218,6 @@ pub fn create_subprocess_with_data(
                     let old_cmd = final_cmd.clone();
                     final_cmd = interpreter;
                     let mut new_argv = Vec::new();
-                    // 保留 argv[0] 语义
                     new_argv.push(if !final_args.is_empty() && (final_args[0].starts_with('-') || final_args[0].starts_with('/')) { final_args[0].clone() } else { final_cmd.clone() });
                     new_argv.extend(shebang_args);
                     new_argv.push(old_cmd);
@@ -255,28 +233,32 @@ pub fn create_subprocess_with_data(
                     final_args = new_argv;
                 }
 
-                // W^X Bypass: 标准 Linker 包装
+                // === W^X Bypass: 标准 Linker 协议构建 ===
                 let canonical_target = std::fs::canonicalize(&final_cmd).unwrap_or_else(|_| std::path::PathBuf::from(&final_cmd));
                 let c_str = canonical_target.to_string_lossy();
                 
                 if final_cmd.contains("/data/") || c_str.contains("/data/") || final_cmd.contains(&real_pkg) {
                     #[cfg(target_pointer_width = "64")] let linker = "/system/bin/linker64";
                     #[cfg(target_pointer_width = "32")] let linker = "/system/bin/linker";
-
+                    
                     if std::path::Path::new(linker).exists() {
                         let mut linker_argv = Vec::new();
-                        // 协议：[linker_path, target_binary_path, child_argv0, child_argv1, ...]
-                        linker_argv.push(linker.to_string()); // argv[0] for the linker itself
-                        linker_argv.push(final_cmd.clone());  // argv[1] for the linker (the binary to load)
-
-                        // 接下来的参数是子进程真正看到的 argv
-                        linker_argv.extend(final_args);
-
+                        // 核心对齐协议：[linker_path, target_binary, target_argv0, target_argv1, ...]
+                        linker_argv.push(linker.to_string()); // 0: Linker self
+                        linker_argv.push(final_cmd.clone());  // 1: Binary to load
+                        
+                        // 2: 目标进程看到的 argv[0]。如果 final_args 为空，默认使用二进制路径
+                        if final_args.is_empty() {
+                            linker_argv.push(final_cmd.clone());
+                        } else {
+                            // final_args 已经包含了原本的 argv[0]（比如 "-login" 或 "/usr/bin/sh"）
+                            linker_argv.extend(final_args);
+                        }
+                        
                         final_args = linker_argv;
                         final_cmd = linker.to_string();
                     }
                 }
-
 
                 let mut c_args = Vec::new();
                 for a in &final_args { if let Ok(ca) = CString::new(a.clone()) { c_args.push(ca); } }
