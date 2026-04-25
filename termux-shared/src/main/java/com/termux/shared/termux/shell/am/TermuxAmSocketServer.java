@@ -104,7 +104,8 @@ public class TermuxAmSocketServer {
 
         // 迁移到 Rust 实现
         Logger.logInfo(LOG_TAG, "Starting Rust LocalSocket server for TermuxAm...");
-        com.termux.terminal.RustTerminal.startLocalSocketServer(TermuxConstants.TERMUX_APP.TERMUX_AM_SOCKET_FILE_PATH);
+        com.termux.shared.termux.shell.am.RustLocalSocketBridge.setContext(context);
+        com.termux.shared.termux.shell.am.RustLocalSocketBridge.startLocalSocketServer(TermuxConstants.TERMUX_APP.TERMUX_AM_SOCKET_FILE_PATH);
     }
 
     /**

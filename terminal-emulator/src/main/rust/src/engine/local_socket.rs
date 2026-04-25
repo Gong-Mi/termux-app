@@ -103,9 +103,8 @@ fn handle_am_command(args: &[&str]) -> (i32, String, String) {
     // 这里需要获取 Java VM 并调用 Java 方法
     if let Some(vm) = crate::JAVA_VM.get() {
         if let Ok(mut env) = vm.attach_current_thread_as_daemon() {
-            // 我们需要定义一个 Java 类来承载这个回调
-            // 假设为 com.termux.terminal.RustTerminal.runAmCommand
-            let class_name = "com/termux/terminal/RustTerminal";
+            // 修正后的类名
+            let class_name = "com/termux/shared/termux/shell/am/RustLocalSocketBridge";
             if let Ok(cls) = env.find_class(class_name) {
                 // 将 Rust args 转换为 Java StringArray
                 let j_args = env.new_object_array(args.len() as i32, "java/lang/String", env.new_string("").unwrap()).unwrap();

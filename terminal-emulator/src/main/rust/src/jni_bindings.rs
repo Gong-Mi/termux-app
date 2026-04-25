@@ -499,7 +499,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_resize(
 
 /// 启动 Rust 本地 Socket 服务器
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_RustTerminal_startLocalSocketServer(
+pub extern "system" fn Java_com_termux_shared_termux_shell_am_RustLocalSocketBridge_startLocalSocketServer(
     mut env: JNIEnv,
     _class: JClass,
     socket_path: JString,
