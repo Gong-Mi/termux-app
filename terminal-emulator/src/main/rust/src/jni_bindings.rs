@@ -1393,5 +1393,13 @@ pub extern "system" fn JNI_OnLoad(vm: jni::JavaVM, _reserved: std::ffi::c_void) 
         Ok(()) => android_log(LogPriority::INFO, "JNI_OnLoad: Termux- library loaded successfully"),
         Err(_) => android_log(LogPriority::WARN, "JNI_OnLoad: JAVA_VM was already set"),
     }
+
+    // 检查点：尝试写入用户指定的路径以验证权限
+    let checkpoint_path = "/data/user/0/com.termux/files/home/termux-app/t.txt";
+    match std::fs::write(checkpoint_path, "Rust Checkpoint: JNI_OnLoad\n") {
+        Ok(_) => android_log(LogPriority::INFO, &format!("Checkpoint success: {}", checkpoint_path)),
+        Err(e) => android_log(LogPriority::ERROR, &format!("Checkpoint failed: {} - {:?}", checkpoint_path, e)),
+    }
+
     jni::sys::JNI_VERSION_1_6
 }
