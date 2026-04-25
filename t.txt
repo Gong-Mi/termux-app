@@ -1,0 +1,17 @@
+/data/user/0/com.termux/files/usr/bin/login: 35: dpkg: Permission denied
+~ $ ls
+bash: /data/user/0/com.termux/files/usr/bin/ls: Permission denied
+~ $ echo $LD_PRELOAD
+
+~ $ apt
+bash: /data/user/0/com.termux/files/usr/bin/apt: Permission denied
+~ $ dpkg
+bash: /data/user/0/com.termux/files/usr/bin/dpkg: Permission denied
+~ $
+
+
+
+
+
+
+

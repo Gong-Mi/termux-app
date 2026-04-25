@@ -15,7 +15,7 @@ use zip::ZipArchive;
 /// - -2: 路径获取错误
 /// - -3: 字节数组转换错误
 /// - -4: 解压错误
-#[unsafe(no_mangle)]
+#[no_mangle]
 pub extern "system" fn Java_com_termux_app_BootstrapExtractor_extractFromBytes(
     env_ptr: *mut *const jni::sys::JNINativeInterface_,
     _class: jni::objects::JClass,
