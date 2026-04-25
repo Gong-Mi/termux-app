@@ -228,6 +228,10 @@ pub fn create_subprocess_with_data(
                     }
                 }
 
+                // 5. 关键安全变量强制注入
+                // termux-exec 的隐藏开关：强制拦截后通过 /system/bin/linker 执行
+                set_env("TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE", "force");
+
                 if !cwd_str.is_empty() {
                     let c_cwd = CString::new(cwd_str.replace("/data/user/0/", "/data/data/")).unwrap();
                     let _ = chdir(c_cwd.as_c_str());
