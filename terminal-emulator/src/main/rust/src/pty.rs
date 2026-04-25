@@ -58,7 +58,7 @@ pub unsafe fn create_subprocess(
         String::new()
     };
 
-    let cwd_str = if !cwd_str.is_null() {
+    let cwd_str = if !cwd.is_null() {
         let js = unsafe { JString::from_raw(cwd) };
         env.get_string(&js).map(|s| s.into()).unwrap_or_default()
     } else {
