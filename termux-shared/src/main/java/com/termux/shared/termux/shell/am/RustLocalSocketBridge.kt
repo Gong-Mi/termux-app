@@ -15,6 +15,17 @@ import java.lang.ref.WeakReference
 @Keep
 object RustLocalSocketBridge {
 
+    init {
+        // Ensure libtermux_rust.so is loaded before any native method is called.
+        // Other classes (TerminalView, JNI, BootstrapExtractor) also load this library,
+        // but RustLocalSocketBridge may be reached first via TermuxApplication.onCreate().
+        try {
+            System.loadLibrary("termux_rust")
+        } catch (_: UnsatisfiedLinkError) {
+            // Library may already be loaded by another class; safe to ignore.
+        }
+    }
+
     private var mContext: WeakReference<Context>? = null
 
     @JvmStatic
