@@ -262,17 +262,21 @@ pub fn create_subprocess_with_data(
                 if final_cmd.contains("/data/") || c_str.contains("/data/") || final_cmd.contains(&real_pkg) {
                     #[cfg(target_pointer_width = "64")] let linker = "/system/bin/linker64";
                     #[cfg(target_pointer_width = "32")] let linker = "/system/bin/linker";
-                    
+
                     if std::path::Path::new(linker).exists() {
                         let mut linker_argv = Vec::new();
-                        linker_argv.push(linker.to_string()); // argv[0] for linker
-                        linker_argv.push(final_cmd.clone());  // argv[1] for linker (path to binary)
-                        linker_argv.extend(final_args);       // argv[2...] for child
-                        
+                        // 协议：[linker_path, target_binary_path, child_argv0, child_argv1, ...]
+                        linker_argv.push(linker.to_string()); // argv[0] for the linker itself
+                        linker_argv.push(final_cmd.clone());  // argv[1] for the linker (the binary to load)
+
+                        // 接下来的参数是子进程真正看到的 argv
+                        linker_argv.extend(final_args);
+
                         final_args = linker_argv;
                         final_cmd = linker.to_string();
                     }
                 }
+
 
                 let mut c_args = Vec::new();
                 for a in &final_args { if let Ok(ca) = CString::new(a.clone()) { c_args.push(ca); } }
