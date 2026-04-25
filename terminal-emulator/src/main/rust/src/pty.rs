@@ -251,16 +251,20 @@ pub fn create_subprocess_with_data(
                     
                     if std::path::Path::new(linker).exists() {
                         let mut linker_argv = Vec::new();
-                        // 核心对齐协议：[linker_path, target_binary, target_argv0, target_argv1, ...]
-                        linker_argv.push(linker.to_string()); // 0: Linker self
-                        linker_argv.push(final_cmd.clone());  // 1: Binary to load
                         
-                        // 2: 目标进程看到的 argv[0]。如果 final_args 为空，默认使用二进制路径
-                        if final_args.is_empty() {
-                            linker_argv.push(final_cmd.clone());
+                        // 关键修复：参考 termux-app-rust，必须保留原始的 argv[0] 给子进程
+                        // linker 会用这个 argv[0] 作为子进程的进程名（这决定了 shell 是否作为 login shell 启动）
+                        let prog_name = if !final_args.is_empty() {
+                            final_args[0].clone()
                         } else {
-                            // final_args 已经包含了原本的 argv[0]（比如 "-login" 或 "/usr/bin/sh"）
-                            linker_argv.extend(final_args);
+                            final_cmd.clone()
+                        };
+                        linker_argv.push(prog_name);         // argv[0]: 原始程序名 (如 "-bash")
+                        linker_argv.push(final_cmd.clone()); // argv[1]: linker 必须加载的绝对路径
+                        
+                        // 透传剩余参数
+                        if final_args.len() > 1 {
+                            linker_argv.extend(final_args.into_iter().skip(1));
                         }
                         
                         final_args = linker_argv;
