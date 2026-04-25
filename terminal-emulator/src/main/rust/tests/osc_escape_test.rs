@@ -11,7 +11,7 @@ use termux_rust::TerminalEngine;
 fn get_row_text(engine: &TerminalEngine, row: i32) -> String {
     let cols = engine.state.cols as usize;
     let mut text = vec![0u16; cols];
-    engine.state.copy_row_text(row, &mut text);
+    engine.state.copy_row_text(row.into(), &mut text);
     String::from_utf16_lossy(&text).replace('\0', " ")
 }
 
