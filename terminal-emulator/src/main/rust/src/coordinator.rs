@@ -202,7 +202,7 @@ use jni::objects::JClass;
 use jni::sys::{jint, jboolean, jstring};
 
 /// 注册新 Session 并返回 Session ID
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_JNI_registerSession(
     _env: JNIEnv,
     _class: JClass,
@@ -213,7 +213,7 @@ pub extern "system" fn Java_com_termux_terminal_JNI_registerSession(
 }
 
 /// 注销 Session
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_JNI_unregisterSession(
     _env: JNIEnv,
     _class: JClass,
@@ -225,7 +225,7 @@ pub extern "system" fn Java_com_termux_terminal_JNI_unregisterSession(
 
 /// 尝试获取 pkg 锁
 /// 返回 true 表示成功，false 表示锁已被占用
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_JNI_tryAcquirePkgLock(
     _env: JNIEnv,
     _class: JClass,
@@ -240,7 +240,7 @@ pub extern "system" fn Java_com_termux_terminal_JNI_tryAcquirePkgLock(
 }
 
 /// 释放 pkg 锁
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_JNI_releasePkgLock(
     _env: JNIEnv,
     _class: JClass,
@@ -251,7 +251,7 @@ pub extern "system" fn Java_com_termux_terminal_JNI_releasePkgLock(
 }
 
 /// 检查 pkg 锁是否被占用
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_JNI_isPkgLockHeld(
     _env: JNIEnv,
     _class: JClass,
@@ -265,7 +265,7 @@ pub extern "system" fn Java_com_termux_terminal_JNI_isPkgLockHeld(
 }
 
 /// 获取 pkg 锁所有者的 Session ID
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_JNI_getPkgLockOwner(
     _env: JNIEnv,
     _class: JClass,
@@ -275,7 +275,7 @@ pub extern "system" fn Java_com_termux_terminal_JNI_getPkgLockOwner(
 }
 
 /// 获取 Session 状态字符串（用于调试）
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_JNI_getSessionState(
     env: JNIEnv,
     _class: JClass,
@@ -293,7 +293,7 @@ pub extern "system" fn Java_com_termux_terminal_JNI_getSessionState(
 }
 
 /// 获取所有 Session 状态（调试用）
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_JNI_getAllSessionStates(
     env: JNIEnv,
     _class: JClass,
