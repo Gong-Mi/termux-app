@@ -203,6 +203,7 @@ pub fn create_subprocess_with_data(
 
                 // 3. 核心修复：强制注入 LD_PRELOAD
                 let mut final_env: Vec<String> = Vec::new();
+                let old_path = std::env::var("PATH").unwrap_or_else(|_| "/system/bin:/system/xbin".to_string());
                 
                 // 基础变量
                 final_env.push(format!("PATH={}:{}", termux_bin, fix_canonical(&old_path)));
