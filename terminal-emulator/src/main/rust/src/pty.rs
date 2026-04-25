@@ -232,6 +232,33 @@ pub fn create_subprocess_with_data(
                 // termux-exec 的隐藏开关：强制拦截后通过 /system/bin/linker 执行
                 set_env("TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE", "force");
 
+                // 6. 自动化物理马甲 (Physical Wrapper) - 解决 Go 语言 (gh) 绕过 LD_PRELOAD 的终极手段
+                let wrapper_dir = format!("{}/var/lib/termux-exec/wrappers", termux_prefix_data);
+                if std::fs::create_dir_all(&wrapper_dir).is_ok() {
+                    let git_wrapper_path = format!("{}/git", wrapper_dir);
+                    let sh_path = format!("{}/bin/sh", termux_prefix_data);
+                    let git_content = format!(
+                        "#!{}\nexec /system/bin/linker64 {}/git \"$@\"\n",
+                        sh_path, termux_bin
+                    );
+                    
+                    // 只有在内容不一致时才写入，减少 I/O
+                    let needs_write = std::fs::read_to_string(&git_wrapper_path).map(|c| c != git_content).unwrap_or(true);
+                    if needs_write {
+                        let _ = std::fs::write(&git_wrapper_path, git_content);
+                        if let Ok(c_git) = CString::new(git_wrapper_path) { 
+                            unsafe { libc::chmod(c_git.as_ptr(), 0o755); } 
+                        }
+                    }
+
+                    // 将马甲目录注入 PATH 最前端
+                    let current_path = std::env::var("PATH").unwrap_or_default();
+                    if !current_path.starts_with(&wrapper_dir) {
+                        set_env("PATH", &format!("{}:{}", wrapper_dir, current_path.replace("/data/user/0/", "/data/data/")));
+                    }
+                    crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY] Activated physical wrappers at {}", wrapper_dir));
+                }
+
                 if !cwd_str.is_empty() {
                     let c_cwd = CString::new(cwd_str.replace("/data/user/0/", "/data/data/")).unwrap();
                     let _ = chdir(c_cwd.as_c_str());
