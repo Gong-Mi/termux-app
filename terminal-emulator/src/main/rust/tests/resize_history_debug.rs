@@ -14,7 +14,7 @@ fn dump_screen_state(engine: &TerminalEngine, label: &str) {
     // 打印可见内容
     println!("  可见内容:");
     for row in 0..screen.rows {
-        let r = screen.get_row(row);
+        let r = screen.get_row(row as i64);
         let text: String = r.text.iter().filter(|&&c| c != ' ' && c != '\0').collect();
         if !text.is_empty() {
             println!("    row {}: '{}'", row, text);
@@ -25,7 +25,7 @@ fn dump_screen_state(engine: &TerminalEngine, label: &str) {
     if screen.active_transcript_rows > 0 {
         println!("  历史内容 ({} 行):", screen.active_transcript_rows);
         for row in -(screen.active_transcript_rows as i32)..0 {
-            let r = screen.get_row(row);
+            let r = screen.get_row(row as i64);
             let text: String = r.text.iter().filter(|&&c| c != ' ' && c != '\0').collect();
             if !text.is_empty() {
                 println!("    history row {}: '{}'", row, text);
@@ -38,7 +38,7 @@ fn dump_screen_state(engine: &TerminalEngine, label: &str) {
 fn test_fast_path_history() {
     println!("\n========== 快路径测试 ==========");
     
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
     
     // 写入 30 行
     for i in 1..=30 {
@@ -50,10 +50,10 @@ fn test_fast_path_history() {
     let initial_history = engine.state.main_screen.active_transcript_rows;
     
     // 快路径：仅改变行数
-    engine.state.resize(80, 18);
+    engine.state.resize(80 as i64, 18 as i64);
     dump_screen_state(&engine, "放大到 80x18 (快路径)");
     
-    engine.state.resize(80, 24);
+    engine.state.resize(80 as i64, 24 as i64);
     dump_screen_state(&engine, "缩小回 80x24 (快路径)");
     
     let final_history = engine.state.main_screen.active_transcript_rows;
@@ -65,7 +65,7 @@ fn test_fast_path_history() {
 fn test_slow_path_history() {
     println!("\n========== 慢路径测试 ==========");
     
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
     
     // 写入 30 行
     for i in 1..=30 {
@@ -78,11 +78,11 @@ fn test_slow_path_history() {
     let initial_first_row = engine.state.main_screen.first_row;
     
     // 慢路径：改变列数 + 行数
-    engine.state.resize(60, 18);
+    engine.state.resize(60 as i64, 18 as i64);
     dump_screen_state(&engine, "改变到 60x18 (慢路径)");
     
     // 恢复原始尺寸
-    engine.state.resize(80, 24);
+    engine.state.resize(80 as i64, 24 as i64);
     dump_screen_state(&engine, "恢复 80x24 (慢路径)");
     
     let final_history = engine.state.main_screen.active_transcript_rows;
@@ -99,7 +99,7 @@ fn test_slow_path_history() {
 fn test_slow_path_content_check() {
     println!("\n========== 慢路径内容检查 ==========");
     
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
     
     // 写入特定内容方便验证
     for i in 1..=30 {
@@ -119,13 +119,13 @@ fn test_slow_path_content_check() {
     }
     
     // 慢路径 resize
-    engine.state.resize(60, 18);
+    engine.state.resize(60 as i64, 18 as i64);
     let resized_transcript = engine.state.main_screen.get_transcript_text();
     let resized_lines: Vec<&str> = resized_transcript.lines().collect();
     println!("\nresize 后 transcript 行数: {}", resized_lines.len());
     
     // 恢复
-    engine.state.resize(80, 24);
+    engine.state.resize(80 as i64, 24 as i64);
     let final_transcript = engine.state.main_screen.get_transcript_text();
     let final_lines: Vec<&str> = final_transcript.lines().collect();
     println!("恢复后 transcript 行数: {}", final_lines.len());

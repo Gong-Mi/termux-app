@@ -4,7 +4,7 @@
 use termux_rust::TerminalEngine;
 
 fn setup_engine_with_content(cols: i32, rows: i32) -> TerminalEngine {
-    let mut engine = TerminalEngine::new(cols, rows, 100, 10, 20);
+    let mut engine = TerminalEngine::new(cols as i64, rows as i64, 100, 10, 20);
 
     // 写入 30 行测试内容
     for i in 1..=30 {
@@ -17,7 +17,7 @@ fn setup_engine_with_content(cols: i32, rows: i32) -> TerminalEngine {
 
 /// 获取历史行数
 fn get_history_rows(engine: &TerminalEngine) -> usize {
-    engine.state.main_screen.active_transcript_rows
+    engine.state.main_screen.active_transcript_rows as usize
 }
 
 #[test]
@@ -30,12 +30,12 @@ fn test_zoom_in_out_cycle() {
     println!("初始状态: 80x24, 历史行数: {}", initial_history);
     
     // 放大（字体变大 → 行列数减少）
-    engine.state.resize(60, 18);
+    engine.state.resize(60 as i64, 18 as i64);
     let zoomed_history = get_history_rows(&engine);
     println!("放大到 60x18: 历史行数: {}", zoomed_history);
     
     // 缩小回原始
-    engine.state.resize(80, 24);
+    engine.state.resize(80 as i64, 24 as i64);
     let final_history = get_history_rows(&engine);
     println!("缩小回 80x24: 历史行数: {}", final_history);
     
@@ -85,7 +85,7 @@ fn test_history_management_during_zoom() {
     println!("初始历史: {} 行", initial_history);
     
     // 放大到 18 行（减少 6 行）
-    engine.state.resize(80, 18);
+    engine.state.resize(80 as i64, 18 as i64);
     let zoomed_history = get_history_rows(&engine);
     println!("放大到 18 行后历史: {} 行", zoomed_history);
     
@@ -94,7 +94,7 @@ fn test_history_management_during_zoom() {
         "放大时历史行数应该增加或保持不变");
     
     // 缩小回 24 行
-    engine.state.resize(80, 24);
+    engine.state.resize(80 as i64, 24 as i64);
     let final_history = get_history_rows(&engine);
     println!("缩小回 24 行后历史: {} 行", final_history);
     
@@ -109,7 +109,7 @@ fn test_history_management_during_zoom() {
 fn test_wide_char_during_zoom() {
     println!("\n=== 测试 4: CJK 字符缩放 ===");
     
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
     
     // 写入 CJK 字符（每个占 2 列）
     let cjk_text = "你好世界测试内容";
@@ -119,11 +119,11 @@ fn test_wide_char_during_zoom() {
     engine.process_bytes(b"\r\n");
     
     // 放大
-    engine.state.resize(40, 12);
+    engine.state.resize(40 as i64, 12 as i64);
     println!("放大到 40x12 后 CJK 字符仍然可见");
     
     // 缩小
-    engine.state.resize(80, 24);
+    engine.state.resize(80 as i64, 24 as i64);
     println!("缩小回 80x24");
     
     println!("✅ CJK 字符缩放测试通过");
@@ -133,7 +133,7 @@ fn test_wide_char_during_zoom() {
 fn test_cursor_position_during_zoom() {
     println!("\n=== 测试 5: 光标位置在缩放时 ===");
     
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
     
     // 移动光标到特定位置
     engine.process_bytes(b"Hello World\r\n");
@@ -144,13 +144,13 @@ fn test_cursor_position_during_zoom() {
     println!("初始光标: ({}, {})", initial_cx, initial_cy);
     
     // 放大
-    engine.state.resize(60, 18);
+    engine.state.resize(60 as i64, 18 as i64);
     let zoomed_cx = engine.state.cursor.x;
     let zoomed_cy = engine.state.cursor.y;
     println!("放大后光标: ({}, {})", zoomed_cx, zoomed_cy);
     
     // 缩小
-    engine.state.resize(80, 24);
+    engine.state.resize(80 as i64, 24 as i64);
     let final_cx = engine.state.cursor.x;
     let final_cy = engine.state.cursor.y;
     println!("缩小后光标: ({}, {})", final_cx, final_cy);
@@ -169,19 +169,19 @@ fn test_extreme_zoom_cycle() {
     let mut engine = setup_engine_with_content(80, 24);
     
     // 极端放大（最小尺寸）
-    engine.state.resize(4, 4);
+    engine.state.resize(4 as i64, 4 as i64);
     println!("极端放大到 4x4");
     assert_eq!(engine.state.cols, 4);
     assert_eq!(engine.state.rows, 4);
     
     // 极端缩小（最大尺寸）
-    engine.state.resize(200, 60);
+    engine.state.resize(200 as i64, 60 as i64);
     println!("极端缩小到 200x60");
     assert_eq!(engine.state.cols, 200);
     assert_eq!(engine.state.rows, 60);
     
     // 回到正常
-    engine.state.resize(80, 24);
+    engine.state.resize(80 as i64, 24 as i64);
     println!("回到 80x24");
     assert_eq!(engine.state.cols, 80);
     assert_eq!(engine.state.rows, 24);
@@ -193,7 +193,7 @@ fn test_extreme_zoom_cycle() {
 fn test_column_change_reflow() {
     println!("\n=== 测试 7: 列变化时的内容重排 ===");
     
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
     
     // 写入长行内容
     let long_line = "A".repeat(70);
@@ -204,12 +204,12 @@ fn test_column_change_reflow() {
     println!("初始: 80 列");
     
     // 缩小列（触发重排）
-    engine.state.resize(40, 24);
+    engine.state.resize(40 as i64, 24 as i64);
     println!("缩小到 40 列，内容应该重排");
     assert_eq!(engine.state.cols, 40);
     
     // 扩大列
-    engine.state.resize(80, 24);
+    engine.state.resize(80 as i64, 24 as i64);
     println!("扩大回 80 列");
     assert_eq!(engine.state.cols, 80);
     
@@ -228,13 +228,13 @@ fn test_zoom_content_preservation() {
     println!("初始 transcript 行数: {}", initial_line_count);
     
     // 放大
-    engine.state.resize(60, 18);
+    engine.state.resize(60 as i64, 18 as i64);
     let zoomed_transcript = engine.state.main_screen.get_transcript_text();
     let zoomed_line_count = zoomed_transcript.lines().count();
     println!("放大后 transcript 行数: {}", zoomed_line_count);
     
     // 缩小回原始
-    engine.state.resize(80, 24);
+    engine.state.resize(80 as i64, 24 as i64);
     let final_transcript = engine.state.main_screen.get_transcript_text();
     let final_line_count = final_transcript.lines().count();
     println!("缩小后 transcript 行数: {}", final_line_count);

@@ -67,7 +67,7 @@ fn generate_ansi_data(size: usize) -> Vec<u8> {
 /// 测试 Rust 引擎原始文本处理性能
 #[test]
 fn test_rust_raw_text_performance() {
-    let mut engine = TerminalEngine::new(COLS, ROWS, 100, 10, 20);
+    let mut engine = TerminalEngine::new(COLS as i64, ROWS as i64, 100, 10, 20);
     let data = generate_random_ascii(DATA_SIZE_MB * 1024 * 1024);
 
     let start = Instant::now();
@@ -91,7 +91,7 @@ fn test_rust_raw_text_performance() {
 /// 测试 Rust 引擎 ANSI 转义序列处理性能
 #[test]
 fn test_rust_ansi_escape_performance() {
-    let mut engine = TerminalEngine::new(COLS, ROWS, 100, 10, 20);
+    let mut engine = TerminalEngine::new(COLS as i64, ROWS as i64, 100, 10, 20);
     let data = generate_ansi_data(1024 * 1024); // 1MB
 
     let start = Instant::now();
@@ -118,7 +118,7 @@ fn test_rust_ansi_escape_performance() {
 /// 测试光标移动性能
 #[test]
 fn test_cursor_movement_performance() {
-    let mut engine = TerminalEngine::new(COLS, ROWS, 100, 10, 20);
+    let mut engine = TerminalEngine::new(COLS as i64, ROWS as i64, 100, 10, 20);
 
     // 光标移动序列
     let movements = b"\x1b[5;10H\x1b[10;20H\x1b[15;30H\x1b[20;40H\x1b[1;1H";
@@ -147,7 +147,7 @@ fn test_cursor_movement_performance() {
 /// 测试滚动性能
 #[test]
 fn test_scrolling_performance() {
-    let mut engine = TerminalEngine::new(COLS, ROWS, 100, 10, 20);
+    let mut engine = TerminalEngine::new(COLS as i64, ROWS as i64, 100, 10, 20);
 
     // 生成 SCROLL_LINES 行文本（触发滚动）
     let mut lines = Vec::new();
@@ -178,7 +178,7 @@ fn test_scrolling_performance() {
 /// 测试宽字符（中文）处理性能
 #[test]
 fn test_wide_char_performance() {
-    let mut engine = TerminalEngine::new(COLS, ROWS, 100, 10, 20);
+    let mut engine = TerminalEngine::new(COLS as i64, ROWS as i64, 100, 10, 20);
 
     // 中文字符串（每个字符占 2 列）
     let chinese_text = "你好世界 ".repeat(WIDE_CHAR_COUNT / 5); // 500,000 字符
@@ -206,7 +206,7 @@ fn test_wide_char_performance() {
 /// 基准测试：小批量高频调用
 #[test]
 fn test_small_batch_performance() {
-    let mut engine = TerminalEngine::new(COLS, ROWS, 100, 10, 20);
+    let mut engine = TerminalEngine::new(COLS as i64, ROWS as i64, 100, 10, 20);
     let small_batch = b"Hello World\r\n";
 
     let start = Instant::now();
@@ -233,7 +233,7 @@ fn test_small_batch_performance() {
 /// 测试批量行读取性能（模拟全屏刷新）
 #[test]
 fn test_batch_row_read_performance() {
-    let mut engine = TerminalEngine::new(COLS, ROWS, 100, 10, 20);
+    let mut engine = TerminalEngine::new(COLS as i64, ROWS as i64, 100, 10, 20);
 
     // 填充屏幕内容
     for i in 0..ROWS {
@@ -270,7 +270,7 @@ fn test_batch_row_read_performance() {
 /// 测试全屏批量读取性能
 #[test]
 fn test_full_screen_batch_read_performance() {
-    let mut engine = TerminalEngine::new(COLS, ROWS, 100, 10, 20);
+    let mut engine = TerminalEngine::new(COLS as i64, ROWS as i64, 100, 10, 20);
 
     // 填充屏幕内容
     for i in 0..ROWS {
@@ -305,7 +305,7 @@ fn test_full_screen_batch_read_performance() {
 /// 对比单行读取 vs 批量读取的性能差异
 #[test]
 fn test_single_vs_batch_read_comparison() {
-    let mut engine = TerminalEngine::new(COLS, ROWS, 100, 10, 20);
+    let mut engine = TerminalEngine::new(COLS as i64, ROWS as i64, 100, 10, 20);
 
     // 填充屏幕内容
     for i in 0..ROWS {

@@ -9,7 +9,7 @@ const ITERATIONS: usize = 1000;
 const TEST_ROWS: i32 = 30;
 
 fn setup_engine(cols: i32, rows: i32) -> TerminalEngine {
-    let mut engine = TerminalEngine::new(cols, rows, 100, 10, 20);
+    let mut engine = TerminalEngine::new(cols as i64, rows as i64, 100, 10, 20);
     
     // 写入测试内容
     for i in 0..TEST_ROWS {
@@ -31,9 +31,9 @@ fn benchmark_resize_fast_path() {
     
     for _ in 0..ITERATIONS {
         // 仅改变行数 - 应该使用快速路径 O(1)
-        engine.state.resize(80, 12);
-        engine.state.resize(80, 18);
-        engine.state.resize(80, 24);
+        engine.state.resize(80 as i64, 12 as i64);
+        engine.state.resize(80 as i64, 18 as i64);
+        engine.state.resize(80 as i64, 24 as i64);
     }
     
     let duration = start.elapsed();
@@ -57,9 +57,9 @@ fn benchmark_resize_slow_path() {
     
     for _ in 0..ITERATIONS {
         // 改变列数 - 使用慢速路径 O(n)
-        engine.state.resize(60, 24);
-        engine.state.resize(100, 24);
-        engine.state.resize(80, 24);
+        engine.state.resize(60 as i64, 24 as i64);
+        engine.state.resize(100 as i64, 24 as i64);
+        engine.state.resize(80 as i64, 24 as i64);
     }
     
     let duration = start.elapsed();
@@ -83,8 +83,8 @@ fn benchmark_resize_comparison() {
     let start_fast = Instant::now();
     
     for _ in 0..ITERATIONS {
-        engine_fast.state.resize(80, 12);
-        engine_fast.state.resize(80, 24);
+        engine_fast.state.resize(80 as i64, 12 as i64);
+        engine_fast.state.resize(80 as i64, 24 as i64);
     }
     
     let duration_fast = start_fast.elapsed();
@@ -95,8 +95,8 @@ fn benchmark_resize_comparison() {
     
     for _ in 0..ITERATIONS {
         // 先改列再改回，确保使用慢速路径
-        engine_slow.state.resize(79, 12);
-        engine_slow.state.resize(80, 24);
+        engine_slow.state.resize(79 as i64, 12 as i64);
+        engine_slow.state.resize(80 as i64, 24 as i64);
     }
     
     let duration_slow = start_slow.elapsed();
@@ -156,8 +156,8 @@ fn benchmark_resize_various_sizes() {
         let start = Instant::now();
         
         for _ in 0..(ITERATIONS / 5) {
-            engine.state.resize(to_cols, to_rows);
-            engine.state.resize(from_cols, from_rows);
+            engine.state.resize(to_cols as i64, to_rows as i64);
+            engine.state.resize(from_cols as i64, from_rows as i64);
         }
         
         let duration = start.elapsed();
@@ -181,8 +181,8 @@ fn benchmark_memory_allocations() {
     // 快速路径：应该很少或没有分配
     let start = Instant::now();
     for _ in 0..ITERATIONS {
-        engine.state.resize(80, 12);
-        engine.state.resize(80, 24);
+        engine.state.resize(80 as i64, 12 as i64);
+        engine.state.resize(80 as i64, 24 as i64);
     }
     let fast_duration = start.elapsed();
     
@@ -190,8 +190,8 @@ fn benchmark_memory_allocations() {
     let mut engine = setup_engine(80, 24);
     let start = Instant::now();
     for _ in 0..ITERATIONS {
-        engine.state.resize(79, 12);
-        engine.state.resize(80, 24);
+        engine.state.resize(79 as i64, 12 as i64);
+        engine.state.resize(80 as i64, 24 as i64);
     }
     let slow_duration = start.elapsed();
     

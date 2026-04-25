@@ -8,7 +8,7 @@ fn test_expand_shows_content_below_viewport() {
     println!("=== 测试屏幕扩大时下方内容显示 ===\n");
 
     // 1. 创建 80x10 小屏幕
-    let mut engine = TerminalEngine::new(80, 10, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 10 as i64, 1000, 10, 20);
     println!("1. 创建 80x10 屏幕");
 
     // 2. 写入 20 行内容（超过屏幕高度）
@@ -30,7 +30,7 @@ fn test_expand_shows_content_below_viewport() {
     // 4. 检查当前可见内容（10 行）
     println!("\n4. 当前可见内容 (10 行):");
     for row in 0..engine.state.main_screen.rows {
-        let line_text = engine.state.get_current_screen().get_row(row);
+        let line_text = engine.state.get_current_screen().get_row(row as i64);
         // 获取整行内容
         let text: String = line_text.text.iter()
             .take(80)  // 取 80 个字符
@@ -51,16 +51,17 @@ fn test_expand_shows_content_below_viewport() {
     let old_active = engine.state.main_screen.active_transcript_rows;
     let old_first = engine.state.main_screen.first_row;
     let old_rows = engine.state.main_screen.rows;
-    
+    // 执行重排
     let (new_cx, new_cy) = engine.state.main_screen.resize_with_reflow(
-        80, 18, 
-        0, // current_style
-        engine.state.cursor.x, 
-        engine.state.cursor.y
+        80, 20, 
+        0, 
+        engine.state.cursor.x as i32, 
+        engine.state.cursor.y as i32
     );
-    engine.state.main_screen.rows = 18;
-    engine.state.cursor.x = new_cx;
-    engine.state.cursor.y = new_cy;
+    engine.state.main_screen.rows = 20;
+    engine.state.cursor.x = new_cx as i64;
+    engine.state.cursor.y = new_cy as i64;
+
     
     println!("   扩大后状态:");
     println!("   active_transcript_rows = {} (之前：{})", engine.state.main_screen.active_transcript_rows, old_active);
@@ -71,7 +72,7 @@ fn test_expand_shows_content_below_viewport() {
     // 7. 检查扩大后可见内容（18 行）
     println!("\n7. 扩大后可见内容 (18 行):");
     for row in 0..engine.state.main_screen.rows {
-        let line_text = engine.state.get_current_screen().get_row(row);
+        let line_text = engine.state.get_current_screen().get_row(row as i64);
         let text: String = line_text.text.iter()
             .take(80)
             .filter(|&&c| c != '\0')
@@ -90,7 +91,7 @@ fn test_expand_shows_content_below_viewport() {
         let expected_md5 = format!("{:x}", compute(format!("Line_{}", expected_num).as_bytes()));
         
         let row = (i - 1) as i32;
-        let row_text = engine.state.get_current_screen().get_row(row);
+        let row_text = engine.state.get_current_screen().get_row(row as i64);
         let text: String = row_text.text.iter()
             .take(80)
             .filter(|&&c| c != '\0')
@@ -120,7 +121,7 @@ fn test_expand_shows_content_below_viewport() {
     // 验证历史行仍然存在
     println!("\n9. 验证历史行:");
     for row in -3..0 {
-        let line_text = engine.state.get_current_screen().get_row(row);
+        let line_text = engine.state.get_current_screen().get_row(row as i64);
         let text: String = line_text.text.iter()
             .take(30)
             .filter(|&&c| c != '\0')

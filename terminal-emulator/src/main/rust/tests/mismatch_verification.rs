@@ -5,7 +5,7 @@
 
 use termux_rust::TerminalEngine;
 
-fn get_row_text(engine: &TerminalEngine, row: i32) -> String {
+fn get_row_text(engine: &TerminalEngine, row: i64) -> String {
     let cols = engine.state.cols as usize;
     let mut text = vec![0u16; cols];
     engine.state.copy_row_text(row, &mut text);
@@ -15,7 +15,7 @@ fn get_row_text(engine: &TerminalEngine, row: i32) -> String {
 fn print_screen(engine: &TerminalEngine, label: &str) {
     println!("\n=== {} ===", label);
     for row in 0..engine.state.rows {
-        let text = get_row_text(engine, row as i32);
+        let text = get_row_text(engine, row);
         if !text.is_empty() {
             println!("  [{:2}] '{}'", row, text.replace('\0', " "));
         }
@@ -25,12 +25,12 @@ fn print_screen(engine: &TerminalEngine, label: &str) {
 
 // 获取 screen_first_row (兼容 main_screen 和 alt_screen)
 fn get_screen_first_row(engine: &TerminalEngine) -> usize {
-    engine.state.screen_first_row()
+    engine.state.get_current_screen().first_row as usize
 }
 
 // 获取 active_transcript_rows
 fn get_active_transcript_rows(engine: &TerminalEngine) -> usize {
-    engine.state.get_current_screen().active_transcript_rows
+    engine.state.get_current_screen().active_transcript_rows as usize
 }
 
 // =============================================================================
@@ -47,7 +47,7 @@ fn get_active_transcript_rows(engine: &TerminalEngine) -> usize {
 fn test_ring_buffer_indexing() {
     println!("\n=== Test 1: Ring Buffer Indexing ===");
     
-    let mut engine = TerminalEngine::new(80, 5, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 5 as i64, 100, 10, 20);
     
     // 写入超过屏幕行数的内容，触发滚动
     for i in 0..10 {
@@ -58,7 +58,7 @@ fn test_ring_buffer_indexing() {
     print_screen(&engine, "After scrolling 10 lines on 5-row screen");
     
     // 验证第一行应该是 "Line 5"（因为滚动了 5 行）
-    let row0_text = get_row_text(&engine, 0);
+    let row0_text = get_row_text(&engine, 0 as i64);
     println!("  Row 0 text: '{}'", row0_text.trim());
     
     // 检查 first_row 值
@@ -86,7 +86,7 @@ fn test_ring_buffer_indexing() {
 fn test_resize_fast_vs_slow_path() {
     println!("\n=== Test 2: Resize Fast vs Slow Path ===");
     
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
     
     // 写入一些内容
     for i in 0..30 {
@@ -100,7 +100,7 @@ fn test_resize_fast_vs_slow_path() {
     let before_cursor_y = engine.state.cursor.y;
     
     // 仅改变行数（Java 应该使用快速路径）
-    engine.state.resize(80, 12);
+    engine.state.resize(80 as i64, 12 as i64);
     
     print_screen(&engine, "After resize to 80x12 (rows only)");
     
@@ -118,7 +118,7 @@ fn test_resize_fast_vs_slow_path() {
 fn test_resize_columns_change() {
     println!("\n=== Test 2b: Resize Columns Change ===");
     
-    let mut engine = TerminalEngine::new(80, 10, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 10 as i64, 100, 10, 20);
     
     // 写入长行
     let long_line = "A".repeat(100);
@@ -128,7 +128,7 @@ fn test_resize_columns_change() {
     print_screen(&engine, "Before resize (80 cols)");
     
     // 缩小列数
-    engine.state.resize(40, 10);
+    engine.state.resize(40 as i64, 10 as i64);
     
     print_screen(&engine, "After resize to 40 cols");
     
@@ -152,7 +152,7 @@ fn test_resize_columns_change() {
 fn test_full_screen_scrolling() {
     println!("\n=== Test 3: Full Screen Scrolling ===");
     
-    let mut engine = TerminalEngine::new(80, 5, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 5 as i64, 100, 10, 20);
     
     // 写入超过屏幕行数的内容
     for i in 0..10 {
@@ -168,7 +168,7 @@ fn test_full_screen_scrolling() {
     println!("  active_transcript_rows: {}", get_active_transcript_rows(&engine));
     
     // 第一行应该是 Line 5（因为滚动了 5 行）
-    let row0_text = get_row_text(&engine, 0);
+    let row0_text = get_row_text(&engine, 0 as i64);
     assert!(row0_text.contains("Line 5") || row0_text.contains("Line 6"),
             "First visible row should be Line 5 or 6");
 }
@@ -178,7 +178,7 @@ fn test_full_screen_scrolling() {
 fn test_partial_scrolling() {
     println!("\n=== Test 3b: Partial Scrolling (Scroll Region) ===");
     
-    let mut engine = TerminalEngine::new(80, 10, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 10 as i64, 100, 10, 20);
     
     // 设置滚动区域（行 2-8）
     engine.process_bytes(b"\x1b[2;8r");
@@ -220,7 +220,7 @@ fn test_unicode_width() {
     ];
     
     for (text, expected_width) in test_cases {
-        let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+        let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
         engine.process_bytes(text.as_bytes());
         
         let actual_width = engine.state.cursor.x;
@@ -228,7 +228,7 @@ fn test_unicode_width() {
                  text.replace('\0', " "), expected_width, actual_width);
         
         // 注意：某些字符的宽度可能因实现而异，这里只做记录
-        if actual_width != expected_width as i32 {
+        if actual_width != expected_width as i64 {
             println!("    ⚠️  MISMATCH! Check unicode-width crate behavior");
         }
     }
@@ -241,7 +241,7 @@ fn test_combining_characters() {
     
     // e + ́ = é (组合字符)
     let combining = "e\u{0301}";
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
     engine.process_bytes(combining.as_bytes());
     
     println!("  'e+combining acute' -> cursor_x={}", engine.state.cursor.x);
@@ -266,7 +266,7 @@ fn test_combining_characters() {
 fn test_newline_style_check() {
     println!("\n=== Test 5: Newline Style Check ===");
     
-    let mut engine = TerminalEngine::new(40, 5, 100, 10, 20);
+    let mut engine = TerminalEngine::new(40 as i64, 5 as i64, 100, 10, 20);
     
     // 写入带样式的文本和尾部空格
     engine.process_bytes(b"\x1b[31mRed Text   \x1b[0m\r\n");
@@ -294,7 +294,7 @@ fn test_newline_style_check() {
 fn test_cursor_after_resize() {
     println!("\n=== Test 6: Cursor After Resize ===");
     
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
     
     // 写入内容并移动光标
     engine.process_bytes(b"\x1b[10;20HText at 10,20");
@@ -303,15 +303,15 @@ fn test_cursor_after_resize() {
              engine.state.cursor.x, engine.state.cursor.y);
     
     // resize 后光标应该保持在有效位置
-    engine.state.resize(40, 12);
+    engine.state.resize(40 as i64, 12 as i64);
     
     println!("  After resize: cursor=({}, {})", 
              engine.state.cursor.x, engine.state.cursor.y);
     
     // 验证光标在有效范围内
-    assert!(engine.state.cursor.x < engine.state.cols as i32,
+    assert!(engine.state.cursor.x < engine.state.cols,
             "Cursor X should be within new columns");
-    assert!(engine.state.cursor.y < engine.state.rows as i32,
+    assert!(engine.state.cursor.y < engine.state.rows,
             "Cursor Y should be within new rows");
 }
 
@@ -320,7 +320,7 @@ fn test_cursor_after_resize() {
 fn test_cursor_not_reset_to_origin() {
     println!("\n=== Test 6b: Cursor Not Reset To Origin ===");
     
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
     
     // 写入多行内容
     for i in 0..20 {
@@ -332,7 +332,7 @@ fn test_cursor_not_reset_to_origin() {
     println!("  Before resize: cursor_y={}", cursor_before_y);
     
     // resize 到较小尺寸
-    engine.state.resize(80, 12);
+    engine.state.resize(80 as i64, 12 as i64);
     
     let cursor_after_y = engine.state.cursor.y;
     println!("  After resize: cursor_y={}", cursor_after_y);
@@ -358,7 +358,7 @@ fn test_cursor_not_reset_to_origin() {
 fn test_blank_line_skipping() {
     println!("\n=== Test 7: Blank Line Skipping ===");
     
-    let mut engine = TerminalEngine::new(80, 10, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 10 as i64, 100, 10, 20);
     
     // 写入一些空行和内容
     engine.process_bytes(b"Line 1\r\n");
@@ -369,8 +369,8 @@ fn test_blank_line_skipping() {
     print_screen(&engine, "After writing blank lines");
     
     // 验证空行被正确处理
-    let row1 = get_row_text(&engine, 1);
-    let row2 = get_row_text(&engine, 2);
+    let row1 = get_row_text(&engine, 1 as i64);
+    let row2 = get_row_text(&engine, 2 as i64);
     println!("  Row 1: '{}'", row1);
     println!("  Row 2: '{}'", row2);
 }
@@ -380,7 +380,7 @@ fn test_blank_line_skipping() {
 fn test_blank_lines_during_resize() {
     println!("\n=== Test 7b: Blank Lines During Resize ===");
     
-    let mut engine = TerminalEngine::new(80, 20, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 20 as i64, 100, 10, 20);
     
     // 写入内容，中间有空行
     for i in 0..15 {
@@ -395,7 +395,7 @@ fn test_blank_lines_during_resize() {
     print_screen(&engine, "Before resize");
     
     // 缩小屏幕
-    engine.state.resize(80, 8);
+    engine.state.resize(80 as i64, 8 as i64);
     
     print_screen(&engine, "After resize to 8 rows");
     
@@ -411,7 +411,7 @@ fn test_blank_lines_during_resize() {
 fn test_stress_comprehensive() {
     println!("\n=== Test 8: Comprehensive Stress Test ===");
     
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
     
     // 模拟 vim 编辑会话
     let session = vec![
@@ -433,7 +433,7 @@ fn test_stress_comprehensive() {
     
     // 验证基本状态
     assert!(engine.state.cursor.y >= 0);
-    assert!(engine.state.cursor.y < engine.state.rows as i32);
+    assert!(engine.state.cursor.y < engine.state.rows);
 }
 
 /// Resize 压力测试：多次调整大小
@@ -441,7 +441,7 @@ fn test_stress_comprehensive() {
 fn test_resize_stress() {
     println!("\n=== Test 8b: Resize Stress Test ===");
     
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
     
     // 写入内容
     for i in 0..50 {
@@ -456,13 +456,13 @@ fn test_resize_stress() {
     ];
     
     for (cols, rows) in sizes {
-        engine.state.resize(cols, rows);
+        engine.state.resize(cols as i64, rows as i64);
         println!("  Resized to {}x{}, cursor=({}, {})", 
                  cols, rows, engine.state.cursor.x, engine.state.cursor.y);
         
         // 验证光标在有效范围内
-        assert!(engine.state.cursor.x < cols as i32);
-        assert!(engine.state.cursor.y < rows as i32);
+        assert!(engine.state.cursor.x < cols as i64);
+        assert!(engine.state.cursor.y < rows as i64);
     }
     
     print_screen(&engine, "After resize stress");
@@ -477,7 +477,7 @@ fn test_resize_stress() {
 fn test_resize_fast_path_rows_only() {
     println!("\n=== Test 9: Resize Fast Path (Rows Only) ===");
     
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
     
     // 写入内容
     for i in 0..30 {
@@ -486,17 +486,17 @@ fn test_resize_fast_path_rows_only() {
     }
     
     let cursor_before_y = engine.state.cursor.y;
-    let first_row_before = engine.state.screen_first_row();
+    let first_row_before = engine.state.get_current_screen().first_row as usize;
     let transcript_before = engine.state.get_current_screen().active_transcript_rows;
     
     println!("  Before: cursor_y={}, first_row={}, transcript={}", 
              cursor_before_y, first_row_before, transcript_before);
     
     // 仅改变行数（应该使用快速路径）
-    engine.state.resize(80, 12);
+    engine.state.resize(80 as i64, 12 as i64);
     
     let cursor_after_y = engine.state.cursor.y;
-    let first_row_after = engine.state.screen_first_row();
+    let first_row_after = engine.state.get_current_screen().first_row as usize;
     let transcript_after = engine.state.get_current_screen().active_transcript_rows;
     
     println!("  After: cursor_y={}, first_row={}, transcript={}", 
@@ -506,7 +506,7 @@ fn test_resize_fast_path_rows_only() {
     assert!(cursor_after_y >= 0 && cursor_after_y < 12);
     
     // 验证：内容没有丢失（通过检查第一行）
-    let row0_text = get_row_text(&engine, 0);
+    let row0_text = get_row_text(&engine, 0 as i64);
     println!("  Row 0: '{}'", row0_text.trim());
     
     // 验证：快速路径应该保持数据不变（只是指针移动）
@@ -525,21 +525,21 @@ fn test_resize_fast_vs_slow_consistency() {
     println!("\n=== Test 9b: Fast vs Slow Path Consistency ===");
     
     // 测试 1: 快速路径（仅行数变化）
-    let mut engine_fast = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine_fast = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
     for i in 0..30 {
         let line = format!("Line {:02}\r\n", i);
         engine_fast.process_bytes(line.as_bytes());
     }
-    engine_fast.state.resize(80, 12);  // 快速路径
+    engine_fast.state.resize(80 as i64, 12 as i64);  // 快速路径
     
     // 测试 2: 慢速路径（列数也变化）
-    let mut engine_slow = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine_slow = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
     for i in 0..30 {
         let line = format!("Line {:02}\r\n", i);
         engine_slow.process_bytes(line.as_bytes());
     }
-    engine_slow.state.resize(79, 12);  // 慢速路径（列变化）
-    engine_slow.state.resize(80, 12);  // 再改回 80 列
+    engine_slow.state.resize(79 as i64, 12 as i64);  // 慢速路径（列变化）
+    engine_slow.state.resize(80 as i64, 12 as i64);  // 再改回 80 列
     
     // 验证：两种方式的光标位置应该相同
     println!("  Fast path cursor: ({}, {})", 
@@ -552,8 +552,8 @@ fn test_resize_fast_vs_slow_consistency() {
                "Cursor Y should be same for fast and slow path");
     
     // 验证：第一行内容应该相同
-    let fast_row0 = get_row_text(&engine_fast, 0);
-    let slow_row0 = get_row_text(&engine_slow, 0);
+    let fast_row0 = get_row_text(&engine_fast, 0 as i64);
+    let slow_row0 = get_row_text(&engine_slow, 0 as i64);
     println!("  Fast path row 0: '{}'", fast_row0.trim());
     println!("  Slow path row 0: '{}'", slow_row0.trim());
     

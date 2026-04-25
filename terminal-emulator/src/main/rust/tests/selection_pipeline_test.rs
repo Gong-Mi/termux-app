@@ -5,7 +5,7 @@ use termux_rust::renderer::{TerminalRenderer, RenderFrame};
 #[test]
 fn test_selection_in_render_frame() {
     // 创建 80x24 终端，1000 行历史
-    let mut engine = TerminalEngine::new(80, 24, 1000, 8, 16);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 1000, 8, 16);
     
     // 输入一些文本
     engine.process_bytes(b"Hello World\r\n");
@@ -65,7 +65,7 @@ fn test_selection_in_render_frame() {
 /// 测试实际终端场景：不滚动时 (top_row = 0)
 #[test]
 fn test_selection_no_scroll() {
-    let mut engine = TerminalEngine::new(80, 24, 1000, 8, 16);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 1000, 8, 16);
     
     let top_row: i32 = 0;
     let _frame = RenderFrame::from_engine(&engine, 24, 80, top_row);
@@ -85,7 +85,7 @@ fn test_selection_no_scroll() {
 /// 测试文本提取与选择坐标匹配
 #[test]
 fn test_selected_text_extraction() {
-    let mut engine = TerminalEngine::new(80, 24, 1000, 8, 16);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 1000, 8, 16);
     
     engine.process_bytes(b"Line 0\r\n");
     engine.process_bytes(b"Line 1\r\n");
@@ -93,7 +93,7 @@ fn test_selected_text_extraction() {
     engine.process_bytes(b"Line 3\r\n");
     
     // 选择从绝对行 1 到绝对行 2 的内容
-    let sel_text = engine.state.get_current_screen().get_selected_text(0, 1, 79, 2);
+    let sel_text = engine.state.get_current_screen().get_selected_text(0 as i64, 1 as i64, 79 as i64, 2 as i64);
     
     assert!(sel_text.contains("Line 1"));
     assert!(sel_text.contains("Line 2"));

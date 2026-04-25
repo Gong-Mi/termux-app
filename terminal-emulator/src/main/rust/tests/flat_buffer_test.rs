@@ -112,7 +112,7 @@ fn test_sync_all_rows_to_shared_buffer() {
             let buffer_len = engine.state.main_screen.buffer.len();
             for physical_row in 0..buffer_len {
                 if let Some(buffer_row) = engine.state.main_screen.buffer.get(physical_row) {
-                    for col in 0..cols.min(buffer_row.text.len() as i32) as usize {
+                    for col in 0..cols.min(buffer_row.text.len() as i64) as usize {
                         let cell_idx = flat_buffer.cell_index(col, physical_row);
                         if cell_idx < flat_buffer.text_data.len() {
                             flat_buffer.text_data[cell_idx] = buffer_row.text[col] as u16;

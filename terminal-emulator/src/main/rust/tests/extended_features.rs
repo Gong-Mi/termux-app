@@ -11,7 +11,7 @@ unsafe impl Sync for SendSyncEngine {}
 
 #[test]
 fn test_sixel_extended_parsing() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 发送带有参数的 Sixel 开始序列: DCS 100;100;1 q
     // 100x100 像素，透明背景
@@ -36,7 +36,7 @@ fn test_sixel_extended_parsing() {
 
 #[test]
 fn test_unicode_boundary_conditions() {
-    let mut engine = TerminalEngine::new(10, 5, 100, 10, 20);
+    let mut engine = TerminalEngine::new(10 as i64, 5 as i64, 100, 10, 20);
 
     // 在行尾测试宽字符自动换行
     engine.process_bytes("123456789测试".as_bytes());
@@ -68,7 +68,7 @@ fn test_concurrent_read_write_stress() {
         for _ in 0..50 {
             let guard = engine_read.read().unwrap();
             for row in 0..24 {
-                guard.0.state.copy_row_text(row, &mut text);
+                guard.0.state.copy_row_text(row as i64, &mut text);
             }
             thread::sleep(Duration::from_micros(20));
         }
@@ -83,7 +83,7 @@ fn test_concurrent_read_write_stress() {
 
 #[test]
 fn test_osc_malformed_sequences() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 测试未闭合的 OSC 序列
     engine.process_bytes(b"\x1b]0;Broken Title");
@@ -93,6 +93,6 @@ fn test_osc_malformed_sequences() {
     assert_eq!(engine.state.title.as_deref(), Some("Broken Title"));
 
     let mut text = [0u16; 80];
-    engine.state.copy_row_text(0, &mut text);
+    engine.state.copy_row_text(0 as i64, &mut text);
     assert_eq!(text[0] as u8, b'N');
 }

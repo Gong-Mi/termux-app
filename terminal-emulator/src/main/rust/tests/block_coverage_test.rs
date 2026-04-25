@@ -11,13 +11,13 @@ fn test_all_block_elements_in_buffer() {
     let block_chars: Vec<char> = (0x2580..=0x259F).filter_map(char::from_u32).collect();
     assert_eq!(block_chars.len(), 32, "Should have 32 block element characters");
 
-    let mut engine = TerminalEngine::new(40, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(40 as i64, 24 as i64, 1000, 10, 20);
 
     // Write all block elements
     let text: String = block_chars.iter().collect();
     engine.process_bytes(text.as_bytes());
 
-    let row = engine.state.main_screen.get_row(0);
+    let row = engine.state.main_screen.get_row(0 as i64);
 
     // Verify each character is stored at the correct position
     for (i, &ch) in block_chars.iter().enumerate() {
@@ -142,13 +142,13 @@ fn test_full_block() {
 /// Test a visual pattern using quadrant blocks (like the user's example)
 #[test]
 fn test_quadrant_pattern() {
-    let mut engine = TerminalEngine::new(80, 5, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 5 as i64, 1000, 10, 20);
 
     // User's example string
     let pattern = "▗█▀▀▜▙▝█▛▀▀▌▜██▖▟██▘▜█▘▜██▖▝█▛▝█▛";
     engine.process_bytes(pattern.as_bytes());
 
-    let row = engine.state.main_screen.get_row(0);
+    let row = engine.state.main_screen.get_row(0 as i64);
     let text: String = row.text.iter()
         .take(pattern.chars().count())
         .map(|&c| c as char)

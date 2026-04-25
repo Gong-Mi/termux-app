@@ -9,10 +9,10 @@ fn test_reflow_wide_char_atomicity() {
 
     // 在旧行末尾写入 "A中" (A 占 1 位，中占 2 位)
     // 布局：[A, 中, \0] -> 占 index 7, 8, 9
-    screen.get_row_mut(0).set_char(7, 'A' as u32, style);
-    screen.get_row_mut(0).set_char(8, char_zhong as u32, style);
-    screen.get_row_mut(0).text[9] = '\0'; 
-    screen.get_row_mut(0).line_wrap = true;
+    screen.get_row_mut(0 as i64).set_char(7, 'A' as u32, style);
+    screen.get_row_mut(0 as i64).set_char(8, char_zhong as u32, style);
+    screen.get_row_mut(0 as i64).text[9] = '\0'; 
+    screen.get_row_mut(0 as i64).line_wrap = true;
 
     println!("BEFORE REFLOW:");
     let idx0 = screen.internal_row(0);
@@ -27,7 +27,7 @@ fn test_reflow_wide_char_atomicity() {
     println!("AFTER REFLOW:");
     let mut found_zhong = false;
     for r in 0..5 {
-        let row = screen.get_row(r as i32);
+        let row = screen.get_row((r as i32).into());
         let row_hex: Vec<String> = row.text.iter().map(|&c| format!("U+{:04X}", c as u32)).collect();
         println!("Row {}: {:?}", r, row_hex);
         
@@ -52,7 +52,7 @@ fn test_reflow_empty_lines_preservation() {
     let style = STYLE_NORMAL;
     
     // 1. 写入一行文字，空两行，再写入一行文字
-    screen.get_row_mut(0).text[0] = 'A';
+    screen.get_row_mut(0 as i64).text[0] = 'A';
     // 行 1, 2 保持全空
     screen.get_row_mut(3).text[0] = 'B';
     
@@ -63,7 +63,7 @@ fn test_reflow_empty_lines_preservation() {
     // 如果 B 移动到了第 1 行（相对于 A），说明空行被错误过滤了
     let mut found_b = -1;
     for i in 0..10 {
-        if screen.get_row(i).text[0] == 'B' {
+        if screen.get_row(i as i64).text[0] == 'B' {
             found_b = i;
             break;
         }

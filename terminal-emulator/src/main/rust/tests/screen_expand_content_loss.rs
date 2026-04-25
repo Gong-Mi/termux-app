@@ -7,7 +7,7 @@ fn test_screen_expand_content_loss() {
     println!("=== 测试屏幕扩大时内容丢失问题 ===\n");
 
     // 1. 创建 80x24 屏幕
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 1000, 10, 20);
     println!("1. 创建 80x24 屏幕");
 
     // 2. 写入 100 行内容
@@ -31,7 +31,7 @@ fn test_screen_expand_content_loss() {
     // 5. 检查能否读取历史行
     println!("\n4. 读取历史行:");
     for row in -76..0 {
-        let line_text = engine.state.get_current_screen().get_row(row);
+        let line_text = engine.state.get_current_screen().get_row(row as i64);
         let text: String = line_text.text.iter()
             .take_while(|&&c| c != ' ' && c != '\0')
             .collect();
@@ -45,12 +45,12 @@ fn test_screen_expand_content_loss() {
     let (new_cx, new_cy) = engine.state.main_screen.resize_with_reflow(
         80, 12, 
         0, // current_style
-        engine.state.cursor.x, 
-        engine.state.cursor.y
+        engine.state.cursor.x as i32, 
+        engine.state.cursor.y as i32
     );
     engine.state.main_screen.rows = 12;
-    engine.state.cursor.x = new_cx;
-    engine.state.cursor.y = new_cy;
+    engine.state.cursor.x = new_cx as i64;
+    engine.state.cursor.y = new_cy as i64;
     
     println!("   active_transcript_rows = {}", engine.state.main_screen.active_transcript_rows);
     println!("   first_row = {}", engine.state.main_screen.first_row);
@@ -63,12 +63,12 @@ fn test_screen_expand_content_loss() {
     let (new_cx, new_cy) = engine.state.main_screen.resize_with_reflow(
         80, 48, 
         0, // current_style
-        engine.state.cursor.x, 
-        engine.state.cursor.y
+        engine.state.cursor.x as i32, 
+        engine.state.cursor.y as i32
     );
     engine.state.main_screen.rows = 48;
-    engine.state.cursor.x = new_cx;
-    engine.state.cursor.y = new_cy;
+    engine.state.cursor.x = new_cx as i64;
+    engine.state.cursor.y = new_cy as i64;
     
     println!("   active_transcript_rows = {}", engine.state.main_screen.active_transcript_rows);
     println!("   first_row = {}", engine.state.main_screen.first_row);

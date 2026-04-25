@@ -9,12 +9,12 @@ fn test_erase_in_display_mode_3_standard() {
     // 1. 制造一些历史记录 (通过滚动)
     for i in 0..50 {
         screen.scroll_up(0, 24, style);
-        screen.get_row_mut(23).text[0] = std::char::from_u32('A' as u32 + (i % 26)).unwrap();
+        screen.get_row_mut(23 as i64).text[0] = std::char::from_u32('A' as u32 + (i % 26)).unwrap();
     }
     assert!(screen.active_transcript_rows > 0);
     
     // 2. 在当前屏幕写点内容
-    screen.get_row_mut(10).text[0] = 'X';
+    screen.get_row_mut(10 as i64).text[0] = 'X';
     
     // 3. 执行 CSI 3 J (mode 3)
     screen.erase_in_display(3, 10, 0, style);

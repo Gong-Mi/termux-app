@@ -11,7 +11,7 @@ use termux_rust::TerminalEngine;
 fn get_row_text(engine: &TerminalEngine, row: i64) -> String {
     let cols = engine.state.cols as usize;
     let mut text = vec![0u16; cols];
-    engine.state.copy_row_text(row, &mut text);
+    engine.state.copy_row_text(row as i64, &mut text);
     String::from_utf16_lossy(&text).replace('\0', " ")
 }
 
@@ -22,7 +22,7 @@ fn get_row_text(engine: &TerminalEngine, row: i64) -> String {
 /// 验证基本文本输出 - ✅ PASS
 #[test]
 fn test_basic_text() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     let data = b"Hello World";
     engine.process_bytes(data);
@@ -36,7 +36,7 @@ fn test_basic_text() {
 
     // 验证屏幕内容
     let mut text = [0u16; 80];
-    engine.state.copy_row_text(0, &mut text);
+    engine.state.copy_row_text(0 as i64, &mut text);
 
     let expected = "Hello World";
     for (i, expected_char) in expected.chars().enumerate() {
@@ -51,7 +51,7 @@ fn test_basic_text() {
 /// 验证退格 - ✅ PASS
 #[test]
 fn test_backspace() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     let data = b"ABC\x08DE";
     engine.process_bytes(data);
@@ -62,7 +62,7 @@ fn test_backspace() {
     );
 
     let mut text = [0u16; 80];
-    engine.state.copy_row_text(0, &mut text);
+    engine.state.copy_row_text(0 as i64, &mut text);
 
     assert_eq!(text[0] as u8, b'A');
     assert_eq!(text[1] as u8, b'B');
@@ -73,7 +73,7 @@ fn test_backspace() {
 /// 验证换行符处理 - ✅ PASS
 #[test]
 fn test_newline() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     let data = b"Line 1\r\nLine 2";
     engine.process_bytes(data);
@@ -96,7 +96,7 @@ fn test_newline() {
 /// 验证制表符 - ✅ PASS
 #[test]
 fn test_tab() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     let data = b"A\tB";
     engine.process_bytes(data);
@@ -115,7 +115,7 @@ fn test_tab() {
 /// 验证光标位置设置 (CUP) - ✅ PASS
 #[test]
 fn test_cursor_position() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     let data = b"\x1b[5;5HAt 5,5";
     engine.process_bytes(data);
@@ -135,7 +135,7 @@ fn test_cursor_position() {
 /// 验证光标移动 (CUU/CUD/CUF/CUB) - ✅ PASS
 #[test]
 fn test_cursor_movement() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     engine.process_bytes(b"\x1b[11;21H");
     assert_eq!(engine.state.cursor.y, 10);
@@ -169,7 +169,7 @@ fn test_cursor_movement() {
 /// 验证光标水平绝对 (CHA) - ✅ PASS
 #[test]
 fn test_cursor_horizontal_absolute() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     engine.process_bytes(b"\x1b[10G");
     assert_eq!(
@@ -181,7 +181,7 @@ fn test_cursor_horizontal_absolute() {
 /// 验证光标垂直绝对 (VPA) - ✅ PASS
 #[test]
 fn test_cursor_vertical_absolute() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     engine.process_bytes(b"\x1b[10d");
     assert_eq!(
@@ -193,7 +193,7 @@ fn test_cursor_vertical_absolute() {
 /// 验证下一行 (CNL) - ✅ PASS
 #[test]
 fn test_cursor_next_line() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     engine.process_bytes(b"\x1b[3E");
     assert_eq!(engine.state.cursor.y, 3, "Cursor Y should be 3");
@@ -206,7 +206,7 @@ fn test_cursor_next_line() {
 /// 验证上一行 (CPL) - ✅ PASS
 #[test]
 fn test_cursor_previous_line() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     engine.process_bytes(b"\x1b[11;21H\x1b[3F");
     assert_eq!(engine.state.cursor.y, 7, "Cursor Y should be 7");
@@ -223,7 +223,7 @@ fn test_cursor_previous_line() {
 /// 验证清屏 (ED) - ✅ PASS
 #[test]
 fn test_erase_display() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     let data = b"Should be erased\x1b[2JStill here";
     engine.process_bytes(data);
@@ -243,7 +243,7 @@ fn test_erase_display() {
 /// 验证清行 (EL) - ✅ PASS
 #[test]
 fn test_erase_line() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     let data = b"Hello\x1b[2KWorld";
     engine.process_bytes(data);
@@ -262,7 +262,7 @@ fn test_erase_line() {
 /// 验证擦除字符 (ECH) - ✅ PASS
 #[test]
 fn test_erase_characters() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     let data = b"Hello World\x1b[5D\x1b[3X";
     engine.process_bytes(data);
@@ -278,7 +278,7 @@ fn test_erase_characters() {
 /// 验证 ED mode 0 - 从光标到屏幕末尾（包括当前行） - ✅ PASS
 #[test]
 fn test_erase_display_mode_0_includes_current_row() {
-    let mut engine = TerminalEngine::new(10, 5, 100, 10, 20);
+    let mut engine = TerminalEngine::new(10 as i64, 5 as i64, 100, 10, 20);
 
     // 填充屏幕 (5 行，每行 10 字符)
     // 使用 \r\n 而不是 \n，因为 \n 只换行不回车 (LF vs LF+CR)
@@ -298,13 +298,13 @@ fn test_erase_display_mode_0_includes_current_row() {
     engine.process_bytes(b"\x1b[0J");
 
     // 第 2 行 (0-indexed row 1): KL 保留，从 M 开始清除
-    let row1 = engine.state.main_screen.get_row(1);
+    let row1 = engine.state.main_screen.get_row(1 as i64);
     assert_eq!(row1.text[0], 'K', "Row 1 col 0 should be 'K'");
     assert_eq!(row1.text[1], 'L', "Row 1 col 1 should be 'L'");
     assert_eq!(row1.text[2], ' ', "Row 1 col 2 should be cleared (space)");
 
     // 第 3 行及之后应该全部被清除
-    let row2 = engine.state.main_screen.get_row(2);
+    let row2 = engine.state.main_screen.get_row(2 as i64);
     for i in 0..10 {
         assert_eq!(row2.text[i], ' ', "Row 2 col {} should be cleared", i);
     }
@@ -313,7 +313,7 @@ fn test_erase_display_mode_0_includes_current_row() {
 /// 验证 ED mode 1 - 从屏幕开头到光标（包括当前行） - ✅ PASS
 #[test]
 fn test_erase_display_mode_1_includes_current_row() {
-    let mut engine = TerminalEngine::new(10, 5, 100, 10, 20);
+    let mut engine = TerminalEngine::new(10 as i64, 5 as i64, 100, 10, 20);
 
     // 填充屏幕 (5 行，每行 10 字符)
     // 使用 \r\n 而不是 \n，因为 \n 只换行不回车
@@ -333,12 +333,12 @@ fn test_erase_display_mode_1_includes_current_row() {
     engine.process_bytes(b"\x1b[1J");
 
     // 第 1 行和第 2 行应该全部被清除
-    let row0 = engine.state.main_screen.get_row(0);
+    let row0 = engine.state.main_screen.get_row(0 as i64);
     for i in 0..10 {
         assert_eq!(row0.text[i], ' ', "Row 0 col {} should be cleared", i);
     }
 
-    let row1 = engine.state.main_screen.get_row(1);
+    let row1 = engine.state.main_screen.get_row(1 as i64);
     for i in 0..10 {
         assert_eq!(row1.text[i], ' ', "Row 1 col {} should be cleared", i);
     }
@@ -347,7 +347,7 @@ fn test_erase_display_mode_1_includes_current_row() {
     // 光标在 col=3 (0-indexed)，所以 col 0-3 被清除，col 4+ 保留
     // Row 2 原始内容：UVWXYZ1234 (U=0,V=1,W=2,X=3,Y=4,...)
     // 清除 0-3 后应该是"    YZ1234"
-    let row2 = engine.state.main_screen.get_row(2);
+    let row2 = engine.state.main_screen.get_row(2 as i64);
     assert_eq!(row2.text[0], ' ', "Row 2 col 0 should be cleared");
     assert_eq!(row2.text[1], ' ', "Row 2 col 1 should be cleared");
     assert_eq!(row2.text[2], ' ', "Row 2 col 2 should be cleared");
@@ -362,7 +362,7 @@ fn test_erase_display_mode_1_includes_current_row() {
 /// 验证 resize 时历史内容不会丢失 - ✅ PASS
 #[test]
 fn test_resize_preserves_history() {
-    let mut engine = TerminalEngine::new(10, 5, 100, 10, 20);
+    let mut engine = TerminalEngine::new(10 as i64, 5 as i64, 100, 10, 20);
 
     // 填充屏幕并产生滚动历史
     // 5 行可见区域，写入 10 行内容，应该有 5 行历史
@@ -376,7 +376,7 @@ fn test_resize_preserves_history() {
     assert!(initial_active_transcript > 0, "Should have some history");
 
     // 缩小终端（从 5 行到 3 行）
-    engine.state.resize(10, 3);
+    engine.state.resize(10 as i64, 3 as i64);
     let shrunk_active_transcript = engine.state.main_screen.active_transcript_rows;
     eprintln!("After shrink (5->3): active_transcript_rows: {}", shrunk_active_transcript);
     
@@ -392,7 +392,7 @@ fn test_resize_preserves_history() {
     // 放大后历史内容应该减少，但不应该丢失
     // 关键验证：第一行历史内容应该还能访问
     let min_row = -(expanded_active_transcript as i64);
-    let first_history_row = engine.state.main_screen.get_row(min_row);
+    let first_history_row = engine.state.main_screen.get_row(min_row as i64);
     let text: String = first_history_row.text.iter().take(10).collect();
     eprintln!("First history row: '{}'", text.trim());
     
@@ -403,7 +403,7 @@ fn test_resize_preserves_history() {
 /// 验证插入字符 (ICH) - ✅ PASS
 #[test]
 fn test_insert_characters() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     let data = b"AB\x1b[2@CD";
     engine.process_bytes(data);
@@ -411,7 +411,7 @@ fn test_insert_characters() {
     // ICH 插入空格，然后 "CD" 覆盖插入的空格
     // 结果应该是 "ABCD"，后面是被推过来的空格
     let mut text = [0u16; 80];
-    engine.state.copy_row_text(0, &mut text);
+    engine.state.copy_row_text(0 as i64, &mut text);
 
     println!("After ICH: text[0-7]={:?}", &text[0..8]);
     assert_eq!(text[0] as u8, b'A');
@@ -423,14 +423,14 @@ fn test_insert_characters() {
 /// 验证删除字符 (DCH) - ✅ PASS
 #[test]
 fn test_delete_characters() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     let data = b"ABCDE\x1b[3D\x1b[2P";
     engine.process_bytes(data);
 
     // 删除 2 个字符后，应该是 "ABE"
     let mut text = [0u16; 80];
-    engine.state.copy_row_text(0, &mut text);
+    engine.state.copy_row_text(0 as i64, &mut text);
 
     assert_eq!(text[0] as u8, b'A');
     assert_eq!(text[1] as u8, b'B');
@@ -440,7 +440,7 @@ fn test_delete_characters() {
 /// 验证插入行 (IL) - ✅ PASS
 #[test]
 fn test_insert_lines() {
-    let mut engine = TerminalEngine::new(80, 5, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 5 as i64, 100, 10, 20);
 
     // 先写两行
     engine.process_bytes(b"Line 1\r\nLine 2");
@@ -458,7 +458,7 @@ fn test_insert_lines() {
 /// 验证删除行 (DL) - ✅ PASS
 #[test]
 fn test_delete_lines() {
-    let mut engine = TerminalEngine::new(80, 5, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 5 as i64, 100, 10, 20);
 
     // 先写三行
     engine.process_bytes(b"Line 1\r\nLine 2\r\nLine 3");
@@ -480,7 +480,7 @@ fn test_delete_lines() {
 /// 验证 SGR 颜色 - ✅ PASS
 #[test]
 fn test_sgr_colors() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     let data = b"\x1b[31mRed";
     engine.process_bytes(data);
@@ -497,7 +497,7 @@ fn test_sgr_colors() {
 /// 验证 SGR 粗体 - ✅ PASS
 #[test]
 fn test_sgr_bold() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     let data = b"\x1b[1mBold";
     engine.process_bytes(data);
@@ -510,7 +510,7 @@ fn test_sgr_bold() {
 /// 验证 SGR 下划线 - ✅ PASS
 #[test]
 fn test_sgr_underline() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     let data = b"\x1b[4mUnderline";
     engine.process_bytes(data);
@@ -523,7 +523,7 @@ fn test_sgr_underline() {
 /// 验证 SGR 重置 - ✅ PASS
 #[test]
 fn test_sgr_reset() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     let data = b"\x1b[1;31mBold Red\x1b[0mNormal";
     engine.process_bytes(data);
@@ -539,7 +539,7 @@ fn test_sgr_reset() {
 /// 验证 SGR 亮色 - ✅ PASS
 #[test]
 fn test_sgr_bright_colors() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     let data = b"\x1b[91mBright Red";
     engine.process_bytes(data);
@@ -560,7 +560,7 @@ fn test_sgr_bright_colors() {
 /// 验证 SGR 256 色前景 - ✅ PASS
 #[test]
 fn test_sgr_256_color_foreground() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 38;5;196 = 红色 (256 色索引)
     let data = b"\x1b[38;5;196mRed256";
@@ -577,7 +577,7 @@ fn test_sgr_256_color_foreground() {
 /// 验证 SGR 256 色背景 - ✅ PASS
 #[test]
 fn test_sgr_256_color_background() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 48;5;21 = 蓝色 (256 色索引)
     let data = b"\x1b[48;5;21mBlueBG";
@@ -596,7 +596,7 @@ fn test_sgr_256_color_background() {
 fn test_sgr_truecolor_foreground() {
     use termux_rust::STYLE_TRUECOLOR_FG;
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 38;2;255;128;64 = RGB 真彩色
     let data = b"\x1b[38;2;255;128;64mTrueColor";
@@ -622,7 +622,7 @@ fn test_sgr_truecolor_foreground() {
 fn test_sgr_truecolor_background() {
     use termux_rust::STYLE_TRUECOLOR_BG;
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 48;2;100;150;200 = RGB 真彩色
     let data = b"\x1b[48;2;100;150;200mTrueColorBG";
@@ -648,7 +648,7 @@ fn test_sgr_truecolor_background() {
 fn test_sgr_underline_subparam() {
     use termux_rust::EFFECT_UNDERLINE;
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 4:0 = 无下划线
     let data = b"\x1b[4m\x1b[4:0mNoUnderline";
@@ -670,7 +670,7 @@ fn test_sgr_underline_subparam() {
 /// 验证保存/恢复光标 - ✅ PASS
 #[test]
 fn test_save_restore_cursor() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     let data = b"\x1b[6;11H\x1b7\x1b[2;3H\x1b8";
     engine.process_bytes(data);
@@ -689,7 +689,7 @@ fn test_save_restore_cursor() {
 /// 验证滚动 - ✅ PASS
 #[test]
 fn test_scrolling() {
-    let mut engine = TerminalEngine::new(80, 5, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 5 as i64, 100, 10, 20);
 
     for i in 0..10 {
         let line = format!("Line {}\r\n", i);
@@ -706,7 +706,7 @@ fn test_scrolling() {
 /// 验证上滚 (SU) - ✅ PASS
 #[test]
 fn test_scroll_up() {
-    let mut engine = TerminalEngine::new(80, 5, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 5 as i64, 100, 10, 20);
 
     // 写满屏幕
     for i in 0..5 {
@@ -724,7 +724,7 @@ fn test_scroll_up() {
 /// 验证下滚 (SD) - ✅ PASS
 #[test]
 fn test_scroll_down() {
-    let mut engine = TerminalEngine::new(80, 5, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 5 as i64, 100, 10, 20);
 
     // 写满屏幕
     for i in 0..5 {
@@ -746,7 +746,7 @@ fn test_scroll_down() {
 /// 验证设置上下边距 (DECSTBM) - ✅ PASS
 #[test]
 fn test_set_margins() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 设置边距 5-20
     let data = b"\x1b[5;20r";
@@ -766,7 +766,7 @@ fn test_set_margins() {
 /// 验证宽字符处理 - ✅ PASS
 #[test]
 fn test_wide_characters() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     let data = "你好".as_bytes();
     engine.process_bytes(data);
@@ -780,7 +780,7 @@ fn test_wide_characters() {
 /// 验证 emoji 宽字符 - ✅ PASS
 #[test]
 fn test_emoji_width() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     let data = "😀".as_bytes();
     engine.process_bytes(data);
@@ -796,10 +796,10 @@ fn test_emoji_width() {
 /// 验证 resize - ✅ PASS
 #[test]
 fn test_resize() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     engine.process_bytes(b"Hello");
-    engine.state.resize(40, 12);
+    engine.state.resize(40 as i64, 12 as i64);
 
     assert_eq!(engine.state.cols, 40, "Columns should be 40 after resize");
     assert_eq!(engine.state.rows, 12, "Rows should be 12 after resize");
@@ -814,7 +814,7 @@ fn test_resize() {
 /// 验证自动换行 - ✅ PASS
 #[test]
 fn test_auto_wrap() {
-    let mut engine = TerminalEngine::new(10, 5, 100, 10, 20); // 窄屏幕
+    let mut engine = TerminalEngine::new(10 as i64, 5 as i64, 100, 10, 20); // 窄屏幕
 
     let data = b"12345678901234567890"; // 20 个字符
     engine.process_bytes(data);
@@ -841,7 +841,7 @@ fn test_auto_wrap() {
 /// 验证 DECSET 光标可见性 - ✅ PASS
 #[test]
 fn test_decset_cursor_visible() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 隐藏光标
     engine.process_bytes(b"\x1b[?25l");
@@ -861,7 +861,7 @@ fn test_decset_cursor_visible() {
 /// 验证 DECSET 应用光标键 - ✅ PASS
 #[test]
 fn test_decset_application_cursor_keys() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     engine.process_bytes(b"\x1b[?1h");
     assert_eq!(
@@ -879,7 +879,7 @@ fn test_decset_application_cursor_keys() {
 /// 验证 DECSET 自动换行 - ✅ PASS
 #[test]
 fn test_decset_auto_wrap() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     engine.process_bytes(b"\x1b[?7l");
     assert_eq!(
@@ -894,7 +894,7 @@ fn test_decset_auto_wrap() {
 /// 验证 DECSET 原点模式 - ✅ PASS
 #[test]
 fn test_decset_origin_mode() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     engine.process_bytes(b"\x1b[?6h");
     assert_eq!(
@@ -912,7 +912,7 @@ fn test_decset_origin_mode() {
 /// 验证 DECSET 括号粘贴模式 - ✅ PASS
 #[test]
 fn test_decset_bracketed_paste() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     engine.process_bytes(b"\x1b[?2004h");
     assert_eq!(
@@ -936,7 +936,7 @@ fn test_decset_bracketed_paste() {
 fn test_decset_leftright_margin_mode() {
     use termux_rust::DECSET_BIT_LEFTRIGHT_MARGIN_MODE;
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 启用 DECLRMM
     engine.process_bytes(b"\x1b[?69h");
@@ -969,7 +969,7 @@ fn test_decset_leftright_margin_mode() {
 /// 验证 DECSET 1004 发送焦点事件 - ✅ PASS
 #[test]
 fn test_decset_send_focus_events() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     engine.process_bytes(b"\x1b[?1004h");
     assert_eq!(
@@ -987,7 +987,7 @@ fn test_decset_send_focus_events() {
 /// 验证鼠标模式互斥 (1000 vs 1002) - ✅ PASS
 #[test]
 fn test_mouse_mode_exclusive() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 启用 1000（鼠标跟踪按下&释放）
     engine.process_bytes(b"\x1b[?1000h");
@@ -1033,7 +1033,7 @@ fn test_mouse_mode_exclusive() {
 /// 验证 DECSET 标志保存/恢复 - ✅ PASS
 #[test]
 fn test_decset_flags_save_restore() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 设置一些 DECSET 标志
     engine.process_bytes(b"\x1b[?7h"); // 自动换行
@@ -1064,7 +1064,7 @@ fn test_decset_flags_save_restore() {
 /// 验证鼠标事件 (SGR 模式) - ✅ PASS
 #[test]
 fn test_mouse_event_sgr() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 启用 SGR 鼠标模式
     engine.process_bytes(b"\x1b[?1006h");
@@ -1084,7 +1084,7 @@ fn test_mouse_event_sgr() {
 /// 验证鼠标事件 (旧格式) - ✅ PASS
 #[test]
 fn test_mouse_event_legacy() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 启用旧格式鼠标跟踪 (DECSET 1000)
     engine.process_bytes(b"\x1b[?1000h");
@@ -1110,7 +1110,7 @@ fn test_mouse_event_legacy() {
 /// 验证鼠标移动事件 (DECSET 1002) - ✅ PASS
 #[test]
 fn test_mouse_event_button_tracking() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 启用按钮事件跟踪 (DECSET 1002)
     engine.process_bytes(b"\x1b[?1002h");
@@ -1134,7 +1134,7 @@ fn test_mouse_event_button_tracking() {
 /// 验证中键和右键事件 - ✅ PASS
 #[test]
 fn test_mouse_event_middle_right_buttons() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 启用 SGR 鼠标模式
     engine.process_bytes(b"\x1b[?1006h");
@@ -1159,7 +1159,7 @@ fn test_mouse_event_middle_right_buttons() {
 /// 验证中键和右键移动事件 - ✅ PASS
 #[test]
 fn test_mouse_event_button_movement() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 启用按钮事件跟踪 (DECSET 1002)
     engine.process_bytes(b"\x1b[?1002h");
@@ -1177,7 +1177,7 @@ fn test_mouse_event_button_movement() {
 /// 验证鼠标释放事件 - ✅ PASS
 #[test]
 fn test_mouse_event_release() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 启用 SGR 鼠标模式
     engine.process_bytes(b"\x1b[?1006h");
@@ -1190,7 +1190,7 @@ fn test_mouse_event_release() {
 /// 验证滚轮事件 - ✅ PASS
 #[test]
 fn test_mouse_event_wheel() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 启用 SGR 鼠标模式
     engine.process_bytes(b"\x1b[?1006h");
@@ -1207,7 +1207,7 @@ fn test_mouse_event_wheel() {
 /// 验证鼠标事件范围限制 - ✅ PASS
 #[test]
 fn test_mouse_event_bounds() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 启用旧格式鼠标跟踪
     engine.process_bytes(b"\x1b[?1000h");
@@ -1224,7 +1224,7 @@ fn test_mouse_event_bounds() {
 /// 验证 DECSET 1048 备用光标 - ✅ PASS
 #[test]
 fn test_decset_1048_save_restore_cursor() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 移动光标到位置 (10, 15)
     engine.process_bytes(b"\x1b[16;11H");
@@ -1250,7 +1250,7 @@ fn test_decset_1048_save_restore_cursor() {
 /// 验证 DECSET 1049 备用屏幕 - ✅ PASS
 #[test]
 fn test_decset_1049_alternate_screen() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 在主缓冲区写内容
     engine.process_bytes(b"Main Buffer Content");
@@ -1282,7 +1282,7 @@ fn test_decset_1049_alternate_screen() {
 /// 验证备用缓冲区清除 - ⚠️ PARTIAL (备用缓冲区切换待完善)
 #[test]
 fn test_alternate_buffer_clear() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 验证备用缓冲区状态
     assert_eq!(
@@ -1318,7 +1318,7 @@ fn test_alternate_buffer_clear() {
 /// 验证键盘事件 - 功能键 - ✅ PASS
 #[test]
 fn test_key_event_function_keys() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // F1 无修饰
     engine.state.send_key_event(131, None, 0);
@@ -1332,7 +1332,7 @@ fn test_key_event_function_keys() {
 /// 验证键盘事件 - 方向键 - ✅ PASS
 #[test]
 fn test_key_event_arrow键() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 上箭头 (无修饰)
     engine.state.send_key_event(19, None, 0);
@@ -1347,7 +1347,7 @@ fn test_key_event_arrow键() {
 /// 验证键盘事件 - Ctrl 组合 - ✅ PASS
 #[test]
 fn test_key_event_ctrl_combinations() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // Ctrl+A
     engine.state.send_key_event(0, Some("a".to_string()), 0x40000000);
@@ -1361,7 +1361,7 @@ fn test_key_event_ctrl_combinations() {
 /// 验证键盘事件 - Alt 前缀 - ✅ PASS
 #[test]
 fn test_key_event_alt_prefix() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // Alt+D
     engine.state.send_key_event(0, Some("d".to_string()), 0x80000000u32 as i32);
@@ -1371,7 +1371,7 @@ fn test_key_event_alt_prefix() {
 /// 验证键盘事件 - 数字小键盘 - ✅ PASS
 #[test]
 fn test_key_event_keypad() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 应用键盘模式禁用
     engine.state.send_key_event(149, None, 0);
@@ -1390,7 +1390,7 @@ fn test_key_event_keypad() {
 /// 验证 DCS 序列处理框架 - ⚠️ PARTIAL
 #[test]
 fn test_dcs_sequence_framework() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // DECSIXEL 序列框架
     let data = b"\x1bPq\x1b\\";
@@ -1403,7 +1403,7 @@ fn test_dcs_sequence_framework() {
 /// 验证 APC 序列处理框架 - ⚠️ PARTIAL
 #[test]
 fn test_apc_sequence_framework() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // APC 序列
     let data = b"\x1b_Hello World\x1b\\";
@@ -1419,7 +1419,7 @@ fn test_apc_sequence_framework() {
 /// 验证焦点事件报告 - ✅ PASS
 #[test]
 fn test_focus_event_reporting() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 启用焦点事件
     engine.process_bytes(b"\x1b[?1004h");
@@ -1441,7 +1441,7 @@ fn test_focus_event_reporting() {
 /// 验证括号粘贴模式 - ✅ PASS
 #[test]
 fn test_bracketed_paste_mode() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 启用括号粘贴模式
     engine.process_bytes(b"\x1b[?2004h");
@@ -1463,7 +1463,7 @@ fn test_bracketed_paste_mode() {
 /// 验证重复字符 (REP) - ✅ PASS
 #[test]
 fn test_repeat_character() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     let data = b"A\x1b[3b";
     engine.process_bytes(data);
@@ -1474,7 +1474,7 @@ fn test_repeat_character() {
     );
 
     let mut text = [0u16; 80];
-    engine.state.copy_row_text(0, &mut text);
+    engine.state.copy_row_text(0 as i64, &mut text);
 
     assert_eq!(text[0] as u8, b'A');
     assert_eq!(text[1] as u8, b'A');
@@ -1489,7 +1489,7 @@ fn test_repeat_character() {
 /// 验证制表符移动 - ✅ PASS
 #[test]
 fn test_tab_forward() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 移动到位置 5，然后制表到下一个制表位 (8)
     engine.process_bytes(b"\x1b[6G\x09");
@@ -1503,7 +1503,7 @@ fn test_tab_forward() {
 /// 验证 DECBI (ESC 6) - ✅ PASS
 #[test]
 fn test_decbi_back_index() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 写入一些文本
     engine.process_bytes(b"Hello");
@@ -1526,7 +1526,7 @@ fn test_decbi_back_index() {
 /// 验证 DECFI (ESC 9) - ✅ PASS
 #[test]
 fn test_decfi_forward_index() {
-    let mut engine = TerminalEngine::new(10, 5, 100, 10, 20); // 窄屏幕
+    let mut engine = TerminalEngine::new(10 as i64, 5 as i64, 100, 10, 20); // 窄屏幕
 
     // 写入到右边界
     engine.process_bytes(b"123456789");
@@ -1544,7 +1544,7 @@ fn test_decfi_forward_index() {
 /// 验证 RIS (ESC c) - ✅ PASS
 #[test]
 fn test_ris_reset() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 设置一些状态
     engine.process_bytes(b"\x1b[?7l"); // 禁用自动换行
@@ -1575,7 +1575,7 @@ fn test_ris_reset() {
 /// 验证 DECALN (ESC # 8) - ✅ PASS
 #[test]
 fn test_decaln_screen_align() {
-    let mut engine = TerminalEngine::new(10, 5, 100, 10, 20);
+    let mut engine = TerminalEngine::new(10 as i64, 5 as i64, 100, 10, 20);
 
     // 先写入一些文本
     engine.process_bytes(b"Hello");
@@ -1586,7 +1586,7 @@ fn test_decaln_screen_align() {
     // 验证整个屏幕被 'E' 填充
     let mut text = [0u16; 10];
     for row in 0..5 {
-        engine.state.copy_row_text(row, &mut text);
+        engine.state.copy_row_text(row as i64, &mut text);
         for col in 0..10 {
             assert_eq!(
                 text[col], 'E' as u16,
@@ -1610,7 +1610,7 @@ fn test_decaln_screen_align() {
 /// 验证 RI (ESC M) - ✅ PASS
 #[test]
 fn test_ri_reverse_index() {
-    let mut engine = TerminalEngine::new(80, 10, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 10 as i64, 100, 10, 20);
 
     // 移动到底部
     engine.process_bytes(b"\x1b[10;5H");
@@ -1638,7 +1638,7 @@ fn test_ri_reverse_index() {
 /// 验证后退制表 (CBT) - ✅ PASS
 #[test]
 fn test_cursor_backward_tab() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 移动到位置 20，然后后退 5 格
     engine.process_bytes(b"\x1b[21G\x1b[5D");
@@ -1652,7 +1652,7 @@ fn test_cursor_backward_tab() {
 /// 验证清除制表位 (TBC) - ✅ PASS
 #[test]
 fn test_clear_tab_stop() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 清除当前位置的制表位
     engine.process_bytes(b"\x1b[8G\x1b[0g");
@@ -1675,7 +1675,7 @@ fn test_clear_tab_stop() {
 fn test_chinese_character_background() {
     use termux_rust::{TerminalEngine, encode_style};
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 设置红色背景 (索引 1)
     let red_bg_style = encode_style(256, 1, 0); // 前景默认，背景红色索引 1
@@ -1725,7 +1725,7 @@ fn test_chinese_character_background() {
 fn test_wide_char_overwrite_style() {
     use termux_rust::{TerminalEngine, encode_style};
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 先写入两个单宽度字符，带不同背景色
     let blue_bg = encode_style(256, 4, 0); // 背景蓝色索引 4
@@ -1764,7 +1764,7 @@ fn test_wide_char_overwrite_style() {
 fn test_wide_char_at_line_end_style() {
     use termux_rust::{TerminalEngine, encode_style};
 
-    let mut engine = TerminalEngine::new(10, 5, 100, 10, 20); // 窄屏幕
+    let mut engine = TerminalEngine::new(10 as i64, 5 as i64, 100, 10, 20); // 窄屏幕
 
     // 设置黄色背景 (索引 3)
     let yellow_bg = encode_style(256, 3, 0);
@@ -1806,7 +1806,7 @@ fn test_wide_char_at_line_end_style() {
 fn test_emoji_background() {
     use termux_rust::{TerminalEngine, encode_style};
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 设置绿色背景 (索引 2)
     let green_bg_style = encode_style(256, 2, 0);
@@ -1842,7 +1842,7 @@ fn test_emoji_background() {
 fn test_mixed_characters_background() {
     use termux_rust::{TerminalEngine, encode_style};
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 设置青色背景 (索引 6)
     let cyan_bg_style = encode_style(256, 6, 0);
@@ -1876,7 +1876,7 @@ fn test_mixed_characters_background() {
 fn test_korean_hangul_background() {
     use termux_rust::{TerminalEngine, encode_style};
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 设置品红色背景 (索引 5)
     let magenta_bg_style = encode_style(256, 5, 0);
@@ -1907,7 +1907,7 @@ fn test_korean_hangul_background() {
 fn test_japanese_kana_background() {
     use termux_rust::{TerminalEngine, encode_style};
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 设置黄色背景 (索引 3)
     let yellow_bg_style = encode_style(256, 3, 0);
@@ -1940,7 +1940,7 @@ fn test_japanese_kana_background() {
 fn test_fullwidth_ascii_background() {
     use termux_rust::{TerminalEngine, encode_style};
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 设置红色背景 (索引 1)
     let red_bg_style = encode_style(256, 1, 0);
@@ -1974,7 +1974,7 @@ fn test_fullwidth_ascii_background() {
 fn test_combining_characters() {
     use termux_rust::{TerminalEngine, encode_style};
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 设置蓝色背景 (索引 4)
     let blue_bg_style = encode_style(256, 4, 0);
@@ -2000,7 +2000,7 @@ fn test_combining_characters() {
 fn test_variation_selectors() {
     use termux_rust::{TerminalEngine, encode_style};
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 设置绿色背景 (索引 2)
     let green_bg_style = encode_style(256, 2, 0);
@@ -2030,7 +2030,7 @@ fn test_variation_selectors() {
 fn test_zero_width_characters() {
     use termux_rust::{TerminalEngine, encode_style};
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 设置青色背景 (索引 6)
     let cyan_bg_style = encode_style(256, 6, 0);
@@ -2068,7 +2068,7 @@ fn test_zero_width_characters() {
 fn test_complex_emoji_sequence() {
     use termux_rust::{TerminalEngine, encode_style};
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 设置红色背景 (索引 1)
     let red_bg_style = encode_style(256, 1, 0);
@@ -2102,7 +2102,7 @@ fn test_complex_emoji_sequence() {
 fn test_regional_indicator_symbols() {
     use termux_rust::{TerminalEngine, encode_style};
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 设置蓝色背景 (索引 4)
     let blue_bg_style = encode_style(256, 4, 0);
@@ -2134,7 +2134,7 @@ fn test_regional_indicator_symbols() {
 fn test_multiple_consecutive_emoji() {
     use termux_rust::{TerminalEngine, encode_style};
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 设置黄色背景 (索引 3)
     let yellow_bg_style = encode_style(256, 3, 0);
@@ -2170,7 +2170,7 @@ fn test_multiple_consecutive_emoji() {
 fn test_emoji_text_style_switch() {
     use termux_rust::{TerminalEngine, encode_style};
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 先写入红色背景的文本
     engine.state.current_style = encode_style(256, 1, 0);
@@ -2232,7 +2232,7 @@ fn test_emoji_text_style_switch() {
 fn test_cursor_on_wide_character() {
     use termux_rust::TerminalEngine;
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 写入一个中文字符
     let data = "你".as_bytes();
@@ -2260,7 +2260,7 @@ fn test_cursor_on_wide_character() {
 fn test_cursor_on_emoji() {
     use termux_rust::TerminalEngine;
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 写入一个 Emoji
     let data = "😀".as_bytes();
@@ -2275,7 +2275,7 @@ fn test_cursor_on_emoji() {
 fn test_cursor_on_mixed_characters() {
     use termux_rust::TerminalEngine;
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 写入混合字符：ASCII + 中文 + Emoji
     let data = "A 你😀".as_bytes();
@@ -2302,7 +2302,7 @@ fn test_cursor_on_mixed_characters() {
 fn test_cursor_and_background_on_wide_character() {
     use termux_rust::{TerminalEngine, encode_style};
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 设置红色背景 (索引 1)
     let red_bg_style = encode_style(256, 1, 0);
@@ -2341,7 +2341,7 @@ fn test_cursor_and_background_on_wide_character() {
 fn test_cursor_and_background_on_emoji() {
     use termux_rust::{TerminalEngine, encode_style};
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 设置绿色背景 (索引 2)
     let green_bg_style = encode_style(256, 2, 0);
@@ -2377,7 +2377,7 @@ fn test_cursor_and_background_on_emoji() {
 fn test_complex_mixed_scenario() {
     use termux_rust::{TerminalEngine, encode_style};
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 设置青色背景 (索引 6)
     let cyan_bg_style = encode_style(256, 6, 0);
@@ -2418,7 +2418,7 @@ fn test_complex_mixed_scenario() {
 fn test_background_switch_with_wide_characters() {
     use termux_rust::{TerminalEngine, encode_style};
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 先写入红色背景的 ASCII
     engine.state.current_style = encode_style(256, 1, 0);
@@ -2480,7 +2480,7 @@ fn test_background_switch_with_wide_characters() {
 fn test_wide_char_at_line_end_with_background() {
     use termux_rust::{TerminalEngine, encode_style};
 
-    let mut engine = TerminalEngine::new(10, 5, 100, 10, 20); // 窄屏幕
+    let mut engine = TerminalEngine::new(10 as i64, 5 as i64, 100, 10, 20); // 窄屏幕
 
     // 设置黄色背景 (索引 3)
     let yellow_bg_style = encode_style(256, 3, 0);
@@ -2522,7 +2522,7 @@ fn test_wide_char_at_line_end_with_background() {
 /// 验证 OSC 4 设置颜色索引 - ✅ PASS
 #[test]
 fn test_osc4_set_color() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // OSC 4 ; 1 ; #FF0000 BEL - 设置颜色索引 1 为红色
     engine.process_bytes(b"\x1b]4;1;#FF0000\x07");
@@ -2535,7 +2535,7 @@ fn test_osc4_set_color() {
 /// 验证 OSC 10 设置前景色 - ✅ PASS
 #[test]
 fn test_osc10_set_foreground() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // OSC 10 ; #00FF00 BEL - 设置前景色为绿色
     engine.process_bytes(b"\x1b]10;#00FF00\x07");
@@ -2551,7 +2551,7 @@ fn test_osc10_set_foreground() {
 /// 验证 OSC 11 设置背景色 - ✅ PASS
 #[test]
 fn test_osc11_set_background() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // OSC 11 ; #0000FF BEL - 设置背景色为蓝色
     engine.process_bytes(b"\x1b]11;#0000FF\x07");
@@ -2569,7 +2569,7 @@ fn test_osc11_set_background() {
 fn test_osc104_reset_colors() {
     use termux_rust::DEFAULT_COLORSCHEME;
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 先更改一些颜色
     engine.process_bytes(b"\x1b]10;#FFFFFF\x07");
@@ -2592,7 +2592,7 @@ fn test_osc104_reset_colors() {
 /// 验证 OSC 22/23 标题栈 - ✅ PASS
 #[test]
 fn test_osc22_23_title_stack() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 设置初始标题
     engine.process_bytes(b"\x1b]2;Initial Title\x07");
@@ -2625,7 +2625,7 @@ fn test_osc22_23_title_stack() {
 /// 验证 ESC ( 和 ESC ) 行绘图字符集切换 - ✅ PASS
 #[test]
 fn test_line_drawing_charset_switch() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // ESC ( 0 - 选择行绘图字符集为 G0
     engine.process_bytes(b"\x1b(0");
@@ -2653,7 +2653,7 @@ fn test_line_drawing_charset_switch() {
 /// 验证 SO/SI 字符集切换 - ✅ PASS
 #[test]
 fn test_so_si_charset_switch() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 先启用 G0 行绘图
     engine.process_bytes(b"\x1b(0");
@@ -2676,7 +2676,7 @@ fn test_so_si_charset_switch() {
 /// 验证 RIS 完整重置 - ✅ PASS
 #[test]
 fn test_ris_full_reset() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 更改一些状态
     engine.process_bytes(b"\x1b[?7l"); // 禁用自动换行
@@ -2709,7 +2709,7 @@ fn test_ris_full_reset() {
 /// 验证滚动计数器 - ✅ PASS
 #[test]
 fn test_scroll_counter() {
-    let mut engine = TerminalEngine::new(80, 5, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 5 as i64, 100, 10, 20);
 
     // 初始滚动计数器应为 0
     assert_eq!(
@@ -2733,7 +2733,7 @@ fn test_scroll_counter() {
 /// 验证自动滚动禁用 - ✅ PASS
 #[test]
 fn test_auto_scroll_disabled() {
-    let mut engine = TerminalEngine::new(80, 5, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 5 as i64, 100, 10, 20);
 
     // 禁用自动滚动
     engine.state.auto_scroll_disabled = true;
@@ -2754,7 +2754,7 @@ fn test_auto_scroll_disabled() {
 /// 验证 SGR 58/59 下划线颜色 - ✅ PASS
 #[test]
 fn test_sgr_underline_color() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 设置下划线颜色为红色 (索引 1)
     engine.process_bytes(b"\x1b[58;5;1m");
@@ -2776,7 +2776,7 @@ fn test_sgr_underline_color() {
 /// 验证保存/恢复光标包含行绘图状态 - ✅ PASS
 #[test]
 fn test_save_restore_cursor_line_drawing() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 启用 G0 行绘图
     engine.process_bytes(b"\x1b(0");
@@ -2800,7 +2800,7 @@ fn test_save_restore_cursor_line_drawing() {
 /// 验证保存/恢复光标包含颜色 - ✅ PASS
 #[test]
 fn test_save_restore_cursor_colors() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 设置红色前景
     engine.process_bytes(b"\x1b[31m");
@@ -2824,7 +2824,7 @@ fn test_save_restore_cursor_colors() {
 #[test]
 fn test_erase_display_mode_3() {
     use termux_rust::TerminalEngine;
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
     // 填充一些滚动历史 (超过 24 行)
     for i in 0..50 {
         let msg = format!("Line {}\n", i);
@@ -2838,7 +2838,7 @@ fn test_erase_display_mode_3() {
     // 记录屏幕内容（可见区域）
     let screen_content_before: Vec<String> = (0..engine.state.rows)
         .map(|row| {
-            let r = engine.state.main_screen.get_row(row);
+            let r = engine.state.main_screen.get_row(row as i64);
             r.text.iter().filter(|&&c| c != ' ' && c != '\0').collect()
         })
         .filter(|s: &String| !s.is_empty())
@@ -2860,7 +2860,7 @@ fn test_erase_display_mode_3() {
     // 验证屏幕内容保留（mode 3 只清历史，不清屏幕）
     let screen_content_after: Vec<String> = (0..engine.state.rows)
         .map(|row| {
-            let r = engine.state.main_screen.get_row(row);
+            let r = engine.state.main_screen.get_row(row as i64);
             r.text.iter().filter(|&&c| c != ' ' && c != '\0').collect()
         })
         .filter(|s: &String| !s.is_empty())
@@ -2978,7 +2978,7 @@ fn test_sixel_delete() {
 /// 验证 Sixel 完整序列 - ⚠️ PARTIAL
 #[test]
 fn test_sixel_full_sequence() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 完整的 Sixel 序列示例：
     // DCS Pn1;Pn2;Pn3 q sixel_data ST
@@ -3000,7 +3000,7 @@ fn test_sixel_image_rendering() {
     // 这里只做框架验证
     use termux_rust::TerminalEngine;
 
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 发送 Sixel 序列
     engine.process_bytes(b"\x1bP0;10;10q?\x1b\\");
@@ -3019,7 +3019,7 @@ fn test_sixel_image_rendering() {
 /// 修复方案：实现逻辑行重排 (Reflow)，溢出内容折叠到下一行。
 #[test]
 fn test_resize_shrink_reflow() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 1. 写入 81 个字符，确保第一行写满并触发自动换行到第二行
     let mut data = "A".repeat(80).into_bytes();
@@ -3033,7 +3033,7 @@ fn test_resize_shrink_reflow() {
     assert_eq!(engine.state.main_screen.buffer[1].text[0], 'B');
 
     // 2. 模拟缩小到 40 列
-    engine.state.resize(40, 24);
+    engine.state.resize(40 as i64, 24 as i64);
 
     // 验证重排结果：拼接所有行以应对内容被拆分的情况
     let mut all_text = String::new();
@@ -3053,7 +3053,7 @@ fn test_resize_shrink_reflow() {
 #[test]
 fn test_resize_expand_reflow() {
     // 1. 从 40 列开始，写入两行通过自动换行连接的文本 (总共 80 字符)
-    let mut engine = TerminalEngine::new(40, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(40 as i64, 24 as i64, 100, 10, 20);
     let data = "B".repeat(80).into_bytes();
     engine.process_bytes(&data);
 
@@ -3061,7 +3061,7 @@ fn test_resize_expand_reflow() {
     assert_eq!(get_row_text(&engine, 0).trim(), "B".repeat(40));
 
     // 2. 模拟放大到 80 列
-    engine.state.resize(80, 24);
+    engine.state.resize(80 as i64, 24 as i64);
 
     // 验证重排结果：
     // 两行 (40 字符 * 2) 现在应该缩回一行 (80 字符)
@@ -3076,7 +3076,7 @@ fn test_resize_expand_reflow() {
 /// 验证带样式的重排一致性 - ✅ 修复验证
 #[test]
 fn test_resize_style_reflow() {
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // 1. 设置红色背景并写入 80 字符
     engine.process_bytes(b"\x1b[41m");
@@ -3084,7 +3084,7 @@ fn test_resize_style_reflow() {
     engine.process_bytes(&data);
 
     // 2. 缩小到 40 列
-    engine.state.resize(40, 24);
+    engine.state.resize(40 as i64, 24 as i64);
 
     // 3. 验证 Row 1 (溢出的行) 是否保留了红色背景样式
     // 红色背景索引为 1，存储在 style 的位 16-24

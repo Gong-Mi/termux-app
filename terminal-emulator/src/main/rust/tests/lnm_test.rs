@@ -4,7 +4,7 @@ use termux_rust::engine::context::TerminalEngine;
 #[test]
 fn test_lnm_mode_behavior() {
     // 初始化引擎 80x24
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 1000, 10, 20);
     
     // 1. 默认情况下 (LNM off), \n 只换行
     engine.process_bytes(b"ABCDEFGHIJ"); // x=10, y=0

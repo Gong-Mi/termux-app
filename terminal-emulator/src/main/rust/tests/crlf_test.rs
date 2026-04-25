@@ -14,7 +14,7 @@ use termux_rust::TerminalEngine;
 fn get_row_text(engine: &TerminalEngine, row: i32) -> String {
     let cols = engine.state.cols as usize;
     let mut text = vec![0u16; cols];
-    engine.state.copy_row_text(row, &mut text);
+    engine.state.copy_row_text(row.into(), &mut text);
     String::from_utf16_lossy(&text).replace('\0', " ")
 }
 
@@ -22,7 +22,7 @@ fn get_row_text(engine: &TerminalEngine, row: i32) -> String {
 /// This matches upstream Java: doLinefeed() only changes row, not col
 #[test]
 fn test_lf_does_not_return_to_origin() {
-    let mut engine = TerminalEngine::new(10, 5, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(10 as i64, 5 as i64, 1000, 10, 20);
 
     // Fill first row to trigger about_to_wrap
     engine.process_bytes(b"1234567890");
@@ -47,7 +47,7 @@ fn test_lf_does_not_return_to_origin() {
 /// Test: CR should return cursor to start of line WITHOUT moving down
 #[test]
 fn test_cr_returns_to_start_without_moving() {
-    let mut engine = TerminalEngine::new(10, 5, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(10 as i64, 5 as i64, 1000, 10, 20);
 
     engine.process_bytes(b"Hello");
     assert_eq!(engine.state.cursor.y, 0);
@@ -69,7 +69,7 @@ fn test_cr_returns_to_start_without_moving() {
 /// Test: Standard CRLF sequence (\r\n) works correctly
 #[test]
 fn test_crlf_sequence() {
-    let mut engine = TerminalEngine::new(10, 5, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(10 as i64, 5 as i64, 1000, 10, 20);
 
     engine.process_bytes(b"Line1\r\n");
     engine.process_bytes(b"Line2\r\n");
@@ -89,7 +89,7 @@ fn test_crlf_sequence() {
 /// Test: CR at end of line followed by text overwrites from beginning
 #[test]
 fn test_cr_then_text() {
-    let mut engine = TerminalEngine::new(10, 5, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(10 as i64, 5 as i64, 1000, 10, 20);
 
     engine.process_bytes(b"Hello\rWorld");
     let row0 = get_row_text(&engine, 0);
@@ -101,7 +101,7 @@ fn test_cr_then_text() {
 /// Test: Multiple LFs in a row
 #[test]
 fn test_multiple_lfs() {
-    let mut engine = TerminalEngine::new(10, 5, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(10 as i64, 5 as i64, 1000, 10, 20);
 
     engine.process_bytes(b"A\n\n\n");
 
@@ -115,7 +115,7 @@ fn test_multiple_lfs() {
 /// Test: LF does not trigger extra wrap when followed by printable char
 #[test]
 fn test_lf_then_printable_no_extra_wrap() {
-    let mut engine = TerminalEngine::new(10, 5, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(10 as i64, 5 as i64, 1000, 10, 20);
 
     // Fill first row to trigger about_to_wrap
     engine.process_bytes(b"1234567890");
@@ -148,7 +148,7 @@ fn test_lf_then_printable_no_extra_wrap() {
 /// Test: about_to_wrap cleared by LF
 #[test]
 fn test_lf_clears_about_to_wrap() {
-    let mut engine = TerminalEngine::new(10, 5, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(10 as i64, 5 as i64, 1000, 10, 20);
 
     engine.process_bytes(b"1234567890");
     assert!(engine.state.cursor.about_to_wrap, "Should be wrapped after filling row");
@@ -162,7 +162,7 @@ fn test_lf_clears_about_to_wrap() {
 /// Test: VT (0x0B) and FF (0x0C) behave like LF
 #[test]
 fn test_vt_ff_like_lf() {
-    let mut engine = TerminalEngine::new(10, 5, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(10 as i64, 5 as i64, 1000, 10, 20);
 
     engine.process_bytes(b"Hello");
     assert_eq!(engine.state.cursor.x, 5);

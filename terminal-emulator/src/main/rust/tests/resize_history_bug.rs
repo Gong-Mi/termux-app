@@ -8,7 +8,7 @@ fn test_history_bug_explicit() {
     println!("\n=== 历史管理问题详细分析 ===");
     
     // 1. 创建 80x24 引擎，写入 30 行
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
     for i in 1..=30 {
         let line = format!("Line {:02}\r\n", i);
         engine.process_bytes(line.as_bytes());
@@ -23,7 +23,7 @@ fn test_history_bug_explicit() {
     println!("  预期: 30 - 24 = 6 行历史");
     
     // 2. 放大到 18 行（减少 6 行）
-    engine.state.resize(80, 18);
+    engine.state.resize(80 as i64, 18 as i64);
     let zoomed_history = engine.state.main_screen.active_transcript_rows;
     let zoomed_first_row = engine.state.main_screen.first_row;
     println!("\n放大到 80x18:");
@@ -32,7 +32,7 @@ fn test_history_bug_explicit() {
     println!("  预期: 30 - 18 = 12 行历史");
     
     // 3. 缩小回 24 行
-    engine.state.resize(80, 24);
+    engine.state.resize(80 as i64, 24 as i64);
     let final_history = engine.state.main_screen.active_transcript_rows;
     let final_first_row = engine.state.main_screen.first_row;
     println!("\n缩小回 80x24:");

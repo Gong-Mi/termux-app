@@ -8,7 +8,7 @@ fn test_column_change_history_loss() {
     println!("\n=== 列变化导致历史丢失测试 ===");
     
     // 1. 创建 80x24 引擎，写入 30 行
-    let mut engine = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
     for i in 1..=30 {
         let line = format!("Line {:02}\r\n", i);
         engine.process_bytes(line.as_bytes());
@@ -21,7 +21,7 @@ fn test_column_change_history_loss() {
     println!("  active_transcript_rows: {}", initial_history);
     
     // 2. 改变列数 + 行数（触发慢路径）
-    engine.state.resize(60, 18);
+    engine.state.resize(60 as i64, 18 as i64);
     let zoomed_history = engine.state.main_screen.active_transcript_rows;
     let zoomed_first_row = engine.state.main_screen.first_row;
     println!("\n改变列数到 60x18 (慢路径):");
@@ -29,7 +29,7 @@ fn test_column_change_history_loss() {
     println!("  active_transcript_rows: {}", zoomed_history);
     
     // 3. 恢复原始尺寸
-    engine.state.resize(80, 24);
+    engine.state.resize(80 as i64, 24 as i64);
     let final_history = engine.state.main_screen.active_transcript_rows;
     let final_first_row = engine.state.main_screen.first_row;
     println!("\n恢复到 80x24:");
@@ -51,15 +51,15 @@ fn test_row_only_vs_column_change() {
     println!("\n=== 仅行变化 vs 列变化对比 ===");
     
     // 测试 1: 仅行变化（快路径）
-    let mut engine1 = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine1 = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
     for i in 1..=30 {
         let line = format!("Line {:02}\r\n", i);
         engine1.process_bytes(line.as_bytes());
     }
     let initial1 = engine1.state.main_screen.active_transcript_rows;
     
-    engine1.state.resize(80, 18); // 快路径
-    engine1.state.resize(80, 24);
+    engine1.state.resize(80 as i64, 18 as i64); // 快路径
+    engine1.state.resize(80 as i64, 24 as i64);
     let final1 = engine1.state.main_screen.active_transcript_rows;
     
     println!("仅行变化 (快路径):");
@@ -67,15 +67,15 @@ fn test_row_only_vs_column_change() {
     assert_eq!(initial1, final1, "快路径应该保留历史");
     
     // 测试 2: 列变化（慢路径）
-    let mut engine2 = TerminalEngine::new(80, 24, 100, 10, 20);
+    let mut engine2 = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
     for i in 1..=30 {
         let line = format!("Line {:02}\r\n", i);
         engine2.process_bytes(line.as_bytes());
     }
     let initial2 = engine2.state.main_screen.active_transcript_rows;
     
-    engine2.state.resize(60, 18); // 慢路径
-    engine2.state.resize(80, 24);
+    engine2.state.resize(60 as i64, 18 as i64); // 慢路径
+    engine2.state.resize(80 as i64, 24 as i64);
     let final2 = engine2.state.main_screen.active_transcript_rows;
     
     println!("\n列变化 (慢路径):");

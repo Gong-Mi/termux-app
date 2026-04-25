@@ -5,7 +5,7 @@ use std::cmp::max;
 fn get_row_text(engine: &TerminalEngine, row: i32) -> String {
     let cols = engine.state.cols as usize;
     let mut text = vec![0u16; cols];
-    engine.state.copy_row_text(row, &mut text);
+    engine.state.copy_row_text(row as i64, &mut text);
     String::from_utf16_lossy(&text).replace('\0', " ")
 }
 
@@ -13,7 +13,7 @@ fn get_row_text(engine: &TerminalEngine, row: i32) -> String {
 fn test_massive_50000_rows_stress() {
     // 1. 初始化最大容量引擎 (50,000 行)
     let max_rows = 50000;
-    let mut engine = TerminalEngine::new(80, 24, max_rows, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, max_rows, 10, 20);
     
     println!("--- Step 1: Writing 45,000 lines of complex content ---");
     let start = Instant::now();
@@ -40,9 +40,9 @@ fn test_massive_50000_rows_stress() {
     // 2. 验证内容完整性 (采样检查)
     // 拼接最后 10 行物理内容来应对重排拆分
     let mut combined_end = String::new();
-    let total_active = engine.state.main_screen.active_transcript_rows as i32;
+    let total_active = engine.state.main_screen.active_transcript_rows as i64;
     for i in (max(-(total_active), engine.state.rows - 10)..engine.state.rows).rev() {
-        combined_end.push_str(&get_row_text(&engine, i));
+        combined_end.push_str(&get_row_text(&engine, i as i32));
     }
     
     println!("Combined end snippet: '{}'", combined_end.replace(" ", ""));
@@ -60,14 +60,14 @@ fn test_massive_50000_rows_stress() {
 
     // 4. 终极重排校验
     println!("--- Step 3: Final Extreme Expansion (120 -> 200) ---");
-    engine.state.resize(200, 24);
+    engine.state.resize(200 as i64, 24 as i64);
     
     let mut found_mid_anchor = false;
     // 尝试在历史记录中寻找“Line 25000”
     // 注意：由于 resize 很多次，行索引可能很深
-    let total_active = engine.state.main_screen.active_transcript_rows as i32;
+    let total_active = engine.state.main_screen.active_transcript_rows as i64;
     for i in (-(total_active)..0).rev() {
-        if get_row_text(&engine, i).contains("Line 25000") {
+        if get_row_text(&engine, i as i32).contains("Line 25000") {
             found_mid_anchor = true;
             println!("Found anchor 'Line 25000' at history index: {}", i);
             break;

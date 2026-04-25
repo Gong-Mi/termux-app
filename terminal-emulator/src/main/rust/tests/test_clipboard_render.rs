@@ -7,7 +7,7 @@ fn test_clipboard_and_rendering() {
     println!("=== 测试剪贴板和渲染问题 ===\n");
 
     // 1. 创建 80x24 屏幕
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 1000, 10, 20);
     
     // 2. 写入带 MD5 哈希的内容
     for i in 1..=50 {
@@ -35,7 +35,7 @@ fn test_clipboard_and_rendering() {
     
     // 6. 测试 get_selected_text 选择历史行
     println!("\n5. 测试选择历史行:");
-    let selected = engine.state.get_current_screen().get_selected_text(0, -26, 79, -1);
+    let selected = engine.state.get_current_screen().get_selected_text(0 as i64, -26 as i64, 79 as i64, -1 as i64);
     let selected_lines = selected.lines().count();
     println!("   选择行 -26 到 -1, 返回 {} 行", selected_lines);
     
@@ -54,7 +54,7 @@ fn test_clipboard_and_rendering() {
     // 9. 测试可见区域
     println!("\n7. 可见区域内容 (行 0-23):");
     for row in 0..rows {
-        let row_data = engine.state.get_current_screen().get_row(row);
+        let row_data = engine.state.get_current_screen().get_row(row as i64);
         let text: String = row_data.text.iter()
             .take(50)
             .filter(|&&c| c != '\0')

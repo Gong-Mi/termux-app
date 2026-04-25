@@ -19,7 +19,7 @@ fn get_row_text(engine: &TerminalEngine, row: i32) -> String {
 /// Verify that NO '\' appears on the screen.
 #[test]
 fn test_osc_sequence_complete() {
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 1000, 10, 20);
 
     // \x1b]0;My Title\x1b\  (ESC ] 0 ; My Title ESC \)
     engine.process_bytes(b"\x1b]0;My Title\x1b\\");
@@ -39,7 +39,7 @@ fn test_osc_sequence_complete() {
 /// Chunk 2: \ (The String Terminator backslash)
 #[test]
 fn test_osc_sequence_split_st() {
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 1000, 10, 20);
 
     // Simulate Chunk 1: Everything up to the final backslash
     engine.process_bytes(b"\x1b]0;Title\x1b");
@@ -57,7 +57,7 @@ fn test_osc_sequence_split_st() {
 /// Shell sets title to "/data/user/0" via OSC, then prints prompt.
 #[test]
 fn test_osc_title_with_path_prompt() {
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 1000, 10, 20);
 
     // 1. Set title to path (simulating PS1 title update)
     // Split it to trigger the bug if present:
@@ -90,7 +90,7 @@ fn test_osc_title_with_path_prompt() {
 /// Chunk 2: \x1b\
 #[test]
 fn test_osc_sequence_split_before_esc() {
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 1000, 10, 20);
 
     engine.process_bytes(b"\x1b]0;Title");
     engine.process_bytes(b"\x1b\\");
@@ -105,7 +105,7 @@ fn test_osc_sequence_split_before_esc() {
 /// Verify they don't break the parser state.
 #[test]
 fn test_osc_title_with_special_chars() {
-    let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 1000, 10, 20);
 
     // Title containing slashes and backslashes
     engine.process_bytes(b"\x1b]0;C:\\Windows\\System32\x1b\\");
