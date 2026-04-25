@@ -195,47 +195,56 @@ pub fn create_subprocess_with_data(
                     s.replace("/data/user/0/", "/data/data/")
                 };
 
-                // 3. 核心修复：深度搜索并注入 LD_PRELOAD
+                // 3. 核心修复：深度搜索并通过 realpath 注入 LD_PRELOAD
                 let mut final_env: Vec<String> = Vec::new();
                 let old_path = std::env::var("PATH").unwrap_or_else(|_| "/system/bin:/system/xbin".to_string());
 
-                // 搜索 libtermux-exec.so
+                // 搜索 libtermux-exec.so 并获取真实路径
                 let mut found_preloader = None;
                 let termux_exec_candidates = [
-                    "libtermux-exec-linker-ld-preload.so", // 优先使用 linker 专用版本
+                    "libtermux-exec-linker-ld-preload.so",
                     "libtermux-exec.so",
                     "libtermux-exec-ld-preload.so",
                 ];
 
                 for candidate in &termux_exec_candidates {
-                    let path = format!("{}/{}", termux_lib, candidate);
-                    // 使用 access 检查可读性
-                    let c_path = CString::new(path.clone()).unwrap();
+                    let path_str = format!("{}/{}", termux_lib, candidate);
+                    let c_path = CString::new(path_str.clone()).unwrap();
+
+                    // 使用 access 确认可读
                     if unsafe { libc::access(c_path.as_ptr(), libc::R_OK) } == 0 {
-                        found_preloader = Some(path);
-                        break;
+                        // 关键：获取真实路径 (realpath)，消除符号链接对 Linker 的干扰
+                        let mut resolved = [0i8; 4096];
+                        let res_ptr = unsafe { libc::realpath(c_path.as_ptr(), resolved.as_mut_ptr()) };
+                        if !res_ptr.is_null() {
+                            let resolved_str = unsafe { std::ffi::CStr::from_ptr(res_ptr) }.to_string_lossy().into_owned();
+                            found_preloader = Some(resolved_str);
+                            break;
+                        }
                     }
                 }
 
-                // 强制基础变量 (参照 Google Play)
+                // 强制基础变量 (统一规范化为 /data/data/ 开头)
                 final_env.push(format!("PATH={}:{}", termux_bin, fix_canonical(&old_path)));
                 final_env.push(format!("PREFIX={}", termux_prefix));
                 final_env.push(format!("HOME={}", termux_home));
                 final_env.push(format!("TMPDIR={}", termux_tmp));
-                // 移除 LD_LIBRARY_PATH，某些版本下它会干扰 linker 加载系统库
-                // final_env.push(format!("LD_LIBRARY_PATH={}", termux_lib));
+
+                // 必须恢复 LD_LIBRARY_PATH，否则 libtermux-exec.so 找不到它的依赖库 (如 libandroid-support.so)
+                final_env.push(format!("LD_LIBRARY_PATH={}", termux_lib));
+
                 final_env.push(format!("TERM=xterm-256color"));
                 final_env.push(format!("COLORTERM=truecolor"));
                 final_env.push(format!("LANG=en_US.UTF-8"));
 
-                // 注入 LD_PRELOAD
+                // 注入 LD_PRELOAD (使用解析后的真实路径)
                 if let Some(ref preloader) = found_preloader {
                     final_env.push(format!("LD_PRELOAD={}", preloader));
-                    crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY] INJECTING LD_PRELOAD={}", preloader));
+                    crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY] RESOLVED and INJECTING LD_PRELOAD={}", preloader));
                 } else {
                     let fallback = format!("{}/libtermux-exec.so", termux_lib);
                     final_env.push(format!("LD_PRELOAD={}", fallback));
-                    crate::utils::android_log(crate::utils::LogPriority::ERROR, &format!("[PTY] LD_PRELOAD NOT ACCESSIBLE! Fallback={}", fallback));
+                    crate::utils::android_log(crate::utils::LogPriority::ERROR, &format!("[PTY] LD_PRELOAD REALPATH FAILED! Using fallback={}", fallback));
                 }
 
                 // 注入 Java 环境
@@ -249,13 +258,12 @@ pub fn create_subprocess_with_data(
                     }
                 }
 
-                // 调试日志
+                // 调试日志：确认最终注入
                 for e in &final_env {
-                    if e.starts_with("LD_PRELOAD") || e.starts_with("PATH") {
+                    if e.starts_with("LD_PRELOAD") || e.starts_with("LD_LIBRARY_PATH") {
                         crate::utils::android_log(crate::utils::LogPriority::DEBUG, &format!("[PTY] ENV: {}", e));
                     }
                 }
-
                 if !cwd_str.is_empty() {
                     let fixed_cwd = fix_canonical(&cwd_str);
                     if let Ok(c_cwd) = CString::new(fixed_cwd) {
