@@ -157,9 +157,17 @@ pub fn create_subprocess_with_data(
                 libc::setenv(CString::new("LANG").unwrap().as_ptr(), CString::new("en_US.UTF-8").unwrap().as_ptr(), 1);
                 
                 // LD_PRELOAD
-                let preloader = format!("{}/libtermux-exec-direct-ld-preload.so", termux_lib);
-                if std::path::Path::new(&preloader).exists() {
-                    libc::setenv(CString::new("LD_PRELOAD").unwrap().as_ptr(), CString::new(preloader).unwrap().as_ptr(), 1);
+                let termux_exec_candidates = [
+                    "libtermux-exec-linker-ld-preload.so",
+                    "libtermux-exec.so",
+                    "libtermux-exec-ld-preload.so",
+                ];
+                for candidate in &termux_exec_candidates {
+                    let preloader = format!("{}/{}", termux_lib, candidate);
+                    if std::path::Path::new(&preloader).exists() {
+                        libc::setenv(CString::new("LD_PRELOAD").unwrap().as_ptr(), CString::new(preloader).unwrap().as_ptr(), 1);
+                        break;
+                    }
                 }
                 
                 for env_var in envp {
