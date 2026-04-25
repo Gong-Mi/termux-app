@@ -41,6 +41,9 @@ interface TerminalSessionClient {
     /** Called when the terminal screen is updated. */
     fun onScreenUpdated() {}
 
+    /** Called when a Sixel image is received. */
+    fun onSixelImage(rgbaData: ByteArray?, width: Int, height: Int, startX: Int, startY: Int) {}
+
     /** Called to set the terminal shell PID. */
     fun setTerminalShellPid(@NonNull session: TerminalSession, pid: Int)
 

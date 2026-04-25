@@ -21,7 +21,7 @@ class RustEngineCallback(private val mClient: TerminalSessionClient?) : Terminal
         // 屏幕更新通知 - 目前不需要特殊处理
     }
 
-    fun onScreenUpdated() {
+    override fun onScreenUpdated() {
         if (mSession != null) {
             mSession!!.onNativeScreenUpdated()
         } else if (mClient != null) {
