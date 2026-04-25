@@ -5,7 +5,6 @@ use nix::unistd::{ForkResult, fork, setsid, chdir};
 use std::ffi::CString;
 
 /// 获取当前 UID 下的进程数，用于规避 Android 12+ 的 Phantom Killer
-/// Phantom Killer 限制的是同一 UID 的进程数（~32），不是系统总进程数
 fn get_uid_process_count() -> usize {
     let own_uid = unsafe { libc::getuid() };
     std::fs::read_dir("/proc")
@@ -59,7 +58,7 @@ pub unsafe fn create_subprocess(
         String::new()
     };
 
-    let cwd_str = if !cwd.is_null() {
+    let cwd_str = if !cwd_str.is_null() {
         let js = unsafe { JString::from_raw(cwd) };
         env.get_string(&js).map(|s| s.into()).unwrap_or_default()
     } else {
@@ -132,7 +131,6 @@ pub fn create_subprocess_with_data(
         }
         let devname = std::ffi::CStr::from_ptr(devname).to_string_lossy().into_owned();
 
-        // Phantom Killer 流控：限制同一 UID 的进程数（Android 12+ 限制约 32）
         let uid_count = get_uid_process_count();
         if uid_count > 28 {
             crate::utils::android_log(crate::utils::LogPriority::WARN, &format!("[PTY] High UID process count ({}), throttling...", uid_count));
@@ -162,7 +160,7 @@ pub fn create_subprocess_with_data(
                 if pts > 2 { libc::close(pts); }
                 libc::close(ptm);
 
-                // === 动态 Prefix 与 规范路径修正 ===
+                // === 动态 Prefix 与 规范路径修正 (同步 termux-app-rust) ===
                 let mut real_pkg = String::from("com.termux");
                 let mut termux_prefix = String::from("/data/user/0/com.termux/files/usr");
                 
@@ -171,8 +169,6 @@ pub fn create_subprocess_with_data(
                     if let Some(pos) = p.find("/files/") {
                         let root = &p[..pos];
                         if let Some(pkg_pos) = root.rfind('/') { real_pkg = root[pkg_pos+1..].to_string(); }
-                        
-                        // 修复：识别并保留 usr-staging 状态，否则解压阶段的 LD_PRELOAD 会因为找不到库而失效
                         if p.contains("/usr-staging/") {
                             termux_prefix = format!("{}/files/usr-staging", root);
                         } else {
@@ -182,25 +178,86 @@ pub fn create_subprocess_with_data(
                     }
                 }
                 
-                // 强制规范化为 /data/data/ (兼容性更好)
+                // 关键：强制使用 /data/data 形式以通过 Linker 白名单
                 let termux_data_root = format!("/data/data/{}", real_pkg);
-                let termux_prefix = format!("{}/files/usr{}", termux_data_root, if termux_prefix.contains("staging") { "-staging" } else { "" });
-                let termux_bin = format!("{}/bin", termux_prefix);
-                let termux_lib = format!("{}/lib", termux_prefix);
-                let termux_home = format!("{}/files/home", termux_data_root);
-                let termux_tmp = format!("{}/tmp", termux_prefix);
+                let termux_files = format!("{}/files", termux_data_root);
+                let termux_prefix_data = format!("{}/usr{}", termux_files, if termux_prefix.contains("staging") { "-staging" } else { "" });
+                let termux_bin = format!("{}/bin", termux_prefix_data);
+                let termux_lib = format!("{}/lib", termux_prefix_data);
+                let termux_home = format!("{}/home", termux_files);
 
-                let fix_canonical = |s: &str| -> String {
-                    s.replace("/data/user/0/", "/data/data/")
-                };
+                let mut final_envp = envp.clone();
+                
+                // 1. PATH
+                let default_path = format!("PATH={}:/system/bin:/system/xbin", termux_bin);
+                if let Some(pos) = final_envp.iter().position(|s| s.starts_with("PATH=")) {
+                    let old_val = final_envp[pos].split('=').nth(1).unwrap_or("");
+                    if !old_val.contains(&termux_bin) {
+                        final_envp[pos] = format!("PATH={}:{}", termux_bin, old_val);
+                    }
+                } else {
+                    final_envp.push(default_path);
+                }
 
-                // === 命令解析 (必须在 execve 之前完成) ===
-                let mut final_cmd = fix_canonical(&cmd_str);
-                let mut final_args: Vec<String> = argv.iter().map(|a| fix_canonical(a)).collect();
+                // 2. LD_LIBRARY_PATH
+                if !final_envp.iter().any(|s| s.starts_with("LD_LIBRARY_PATH=")) {
+                    final_envp.push(format!("LD_LIBRARY_PATH={}", termux_lib));
+                }
 
+                // 3. LD_PRELOAD - 让 libtermux-exec.so 拦截 shell 内所有子进程 exec
+                let termux_exec_path = format!("{}/lib/libtermux-exec.so", termux_prefix_data);
+                if !final_envp.iter().any(|s| s.starts_with("LD_PRELOAD=")) {
+                    final_envp.push(format!("LD_PRELOAD={}", termux_exec_path));
+                }
+
+                // 4. 基础系统变量
+                if !final_envp.iter().any(|s| s.starts_with("TERM=")) { final_envp.push("TERM=xterm-256color".to_string()); }
+                if !final_envp.iter().any(|s| s.starts_with("HOME=")) { final_envp.push(format!("HOME={}", termux_home)); }
+                if !final_envp.iter().any(|s| s.starts_with("PREFIX=")) { final_envp.push(format!("PREFIX={}", termux_prefix_data)); }
+                
+                let sys_vars = [
+                    "ANDROID_ART_ROOT", "ANDROID_ASSETS", "ANDROID_DATA", "ANDROID_I18N_ROOT",
+                    "ANDROID_ROOT", "ANDROID_RUNTIME_ROOT", "ANDROID_STORAGE", "ANDROID_TZDATA_ROOT",
+                    "EXTERNAL_STORAGE", "BOOTCLASSPATH", "DEX2OATBOOTCLASSPATH", "SYSTEMSERVERCLASSPATH"
+                ];
+                for var in sys_vars {
+                    if !final_envp.iter().any(|s| s.starts_with(&format!("{}=", var))) {
+                        if let Ok(val) = std::env::var(var) { final_envp.push(format!("{}={}", var, val)); }
+                    }
+                }
+
+                libc::clearenv();
+                for env_var in final_envp {
+                    if let Ok(c_env) = CString::new(env_var) {
+                        libc::putenv(c_env.into_raw());
+                    }
+                }
+
+                if !cwd_str.is_empty() {
+                    let c_cwd = CString::new(cwd_str.clone()).unwrap();
+                    let _ = chdir(c_cwd.as_c_str());
+                }
+
+                // ====== [PTY_CHECKPOINT] 开始分析 ======
+                crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY_CHECKPOINT] CP01: input cmd='{}' argv={:?}", cmd_str, argv));
+
+                let mut final_cmd = cmd_str.clone();
                 if !final_cmd.starts_with('/') {
                     let resolved = format!("{}/{}", termux_bin, final_cmd);
                     if std::path::Path::new(&resolved).exists() { final_cmd = resolved; }
+                }
+                
+                let mut final_args = argv.clone();
+                
+                // Login Shell 处理 (对齐 termux-app-rust)
+                let is_shell = ["sh", "bash", "zsh", "dash", "fish"].iter().any(|&s| final_cmd.ends_with(s));
+                if is_shell {
+                    let shell_name = std::path::Path::new(&final_cmd).file_name().and_then(|n| n.to_str()).unwrap_or("sh");
+                    if final_args.is_empty() {
+                        final_args.push(format!("-{}", shell_name));
+                    } else if !final_args[0].starts_with('-') {
+                        final_args[0] = format!("-{}", shell_name);
+                    }
                 }
 
                 // ELF/Shebang 逻辑
@@ -229,9 +286,9 @@ pub fn create_subprocess_with_data(
 
                 if has_shebang && !shebang_interpreter.is_empty() {
                     let mut interpreter = shebang_interpreter;
-                    if interpreter.starts_with("/usr/bin/") || interpreter.starts_with("/bin/") || interpreter.starts_with("/data/data/com.termux/files/usr/bin/") {
+                    if interpreter.starts_with("/usr/bin/") || interpreter.starts_with("/bin/") {
                         if let Some(name) = std::path::Path::new(&interpreter).file_name().and_then(|n| n.to_str()) {
-                            interpreter = format!("{}/bin/{}", termux_prefix, name);
+                            interpreter = format!("{}/bin/{}", termux_prefix_data, name);
                         }
                     }
                     let old_cmd = final_cmd.clone();
@@ -240,26 +297,28 @@ pub fn create_subprocess_with_data(
                     new_argv.push(if !final_args.is_empty() { final_args[0].clone() } else { final_cmd.clone() });
                     new_argv.extend(shebang_args);
                     new_argv.push(old_cmd);
-                    if final_args.len() > 1 { new_argv.extend(final_args.iter().skip(1).cloned()); }
+                    if argv.len() > 1 { new_argv.extend(final_args.iter().skip(1).cloned()); }
                     final_args = new_argv;
                 } else if !is_elf && !has_shebang {
                     let old_cmd = final_cmd.clone();
-                    final_cmd = format!("{}/bin/sh", termux_prefix);
+                    final_cmd = format!("{}/bin/sh", termux_prefix_data);
                     let mut new_argv = Vec::new();
                     new_argv.push(if !final_args.is_empty() { final_args[0].clone() } else { final_cmd.clone() });
                     new_argv.push(old_cmd);
-                    if final_args.len() > 1 { new_argv.extend(final_args.iter().skip(1).cloned()); }
+                    if argv.len() > 1 { new_argv.extend(final_args.iter().skip(1).cloned()); }
                     final_args = new_argv;
                 }
 
-                // === W^X Bypass: 标准 Linker 协议构建 ===
+                // W^X Bypass: 标准 Linker 协议构建
                 let canonical_target = std::fs::canonicalize(&final_cmd).unwrap_or_else(|_| std::path::PathBuf::from(&final_cmd));
                 let c_str = canonical_target.to_string_lossy();
+                
+                let needs_linker = final_cmd.contains(&real_pkg) || final_cmd.contains("/data/") || c_str.contains("/data/");
 
-                if final_cmd.contains("/data/") || c_str.contains("/data/") || final_cmd.contains(&real_pkg) {
+                if needs_linker {
                     #[cfg(target_pointer_width = "64")] let linker = "/system/bin/linker64";
                     #[cfg(target_pointer_width = "32")] let linker = "/system/bin/linker";
-
+                    
                     if std::path::Path::new(linker).exists() {
                         let mut linker_argv = Vec::new();
                         let prog_name = if !final_args.is_empty() { final_args[0].clone() } else { final_cmd.clone() };
@@ -273,79 +332,25 @@ pub fn create_subprocess_with_data(
                     }
                 }
 
-                // 3. 核心修复：极致环境对齐 (参考 termux.c / TermuxShellUtils.java)
-                let mut final_env: Vec<String> = Vec::new();
-                let old_path = std::env::var("PATH").unwrap_or_else(|_| "/system/bin:/system/xbin".to_string());
-
-                // 基础系统变量
-                let sys_vars = [
-                    "ANDROID_ART_ROOT", "ANDROID_ASSETS", "ANDROID_DATA", "ANDROID_I18N_ROOT",
-                    "ANDROID_ROOT", "ANDROID_RUNTIME_ROOT", "ANDROID_STORAGE", "ANDROID_TZDATA_ROOT",
-                    "EXTERNAL_STORAGE", "BOOTCLASSPATH", "DEX2OATBOOTCLASSPATH", "SYSTEMSERVERCLASSPATH"
-                ];
-                for var in sys_vars {
-                    if let Ok(val) = std::env::var(var) { final_env.push(format!("{}={}", var, val)); }
-                }
-
-                final_env.push(format!("PATH={}:{}", termux_bin, fix_canonical(&old_path)));
-                final_env.push(format!("PREFIX={}", termux_prefix));
-                final_env.push(format!("HOME={}", termux_home));
-                final_env.push(format!("TMPDIR={}", termux_tmp));
-                final_env.push(format!("TERM=xterm-256color"));
-                final_env.push(format!("COLORTERM=truecolor"));
-                final_env.push(format!("LANG=en_US.UTF-8"));
-
-                let preloader = format!("{}/libtermux-exec.so", termux_lib);
-                final_env.push(format!("LD_PRELOAD={}", preloader));
-
-                for env_var in envp {
-                    if let Some(pos) = env_var.find('=') {
-                        let k = &env_var[..pos];
-                        if ["PATH", "PREFIX", "HOME", "TMP", "TMPDIR", "LD_LIBRARY_PATH", "LD_PRELOAD"].contains(&k) { continue; }
-                        final_env.push(format!("{}={}", k, fix_canonical(&env_var[pos+1..])));
-                    }
-                }
-
-                // --- 子进程清理 (关键) ---
+                // 子进程清理
                 unsafe {
-                    // 1. 解除信号屏蔽
                     let mut signals_to_unblock: libc::sigset_t = std::mem::zeroed();
                     libc::sigfillset(&mut signals_to_unblock);
                     libc::sigprocmask(libc::SIG_UNBLOCK, &signals_to_unblock, std::ptr::null_mut());
-
-                    // 2. 打印调试日志 (在关闭 FD 之前，确保 Logcat Socket 还在)
-                    crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY] CHILD_EXECUTE: pid={} cmd='{}' ld_preload='{}'", libc::getpid(), final_cmd, preloader));
-
-                    // 3. 关闭多余句柄 (FD > 2)
-                    if let Ok(dir) = std::fs::read_dir("/proc/self/fd") {
-                        // 注意：必须先收集所有要关闭的 FD，否则在遍历过程中关闭 dir 的 FD 会导致中断
-                        let fds_to_close: Vec<i32> = dir.filter_map(|e| e.ok())
-                            .filter_map(|entry| entry.file_name().into_string().ok())
-                            .filter_map(|fd_str| fd_str.parse::<i32>().ok())
-                            .filter(|&fd| fd > 2)
-                            .collect();
-                        
-                        for fd in fds_to_close {
-                            libc::close(fd);
-                        }
-                    }
                 }
-
-                // 准备环境与参数指针
-                let mut c_envs = Vec::new();
-                for e in &final_env { if let Ok(ce) = CString::new(e.clone()) { c_envs.push(ce); } }
-                let ptr_envs: Vec<_> = c_envs.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
 
                 let mut c_args = Vec::new();
                 for a in &final_args { if let Ok(ca) = CString::new(a.clone()) { c_args.push(ca); } }
                 let ptr_args: Vec<_> = c_args.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
 
+                crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY_CHECKPOINT] CP07: final_exec cmd='{}' argv={:?}", final_cmd, final_args));
+
                 if !final_cmd.is_empty() {
-                    if let Ok(c_cmd) = CString::new(final_cmd.clone()) {
-                        libc::execve(c_cmd.as_ptr(), ptr_args.as_ptr(), ptr_envs.as_ptr());
-                    }
+                    let c_cmd = CString::new(final_cmd.clone()).unwrap();
+                    libc::execv(c_cmd.as_ptr(), ptr_args.as_ptr());
+                    
                     let err = nix::errno::Errno::last_raw();
-                    crate::utils::android_log(crate::utils::LogPriority::ERROR, &format!("[PTY] execve FAILED! errno={} cmd={}", err, final_cmd));
+                    crate::utils::android_log(crate::utils::LogPriority::ERROR, &format!("[PTY_CHECKPOINT] CP08: execv FAILED! errno={} cmd={}", err, final_cmd));
                 }
                 libc::_exit(1);
             }
