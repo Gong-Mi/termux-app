@@ -324,7 +324,7 @@ fn flush_events_to_java(env: &mut JNIEnv, callback_obj: &Option<jni::objects::Gl
 /// 创建引擎实例
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_createEngine(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     cols: jint,
     rows: jint,
@@ -333,7 +333,11 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_createEngine(
     total_rows: jint,
     callback: JObject,
 ) -> jlong {
-    android_log(LogPriority::DEBUG, &format!("JNI: createEngine ({}x{})", cols, rows));
+    android_log(LogPriority::DEBUG, &format!("JNI: createEngine ({}x{}) - Initializing staggering...", cols, rows));
+    
+    // 降温处理：防止启动瞬间 CPU 爆发导致系统误杀
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    
     let mut engine = TerminalEngine::new(cols as i64, rows as i64, total_rows as i64, cw, ch);
     if !callback.is_null() {
         if let Ok(global_ref) = env.new_global_ref(callback) {
