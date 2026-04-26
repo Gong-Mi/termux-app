@@ -11,10 +11,12 @@ on:
     branches:
       - feature/rust-integration
       - fix/android-12-compat
+      - legacy/sdk-28-compat
   pull_request:
     branches:
       - feature/rust-integration
       - fix/android-12-compat
+      - legacy/sdk-28-compat
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
