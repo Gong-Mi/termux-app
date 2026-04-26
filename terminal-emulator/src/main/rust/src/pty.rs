@@ -86,7 +86,7 @@ pub fn create_subprocess_with_data(
     cw: jint,
     ch: jint,
 ) -> Result<(jint, i32), ()> {
-    // 1. 预解析路径 (Parent)
+    // 1. 预解析 (Parent)
     let mut real_pkg = String::from("com.termux");
     let mut termux_prefix = String::from("/data/user/0/com.termux/files/usr");
     
@@ -106,20 +106,22 @@ pub fn create_subprocess_with_data(
     let termux_bin = format!("{}/bin", termux_prefix_data);
     let termux_home = format!("{}/home", termux_files);
 
-    // 2. 部署核心马甲 (Physical PATH Interception)
-    // 使用 /system/bin/sh 作为解释器以避开 W^X 拦截，强制通过 Linker 运行关键工具
+    // 2. 核心马甲部署 (物理 PATH 拦截)
     let wrapper_dir = format!("{}/bin-wrappers", termux_prefix_data);
     let _ = std::fs::create_dir_all(&wrapper_dir);
-    for (name, rp) in [("git", format!("{}/bin/git", termux_prefix_data)), ("ssh", format!("{}/bin/ssh", termux_prefix_data))] {
-        let wp = format!("{}/{}", wrapper_dir, name);
-        let content = format!("#!/system/bin/sh\nexec /system/bin/linker64 {} \"$@\"\n", rp);
-        let _ = std::fs::write(&wp, content);
-        let _ = std::path::Path::new(&wp).metadata().map(|m| {
-            use std::os::unix::fs::PermissionsExt;
-            let mut p = m.permissions();
-            p.set_mode(0o755);
-            let _ = std::fs::set_permissions(&wp, p);
-        });
+    for tool in ["git", "ssh", "sh", "bash"] {
+        let target = format!("{}/{}", termux_bin, tool);
+        if let Ok(real_path) = std::fs::canonicalize(&target) {
+            let wp = format!("{}/{}", wrapper_dir, tool);
+            let content = format!("#!/system/bin/sh\nexec /system/bin/linker64 {} \"$@\"\n", real_path.to_string_lossy());
+            let _ = std::fs::write(&wp, content);
+            let _ = std::path::Path::new(&wp).metadata().map(|m| {
+                use std::os::unix::fs::PermissionsExt;
+                let mut p = m.permissions();
+                p.set_mode(0o755);
+                std::fs::set_permissions(&wp, p);
+            });
+        }
     }
 
     // 3. 命令决议与包装
@@ -137,7 +139,7 @@ pub fn create_subprocess_with_data(
         if f.read_exact(&mut magic).is_ok() && &magic == b"\x7fELF" { is_actual_elf = true; }
     }
 
-    // 递归转换脚本
+    // 递归脚本转换
     if !is_actual_elf && (final_cmd.contains(&real_pkg) || final_cmd.contains("/data/")) {
         let mut sh_argv = Vec::new();
         sh_argv.push(String::from("sh"));
@@ -148,7 +150,7 @@ pub fn create_subprocess_with_data(
         is_actual_elf = true; 
     }
 
-    // Login Shell 特殊处理
+    // Login Shell
     let is_shell = ["sh", "bash", "zsh", "dash", "fish"].iter().any(|&s| final_cmd.ends_with(s));
     if is_shell {
         let shell_name = std::path::Path::new(&final_cmd).file_name().and_then(|n| n.to_str()).unwrap_or("sh");
@@ -156,7 +158,7 @@ pub fn create_subprocess_with_data(
         else if !final_args[0].starts_with('-') { final_args[0] = format!("-{}", shell_name); }
     }
 
-    // 最终包装
+    // Linker 包装
     if is_actual_elf && (final_cmd.contains(&real_pkg) || final_cmd.contains("/data/")) {
         #[cfg(target_pointer_width = "64")] let linker = "/system/bin/linker64";
         #[cfg(target_pointer_width = "32")] let linker = "/system/bin/linker";
@@ -171,10 +173,9 @@ pub fn create_subprocess_with_data(
         }
     }
 
-    // 4. 环境准备
+    // 4. 环境序列化 (Parent 确保线程安全)
     let mut final_env = Vec::new();
     let old_p = std::env::var("PATH").unwrap_or_else(|_| "/system/bin".to_string());
-    // 强制注入马甲路径到 PATH 首位
     let fp = format!("{}:{}:{}", wrapper_dir, termux_bin, old_p.replace("/data/user/0/", "/data/data/"));
     final_env.push(format!("PATH={}", fp));
     final_env.push(format!("PREFIX={}", termux_prefix_data));
@@ -221,6 +222,14 @@ pub fn create_subprocess_with_data(
                 libc::ioctl(pts, libc::TIOCSCTTY as _, 0);
                 libc::dup2(pts, 0); libc::dup2(pts, 1); libc::dup2(pts, 2);
                 libc::close(ptm);
+
+                if !cwd_str.is_empty() {
+                    if let Ok(c_cwd) = CString::new(cwd_str.replace("/data/user/0/", "/data/data/")) { let _ = chdir(c_cwd.as_c_str()); }
+                }
+
+                let mut signals_to_unblock: libc::sigset_t = std::mem::zeroed();
+                libc::sigfillset(&mut signals_to_unblock);
+                libc::sigprocmask(libc::SIG_UNBLOCK, &signals_to_unblock, std::ptr::null_mut());
 
                 let ptr_args: Vec<_> = c_args.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
                 let ptr_envs: Vec<_> = c_envs.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
