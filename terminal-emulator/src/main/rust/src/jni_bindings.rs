@@ -396,9 +396,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processCodePoint(
 }
 
 /// 销毁引擎
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_destroyEngine(
-    mut env: JNIEnv,
+    _env: JNIEnv,
     _class: JClass,
     ptr: jlong,
 ) {
