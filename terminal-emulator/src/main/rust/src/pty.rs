@@ -363,11 +363,19 @@ pub fn create_subprocess_with_data(
                     final_args = new_argv;
                 }
 
-                // W^X Bypass: 标准 Linker 协议构建
+                // W^X Bypass: 标准 Linker 协议构建 (智能分级加载)
                 let canonical_target = std::fs::canonicalize(&final_cmd).unwrap_or_else(|_| std::path::PathBuf::from(&final_cmd));
                 let c_str = canonical_target.to_string_lossy();
                 
-                let needs_linker = final_cmd.contains(&real_pkg) || final_cmd.contains("/data/") || c_str.contains("/data/");
+                // 1. 检查目标是否确实是 ELF 二进制
+                let mut is_actual_elf = false;
+                if let Ok(mut f) = std::fs::File::open(&final_cmd) {
+                    use std::io::Read;
+                    let mut magic = [0u8; 4];
+                    if f.read(&mut magic).is_ok() && &magic == b"\x7fELF" { is_actual_elf = true; }
+                }
+
+                let needs_linker = is_actual_elf && (final_cmd.contains(&real_pkg) || final_cmd.contains("/data/") || c_str.contains("/data/"));
 
                 if needs_linker {
                     #[cfg(target_pointer_width = "64")] let linker = "/system/bin/linker64";
@@ -375,6 +383,7 @@ pub fn create_subprocess_with_data(
                     
                     if std::path::Path::new(linker).exists() {
                         let mut linker_argv = Vec::new();
+                        // 保持原始的 argv[0] 以兼容 login/bash 启动模式
                         let prog_name = if !final_args.is_empty() { final_args[0].clone() } else { final_cmd.clone() };
                         linker_argv.push(prog_name);         // argv[0]
                         linker_argv.push(final_cmd.clone()); // argv[1]
@@ -384,6 +393,16 @@ pub fn create_subprocess_with_data(
                         final_args = linker_argv;
                         final_cmd = linker.to_string();
                     }
+                } else if !is_actual_elf && !final_cmd.starts_with("/system/bin/") {
+                    // 如果是脚本且不在系统路径，强制使用 sh 启动以确保 LD_PRELOAD 生效
+                    let mut sh_argv = Vec::new();
+                    sh_argv.push(String::from("sh"));
+                    sh_argv.push(final_cmd.clone());
+                    if final_args.len() > 1 {
+                        sh_argv.extend(final_args.into_iter().skip(1));
+                    }
+                    final_args = sh_argv;
+                    final_cmd = format!("{}/bin/sh", termux_prefix_data);
                 }
 
                 // 子进程清理
