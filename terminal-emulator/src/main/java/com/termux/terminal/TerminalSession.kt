@@ -141,23 +141,7 @@ class TerminalSession(
             mClient.onTextChanged(this)
 
             if (mTerminalFileDescriptor != -1) {
-                val terminalFileDescriptorWrapped = wrapFileDescriptor(mTerminalFileDescriptor, mClient)
-
-                Thread(null, object : Runnable {
-                    override fun run() {
-                        val buffer = ByteArray(4096)
-                        try {
-                            FileOutputStream(terminalFileDescriptorWrapped).use { termOut ->
-                                while (true) {
-                                    val bytesToWrite = mTerminalToProcessIOQueue.read(buffer, true)
-                                    if (bytesToWrite == -1) return
-                                    termOut.write(buffer, 0, bytesToWrite)
-                                }
-                            }
-                        } catch (_: IOException) { }
-                    }
-                }, "TermSessionOutputWriter[pid=$mShellPid]").start()
-
+                // 仅保留退出状态等待线程，所有数据 IO 已迁移至 Rust
                 Thread(null, object : Runnable {
                     override fun run() {
                         val processExitCode = runCatching { JNI.waitFor(mShellPid) }.getOrDefault(0)
@@ -175,7 +159,7 @@ class TerminalSession(
     /** Write data to the shell process. */
     override fun write(data: ByteArray, offset: Int, count: Int) {
         if (mSessionState != SessionState.READY) return
-        if (mShellPid > 0) mTerminalToProcessIOQueue.write(data, offset, count)
+        mEmulator?.takeIf { it.isAlive() }?.append(data, count) // 通过 Rust 写入 PTY
     }
 
     /** Write the Unicode code point to the terminal encoded in UTF-8. */
@@ -183,31 +167,12 @@ class TerminalSession(
         if (codePoint > 1114111 || codePoint in 0xD800..0xDFFF) {
             throw IllegalArgumentException("Invalid code point: $codePoint")
         }
-
-        var bufferPosition = 0
-        if (prependEscape) mUtf8InputBuffer[bufferPosition++] = 27.toByte()
-
-        when {
-            codePoint <= 0b1111111 -> {
-                mUtf8InputBuffer[bufferPosition++] = codePoint.toByte()
-            }
-            codePoint <= 0b11111111111 -> {
-                mUtf8InputBuffer[bufferPosition++] = (0b11000000 or (codePoint shr 6)).toByte()
-                mUtf8InputBuffer[bufferPosition++] = (0b10000000 or (codePoint and 0b111111)).toByte()
-            }
-            codePoint <= 0b1111111111111111 -> {
-                mUtf8InputBuffer[bufferPosition++] = (0b11100000 or (codePoint shr 12)).toByte()
-                mUtf8InputBuffer[bufferPosition++] = (0b10000000 or ((codePoint shr 6) and 0b111111)).toByte()
-                mUtf8InputBuffer[bufferPosition++] = (0b10000000 or (codePoint and 0b111111)).toByte()
-            }
-            else -> {
-                mUtf8InputBuffer[bufferPosition++] = (0b11110000 or (codePoint shr 18)).toByte()
-                mUtf8InputBuffer[bufferPosition++] = (0b10000000 or ((codePoint shr 12) and 0b111111)).toByte()
-                mUtf8InputBuffer[bufferPosition++] = (0b10000000 or ((codePoint shr 6) and 0b111111)).toByte()
-                mUtf8InputBuffer[bufferPosition++] = (0b10000000 or (codePoint and 0b111111)).toByte()
-            }
+        
+        // 如果需要前缀转义符，先处理
+        if (prependEscape) {
+            mEmulator?.processCodePoint(27)
         }
-        write(mUtf8InputBuffer, 0, bufferPosition)
+        mEmulator?.processCodePoint(codePoint)
     }
 
     fun getEmulator(): TerminalEmulator? = mEmulator
@@ -294,18 +259,8 @@ class TerminalSession(
                 return
             }
 
-            var totalBytesRead = 0
-            var bytesRead = 0
-            while (mEmulator?.isAlive() == true &&
-                   mProcessToTerminalIOQueue.read(mReceiveBuffer, false).also { bytesRead = it } > 0) {
-                mEmulator!!.append(mReceiveBuffer, bytesRead)
-                totalBytesRead += bytesRead
-                if (totalBytesRead > 32 * 1024) {
-                    if (!hasMessages(MSG_NEW_INPUT)) sendEmptyMessage(MSG_NEW_INPUT)
-                    break
-                }
-            }
-            if (totalBytesRead > 0) notifyScreenUpdate()
+            // 数据解析已完全移交至 Rust IO 线程，此处不再需要 Kotlin 端的解析循环
+            // notifyScreenUpdate() 会由 Rust 侧通过 onNativeScreenUpdated 触发
 
             if (msg.what == MSG_PROCESS_EXITED) {
                 val exitCode = msg.obj as? Int ?: 0

@@ -345,7 +345,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_createEngine(
     Arc::into_raw(context) as jlong
 }
 
-/// 批量处理
+/// 批量处理 (现在直接写入 PTY，移交 IO 控制权给 Rust)
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatch(
     mut env: JNIEnv,
@@ -356,42 +356,49 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatch(
 ) {
     if ptr == 0 || batch.is_null() { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
-    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let (events, cb) = {
-            let mut engine = context.lock.write().unwrap();
-            let j_array = unsafe { jni::objects::JByteArray::from_raw(batch) };
-            if let Ok(bytes) = env.convert_byte_array(&j_array) {
-                let len = length as usize;
-                let actual_len = std::cmp::min(len, bytes.len());
-                engine.process_bytes(&bytes[..actual_len]);
-            }
-            (engine.take_events(), engine.state.java_callback_obj.clone())
+    
+    let j_array = unsafe { jni::objects::JByteArray::from_raw(batch) };
+    if let Ok(bytes) = env.convert_byte_array(&j_array) {
+        let len = length as usize;
+        let actual_len = std::cmp::min(len, bytes.len());
+        
+        let pty_fd = {
+            let engine = context.lock.read().unwrap();
+            engine.pty_fd
         };
-        flush_events_to_java(&mut env, &cb, events);
-        render_thread::request_render();
-    }));
+
+        if let Some(fd) = pty_fd {
+            unsafe { libc::write(fd, bytes[..actual_len].as_ptr() as *const _, actual_len); }
+        }
+    }
+    
     let _ = Arc::into_raw(context);
 }
 
-/// 处理 Unicode 码点
+/// 处理 Unicode 码点 (现在直接写入 PTY，移交 IO 控制权给 Rust)
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_processCodePoint(
-    mut env: JNIEnv,
+    _env: JNIEnv,
     _class: JClass,
     ptr: jlong,
     code_point: jint,
 ) {
     if ptr == 0 { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
-    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let (events, cb) = {
-            let mut engine = context.lock.write().unwrap();
-            engine.process_code_point(code_point as u32);
-            (engine.take_events(), engine.state.java_callback_obj.clone())
-        };
-        flush_events_to_java(&mut env, &cb, events);
-        render_thread::request_render();
-    }));
+    
+    let pty_fd = {
+        let engine = context.lock.read().unwrap();
+        engine.pty_fd
+    };
+
+    if let Some(fd) = pty_fd {
+        let mut utf8_buf = [0u8; 4];
+        let utf8_str = char::from_u32(code_point as u32)
+            .unwrap_or('\u{FFFD}')
+            .encode_utf8(&mut utf8_buf);
+        unsafe { libc::write(fd, utf8_str.as_ptr() as *const _, utf8_str.len()); }
+    }
+    
     let _ = Arc::into_raw(context);
 }
 
@@ -1246,6 +1253,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
 
         android_log(LogPriority::DEBUG, "[TRACE_SESSION] Creating TerminalEngine");
         let mut engine = TerminalEngine::new(cols as i64, rows as i64, transcript_rows as i64, cw, ch);
+        engine.pty_fd = Some(pty_fd); // 记录 FD 以供后续 write 调用使用
         if let Some(ref cb) = callback_ref {
             engine.state.java_callback_obj = Some(cb.clone());
         }
