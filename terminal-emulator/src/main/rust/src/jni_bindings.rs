@@ -396,17 +396,22 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processCodePoint(
 }
 
 /// 销毁引擎
-#[unsafe(no_mangle)]
+#[no_mangle]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_destroyEngine(
     mut env: JNIEnv,
     _class: JClass,
     ptr: jlong,
 ) {
     if ptr != 0 {
+        android_log(LogPriority::INFO, &format!("destroyEngine: Cleaning up engine pointer {}", ptr));
+        render_thread::cleanup_engine(ptr);
+
         let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
         context.running.store(false, std::sync::atomic::Ordering::SeqCst);
+        // context (Arc) drops here, freeing memory
     }
 }
+
 
 /// 启动 IO 线程
 #[unsafe(no_mangle)]

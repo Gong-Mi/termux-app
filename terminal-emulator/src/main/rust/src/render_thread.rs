@@ -92,6 +92,16 @@ pub fn try_start_render_thread() {
     }
 }
 
+/// 清理引擎指针，防止 Use-After-Free
+pub fn cleanup_engine(ptr: jlong) {
+    let mut guard = ENGINE_POINTER.lock().unwrap();
+    if *guard == ptr {
+        android_log(LogPriority::INFO, &format!("cleanup_engine: Nulling ENGINE_POINTER {}", ptr));
+        *guard = 0;
+        ENGINE_READY.store(false, Ordering::SeqCst);
+    }
+}
+
 /// 实际启动渲染线程的内部函数
 fn spawn_render_thread(engine_ptr: jlong) {
     RENDER_THREAD_RUNNING.store(true, Ordering::SeqCst);
@@ -154,14 +164,30 @@ fn spawn_render_thread(engine_ptr: jlong) {
                     }
                 };
 
-                // 获取 Engine 实例
-                let current_engine_ptr = *ENGINE_POINTER.lock().unwrap();
-                if current_engine_ptr == 0 {
-                    std::thread::sleep(std::time::Duration::from_millis(16));
-                    continue;
-                }
+                // 获取 Engine 实例 - 增加引用计数确保在渲染期间不会被释放
+                let engine_arc = {
+                    let guard = ENGINE_POINTER.lock().unwrap();
+                    let ptr = *guard;
+                    if ptr == 0 {
+                        None
+                    } else {
+                        unsafe {
+                            let context = std::sync::Arc::from_raw(ptr as *const crate::engine::TerminalContext);
+                            let clone = std::sync::Arc::clone(&context);
+                            let _ = std::sync::Arc::into_raw(context); // 返还所有权，不减少引用计数
+                            Some(clone)
+                        }
+                    }
+                };
 
-                let term_ctx = unsafe { &*(current_engine_ptr as *const TerminalContext) };
+                let term_ctx = match engine_arc {
+                    Some(arc) => arc,
+                    None => {
+                        std::thread::sleep(std::time::Duration::from_millis(16));
+                        continue;
+                    }
+                };
+
                 let top_row = *RENDER_TOP_ROW.lock().unwrap();
 
                 let frame = {
