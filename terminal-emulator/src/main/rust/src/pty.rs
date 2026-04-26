@@ -202,9 +202,22 @@ pub fn create_subprocess_with_data(
                 
                 set_env("LD_LIBRARY_PATH", &termux_lib);
                 
-                // 2. 注入关键绕过库 LD_PRELOAD
-                let termux_exec_path = format!("{}/lib/libtermux-exec.so", termux_prefix_data);
-                set_env("LD_PRELOAD", &termux_exec_path);
+                // 2. 注入关键绕过库 LD_PRELOAD (优先使用极限 NOS 版本)
+                let termux_exec_candidates = [
+                    "libtermux-exec_nos_c_tre.so",
+                    "libtermux-exec-linker-ld-preload.so",
+                    "libtermux-exec.so",
+                ];
+                let mut active_preloader = format!("{}/lib/libtermux-exec.so", termux_prefix_data);
+                for candidate in &termux_exec_candidates {
+                    let path = format!("{}/lib/{}", termux_prefix_data, candidate);
+                    let c_path = CString::new(path.clone()).unwrap();
+                    if unsafe { libc::access(c_path.as_ptr(), libc::R_OK) } == 0 {
+                        active_preloader = path;
+                        break;
+                    }
+                }
+                set_env("LD_PRELOAD", &active_preloader);
 
                 // 3. 注入系统变量 (Linker 必需)
                 let sys_vars = [
