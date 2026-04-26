@@ -24,16 +24,12 @@ pub unsafe fn create_subprocess(
     let cmd_str = if !cmd.is_null() {
         let js = unsafe { JString::from_raw(cmd) };
         env.get_string(&js).map(|s| s.into()).unwrap_or_default()
-    } else {
-        String::new()
-    };
+    } else { String::new() };
 
     let cwd_str = if !cwd.is_null() {
         let js = unsafe { JString::from_raw(cwd) };
         env.get_string(&js).map(|s| s.into()).unwrap_or_default()
-    } else {
-        String::new()
-    };
+    } else { String::new() };
 
     let mut argv = Vec::new();
     let args_obj = unsafe { JObjectArray::from_raw(args) };
@@ -42,9 +38,7 @@ pub unsafe fn create_subprocess(
             for i in 0..len {
                 if let Ok(arg_obj) = env.get_object_array_element(&args_obj, i) {
                     let arg_java: JString = arg_obj.into();
-                    if let Ok(s) = env.get_string(&arg_java) {
-                        argv.push(String::from(s));
-                    }
+                    if let Ok(s) = env.get_string(&arg_java) { argv.push(String::from(s)); }
                 }
             }
         }
@@ -57,9 +51,7 @@ pub unsafe fn create_subprocess(
             for i in 0..len {
                 if let Ok(env_obj) = env.get_object_array_element(&env_vars_obj, i) {
                     let env_java: JString = env_obj.into();
-                    if let Ok(s) = env.get_string(&env_java) {
-                        envp.push(String::from(s));
-                    }
+                    if let Ok(s) = env.get_string(&env_java) { envp.push(String::from(s)); }
                 }
             }
         }
@@ -86,122 +78,70 @@ pub fn create_subprocess_with_data(
     cw: jint,
     ch: jint,
 ) -> Result<(jint, i32), ()> {
-    // 1. 预解析 (Parent)
-    let mut real_pkg = String::from("com.termux");
-    let mut termux_prefix = String::from("/data/user/0/com.termux/files/usr");
-    
-    for p in [&cmd_str, &cwd_str] {
-        if let Some(pos) = p.find("/files/") {
-            let root = &p[..pos];
-            if let Some(pkg_pos) = root.rfind('/') { real_pkg = root[pkg_pos+1..].to_string(); }
-            termux_prefix = format!("{}/files/usr{}", root, if p.contains("/usr-staging/") { "-staging" } else { "" });
-            break;
-        }
-    }
-    
+    // 1. 基础路径解析
+    let real_pkg = "com.termux";
     let termux_data_root = format!("/data/data/{}", real_pkg);
     let termux_files = format!("{}/files", termux_data_root);
-    let termux_prefix_data = format!("{}/usr{}", termux_files, if termux_prefix.contains("staging") { "-staging" } else { "" });
-    let termux_bin = format!("{}/bin", termux_prefix_data);
+    let termux_prefix = format!("{}/usr", termux_files);
+    let termux_bin = format!("{}/bin", termux_prefix);
     let termux_home = format!("{}/home", termux_files);
 
-    // 2. 核心马甲引擎 (Parent 确保原子性)
-    let wrapper_dir = format!("{}/bin-wrappers", termux_prefix_data);
-    let _ = std::fs::create_dir_all(&wrapper_dir);
-    
-    // 我们强制劫持这几个核心工具
-    for tool in ["git", "ssh", "sh", "bash"] {
-        let target = format!("{}/{}", termux_bin, tool);
-        // 重要：解析软连接，Linker 必须吃原始 ELF 的绝对路径
-        if let Ok(real_path) = std::fs::canonicalize(&target) {
-            let real_path_str = real_path.to_string_lossy().replace("/data/user/0/", "/data/data/");
-            let wp = format!("{}/{}", wrapper_dir, tool);
-            // 使用 /system/bin/sh 作为 Shebang，因为它拥有系统级的执行豁免权
-            let content = format!("#!/system/bin/sh\nexec /system/bin/linker64 {} \"$@\"\n", real_path_str);
-            let _ = std::fs::write(&wp, content);
-            let _ = std::path::Path::new(&wp).metadata().map(|m| {
-                use std::os::unix::fs::PermissionsExt;
-                let mut p = m.permissions();
-                p.set_mode(0o755);
-                let _ = std::fs::set_permissions(&wp, p);
-            });
-        }
-    }
-
-    // 3. 命令决议与包装
-    let mut final_cmd = cmd_str.replace("/data/user/0/", "/data/data/");
-    if !final_cmd.starts_with('/') {
-        let resolved = format!("{}/{}", termux_bin, final_cmd);
-        if std::path::Path::new(&resolved).exists() { final_cmd = resolved; }
-    }
-    let mut final_args: Vec<String> = argv.iter().map(|a| a.replace("/data/user/0/", "/data/data/")).collect();
-    
-    let mut is_actual_elf = false;
-    if let Ok(mut f) = std::fs::File::open(&final_cmd) {
-        use std::io::Read;
-        let mut magic = [0u8; 4];
-        if f.read_exact(&mut magic).is_ok() && &magic == b"\x7fELF" { is_actual_elf = true; }
-    }
-
-    // 递归转换脚本
-    if !is_actual_elf && (final_cmd.contains(&real_pkg) || final_cmd.contains("/data/")) {
-        let mut sh_argv = Vec::new();
-        sh_argv.push(String::from("sh"));
-        sh_argv.push(final_cmd.clone());
-        if final_args.len() > 1 { sh_argv.extend(final_args.into_iter().skip(1)); }
-        final_args = sh_argv;
-        final_cmd = format!("{}/bin/sh", termux_prefix_data);
-        is_actual_elf = true; 
-    }
-
-    // Login Shell 特殊处理 (argv[0] 开始符为 '-')
-    let is_shell = ["sh", "bash", "zsh", "dash", "fish"].iter().any(|&s| final_cmd.ends_with(s));
-    if is_shell {
-        let shell_name = std::path::Path::new(&final_cmd).file_name().and_then(|n| n.to_str()).unwrap_or("sh");
-        if final_args.is_empty() { final_args.push(format!("-{}", shell_name)); }
-        else if !final_args[0].starts_with('-') { final_args[0] = format!("-{}", shell_name); }
-    }
-
-    // 最终包装 (Linker 模式)
-    if is_actual_elf && (final_cmd.contains(&real_pkg) || final_cmd.contains("/data/")) {
-        #[cfg(target_pointer_width = "64")] let linker = "/system/bin/linker64";
-        #[cfg(target_pointer_width = "32")] let linker = "/system/bin/linker";
-        if std::path::Path::new(linker).exists() {
-            let mut linker_argv = Vec::new();
-            let prog_name = if !final_args.is_empty() { final_args[0].clone() } else { final_cmd.clone() };
-            linker_argv.push(prog_name);         // argv[0] -> 进程名
-            linker_argv.push(final_cmd.clone()); // argv[1] -> Linker 要求的绝对路径
-            if final_args.len() > 1 { linker_argv.extend(final_args.into_iter().skip(1)); }
-            final_args = linker_argv;
-            final_cmd = linker.to_string();
-        }
-    }
-
-    // 4. 环境序列化 (Parent 线程安全)
+    // 2. 环境序列化
     let mut final_env = Vec::new();
     let old_p = std::env::var("PATH").unwrap_or_else(|_| "/system/bin".to_string());
-    // 强制：马甲目录第一，Termux bin 第二，系统 bin 第三
-    let fp = format!("{}:{}:{}", wrapper_dir, termux_bin, old_p.replace("/data/user/0/", "/data/data/"));
-    final_env.push(format!("PATH={}", fp));
-    final_env.push(format!("PREFIX={}", termux_prefix_data));
+    final_env.push(format!("PATH={}:{}", termux_bin, old_p.replace("/data/user/0/", "/data/data/")));
+    final_env.push(format!("PREFIX={}", termux_prefix));
     final_env.push(format!("HOME={}", termux_home));
-    final_env.push(format!("LD_PRELOAD={}/lib/libtermux-exec.so", termux_prefix_data));
-    final_env.push(format!("TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE=force"));
+    final_env.push(format!("LD_PRELOAD={}/lib/libtermux-exec.so", termux_prefix));
 
-    for var in ["ANDROID_ART_ROOT", "ANDROID_ASSETS", "ANDROID_DATA", "ANDROID_I18N_ROOT", "ANDROID_ROOT", "ANDROID_RUNTIME_ROOT", "ANDROID_STORAGE", "ANDROID_TZDATA_ROOT", "EXTERNAL_STORAGE", "BOOTCLASSPATH", "DEX2OATBOOTCLASSPATH", "SYSTEMSERVERCLASSPATH"] {
+    for var in ["ANDROID_DATA", "ANDROID_ROOT", "EXTERNAL_STORAGE", "BOOTCLASSPATH"] {
         if let Ok(val) = std::env::var(var) { final_env.push(format!("{}={}", var, val)); }
     }
 
     for env_var in envp {
         if let Some(pos) = env_var.find('=') {
             let k = &env_var[..pos];
-            if !["PATH", "PREFIX", "HOME", "LD_PRELOAD", "LD_LIBRARY_PATH"].contains(&k) {
+            if !["PATH", "PREFIX", "HOME", "LD_PRELOAD"].contains(&k) {
                 final_env.push(env_var.replace("/data/user/0/", "/data/data/"));
             }
         }
     }
 
-    crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY_CHECKPOINT] FINAL_PLAN: cmd='{}' argv={:?}", final_cmd, final_args));
+    // 3. 命令决议
+    let mut final_cmd = cmd_str.replace("/data/user/0/", "/data/data/");
+    if !final_cmd.starts_with('/') {
+        let resolved = format!("{}/{}", termux_bin, final_cmd);
+        if std::path::Path::new(&resolved).exists() { final_cmd = resolved; }
+    }
+    let mut final_args: Vec<String> = argv.iter().map(|a| a.replace("/data/user/0/", "/data/data/")).collect();
+
+    // 4. 简化的 Linker 包装逻辑 (针对 Android 11/SDK 30 环境)
+    let mut is_elf = false;
+    if let Ok(mut f) = std::fs::File::open(&final_cmd) {
+        use std::io::Read;
+        let mut magic = [0u8; 4];
+        if f.read_exact(&mut magic).is_ok() && &magic == b"\x7fELF" { is_elf = true; }
+    }
+
+    if is_elf && final_cmd.contains("/data/data/") {
+        #[cfg(target_pointer_width = "64")] let linker = "/system/bin/linker64";
+        #[cfg(target_pointer_width = "32")] let linker = "/system/bin/linker";
+        if std::path::Path::new(linker).exists() {
+            let mut linker_argv = Vec::new();
+            linker_argv.push(if !final_args.is_empty() { final_args[0].clone() } else { final_cmd.clone() });
+            linker_argv.push(final_cmd.clone());
+            if final_args.len() > 1 { linker_argv.extend(final_args.into_iter().skip(1)); }
+            final_args = linker_argv;
+            final_cmd = linker.to_string();
+        }
+    } else if !is_elf && final_cmd.contains("/data/data/") {
+        let mut sh_argv = Vec::new();
+        sh_argv.push(String::from("sh"));
+        sh_argv.push(final_cmd.clone());
+        if final_args.len() > 1 { sh_argv.extend(final_args.into_iter().skip(1)); }
+        final_args = sh_argv;
+        final_cmd = format!("{}/bin/sh", termux_prefix);
+    }
 
     let c_cmd = CString::new(final_cmd).unwrap();
     let c_args: Vec<CString> = final_args.iter().map(|a| CString::new(a.clone()).unwrap()).collect();
