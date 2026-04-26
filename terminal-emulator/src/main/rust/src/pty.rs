@@ -141,7 +141,7 @@ pub fn create_subprocess_with_data(
     let termux_lib = format!("{}/lib", termux_prefix_data);
     let termux_home = format!("{}/home", termux_files);
 
-    // === 2. 命令决议 (Parent 进程) ===
+    // === 2. 命令决议与特征扫描 (Parent 进程) ===
     let mut final_cmd = cmd_str.replace("/data/user/0/", "/data/data/");
     if !final_cmd.starts_with('/') {
         let resolved = format!("{}/{}", termux_bin, final_cmd);
@@ -150,6 +150,7 @@ pub fn create_subprocess_with_data(
     
     let mut final_args: Vec<String> = argv.iter().map(|a| a.replace("/data/user/0/", "/data/data/")).collect();
     
+    // ELF 探测 (必须在包装前进行)
     let mut is_actual_elf = false;
     if let Ok(mut f) = std::fs::File::open(&final_cmd) {
         use std::io::Read;
@@ -157,25 +158,17 @@ pub fn create_subprocess_with_data(
         if f.read_exact(&mut magic).is_ok() && &magic == b"\x7fELF" { is_actual_elf = true; }
     }
 
-    if !is_actual_elf && (final_cmd.contains(&real_pkg) || final_cmd.contains("/data/")) {
-        let mut sh_argv = Vec::new();
-        sh_argv.push(String::from("sh"));
-        sh_argv.push(final_cmd.clone());
-        if final_args.len() > 1 { sh_argv.extend(final_args.into_iter().skip(1)); }
-        final_args = sh_argv;
-        final_cmd = format!("{}/bin/sh", termux_prefix_data);
-        is_actual_elf = true; 
-    }
-
-    // Go/Static 扫描
+    // Go/Static 扫描 (必须在 final_cmd 还是原始程序时进行)
     let is_static_or_go = |path: &str| -> bool {
         if let Ok(mut f) = std::fs::File::open(path) {
             use std::io::Read;
             let mut buffer = [0u8; 4096];
-            if f.read(&mut buffer).is_ok() {
-                let content_str = String::from_utf8_lossy(&buffer);
+            if let Ok(n) = f.read(&mut buffer) {
+                let content_str = String::from_utf8_lossy(&buffer[..n]);
                 if content_str.contains("Go build ID") || content_str.contains("Go runtime") { return true; }
             }
+            let name = std::path::Path::new(path).file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if ["gh", "docker", "podman", "terraform", "rclone"].contains(&name) { return true; }
         }
         false
     };
@@ -191,30 +184,52 @@ pub fn create_subprocess_with_data(
                 let _ = std::fs::write(&wp, content);
                 if let Ok(c_p) = CString::new(wp) { unsafe { libc::chmod(c_p.as_ptr(), 0o755); } }
             }
-            wrapper_dir_to_inject = Some(wrapper_dir);
+            wrapper_dir_to_inject = Some(wrapper_dir.clone());
+            crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY] Go binary detected: {}. Prepared wrappers at {}", final_cmd, wrapper_dir));
         }
     }
 
-    // 最终包装 (关键修正：Linker 的 argv[1] 必须是路径)
+    // 脚本递归转换 (如果不是 ELF 且位于私有目录，包装进 sh)
+    if !is_actual_elf && (final_cmd.contains(&real_pkg) || final_cmd.contains("/data/")) {
+        let mut sh_argv = Vec::new();
+        sh_argv.push(String::from("sh"));
+        sh_argv.push(final_cmd.clone());
+        if final_args.len() > 1 { sh_argv.extend(final_args.into_iter().skip(1)); }
+        final_args = sh_argv;
+        final_cmd = format!("{}/bin/sh", termux_prefix_data);
+        is_actual_elf = true; 
+    }
+
+    // Login Shell 处理
+    let is_shell = ["sh", "bash", "zsh", "dash", "fish"].iter().any(|&s| final_cmd.ends_with(s));
+    if is_shell {
+        let shell_name = std::path::Path::new(&final_cmd).file_name().and_then(|n| n.to_str()).unwrap_or("sh");
+        if final_args.is_empty() { final_args.push(format!("-{}", shell_name)); }
+        else if !final_args[0].starts_with('-') { final_args[0] = format!("-{}", shell_name); }
+    }
+
+    // 最终 Linker 包装 (针对 ELF)
     if is_actual_elf && (final_cmd.contains(&real_pkg) || final_cmd.contains("/data/")) {
         #[cfg(target_pointer_width = "64")] let linker = "/system/bin/linker64";
         #[cfg(target_pointer_width = "32")] let linker = "/system/bin/linker";
         if std::path::Path::new(linker).exists() {
             let mut linker_argv = Vec::new();
-            // 修正：argv[0] 使用程序名，argv[1] 必须是绝对路径
             let prog_name = if !final_args.is_empty() { final_args[0].clone() } else { final_cmd.clone() };
             linker_argv.push(prog_name);         // argv[0]
-            linker_argv.push(final_cmd.clone()); // argv[1] -> 强制绝对路径
-            if final_args.len() > 1 {
-                linker_argv.extend(final_args.into_iter().skip(1));
-            }
+            linker_argv.push(final_cmd.clone()); // argv[1]
+            if final_args.len() > 1 { linker_argv.extend(final_args.into_iter().skip(1)); }
             final_args = linker_argv;
             final_cmd = linker.to_string();
         }
     }
 
-    // 在 Parent 进程打印最终决定
     crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY_CHECKPOINT] FINAL_PLAN: cmd='{}' argv={:?}", final_cmd, final_args));
+
+    // === 3. 执行 (Child 进程) ===
+    let uid_count = get_uid_process_count();
+    if uid_count > 28 {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
 
     unsafe {
         let ptm = libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY);
@@ -225,6 +240,10 @@ pub fn create_subprocess_with_data(
         }
 
         let devname = libc::ptsname(ptm);
+        if devname.is_null() {
+            libc::close(ptm);
+            return Err(());
+        }
         let devname_str = std::ffi::CStr::from_ptr(devname).to_string_lossy().into_owned();
 
         match fork() {
@@ -246,18 +265,31 @@ pub fn create_subprocess_with_data(
                 libc::dup2(pts, 2);
                 libc::close(ptm);
 
-                // 环境设置 (外科手术式)
-                let mut set_e = |k: &str, v: &str| {
+                // 外科手术式注入
+                let set_e = |k: &str, v: &str| {
                     if let (Ok(ck), Ok(cv)) = (CString::new(k), CString::new(v)) { libc::setenv(ck.as_ptr(), cv.as_ptr(), 1); }
                 };
                 set_e("PREFIX", &termux_prefix_data);
                 set_e("HOME", &termux_home);
                 let op = std::env::var("PATH").unwrap_or_default();
-                let fp = if let Some(wd) = wrapper_dir_to_inject { format!("{}:{}:{}", wd, termux_bin, op.replace("/data/user/0/", "/data/data/")) }
+                let fp = if let Some(ref wd) = wrapper_dir_to_inject { format!("{}:{}:{}", wd, termux_bin, op.replace("/data/user/0/", "/data/data/")) }
                          else { format!("{}:{}", termux_bin, op.replace("/data/user/0/", "/data/data/")) };
                 set_e("PATH", &fp);
                 set_e("LD_PRELOAD", &format!("{}/lib/libtermux-exec.so", termux_prefix_data));
                 set_e("TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE", "force");
+
+                // 系统变量继承
+                for var in ["ANDROID_DATA", "ANDROID_ROOT", "EXTERNAL_STORAGE", "BOOTCLASSPATH"] {
+                    if let Ok(val) = std::env::var(var) { set_e(var, &val); }
+                }
+
+                if !cwd_str.is_empty() {
+                    if let Ok(c_cwd) = CString::new(cwd_str.replace("/data/user/0/", "/data/data/")) { let _ = chdir(c_cwd.as_c_str()); }
+                }
+
+                let mut signals_to_unblock: libc::sigset_t = std::mem::zeroed();
+                libc::sigfillset(&mut signals_to_unblock);
+                libc::sigprocmask(libc::SIG_UNBLOCK, &signals_to_unblock, std::ptr::null_mut());
 
                 let mut c_args = Vec::new();
                 for a in &final_args { if let Ok(ca) = CString::new(a.clone()) { c_args.push(ca); } }
