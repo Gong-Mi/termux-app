@@ -418,8 +418,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_startIoThread(
     _env: JNIEnv,
     _class: JClass,
     ptr: jlong,
-) {
-
     fd: jint,
 ) {
     if ptr == 0 { return; }
