@@ -116,41 +116,36 @@ pub fn create_subprocess_with_data(
     cw: jint,
     ch: jint,
 ) -> Result<(jint, i32), ()> {
-    // === 1. 预解析 (Parent 进程) ===
+    // 1. 预解析 (Parent)
     let mut real_pkg = String::from("com.termux");
     let mut termux_prefix = String::from("/data/user/0/com.termux/files/usr");
     
-    let paths_to_check = [&cmd_str, &cwd_str];
-    for p in paths_to_check {
-        if let Some(pos) = p.find("/files/") {
-            let root = &p[..pos];
-            if let Some(pkg_pos) = root.rfind('/') { real_pkg = root[pkg_pos+1..].to_string(); }
-            if p.contains("/usr-staging/") {
-                termux_prefix = format!("{}/files/usr-staging", root);
-            } else {
-                termux_prefix = format!("{}/files/usr", root);
-            }
-            break;
-        }
+    // 手动循环解析路径，避开借用检查问题
+    if let Some(pos) = cmd_str.find("/files/") {
+        let root = &cmd_str[..pos];
+        if let Some(pkg_pos) = root.rfind('/') { real_pkg = root[pkg_pos+1..].to_string(); }
+        termux_prefix = format!("{}/files/usr{}", root, if cmd_str.contains("/usr-staging/") { "-staging" } else { "" });
+    } else if let Some(pos) = cwd_str.find("/files/") {
+        let root = &cwd_str[..pos];
+        if let Some(pkg_pos) = root.rfind('/') { real_pkg = root[pkg_pos+1..].to_string(); }
+        termux_prefix = format!("{}/files/usr", root);
     }
     
     let termux_data_root = format!("/data/data/{}", real_pkg);
     let termux_files = format!("{}/files", termux_data_root);
     let termux_prefix_data = format!("{}/usr{}", termux_files, if termux_prefix.contains("staging") { "-staging" } else { "" });
     let termux_bin = format!("{}/bin", termux_prefix_data);
-    let termux_lib = format!("{}/lib", termux_prefix_data);
     let termux_home = format!("{}/home", termux_files);
 
-    // === 2. 命令决议与特征扫描 (Parent 进程) ===
+    // 2. 命令决议
     let mut final_cmd = cmd_str.replace("/data/user/0/", "/data/data/");
     if !final_cmd.starts_with('/') {
         let resolved = format!("{}/{}", termux_bin, final_cmd);
         if std::path::Path::new(&resolved).exists() { final_cmd = resolved; }
     }
-    
     let mut final_args: Vec<String> = argv.iter().map(|a| a.replace("/data/user/0/", "/data/data/")).collect();
     
-    // ELF 探测 (必须在包装前进行)
+    // ELF 探测
     let mut is_actual_elf = false;
     if let Ok(mut f) = std::fs::File::open(&final_cmd) {
         use std::io::Read;
@@ -158,7 +153,7 @@ pub fn create_subprocess_with_data(
         if f.read_exact(&mut magic).is_ok() && &magic == b"\x7fELF" { is_actual_elf = true; }
     }
 
-    // Go/Static 扫描 (必须在 final_cmd 还是原始程序时进行)
+    // 扫描 Go/Static
     let is_static_or_go = |path: &str| -> bool {
         if let Ok(mut f) = std::fs::File::open(path) {
             use std::io::Read;
@@ -182,14 +177,19 @@ pub fn create_subprocess_with_data(
                 let wp = format!("{}/{}", wrapper_dir, name);
                 let content = format!("#!{}\nexec /system/bin/linker64 {} \"$@\"\n", sh_p, rp);
                 let _ = std::fs::write(&wp, content);
-                if let Ok(c_p) = CString::new(wp) { unsafe { libc::chmod(c_p.as_ptr(), 0o755); } }
+                let _ = std::path::Path::new(&wp).metadata().map(|m| {
+                    use std::os::unix::fs::PermissionsExt;
+                    let mut p = m.permissions();
+                    p.set_mode(0o755);
+                    let _ = std::fs::set_permissions(&wp, p);
+                });
             }
-            wrapper_dir_to_inject = Some(wrapper_dir.clone());
-            crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY] Go binary detected: {}. Prepared wrappers at {}", final_cmd, wrapper_dir));
+            wrapper_dir_to_inject = Some(wrapper_dir);
+            crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY] Go binary detected: {}. Prepared wrappers.", final_cmd));
         }
     }
 
-    // 脚本递归转换 (如果不是 ELF 且位于私有目录，包装进 sh)
+    // 脚本转换
     if !is_actual_elf && (final_cmd.contains(&real_pkg) || final_cmd.contains("/data/")) {
         let mut sh_argv = Vec::new();
         sh_argv.push(String::from("sh"));
@@ -200,7 +200,7 @@ pub fn create_subprocess_with_data(
         is_actual_elf = true; 
     }
 
-    // Login Shell 处理
+    // Login Shell
     let is_shell = ["sh", "bash", "zsh", "dash", "fish"].iter().any(|&s| final_cmd.ends_with(s));
     if is_shell {
         let shell_name = std::path::Path::new(&final_cmd).file_name().and_then(|n| n.to_str()).unwrap_or("sh");
@@ -208,42 +208,56 @@ pub fn create_subprocess_with_data(
         else if !final_args[0].starts_with('-') { final_args[0] = format!("-{}", shell_name); }
     }
 
-    // 最终 Linker 包装 (针对 ELF)
+    // Linker 包装
     if is_actual_elf && (final_cmd.contains(&real_pkg) || final_cmd.contains("/data/")) {
         #[cfg(target_pointer_width = "64")] let linker = "/system/bin/linker64";
         #[cfg(target_pointer_width = "32")] let linker = "/system/bin/linker";
         if std::path::Path::new(linker).exists() {
             let mut linker_argv = Vec::new();
             let prog_name = if !final_args.is_empty() { final_args[0].clone() } else { final_cmd.clone() };
-            linker_argv.push(prog_name);         // argv[0]
-            linker_argv.push(final_cmd.clone()); // argv[1]
+            linker_argv.push(prog_name);
+            linker_argv.push(final_cmd.clone());
             if final_args.len() > 1 { linker_argv.extend(final_args.into_iter().skip(1)); }
             final_args = linker_argv;
             final_cmd = linker.to_string();
         }
     }
 
+    // 预序列化环境
+    let mut final_env = Vec::new();
+    let old_p = std::env::var("PATH").unwrap_or_else(|_| "/system/bin".to_string());
+    let fp = if let Some(ref wd) = wrapper_dir_to_inject { format!("{}:{}:{}", wd, termux_bin, old_p.replace("/data/user/0/", "/data/data/")) }
+             else { format!("{}:{}", termux_bin, old_p.replace("/data/user/0/", "/data/data/")) };
+    final_env.push(format!("PATH={}", fp));
+    final_env.push(format!("PREFIX={}", termux_prefix_data));
+    final_env.push(format!("HOME={}", termux_home));
+    final_env.push(format!("LD_PRELOAD={}/lib/libtermux-exec.so", termux_prefix_data));
+    final_env.push(format!("TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE=force"));
+
+    for var in ["ANDROID_ART_ROOT", "ANDROID_ASSETS", "ANDROID_DATA", "ANDROID_I18N_ROOT", "ANDROID_ROOT", "ANDROID_RUNTIME_ROOT", "ANDROID_STORAGE", "ANDROID_TZDATA_ROOT", "EXTERNAL_STORAGE", "BOOTCLASSPATH", "DEX2OATBOOTCLASSPATH", "SYSTEMSERVERCLASSPATH"] {
+        if let Ok(val) = std::env::var(var) { final_env.push(format!("{}={}", var, val)); }
+    }
+
+    for env_var in envp {
+        if let Some(pos) = env_var.find('=') {
+            let k = &env_var[..pos];
+            if !["PATH", "PREFIX", "HOME", "LD_PRELOAD", "LD_LIBRARY_PATH"].contains(&k) {
+                final_env.push(env_var.replace("/data/user/0/", "/data/data/"));
+            }
+        }
+    }
+
     crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY_CHECKPOINT] FINAL_PLAN: cmd='{}' argv={:?}", final_cmd, final_args));
 
-    // === 3. 执行 (Child 进程) ===
-    let uid_count = get_uid_process_count();
-    if uid_count > 28 {
-        std::thread::sleep(std::time::Duration::from_millis(500));
-    }
+    let c_cmd = CString::new(final_cmd).unwrap();
+    let c_args: Vec<CString> = final_args.iter().map(|a| CString::new(a.clone()).unwrap()).collect();
+    let c_envs: Vec<CString> = final_env.iter().map(|e| CString::new(e.clone()).unwrap()).collect();
 
     unsafe {
         let ptm = libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY);
         if ptm < 0 { return Err(()); }
-        if libc::grantpt(ptm) < 0 || libc::unlockpt(ptm) < 0 {
-            libc::close(ptm);
-            return Err(());
-        }
-
+        libc::grantpt(ptm); libc::unlockpt(ptm);
         let devname = libc::ptsname(ptm);
-        if devname.is_null() {
-            libc::close(ptm);
-            return Err(());
-        }
         let devname_str = std::ffi::CStr::from_ptr(devname).to_string_lossy().into_owned();
 
         match fork() {
@@ -254,48 +268,16 @@ pub fn create_subprocess_with_data(
             }
             Ok(ForkResult::Child) => {
                 let _ = setsid();
-                let c_devname = match CString::new(devname_str) {
-                    Ok(c) => c,
-                    Err(_) => { libc::_exit(1); }
-                };
-                let pts = libc::open(c_devname.as_ptr(), libc::O_RDWR);
+                let c_pts = CString::new(devname_str).unwrap();
+                let pts = libc::open(c_pts.as_ptr(), libc::O_RDWR);
                 libc::ioctl(pts, libc::TIOCSCTTY as _, 0);
-                libc::dup2(pts, 0);
-                libc::dup2(pts, 1);
-                libc::dup2(pts, 2);
+                libc::dup2(pts, 0); libc::dup2(pts, 1); libc::dup2(pts, 2);
                 libc::close(ptm);
 
-                // 外科手术式注入
-                let set_e = |k: &str, v: &str| {
-                    if let (Ok(ck), Ok(cv)) = (CString::new(k), CString::new(v)) { libc::setenv(ck.as_ptr(), cv.as_ptr(), 1); }
-                };
-                set_e("PREFIX", &termux_prefix_data);
-                set_e("HOME", &termux_home);
-                let op = std::env::var("PATH").unwrap_or_default();
-                let fp = if let Some(ref wd) = wrapper_dir_to_inject { format!("{}:{}:{}", wd, termux_bin, op.replace("/data/user/0/", "/data/data/")) }
-                         else { format!("{}:{}", termux_bin, op.replace("/data/user/0/", "/data/data/")) };
-                set_e("PATH", &fp);
-                set_e("LD_PRELOAD", &format!("{}/lib/libtermux-exec.so", termux_prefix_data));
-                set_e("TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE", "force");
-
-                // 系统变量继承
-                for var in ["ANDROID_DATA", "ANDROID_ROOT", "EXTERNAL_STORAGE", "BOOTCLASSPATH"] {
-                    if let Ok(val) = std::env::var(var) { set_e(var, &val); }
-                }
-
-                if !cwd_str.is_empty() {
-                    if let Ok(c_cwd) = CString::new(cwd_str.replace("/data/user/0/", "/data/data/")) { let _ = chdir(c_cwd.as_c_str()); }
-                }
-
-                let mut signals_to_unblock: libc::sigset_t = std::mem::zeroed();
-                libc::sigfillset(&mut signals_to_unblock);
-                libc::sigprocmask(libc::SIG_UNBLOCK, &signals_to_unblock, std::ptr::null_mut());
-
-                let mut c_args = Vec::new();
-                for a in &final_args { if let Ok(ca) = CString::new(a.clone()) { c_args.push(ca); } }
                 let ptr_args: Vec<_> = c_args.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
+                let ptr_envs: Vec<_> = c_envs.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
 
-                if let Ok(c_cmd) = CString::new(final_cmd) { libc::execv(c_cmd.as_ptr(), ptr_args.as_ptr()); }
+                libc::execve(c_cmd.as_ptr(), ptr_args.as_ptr(), ptr_envs.as_ptr());
                 libc::_exit(1);
             }
             Err(_) => Err(()),
