@@ -232,38 +232,6 @@ pub fn create_subprocess_with_data(
                 // termux-exec 的隐藏开关：强制拦截后通过 /system/bin/linker 执行
                 set_env("TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE", "force");
 
-                // 6. 自动化物理马甲 (Physical Wrapper) - 解决 Go 语言 (gh) 绕过 LD_PRELOAD 的终极手段
-                let wrapper_dir = format!("{}/var/lib/termux-exec/wrappers", termux_prefix_data);
-                if std::fs::create_dir_all(&wrapper_dir).is_ok() {
-                    let git_wrapper_path = format!("{}/git", wrapper_dir);
-                    let sh_path = format!("{}/bin/sh", termux_prefix_data);
-                    let git_content = format!(
-                        "#!{}\nexec /system/bin/linker64 {}/git \"$@\"\n",
-                        sh_path, termux_bin
-                    );
-                    
-                    // 只有在内容不一致时才写入，减少 I/O
-                    let needs_write = std::fs::read_to_string(&git_wrapper_path).map(|c| c != git_content).unwrap_or(true);
-                    if needs_write {
-                        let _ = std::fs::write(&git_wrapper_path, git_content);
-                        if let Ok(c_git) = CString::new(git_wrapper_path) { 
-                            unsafe { libc::chmod(c_git.as_ptr(), 0o755); } 
-                        }
-                    }
-
-                    // 将马甲目录注入 PATH 最前端
-                    let current_path = std::env::var("PATH").unwrap_or_default();
-                    if !current_path.starts_with(&wrapper_dir) {
-                        set_env("PATH", &format!("{}:{}", wrapper_dir, current_path.replace("/data/user/0/", "/data/data/")));
-                    }
-                    crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY] Activated physical wrappers at {}", wrapper_dir));
-                }
-
-                if !cwd_str.is_empty() {
-                    let c_cwd = CString::new(cwd_str.replace("/data/user/0/", "/data/data/")).unwrap();
-                    let _ = chdir(c_cwd.as_c_str());
-                }
-
                 // ====== [PTY_CHECKPOINT] 开始分析 ======
                 let mut final_cmd = cmd_str.replace("/data/user/0/", "/data/data/");
                 if !final_cmd.starts_with('/') {
@@ -273,6 +241,55 @@ pub fn create_subprocess_with_data(
                 
                 let mut final_args: Vec<String> = argv.iter().map(|a| a.replace("/data/user/0/", "/data/data/")).collect();
                 
+                // ====== [精细化扫描与环境干预] ======
+                // 1. 定义检测逻辑：识别静态链接或 Go 语言编写的“裸奔”二进制
+                let is_static_or_go = |path: &str| -> bool {
+                    if let Ok(mut f) = std::fs::File::open(path) {
+                        use std::io::Read;
+                        let mut buffer = [0u8; 4096];
+                        if f.read(&mut buffer).is_ok() {
+                            if &buffer[..4] == b"\x7fELF" {
+                                let content_str = String::from_utf8_lossy(&buffer);
+                                if content_str.contains("Go build ID") || content_str.contains("Go runtime") { return true; }
+                            }
+                        }
+                        let name = std::path::Path::new(path).file_name().and_then(|n| n.to_str()).unwrap_or("");
+                        if ["gh", "docker", "podman", "terraform", "rclone"].contains(&name) { return true; }
+                    }
+                    false
+                };
+
+                // 2. 只有在目标是静态/Go 程序时，才激活 PATH 劫持
+                if is_static_or_go(&final_cmd) {
+                    let wrapper_dir = format!("{}/bin-wrappers", termux_prefix_data);
+                    if std::fs::create_dir_all(&wrapper_dir).is_ok() {
+                        let sh_path = format!("{}/bin/sh", termux_prefix_data);
+                        let targets = [("git", format!("{}/bin/git", termux_prefix_data)), 
+                                       ("ssh", format!("{}/bin/ssh", termux_prefix_data))];
+                        
+                        for (name, real_path) in targets {
+                            let wrapper_path = format!("{}/{}", wrapper_dir, name);
+                            let content = format!("#!{}\nexec /system/bin/linker64 {} \"$@\"\n", sh_path, real_path);
+                            if std::fs::read_to_string(&wrapper_path).map(|c| c != content).unwrap_or(true) {
+                                let _ = std::fs::write(&wrapper_path, content);
+                                if let Ok(c_p) = CString::new(wrapper_path) { 
+                                    unsafe { libc::chmod(c_p.as_ptr(), 0o755); } 
+                                }
+                            }
+                        }
+
+                        let current_path = std::env::var("PATH").unwrap_or_default();
+                        if !current_path.starts_with(&wrapper_dir) {
+                            unsafe {
+                                if let (Ok(ck), Ok(cv)) = (CString::new("PATH"), CString::new(format!("{}:{}", wrapper_dir, current_path.replace("/data/user/0/", "/data/data/")))) {
+                                    libc::setenv(ck.as_ptr(), cv.as_ptr(), 1);
+                                }
+                            }
+                        }
+                        crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY] Activated whitelisted wrappers for Go binary: {}", final_cmd));
+                    }
+                }
+
                 // Login Shell 处理
                 let is_shell = ["sh", "bash", "zsh", "dash", "fish"].iter().any(|&s| final_cmd.ends_with(s));
                 if is_shell {
