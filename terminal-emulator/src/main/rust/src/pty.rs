@@ -90,14 +90,13 @@ pub fn create_subprocess_with_data(
     let mut real_pkg = String::from("com.termux");
     let mut termux_prefix = String::from("/data/user/0/com.termux/files/usr");
     
-    if let Some(pos) = cmd_str.find("/files/") {
-        let root = &cmd_str[..pos];
-        if let Some(pkg_pos) = root.rfind('/') { real_pkg = root[pkg_pos+1..].to_string(); }
-        termux_prefix = format!("{}/files/usr{}", root, if cmd_str.contains("/usr-staging/") { "-staging" } else { "" });
-    } else if let Some(pos) = cwd_str.find("/files/") {
-        let root = &cwd_str[..pos];
-        if let Some(pkg_pos) = root.rfind('/') { real_pkg = root[pkg_pos+1..].to_string(); }
-        termux_prefix = format!("{}/files/usr", root);
+    for p in [&cmd_str, &cwd_str] {
+        if let Some(pos) = p.find("/files/") {
+            let root = &p[..pos];
+            if let Some(pkg_pos) = root.rfind('/') { real_pkg = root[pkg_pos+1..].to_string(); }
+            termux_prefix = format!("{}/files/usr{}", root, if p.contains("/usr-staging/") { "-staging" } else { "" });
+            break;
+        }
     }
     
     let termux_data_root = format!("/data/data/{}", real_pkg);
@@ -106,20 +105,25 @@ pub fn create_subprocess_with_data(
     let termux_bin = format!("{}/bin", termux_prefix_data);
     let termux_home = format!("{}/home", termux_files);
 
-    // 2. 核心马甲部署 (物理 PATH 拦截)
+    // 2. 核心马甲引擎 (Parent 确保原子性)
     let wrapper_dir = format!("{}/bin-wrappers", termux_prefix_data);
     let _ = std::fs::create_dir_all(&wrapper_dir);
+    
+    // 我们强制劫持这几个核心工具
     for tool in ["git", "ssh", "sh", "bash"] {
         let target = format!("{}/{}", termux_bin, tool);
+        // 重要：解析软连接，Linker 必须吃原始 ELF 的绝对路径
         if let Ok(real_path) = std::fs::canonicalize(&target) {
+            let real_path_str = real_path.to_string_lossy().replace("/data/user/0/", "/data/data/");
             let wp = format!("{}/{}", wrapper_dir, tool);
-            let content = format!("#!/system/bin/sh\nexec /system/bin/linker64 {} \"$@\"\n", real_path.to_string_lossy());
+            // 使用 /system/bin/sh 作为 Shebang，因为它拥有系统级的执行豁免权
+            let content = format!("#!/system/bin/sh\nexec /system/bin/linker64 {} \"$@\"\n", real_path_str);
             let _ = std::fs::write(&wp, content);
             let _ = std::path::Path::new(&wp).metadata().map(|m| {
                 use std::os::unix::fs::PermissionsExt;
                 let mut p = m.permissions();
                 p.set_mode(0o755);
-                std::fs::set_permissions(&wp, p);
+                let _ = std::fs::set_permissions(&wp, p);
             });
         }
     }
@@ -139,7 +143,7 @@ pub fn create_subprocess_with_data(
         if f.read_exact(&mut magic).is_ok() && &magic == b"\x7fELF" { is_actual_elf = true; }
     }
 
-    // 递归脚本转换
+    // 递归转换脚本
     if !is_actual_elf && (final_cmd.contains(&real_pkg) || final_cmd.contains("/data/")) {
         let mut sh_argv = Vec::new();
         sh_argv.push(String::from("sh"));
@@ -150,7 +154,7 @@ pub fn create_subprocess_with_data(
         is_actual_elf = true; 
     }
 
-    // Login Shell
+    // Login Shell 特殊处理 (argv[0] 开始符为 '-')
     let is_shell = ["sh", "bash", "zsh", "dash", "fish"].iter().any(|&s| final_cmd.ends_with(s));
     if is_shell {
         let shell_name = std::path::Path::new(&final_cmd).file_name().and_then(|n| n.to_str()).unwrap_or("sh");
@@ -158,24 +162,25 @@ pub fn create_subprocess_with_data(
         else if !final_args[0].starts_with('-') { final_args[0] = format!("-{}", shell_name); }
     }
 
-    // Linker 包装
+    // 最终包装 (Linker 模式)
     if is_actual_elf && (final_cmd.contains(&real_pkg) || final_cmd.contains("/data/")) {
         #[cfg(target_pointer_width = "64")] let linker = "/system/bin/linker64";
         #[cfg(target_pointer_width = "32")] let linker = "/system/bin/linker";
         if std::path::Path::new(linker).exists() {
             let mut linker_argv = Vec::new();
             let prog_name = if !final_args.is_empty() { final_args[0].clone() } else { final_cmd.clone() };
-            linker_argv.push(prog_name);
-            linker_argv.push(final_cmd.clone());
+            linker_argv.push(prog_name);         // argv[0] -> 进程名
+            linker_argv.push(final_cmd.clone()); // argv[1] -> Linker 要求的绝对路径
             if final_args.len() > 1 { linker_argv.extend(final_args.into_iter().skip(1)); }
             final_args = linker_argv;
             final_cmd = linker.to_string();
         }
     }
 
-    // 4. 环境序列化 (Parent 确保线程安全)
+    // 4. 环境序列化 (Parent 线程安全)
     let mut final_env = Vec::new();
     let old_p = std::env::var("PATH").unwrap_or_else(|_| "/system/bin".to_string());
+    // 强制：马甲目录第一，Termux bin 第二，系统 bin 第三
     let fp = format!("{}:{}:{}", wrapper_dir, termux_bin, old_p.replace("/data/user/0/", "/data/data/"));
     final_env.push(format!("PATH={}", fp));
     final_env.push(format!("PREFIX={}", termux_prefix_data));
@@ -205,7 +210,7 @@ pub fn create_subprocess_with_data(
     unsafe {
         let ptm = libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY);
         if ptm < 0 { return Err(()); }
-        libc::grantpt(ptm); libc::unlockpt(ptm);
+        let _ = libc::grantpt(ptm); let _ = libc::unlockpt(ptm);
         let devname = libc::ptsname(ptm);
         let devname_str = std::ffi::CStr::from_ptr(devname).to_string_lossy().into_owned();
 
