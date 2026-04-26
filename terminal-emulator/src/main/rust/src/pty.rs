@@ -178,7 +178,6 @@ pub fn create_subprocess_with_data(
                     }
                 }
                 
-                // 关键：强制使用 /data/data 形式以通过 Linker 白名单
                 let termux_data_root = format!("/data/data/{}", real_pkg);
                 let termux_files = format!("{}/files", termux_data_root);
                 let termux_prefix_data = format!("{}/usr{}", termux_files, if termux_prefix.contains("staging") { "-staging" } else { "" });
@@ -186,52 +185,35 @@ pub fn create_subprocess_with_data(
                 let termux_lib = format!("{}/lib", termux_prefix_data);
                 let termux_home = format!("{}/home", termux_files);
 
-                // --- 环境变量外科手术式注入 (不使用 clearenv 以保持 Linker 信任) ---
                 let set_env = |k: &str, v: &str| {
                     if let (Ok(ck), Ok(cv)) = (CString::new(k), CString::new(v)) {
-                        unsafe { libc::setenv(ck.as_ptr(), cv.as_ptr(), 1); }
+                        libc::setenv(ck.as_ptr(), cv.as_ptr(), 1);
                     }
                 };
 
-                // 1. 注入核心路径
                 set_env("PREFIX", &termux_prefix_data);
                 set_env("HOME", &termux_home);
-                
                 let old_path = std::env::var("PATH").unwrap_or_else(|_| "/system/bin:/system/xbin".to_string());
                 set_env("PATH", &format!("{}:{}", termux_bin, old_path.replace("/data/user/0/", "/data/data/")));
-                
                 set_env("LD_LIBRARY_PATH", &termux_lib);
                 
-                // 2. 注入关键绕过库 LD_PRELOAD (优先使用极限 NOS 版本)
-                let termux_exec_candidates = [
-                    "libtermux-exec_nos_c_tre.so",
-                    "libtermux-exec-linker-ld-preload.so",
-                    "libtermux-exec.so",
-                ];
+                let termux_exec_candidates = ["libtermux-exec_nos_c_tre.so", "libtermux-exec-linker-ld-preload.so", "libtermux-exec.so"];
                 let mut active_preloader = format!("{}/lib/libtermux-exec.so", termux_prefix_data);
                 for candidate in &termux_exec_candidates {
                     let path = format!("{}/lib/{}", termux_prefix_data, candidate);
                     let c_path = CString::new(path.clone()).unwrap();
-                    if unsafe { libc::access(c_path.as_ptr(), libc::R_OK) } == 0 {
+                    if libc::access(c_path.as_ptr(), libc::R_OK) == 0 {
                         active_preloader = path;
                         break;
                     }
                 }
                 set_env("LD_PRELOAD", &active_preloader);
 
-                // 3. 注入系统变量 (Linker 必需)
-                let sys_vars = [
-                    "ANDROID_ART_ROOT", "ANDROID_ASSETS", "ANDROID_DATA", "ANDROID_I18N_ROOT",
-                    "ANDROID_ROOT", "ANDROID_RUNTIME_ROOT", "ANDROID_STORAGE", "ANDROID_TZDATA_ROOT",
-                    "EXTERNAL_STORAGE", "BOOTCLASSPATH", "DEX2OATBOOTCLASSPATH", "SYSTEMSERVERCLASSPATH"
-                ];
+                let sys_vars = ["ANDROID_ART_ROOT", "ANDROID_ASSETS", "ANDROID_DATA", "ANDROID_I18N_ROOT", "ANDROID_ROOT", "ANDROID_RUNTIME_ROOT", "ANDROID_STORAGE", "ANDROID_TZDATA_ROOT", "EXTERNAL_STORAGE", "BOOTCLASSPATH", "DEX2OATBOOTCLASSPATH", "SYSTEMSERVERCLASSPATH"];
                 for var in sys_vars {
-                    if let Ok(val) = std::env::var(var) {
-                        set_env(var, &val);
-                    }
+                    if let Ok(val) = std::env::var(var) { set_env(var, &val); }
                 }
 
-                // 4. 注入 Java 剩余环境
                 for env_var in envp {
                     if let Some(pos) = env_var.find('=') {
                         let k = &env_var[..pos];
@@ -240,10 +222,12 @@ pub fn create_subprocess_with_data(
                         }
                     }
                 }
-
-                // 5. 关键安全变量强制注入
-                // termux-exec 的隐藏开关：强制拦截后通过 /system/bin/linker 执行
                 set_env("TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE", "force");
+
+                if !cwd_str.is_empty() {
+                    let c_cwd = CString::new(cwd_str.replace("/data/user/0/", "/data/data/")).unwrap();
+                    let _ = chdir(c_cwd.as_c_str());
+                }
 
                 // ====== [PTY_CHECKPOINT] 开始分析 ======
                 let mut final_cmd = cmd_str.replace("/data/user/0/", "/data/data/");
@@ -254,120 +238,7 @@ pub fn create_subprocess_with_data(
                 
                 let mut final_args: Vec<String> = argv.iter().map(|a| a.replace("/data/user/0/", "/data/data/")).collect();
                 
-                // ====== [精细化扫描与环境干预] ======
-                // 1. 定义检测逻辑：识别静态链接或 Go 语言编写的“裸奔”二进制
-                let is_static_or_go = |path: &str| -> bool {
-                    if let Ok(mut f) = std::fs::File::open(path) {
-                        use std::io::Read;
-                        let mut buffer = [0u8; 4096];
-                        if f.read(&mut buffer).is_ok() {
-                            if &buffer[..4] == b"\x7fELF" {
-                                let content_str = String::from_utf8_lossy(&buffer);
-                                if content_str.contains("Go build ID") || content_str.contains("Go runtime") { return true; }
-                            }
-                        }
-                        let name = std::path::Path::new(path).file_name().and_then(|n| n.to_str()).unwrap_or("");
-                        if ["gh", "docker", "podman", "terraform", "rclone"].contains(&name) { return true; }
-                    }
-                    false
-                };
-
-                // 2. 只有在目标是静态/Go 程序时，才激活 PATH 劫持
-                if is_static_or_go(&final_cmd) {
-                    let wrapper_dir = format!("{}/bin-wrappers", termux_prefix_data);
-                    if std::fs::create_dir_all(&wrapper_dir).is_ok() {
-                        let sh_path = format!("{}/bin/sh", termux_prefix_data);
-                        let targets = [("git", format!("{}/bin/git", termux_prefix_data)), 
-                                       ("ssh", format!("{}/bin/ssh", termux_prefix_data))];
-                        
-                        for (name, real_path) in targets {
-                            let wrapper_path = format!("{}/{}", wrapper_dir, name);
-                            let content = format!("#!{}\nexec /system/bin/linker64 {} \"$@\"\n", sh_path, real_path);
-                            if std::fs::read_to_string(&wrapper_path).map(|c| c != content).unwrap_or(true) {
-                                let _ = std::fs::write(&wrapper_path, content);
-                                if let Ok(c_p) = CString::new(wrapper_path) { 
-                                    unsafe { libc::chmod(c_p.as_ptr(), 0o755); } 
-                                }
-                            }
-                        }
-
-                        let current_path = std::env::var("PATH").unwrap_or_default();
-                        if !current_path.starts_with(&wrapper_dir) {
-                            unsafe {
-                                if let (Ok(ck), Ok(cv)) = (CString::new("PATH"), CString::new(format!("{}:{}", wrapper_dir, current_path.replace("/data/user/0/", "/data/data/")))) {
-                                    libc::setenv(ck.as_ptr(), cv.as_ptr(), 1);
-                                }
-                            }
-                        }
-                        crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY] Activated whitelisted wrappers for Go binary: {}", final_cmd));
-                    }
-                }
-
-                // Login Shell 处理
-                let is_shell = ["sh", "bash", "zsh", "dash", "fish"].iter().any(|&s| final_cmd.ends_with(s));
-                if is_shell {
-                    let shell_name = std::path::Path::new(&final_cmd).file_name().and_then(|n| n.to_str()).unwrap_or("sh");
-                    if final_args.is_empty() {
-                        final_args.push(format!("-{}", shell_name));
-                    } else if !final_args[0].starts_with('-') {
-                        final_args[0] = format!("-{}", shell_name);
-                    }
-                }
-
-                // ELF/Shebang 逻辑
-                let mut is_elf = false;
-                let mut has_shebang = false;
-                let mut shebang_interpreter = String::new();
-                let mut shebang_args = Vec::new();
-                if let Ok(mut f) = std::fs::File::open(&final_cmd) {
-                    use std::io::Read;
-                    let mut buf = [0u8; 256];
-                    if let Ok(n) = f.read(&mut buf) {
-                        if n > 4 && &buf[..4] == b"\x7fELF" { is_elf = true; }
-                        else if n > 2 && &buf[..2] == b"#!" {
-                            has_shebang = true;
-                            if let Ok(s) = std::str::from_utf8(&buf[2..n]) {
-                                let line = s.lines().next().unwrap_or("").trim();
-                                let parts: Vec<&str> = line.split_whitespace().collect();
-                                if !parts.is_empty() {
-                                    shebang_interpreter = parts[0].to_string();
-                                    shebang_args = parts[1..].iter().map(|&s| s.to_string()).collect();
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if has_shebang && !shebang_interpreter.is_empty() {
-                    let mut interpreter = shebang_interpreter;
-                    if interpreter.starts_with("/usr/bin/") || interpreter.starts_with("/bin/") {
-                        if let Some(name) = std::path::Path::new(&interpreter).file_name().and_then(|n| n.to_str()) {
-                            interpreter = format!("{}/bin/{}", termux_prefix_data, name);
-                        }
-                    }
-                    let old_cmd = final_cmd.clone();
-                    final_cmd = interpreter;
-                    let mut new_argv = Vec::new();
-                    new_argv.push(if !final_args.is_empty() { final_args[0].clone() } else { final_cmd.clone() });
-                    new_argv.extend(shebang_args);
-                    new_argv.push(old_cmd);
-                    if argv.len() > 1 { new_argv.extend(argv.iter().skip(1).cloned()); }
-                    final_args = new_argv;
-                } else if !is_elf && !has_shebang {
-                    let old_cmd = final_cmd.clone();
-                    final_cmd = format!("{}/bin/sh", termux_prefix_data);
-                    let mut new_argv = Vec::new();
-                    new_argv.push(if !final_args.is_empty() { final_args[0].clone() } else { final_cmd.clone() });
-                    new_argv.push(old_cmd);
-                    if argv.len() > 1 { new_argv.extend(argv.iter().skip(1).cloned()); }
-                    final_args = new_argv;
-                }
-
-                // W^X Bypass: 标准 Linker 协议构建 (智能分级加载)
-                let canonical_target = std::fs::canonicalize(&final_cmd).unwrap_or_else(|_| std::path::PathBuf::from(&final_cmd));
-                let c_str = canonical_target.to_string_lossy();
-                
-                // 1. 检查目标是否确实是 ELF 二进制
+                // 1. 探测目标是否为脚本 (Shebang)
                 let mut is_actual_elf = false;
                 if let Ok(mut f) = std::fs::File::open(&final_cmd) {
                     use std::io::Read;
@@ -375,42 +246,74 @@ pub fn create_subprocess_with_data(
                     if f.read(&mut magic).is_ok() && &magic == b"\x7fELF" { is_actual_elf = true; }
                 }
 
-                let needs_linker = is_actual_elf && (final_cmd.contains(&real_pkg) || final_cmd.contains("/data/") || c_str.contains("/data/"));
-
-                if needs_linker {
-                    #[cfg(target_pointer_width = "64")] let linker = "/system/bin/linker64";
-                    #[cfg(target_pointer_width = "32")] let linker = "/system/bin/linker";
-                    
-                    if std::path::Path::new(linker).exists() {
-                        let mut linker_argv = Vec::new();
-                        // 保持原始的 argv[0] 以兼容 login/bash 启动模式
-                        let prog_name = if !final_args.is_empty() { final_args[0].clone() } else { final_cmd.clone() };
-                        linker_argv.push(prog_name);         // argv[0]
-                        linker_argv.push(final_cmd.clone()); // argv[1]
-                        if final_args.len() > 1 {
-                            linker_argv.extend(final_args.into_iter().skip(1));
-                        }
-                        final_args = linker_argv;
-                        final_cmd = linker.to_string();
-                    }
-                } else if !is_actual_elf && !final_cmd.starts_with("/system/bin/") {
-                    // 如果是脚本且不在系统路径，强制使用 sh 启动以确保 LD_PRELOAD 生效
+                // 2. 递归转换：如果是脚本且位于私有目录，先通过 sh 启动
+                if !is_actual_elf && (final_cmd.contains(&real_pkg) || final_cmd.contains("/data/")) {
                     let mut sh_argv = Vec::new();
                     sh_argv.push(String::from("sh"));
                     sh_argv.push(final_cmd.clone());
-                    if final_args.len() > 1 {
-                        sh_argv.extend(final_args.into_iter().skip(1));
-                    }
+                    if final_args.len() > 1 { sh_argv.extend(final_args.into_iter().skip(1)); }
                     final_args = sh_argv;
                     final_cmd = format!("{}/bin/sh", termux_prefix_data);
+                    is_actual_elf = true; // sh 自身是 ELF，将触发下一阶段包装
+                }
+
+                // 3. 精细化扫描与环境干预 (针对 Go/Static)
+                let is_static_or_go = |path: &str| -> bool {
+                    if let Ok(mut f) = std::fs::File::open(path) {
+                        use std::io::Read;
+                        let mut buffer = [0u8; 4096];
+                        if f.read(&mut buffer).is_ok() {
+                            let content_str = String::from_utf8_lossy(&buffer);
+                            if content_str.contains("Go build ID") || content_str.contains("Go runtime") { return true; }
+                        }
+                        let name = std::path::Path::new(path).file_name().and_then(|n| n.to_str()).unwrap_or("");
+                        if ["gh", "docker", "podman", "terraform", "rclone"].contains(&name) { return true; }
+                    }
+                    false
+                };
+
+                if is_static_or_go(&final_cmd) {
+                    let wrapper_dir = format!("{}/bin-wrappers", termux_prefix_data);
+                    if std::fs::create_dir_all(&wrapper_dir).is_ok() {
+                        let sh_p = format!("{}/bin/sh", termux_prefix_data);
+                        for (name, rp) in [("git", format!("{}/bin/git", termux_prefix_data)), ("ssh", format!("{}/bin/ssh", termux_prefix_data))] {
+                            let wp = format!("{}/{}", wrapper_dir, name);
+                            let content = format!("#!{}\nexec /system/bin/linker64 {} \"$@\"\n", sh_p, rp);
+                            let _ = std::fs::write(&wp, content);
+                            let c_p = CString::new(wp).unwrap();
+                            libc::chmod(c_p.as_ptr(), 0o755);
+                        }
+                        let cp = std::env::var("PATH").unwrap_or_default();
+                        set_env("PATH", &format!("{}:{}", wrapper_dir, cp.replace("/data/user/0/", "/data/data/")));
+                    }
+                }
+
+                // Login Shell 处理
+                let is_shell = ["sh", "bash", "zsh", "dash", "fish"].iter().any(|&s| final_cmd.ends_with(s));
+                if is_shell {
+                    let shell_name = std::path::Path::new(&final_cmd).file_name().and_then(|n| n.to_str()).unwrap_or("sh");
+                    if final_args.is_empty() { final_args.push(format!("-{}", shell_name)); }
+                    else if !final_args[0].starts_with('-') { final_args[0] = format!("-{}", shell_name); }
+                }
+
+                // 4. 最终 Linker 包装 (只有 ELF 才包装)
+                if is_actual_elf && (final_cmd.contains(&real_pkg) || final_cmd.contains("/data/")) {
+                    #[cfg(target_pointer_width = "64")] let linker = "/system/bin/linker64";
+                    #[cfg(target_pointer_width = "32")] let linker = "/system/bin/linker";
+                    if std::path::Path::new(linker).exists() {
+                        let mut linker_argv = Vec::new();
+                        linker_argv.push(if !final_args.is_empty() { final_args[0].clone() } else { final_cmd.clone() });
+                        linker_argv.push(final_cmd.clone());
+                        if final_args.len() > 1 { linker_argv.extend(final_args.into_iter().skip(1)); }
+                        final_args = linker_argv;
+                        final_cmd = linker.to_string();
+                    }
                 }
 
                 // 子进程清理
-                unsafe {
-                    let mut signals_to_unblock: libc::sigset_t = std::mem::zeroed();
-                    libc::sigfillset(&mut signals_to_unblock);
-                    libc::sigprocmask(libc::SIG_UNBLOCK, &signals_to_unblock, std::ptr::null_mut());
-                }
+                let mut signals_to_unblock: libc::sigset_t = std::mem::zeroed();
+                libc::sigfillset(&mut signals_to_unblock);
+                libc::sigprocmask(libc::SIG_UNBLOCK, &signals_to_unblock, std::ptr::null_mut());
 
                 let mut c_args = Vec::new();
                 for a in &final_args { if let Ok(ca) = CString::new(a.clone()) { c_args.push(ca); } }
@@ -421,7 +324,6 @@ pub fn create_subprocess_with_data(
                 if !final_cmd.is_empty() {
                     let c_cmd = CString::new(final_cmd.clone()).unwrap();
                     libc::execv(c_cmd.as_ptr(), ptr_args.as_ptr());
-                    
                     let err = nix::errno::Errno::last_raw();
                     crate::utils::android_log(crate::utils::LogPriority::ERROR, &format!("[PTY_CHECKPOINT] CP08: execv FAILED! errno={} cmd={}", err, final_cmd));
                 }
