@@ -116,7 +116,7 @@ pub fn create_subprocess_with_data(
     cw: jint,
     ch: jint,
 ) -> Result<(jint, i32), ()> {
-    // === 1. 预解析与路径规范化 (在 Parent 进程完成，确保线程安全) ===
+    // === 1. 预解析 (Parent 进程) ===
     let mut real_pkg = String::from("com.termux");
     let mut termux_prefix = String::from("/data/user/0/com.termux/files/usr");
     
@@ -141,7 +141,7 @@ pub fn create_subprocess_with_data(
     let termux_lib = format!("{}/lib", termux_prefix_data);
     let termux_home = format!("{}/home", termux_files);
 
-    // === 2. 命令与参数决议 (在 Parent 进程完成) ===
+    // === 2. 命令决议 (Parent 进程) ===
     let mut final_cmd = cmd_str.replace("/data/user/0/", "/data/data/");
     if !final_cmd.starts_with('/') {
         let resolved = format!("{}/{}", termux_bin, final_cmd);
@@ -150,15 +150,13 @@ pub fn create_subprocess_with_data(
     
     let mut final_args: Vec<String> = argv.iter().map(|a| a.replace("/data/user/0/", "/data/data/")).collect();
     
-    // ELF 探测
     let mut is_actual_elf = false;
     if let Ok(mut f) = std::fs::File::open(&final_cmd) {
         use std::io::Read;
         let mut magic = [0u8; 4];
-        if f.read(&mut magic).is_ok() && &magic == b"\x7fELF" { is_actual_elf = true; }
+        if f.read_exact(&mut magic).is_ok() && &magic == b"\x7fELF" { is_actual_elf = true; }
     }
 
-    // 脚本转换
     if !is_actual_elf && (final_cmd.contains(&real_pkg) || final_cmd.contains("/data/")) {
         let mut sh_argv = Vec::new();
         sh_argv.push(String::from("sh"));
@@ -178,8 +176,6 @@ pub fn create_subprocess_with_data(
                 let content_str = String::from_utf8_lossy(&buffer);
                 if content_str.contains("Go build ID") || content_str.contains("Go runtime") { return true; }
             }
-            let name = std::path::Path::new(path).file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if ["gh", "docker", "podman", "terraform", "rclone"].contains(&name) { return true; }
         }
         false
     };
@@ -199,34 +195,26 @@ pub fn create_subprocess_with_data(
         }
     }
 
-    // Login Shell 处理
-    let is_shell = ["sh", "bash", "zsh", "dash", "fish"].iter().any(|&s| final_cmd.ends_with(s));
-    if is_shell {
-        let shell_name = std::path::Path::new(&final_cmd).file_name().and_then(|n| n.to_str()).unwrap_or("sh");
-        if final_args.is_empty() { final_args.push(format!("-{}", shell_name)); }
-        else if !final_args[0].starts_with('-') { final_args[0] = format!("-{}", shell_name); }
-    }
-
-    // Linker 包装
+    // 最终包装 (关键修正：Linker 的 argv[1] 必须是路径)
     if is_actual_elf && (final_cmd.contains(&real_pkg) || final_cmd.contains("/data/")) {
         #[cfg(target_pointer_width = "64")] let linker = "/system/bin/linker64";
         #[cfg(target_pointer_width = "32")] let linker = "/system/bin/linker";
         if std::path::Path::new(linker).exists() {
             let mut linker_argv = Vec::new();
-            linker_argv.push(if !final_args.is_empty() { final_args[0].clone() } else { final_cmd.clone() });
-            linker_argv.push(final_cmd.clone());
-            if final_args.len() > 1 { linker_argv.extend(final_args.into_iter().skip(1)); }
+            // 修正：argv[0] 使用程序名，argv[1] 必须是绝对路径
+            let prog_name = if !final_args.is_empty() { final_args[0].clone() } else { final_cmd.clone() };
+            linker_argv.push(prog_name);         // argv[0]
+            linker_argv.push(final_cmd.clone()); // argv[1] -> 强制绝对路径
+            if final_args.len() > 1 {
+                linker_argv.extend(final_args.into_iter().skip(1));
+            }
             final_args = linker_argv;
             final_cmd = linker.to_string();
         }
     }
 
-    // === 3. 准备子进程环境与清理 (在 Parent 进程完成) ===
-    let uid_count = get_uid_process_count();
-    if uid_count > 28 {
-        crate::utils::android_log(crate::utils::LogPriority::WARN, &format!("[PTY] High UID process count ({}), throttling...", uid_count));
-        std::thread::sleep(std::time::Duration::from_millis(500));
-    }
+    // 在 Parent 进程打印最终决定
+    crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY_CHECKPOINT] FINAL_PLAN: cmd='{}' argv={:?}", final_cmd, final_args));
 
     unsafe {
         let ptm = libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY);
@@ -237,106 +225,55 @@ pub fn create_subprocess_with_data(
         }
 
         let devname = libc::ptsname(ptm);
-        if devname.is_null() {
-            libc::close(ptm);
-            return Err(());
-        }
         let devname_str = std::ffi::CStr::from_ptr(devname).to_string_lossy().into_owned();
 
         match fork() {
             Ok(ForkResult::Parent { child }) => {
-                let ch = ch as u16;
-                let cw = cw as u16;
-                let sz = libc::winsize { ws_row: rows as u16, ws_col: cols as u16, ws_xpixel: (cols as u16 * cw), ws_ypixel: (rows as u16 * ch) };
+                let sz = libc::winsize { ws_row: rows as u16, ws_col: cols as u16, ws_xpixel: (cols as u32 * cw as u32) as u16, ws_ypixel: (rows as u32 * ch as u32) as u16 };
                 libc::ioctl(ptm, libc::TIOCSWINSZ, &sz);
                 Ok((ptm, child.as_raw()))
             }
             Ok(ForkResult::Child) => {
-                // --- 以下进入 Async-Signal-Safe 区域 ---
                 let _ = setsid();
-                libc::setpriority(libc::PRIO_PROCESS, 0, 19);
-
                 let c_devname = match CString::new(devname_str) {
                     Ok(c) => c,
                     Err(_) => { libc::_exit(1); }
                 };
                 let pts = libc::open(c_devname.as_ptr(), libc::O_RDWR);
-                if pts < 0 { libc::_exit(1); }
                 libc::ioctl(pts, libc::TIOCSCTTY as _, 0);
                 libc::dup2(pts, 0);
                 libc::dup2(pts, 1);
                 libc::dup2(pts, 2);
-                if pts > 2 { libc::close(pts); }
                 libc::close(ptm);
 
-                // 外科手术式设置环境变量
-                let mut set_env_safe = |k: &str, v: &str| {
-                    if let (Ok(ck), Ok(cv)) = (CString::new(k), CString::new(v)) {
-                        libc::setenv(ck.as_ptr(), cv.as_ptr(), 1);
-                    }
+                // 环境设置 (外科手术式)
+                let mut set_e = |k: &str, v: &str| {
+                    if let (Ok(ck), Ok(cv)) = (CString::new(k), CString::new(v)) { libc::setenv(ck.as_ptr(), cv.as_ptr(), 1); }
                 };
+                set_e("PREFIX", &termux_prefix_data);
+                set_e("HOME", &termux_home);
+                let op = std::env::var("PATH").unwrap_or_default();
+                let fp = if let Some(wd) = wrapper_dir_to_inject { format!("{}:{}:{}", wd, termux_bin, op.replace("/data/user/0/", "/data/data/")) }
+                         else { format!("{}:{}", termux_bin, op.replace("/data/user/0/", "/data/data/")) };
+                set_e("PATH", &fp);
+                set_e("LD_PRELOAD", &format!("{}/lib/libtermux-exec.so", termux_prefix_data));
+                set_e("TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE", "force");
 
-                set_env_safe("PREFIX", &termux_prefix_data);
-                set_env_safe("HOME", &termux_home);
-                let old_p = std::env::var("PATH").unwrap_or_else(|_| "/system/bin".to_string());
-                let final_path = if let Some(wd) = wrapper_dir_to_inject {
-                    format!("{}:{}:{}", wd, termux_bin, old_p.replace("/data/user/0/", "/data/data/"))
-                } else {
-                    format!("{}:{}", termux_bin, old_p.replace("/data/user/0/", "/data/data/"))
-                };
-                set_env_safe("PATH", &final_path);
-                set_env_safe("LD_LIBRARY_PATH", &termux_lib);
-                set_env_safe("LD_PRELOAD", &format!("{}/lib/libtermux-exec.so", termux_prefix_data));
-                set_env_safe("TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE", "force");
-
-                // 系统变量继承
-                let sys_vars = ["ANDROID_ART_ROOT", "ANDROID_ASSETS", "ANDROID_DATA", "ANDROID_I18N_ROOT", "ANDROID_ROOT", "ANDROID_RUNTIME_ROOT", "ANDROID_STORAGE", "ANDROID_TZDATA_ROOT", "EXTERNAL_STORAGE", "BOOTCLASSPATH", "DEX2OATBOOTCLASSPATH", "SYSTEMSERVERCLASSPATH"];
-                for var in sys_vars {
-                    if let Ok(val) = std::env::var(var) { set_env_safe(var, &val); }
-                }
-
-                // Java 变量注入
-                for env_var in envp {
-                    if let Some(pos) = env_var.find('=') {
-                        let k = &env_var[..pos];
-                        if !["PATH", "PREFIX", "HOME", "LD_PRELOAD", "LD_LIBRARY_PATH"].contains(&k) {
-                            set_env_safe(k, &env_var[pos+1..].replace("/data/user/0/", "/data/data/"));
-                        }
-                    }
-                }
-
-                if !cwd_str.is_empty() {
-                    let c_cwd = CString::new(cwd_str.replace("/data/user/0/", "/data/data/")).unwrap();
-                    let _ = chdir(c_cwd.as_c_str());
-                }
-
-                // 信号清理
-                let mut signals_to_unblock: libc::sigset_t = std::mem::zeroed();
-                libc::sigfillset(&mut signals_to_unblock);
-                libc::sigprocmask(libc::SIG_UNBLOCK, &signals_to_unblock, std::ptr::null_mut());
-
-                // 准备 C 风格参数
                 let mut c_args = Vec::new();
                 for a in &final_args { if let Ok(ca) = CString::new(a.clone()) { c_args.push(ca); } }
                 let ptr_args: Vec<_> = c_args.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
 
-                // 最终执行
-                if let Ok(c_cmd) = CString::new(final_cmd.clone()) {
-                    libc::execv(c_cmd.as_ptr(), ptr_args.as_ptr());
-                }
+                if let Ok(c_cmd) = CString::new(final_cmd) { libc::execv(c_cmd.as_ptr(), ptr_args.as_ptr()); }
                 libc::_exit(1);
             }
-            Err(e) => {
-                crate::utils::android_log(crate::utils::LogPriority::ERROR, &format!("[PTY] fork FAILED: {:?}", e));
-                Err(())
-            }
+            Err(_) => Err(()),
         }
     }
 }
 
 pub fn set_pty_window_size(fd: jint, rows: jint, cols: jint, cell_width: jint, cell_height: jint) {
     if fd < 0 { return; }
-    let sz = libc::winsize { ws_row: rows as u16, ws_col: cols as u16, ws_xpixel: (cols as u16 * cell_width as u16), ws_ypixel: (rows as u16 * cell_height as u16) };
+    let sz = libc::winsize { ws_row: rows as u16, ws_col: cols as u16, ws_xpixel: (cols as u32 * cell_width as u32) as u16, ws_ypixel: (rows as u32 * cell_height as u32) as u16 };
     unsafe { libc::ioctl(fd, libc::TIOCSWINSZ, &sz); }
 }
 
