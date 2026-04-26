@@ -4,36 +4,6 @@ use jni::sys::{JNINativeInterface_, jint, jintArray, jobjectArray, jstring};
 use nix::unistd::{ForkResult, fork, setsid, chdir};
 use std::ffi::CString;
 
-/// 获取当前 UID 下的进程数，用于规避 Android 12+ 的 Phantom Killer
-fn get_uid_process_count() -> usize {
-    let own_uid = unsafe { libc::getuid() };
-    std::fs::read_dir("/proc")
-        .map(|dir| {
-            dir.filter_map(|entry| entry.ok())
-                .filter(|entry| {
-                    let file_name = entry.file_name();
-                    let name = file_name.to_string_lossy();
-                    if !name.chars().all(|c| c.is_numeric()) { return false; }
-                    let status_path = format!("/proc/{}/status", name);
-                    if let Ok(content) = std::fs::read_to_string(&status_path) {
-                        for line in content.lines() {
-                            if line.starts_with("Uid:") {
-                                let parts: Vec<&str> = line.split_whitespace().collect();
-                                if parts.len() >= 2 {
-                                    if let Ok(uid) = parts[1].parse::<u32>() {
-                                        return uid == own_uid;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    false
-                })
-                .count()
-        })
-        .unwrap_or(0)
-}
-
 pub unsafe fn create_subprocess(
     env_ptr: *mut *const JNINativeInterface_,
     cmd: jstring,
@@ -116,11 +86,10 @@ pub fn create_subprocess_with_data(
     cw: jint,
     ch: jint,
 ) -> Result<(jint, i32), ()> {
-    // 1. 预解析 (Parent)
+    // 1. 预解析路径 (Parent)
     let mut real_pkg = String::from("com.termux");
     let mut termux_prefix = String::from("/data/user/0/com.termux/files/usr");
     
-    // 手动循环解析路径，避开借用检查问题
     if let Some(pos) = cmd_str.find("/files/") {
         let root = &cmd_str[..pos];
         if let Some(pkg_pos) = root.rfind('/') { real_pkg = root[pkg_pos+1..].to_string(); }
@@ -137,7 +106,23 @@ pub fn create_subprocess_with_data(
     let termux_bin = format!("{}/bin", termux_prefix_data);
     let termux_home = format!("{}/home", termux_files);
 
-    // 2. 命令决议
+    // 2. 部署核心马甲 (Physical PATH Interception)
+    // 使用 /system/bin/sh 作为解释器以避开 W^X 拦截，强制通过 Linker 运行关键工具
+    let wrapper_dir = format!("{}/bin-wrappers", termux_prefix_data);
+    let _ = std::fs::create_dir_all(&wrapper_dir);
+    for (name, rp) in [("git", format!("{}/bin/git", termux_prefix_data)), ("ssh", format!("{}/bin/ssh", termux_prefix_data))] {
+        let wp = format!("{}/{}", wrapper_dir, name);
+        let content = format!("#!/system/bin/sh\nexec /system/bin/linker64 {} \"$@\"\n", rp);
+        let _ = std::fs::write(&wp, content);
+        let _ = std::path::Path::new(&wp).metadata().map(|m| {
+            use std::os::unix::fs::PermissionsExt;
+            let mut p = m.permissions();
+            p.set_mode(0o755);
+            let _ = std::fs::set_permissions(&wp, p);
+        });
+    }
+
+    // 3. 命令决议与包装
     let mut final_cmd = cmd_str.replace("/data/user/0/", "/data/data/");
     if !final_cmd.starts_with('/') {
         let resolved = format!("{}/{}", termux_bin, final_cmd);
@@ -145,7 +130,6 @@ pub fn create_subprocess_with_data(
     }
     let mut final_args: Vec<String> = argv.iter().map(|a| a.replace("/data/user/0/", "/data/data/")).collect();
     
-    // ELF 探测
     let mut is_actual_elf = false;
     if let Ok(mut f) = std::fs::File::open(&final_cmd) {
         use std::io::Read;
@@ -153,43 +137,7 @@ pub fn create_subprocess_with_data(
         if f.read_exact(&mut magic).is_ok() && &magic == b"\x7fELF" { is_actual_elf = true; }
     }
 
-    // 扫描 Go/Static
-    let is_static_or_go = |path: &str| -> bool {
-        if let Ok(mut f) = std::fs::File::open(path) {
-            use std::io::Read;
-            let mut buffer = [0u8; 4096];
-            if let Ok(n) = f.read(&mut buffer) {
-                let content_str = String::from_utf8_lossy(&buffer[..n]);
-                if content_str.contains("Go build ID") || content_str.contains("Go runtime") { return true; }
-            }
-            let name = std::path::Path::new(path).file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if ["gh", "docker", "podman", "terraform", "rclone"].contains(&name) { return true; }
-        }
-        false
-    };
-
-    let mut wrapper_dir_to_inject = None;
-    if is_static_or_go(&final_cmd) {
-        let wrapper_dir = format!("{}/bin-wrappers", termux_prefix_data);
-        if std::fs::create_dir_all(&wrapper_dir).is_ok() {
-            let sh_p = format!("{}/bin/sh", termux_prefix_data);
-            for (name, rp) in [("git", format!("{}/bin/git", termux_prefix_data)), ("ssh", format!("{}/bin/ssh", termux_prefix_data))] {
-                let wp = format!("{}/{}", wrapper_dir, name);
-                let content = format!("#!{}\nexec /system/bin/linker64 {} \"$@\"\n", sh_p, rp);
-                let _ = std::fs::write(&wp, content);
-                let _ = std::path::Path::new(&wp).metadata().map(|m| {
-                    use std::os::unix::fs::PermissionsExt;
-                    let mut p = m.permissions();
-                    p.set_mode(0o755);
-                    let _ = std::fs::set_permissions(&wp, p);
-                });
-            }
-            wrapper_dir_to_inject = Some(wrapper_dir);
-            crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY] Go binary detected: {}. Prepared wrappers.", final_cmd));
-        }
-    }
-
-    // 脚本转换
+    // 递归转换脚本
     if !is_actual_elf && (final_cmd.contains(&real_pkg) || final_cmd.contains("/data/")) {
         let mut sh_argv = Vec::new();
         sh_argv.push(String::from("sh"));
@@ -200,7 +148,7 @@ pub fn create_subprocess_with_data(
         is_actual_elf = true; 
     }
 
-    // Login Shell
+    // Login Shell 特殊处理
     let is_shell = ["sh", "bash", "zsh", "dash", "fish"].iter().any(|&s| final_cmd.ends_with(s));
     if is_shell {
         let shell_name = std::path::Path::new(&final_cmd).file_name().and_then(|n| n.to_str()).unwrap_or("sh");
@@ -208,7 +156,7 @@ pub fn create_subprocess_with_data(
         else if !final_args[0].starts_with('-') { final_args[0] = format!("-{}", shell_name); }
     }
 
-    // Linker 包装
+    // 最终包装
     if is_actual_elf && (final_cmd.contains(&real_pkg) || final_cmd.contains("/data/")) {
         #[cfg(target_pointer_width = "64")] let linker = "/system/bin/linker64";
         #[cfg(target_pointer_width = "32")] let linker = "/system/bin/linker";
@@ -223,11 +171,11 @@ pub fn create_subprocess_with_data(
         }
     }
 
-    // 预序列化环境
+    // 4. 环境准备
     let mut final_env = Vec::new();
     let old_p = std::env::var("PATH").unwrap_or_else(|_| "/system/bin".to_string());
-    let fp = if let Some(ref wd) = wrapper_dir_to_inject { format!("{}:{}:{}", wd, termux_bin, old_p.replace("/data/user/0/", "/data/data/")) }
-             else { format!("{}:{}", termux_bin, old_p.replace("/data/user/0/", "/data/data/")) };
+    // 强制注入马甲路径到 PATH 首位
+    let fp = format!("{}:{}:{}", wrapper_dir, termux_bin, old_p.replace("/data/user/0/", "/data/data/"));
     final_env.push(format!("PATH={}", fp));
     final_env.push(format!("PREFIX={}", termux_prefix_data));
     final_env.push(format!("HOME={}", termux_home));
