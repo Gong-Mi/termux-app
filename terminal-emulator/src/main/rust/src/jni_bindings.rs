@@ -412,13 +412,14 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_destroyEngine(
     }
 }
 
-
 /// 启动 IO 线程
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_startIoThread(
-    mut env: JNIEnv,
+    _env: JNIEnv,
     _class: JClass,
     ptr: jlong,
+) {
+
     fd: jint,
 ) {
     if ptr == 0 { return; }
