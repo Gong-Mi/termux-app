@@ -116,29 +116,66 @@ impl TerminalContext {
             let mut read_pty = pty_file.try_clone().unwrap();
             let read_context = context.clone();
             
-            thread::spawn(move || {
-                let mut buffer = [0u8; 8192];
-                while read_context.running.load(Ordering::Relaxed) {
-                    match read_pty.read(&mut buffer) {
-                        Ok(0) => break,
-                        Ok(n) => {
-                            let (events, callback_obj) = {
-                                let mut engine = read_context.lock.write().unwrap();
-                                engine.process_bytes(&buffer[..n]);
-                                (engine.take_events(), engine.state.java_callback_obj.clone())
-                            };
-                            crate::render_thread::request_render();
-                            if !events.is_empty() {
-                                // 处理回调 (保持原有逻辑...)
-                                if let Some(obj) = &callback_obj {
-                                     // ... (此处省略回调分发代码)
+            let mut buffer = [0u8; 8192];
+            while read_context.running.load(Ordering::Relaxed) {
+                match read_pty.read(&mut buffer) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let (events, callback_obj) = {
+                            let mut engine = read_context.lock.write().unwrap();
+                            engine.process_bytes(&buffer[..n]);
+                            (engine.take_events(), engine.state.java_callback_obj.clone())
+                        };
+                        crate::render_thread::request_render();
+                        if !events.is_empty() {
+                            if let Some(obj) = &callback_obj {
+                                let env = &mut *guard;
+                                if read_context.running.load(Ordering::Relaxed) {
+                                    for event in events {
+                                        if obj.as_obj().is_null() { break; }
+
+                                        match event {
+                                            TerminalEvent::ScreenUpdated => { let _ = env.call_method(obj.as_obj(), "onScreenUpdated", "()V", &[]); }
+                                            TerminalEvent::Bell => { let _ = env.call_method(obj.as_obj(), "onBell", "()V", &[]); }
+                                            TerminalEvent::ColorsChanged => { let _ = env.call_method(obj.as_obj(), "onColorsChanged", "()V", &[]); }
+                                            TerminalEvent::CopytoClipboard(text) => {
+                                                if let Ok(j_text) = env.new_string(text) {
+                                                    let _ = env.call_method(obj.as_obj(), "onCopyTextToClipboard", "(Ljava/lang/String;)V", &[(&j_text).into()]);
+                                                }
+                                            }
+                                            TerminalEvent::TitleChanged(title) => {
+                                                if let Ok(j_title) = env.new_string(title) {
+                                                    let _ = env.call_method(obj.as_obj(), "reportTitleChange", "(Ljava/lang/String;)V", &[(&j_title).into()]);
+                                                }
+                                            }
+                                            TerminalEvent::TerminalResponse(resp) => {
+                                                if let Ok(j_resp) = env.new_string(resp) {
+                                                    let _ = env.call_method(obj.as_obj(), "write", "(Ljava/lang/String;)V", &[(&j_resp).into()]);
+                                                }
+                                            }
+                                            TerminalEvent::SixelImage { rgba_data, width, height, start_x, start_y } => {
+                                                if let Ok(j_data) = env.new_byte_array(rgba_data.len() as i32) {
+                                                    unsafe { let _ = env.set_byte_array_region(&j_data, 0, std::mem::transmute::<&[u8], &[i8]>(&rgba_data)); }
+                                                    let _ = env.call_method(obj.as_obj(), "onSixelImage", "([BIIII)V", &[
+                                                        (&j_data).into(), width.into(), height.into(), start_x.into(), start_y.into()
+                                                    ]);
+                                                }
+                                            }
+                                        }
+
+                                        if env.exception_check().unwrap_or(false) {
+                                            let _ = env.exception_describe();
+                                            let _ = env.exception_clear();
+                                            break;
+                                        }
+                                    }
                                 }
                             }
                         }
-                        Err(_) => break,
                     }
+                    Err(_) => break,
                 }
-            });
+            }
 
             // 监听来自 Java 的写入请求 (可通过共享队列或直接 JNI 调用，
             // 但用户要求 "IO 全部移交"，意味着 Java 的 write 应该直接写进 PTY fd)

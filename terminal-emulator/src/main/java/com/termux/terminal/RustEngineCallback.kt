@@ -2,6 +2,7 @@ package com.termux.terminal
 
 import androidx.annotation.NonNull
 import androidx.annotation.Nullable
+import androidx.annotation.Keep
 
 /**
  * 回调接口：由 Rust 引擎直接通过 JNI 调用
@@ -9,6 +10,7 @@ import androidx.annotation.Nullable
  *
  * 实现 TerminalSessionClient 接口，以便可以直接传给 Rust JNI
  */
+@Keep
 class RustEngineCallback(private val mClient: TerminalSessionClient?) : TerminalSessionClient {
 
     private var mSession: TerminalSession? = null
