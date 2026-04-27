@@ -35,7 +35,8 @@ internal object JNI {
                     }
                 }
             }
-        } catch (_: Throwable) {
+        } catch (t: Throwable) {
+            android.util.Log.e("TermuxTrace", "Failed to load termux_rust library", t)
         }
         sNativeLibrariesLoaded = loaded
     }
