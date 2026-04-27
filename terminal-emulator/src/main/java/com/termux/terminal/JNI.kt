@@ -12,13 +12,18 @@ internal object JNI {
 
     init {
         var loaded = false
+        android.util.Log.d("TermuxTrace", "[JNI] Start loading termux_rust library")
         try {
             val vendor = System.getProperty("java.vendor")
+            android.util.Log.d("TermuxTrace", "[JNI] java.vendor: $vendor")
             if (vendor != null && vendor.contains("Android")) {
+                android.util.Log.d("TermuxTrace", "[JNI] Attempting System.loadLibrary(\"termux_rust\")")
                 System.loadLibrary("termux_rust")
                 loaded = true
+                android.util.Log.d("TermuxTrace", "[JNI] System.loadLibrary(\"termux_rust\") succeeded")
             } else {
                 val libName = System.mapLibraryName("termux_rust")
+                android.util.Log.d("TermuxTrace", "[JNI] Non-Android environment, libName: $libName")
                 val possiblePaths = arrayOf(
                     "terminal-emulator/src/main/jniLibs/x86_64/$libName",
                     "src/main/jniLibs/x86_64/$libName",
@@ -28,17 +33,21 @@ internal object JNI {
                 )
                 for (path in possiblePaths) {
                     val libFile = java.io.File(path)
+                    android.util.Log.d("TermuxTrace", "[JNI] Checking path: ${libFile.absolutePath}")
                     if (libFile.exists()) {
+                        android.util.Log.d("TermuxTrace", "[JNI] Found library at: ${libFile.absolutePath}, attempting System.load")
                         System.load(libFile.absolutePath)
                         loaded = true
+                        android.util.Log.d("TermuxTrace", "[JNI] System.load succeeded")
                         break
                     }
                 }
             }
         } catch (t: Throwable) {
-            android.util.Log.e("TermuxTrace", "Failed to load termux_rust library", t)
+            android.util.Log.e("TermuxTrace", "[JNI] Failed to load termux_rust library", t)
         }
         sNativeLibrariesLoaded = loaded
+        android.util.Log.d("TermuxTrace", "[JNI] sNativeLibrariesLoaded: $sNativeLibrariesLoaded")
     }
 
     // --- PTY ---

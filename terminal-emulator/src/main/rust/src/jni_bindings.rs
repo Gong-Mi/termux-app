@@ -88,7 +88,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetFontPath(
 /// 获取字体指标
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
-    _env: JNIEnv,
+    mut env: JNIEnv,
     _obj: JObject,
     metrics_array: jni::sys::jfloatArray,
 ) {
@@ -1247,9 +1247,25 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
                 android_log(LogPriority::INFO, &format!("[TRACE_SESSION] PTY creation SUCCESS (fd={}, pid={})", res.0, res.1));
                 res
             },
-            Err(_) => {
-                android_log(LogPriority::ERROR, "[TRACE_SESSION] PTY creation FAILED");
+            Err(e) => {
+                android_log(LogPriority::ERROR, &format!("[TRACE_SESSION] PTY creation FAILED: {:?}", e));
                 coordinator.unregister_session(session_id);
+                
+                // Notify Java about failure
+                if let Some(ref cb) = callback_ref {
+                    if let Some(vm) = crate::JAVA_VM.get() {
+                        if let Ok(mut env) = vm.attach_current_thread_as_daemon() {
+                            if let Ok(err_msg) = env.new_string(format!("PTY creation failed: {:?}", e)) {
+                                let _ = env.call_method(
+                                    cb.as_obj(),
+                                    "onEngineInitializationFailed",
+                                    "(Ljava/lang/String;)V",
+                                    &[jni::objects::JValue::Object(&err_msg.into())]
+                                );
+                            }
+                        }
+                    }
+                }
                 return;
             }
         };
@@ -1412,11 +1428,13 @@ pub extern "system" fn Java_com_termux_terminal_JNI_getKeyCodeFromTermcap(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn JNI_OnLoad(vm: jni::JavaVM, _reserved: std::ffi::c_void) -> jint {
+    android_log(LogPriority::DEBUG, "JNI_OnLoad started");
     let result = crate::JAVA_VM.set(vm);
     match result {
-        Ok(()) => android_log(LogPriority::INFO, "JNI_OnLoad: Termux- library loaded successfully"),
-        Err(_) => android_log(LogPriority::WARN, "JNI_OnLoad: JAVA_VM was already set"),
+        Ok(()) => android_log(LogPriority::INFO, "JNI_OnLoad: Termux- library loaded successfully and JAVA_VM set"),
+        Err(_) => android_log(LogPriority::WARN, "JNI_OnLoad: JAVA_VM was already set (this is unexpected but not necessarily fatal)"),
     }
 
+    android_log(LogPriority::DEBUG, "JNI_OnLoad returning JNI_VERSION_1_6");
     jni::sys::JNI_VERSION_1_6
 }

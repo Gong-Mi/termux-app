@@ -38,6 +38,13 @@ class RustEngineCallback(private val mClient: TerminalSessionClient?) : Terminal
         mSession?.onEngineInitialized(enginePtr, ptyFd, pid)
     }
 
+    /**
+     * Called when the Rust engine initialization fails.
+     */
+    fun onEngineInitializationFailed(error: String) {
+        mSession?.onEngineInitializationFailed(error)
+    }
+
     override fun reportTitleChange(title: String?) {
         mClient?.reportTitleChange(title)
     }

@@ -108,6 +108,15 @@ class TerminalSession(
     fun initializeEmulator(columns: Int, rows: Int, cellWidthPixels: Int, cellHeightPixels: Int) {
         android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 4. initializeEmulator called (${columns}x${rows})")
         mSessionState = SessionState.INITIALIZING
+        
+        // Add timeout check
+        mMainThreadHandler.postDelayed({
+            if (mSessionState == SessionState.INITIALIZING) {
+                android.util.Log.e("TermuxTrace", "[TRACE_SESSION] TIMEOUT: onEngineInitialized was not called within 5 seconds")
+                onEngineInitializationFailed("Timeout waiting for terminal engine initialization")
+            }
+        }, 5000)
+
         if (JNI.sNativeLibrariesLoaded) {
             android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 5. Calling JNI.createSessionAsync")
             JNI.createSessionAsync(
@@ -170,6 +179,16 @@ class TerminalSession(
             }
 
             notifyScreenUpdate()
+        }
+    }
+
+    /** Callback from Rust when async initialization fails. */
+    fun onEngineInitializationFailed(error: String) {
+        android.util.Log.e("TermuxTrace", "[TRACE_SESSION] Engine initialization FAILED: $error")
+        mMainThreadHandler.post {
+            mSessionState = SessionState.IDLE
+            mClient.logError(LOG_TAG, "Terminal engine initialization failed: $error")
+            // Optionally notify user
         }
     }
 
