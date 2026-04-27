@@ -14,8 +14,23 @@ use crate::coordinator::SessionCoordinator;
 pub fn start_server(socket_path: String) {
     thread::spawn(move || {
         let path = Path::new(&socket_path);
-        
-        // 1. 清理旧的 socket 文件
+
+        // 1. 创建父目录以防其不存在
+        if let Some(parent) = path.parent() {
+            if !parent.exists() {
+                if let Err(e) = fs::create_dir_all(parent) {
+                    android_log(LogPriority::ERROR, &format!("Failed to create socket directory {}: {}", parent.display(), e));
+                    return;
+                }
+                #[cfg(target_os = "android")]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
+                }
+            }
+        }
+
+        // 2. 清理旧的 socket 文件
         if path.exists() {
             if let Err(e) = fs::remove_file(path) {
                 android_log(LogPriority::ERROR, &format!("Failed to remove old socket {}: {}", socket_path, e));
@@ -23,8 +38,9 @@ pub fn start_server(socket_path: String) {
             }
         }
 
-        // 2. 绑定并监听
+        // 3. 绑定并监听
         let listener = match UnixListener::bind(path) {
+
             Ok(l) => l,
             Err(e) => {
                 android_log(LogPriority::ERROR, &format!("Failed to bind socket {}: {}", socket_path, e));

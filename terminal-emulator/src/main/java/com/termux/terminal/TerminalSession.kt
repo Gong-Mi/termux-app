@@ -140,11 +140,27 @@ class TerminalSession(
 
             // 启动 Rust 端的数据循环以开始接管 PTY 读取
             RustTerminal.startIoThread(enginePtr, ptyFd)
-            
+
             mClient.onTextChanged(this)
 
             if (mTerminalFileDescriptor != -1) {
-                // 仅保留退出状态等待线程，所有数据 IO 已迁移至 Rust
+                val terminalFileDescriptorWrapped = wrapFileDescriptor(mTerminalFileDescriptor, mClient)
+
+                Thread(null, object : Runnable {
+                    override fun run() {
+                        val buffer = ByteArray(4096)
+                        try {
+                            FileOutputStream(terminalFileDescriptorWrapped).use { termOut ->
+                                while (true) {
+                                    val bytesToWrite = mTerminalToProcessIOQueue.read(buffer, true)
+                                    if (bytesToWrite == -1) return
+                                    termOut.write(buffer, 0, bytesToWrite)
+                                }
+                            }
+                        } catch (_: IOException) { }
+                    }
+                }, "TermSessionOutputWriter[pid=$mShellPid]").start()
+
                 Thread(null, object : Runnable {
                     override fun run() {
                         val processExitCode = runCatching { JNI.waitFor(mShellPid) }.getOrDefault(0)
@@ -162,7 +178,7 @@ class TerminalSession(
     /** Write data to the shell process. */
     override fun write(data: ByteArray, offset: Int, count: Int) {
         if (mSessionState != SessionState.READY) return
-        mEmulator?.takeIf { it.isAlive() }?.append(data, count) // 通过 Rust 写入 PTY
+        if (mShellPid > 0) mTerminalToProcessIOQueue.write(data, offset, count)
     }
 
     /** Write the Unicode code point to the terminal encoded in UTF-8. */
@@ -170,12 +186,31 @@ class TerminalSession(
         if (codePoint > 1114111 || codePoint in 0xD800..0xDFFF) {
             throw IllegalArgumentException("Invalid code point: $codePoint")
         }
-        
-        // 如果需要前缀转义符，先处理
-        if (prependEscape) {
-            mEmulator?.processCodePoint(27)
+
+        var bufferPosition = 0
+        if (prependEscape) mUtf8InputBuffer[bufferPosition++] = 27.toByte()
+
+        when {
+            codePoint <= 0b1111111 -> {
+                mUtf8InputBuffer[bufferPosition++] = codePoint.toByte()
+            }
+            codePoint <= 0b11111111111 -> {
+                mUtf8InputBuffer[bufferPosition++] = (0b11000000 or (codePoint shr 6)).toByte()
+                mUtf8InputBuffer[bufferPosition++] = (0b10000000 or (codePoint and 0b111111)).toByte()
+            }
+            codePoint <= 0b1111111111111111 -> {
+                mUtf8InputBuffer[bufferPosition++] = (0b11100000 or (codePoint shr 12)).toByte()
+                mUtf8InputBuffer[bufferPosition++] = (0b10000000 or ((codePoint shr 6) and 0b111111)).toByte()
+                mUtf8InputBuffer[bufferPosition++] = (0b10000000 or (codePoint and 0b111111)).toByte()
+            }
+            else -> {
+                mUtf8InputBuffer[bufferPosition++] = (0b11110000 or (codePoint shr 18)).toByte()
+                mUtf8InputBuffer[bufferPosition++] = (0b10000000 or ((codePoint shr 12) and 0b111111)).toByte()
+                mUtf8InputBuffer[bufferPosition++] = (0b10000000 or ((codePoint shr 6) and 0b111111)).toByte()
+                mUtf8InputBuffer[bufferPosition++] = (0b10000000 or (codePoint and 0b111111)).toByte()
+            }
         }
-        mEmulator?.processCodePoint(codePoint)
+        write(mUtf8InputBuffer, 0, bufferPosition)
     }
 
     fun getEmulator(): TerminalEmulator? = mEmulator
