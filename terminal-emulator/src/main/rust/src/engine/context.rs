@@ -1,5 +1,5 @@
 /// 终端引擎和上下文管理
-use std::sync::{Arc, RwLock, Mutex};
+use std::sync::{RwLock, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use crate::vte_parser::Parser;

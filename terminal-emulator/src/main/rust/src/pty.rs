@@ -223,8 +223,8 @@ pub fn create_subprocess_with_data(
                 libc::execve(c_cmd.as_ptr(), ptr_args.as_ptr(), ptr_envs.as_ptr());
 
                 // If execve returns, print error and exit.
-                let err_ptr = libc::strerror(*libc::__errno());
-                let err_msg = format!("Child: execve failed: {}\n", std::ffi::CStr::from_ptr(err_ptr).to_string_lossy());
+                let err = std::io::Error::last_os_error();
+                let err_msg = format!("Child: execve failed: {}\n", err);
                 let _ = libc::write(2, err_msg.as_ptr() as *const _, err_msg.len());
                 libc::_exit(1);
             }
