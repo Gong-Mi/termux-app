@@ -193,6 +193,12 @@ pub fn create_subprocess_with_data(
                 let msg2 = "Child: PTY setup complete, about to execve\n";
                 let _ = libc::write(2, msg2.as_ptr() as *const _, msg2.len());
 
+                // 强制确保二进制文件具有可执行权限
+                unsafe {
+                    let c_path = CString::new(final_cmd.clone()).unwrap();
+                    libc::chmod(c_path.as_ptr(), 0o700);
+                }
+
                 // Clear environment and rebuild with only the passed variables.
                 libc::clearenv();
                 for env_str in &c_envs {
@@ -200,8 +206,12 @@ pub fn create_subprocess_with_data(
                 }
 
                 if !cwd_str.is_empty() {
-                    if let Ok(c_cwd) = CString::new(cwd_str.replace("/data/user/0/", "/data/data/")) {
-                        let _ = chdir(c_cwd.as_c_str());
+                    let final_cwd = cwd_str.replace("/data/user/0/", "/data/data/");
+                    if let Ok(c_cwd) = CString::new(final_cwd) {
+                        if let Err(e) = chdir(c_cwd.as_c_str()) {
+                            let err_msg = format!("Child: chdir failed: {:?}\n", e);
+                            let _ = libc::write(2, err_msg.as_ptr() as *const _, err_msg.len());
+                        }
                     }
                 }
 
@@ -213,7 +223,9 @@ pub fn create_subprocess_with_data(
                 libc::execve(c_cmd.as_ptr(), ptr_args.as_ptr(), ptr_envs.as_ptr());
 
                 // If execve returns, print error and exit.
-                let _ = libc::perror(c_cmd.as_ptr() as *const _);
+                let err_ptr = libc::strerror(*libc::__errno());
+                let err_msg = format!("Child: execve failed: {}\n", std::ffi::CStr::from_ptr(err_ptr).to_string_lossy());
+                let _ = libc::write(2, err_msg.as_ptr() as *const _, err_msg.len());
                 libc::_exit(1);
             }
             Err(_) => Err(()),
