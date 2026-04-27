@@ -11,6 +11,27 @@ use crate::terminal::cursor::Cursor;
 use crate::engine::shared_buffer::{SharedBufferPtr, FlatScreenBuffer, SharedScreenBuffer};
 use crate::engine::events::TerminalEvent;
 
+/// 文本选择区域
+#[derive(Clone, Copy, Debug)]
+pub struct Selection {
+    pub x1: i64,
+    pub y1: i64,
+    pub x2: i64,
+    pub y2: i64,
+}
+
+impl Selection {
+    pub fn normalize(&self) -> (i64, i64, i64, i64) {
+        if self.y1 < self.y2 {
+            (self.x1, self.y1, self.x2, self.y2)
+        } else if self.y1 > self.y2 {
+            (self.x2, self.y2, self.x1, self.y1)
+        } else {
+            (self.x1.min(self.x2), self.y1, self.x1.max(self.x2), self.y2)
+        }
+    }
+}
+
 /// 屏幕状态 - 包含所有终端可见状态
 pub struct ScreenState {
     pub rows: i64,
@@ -55,6 +76,7 @@ pub struct ScreenState {
     pub sgr_mouse: bool,
     pub auto_scroll_disabled: bool,
     pub underline_color: u64,
+    pub selection: Option<Selection>,
 }
 
 impl Drop for ScreenState {
@@ -122,6 +144,7 @@ impl ScreenState {
             sgr_mouse: false,
             auto_scroll_disabled: false,
             underline_color: COLOR_INDEX_FOREGROUND as u64,
+            selection: None,
         }
     }
 
@@ -133,6 +156,30 @@ impl ScreenState {
         if self.use_alternate_buffer { &mut self.alt_screen } else { &mut self.main_screen }
     }
 
+    // --- 文本选择 ---
+
+    pub fn set_selection(&mut self, x1: i64, y1: i64, x2: i64, y2: i64) {
+        self.selection = Some(Selection { x1, y1, x2, y2 });
+    }
+
+    pub fn clear_selection(&mut self) {
+        self.selection = None;
+    }
+
+    pub fn is_selection_active(&self) -> bool {
+        self.selection.is_some()
+    }
+
+    pub fn get_selection_text(&self) -> String {
+        match self.selection {
+            Some(sel) => {
+                let (sx, sy, ex, ey) = sel.normalize();
+                self.get_current_screen().get_selected_text(sx, sy, ex, ey)
+            }
+            None => String::new(),
+        }
+    }
+
     pub fn scroll_up(&mut self) {
         let top = self.top_margin;
         let bottom = self.bottom_margin;
@@ -140,6 +187,11 @@ impl ScreenState {
         self.get_current_screen_mut().scroll_up(top, bottom, style);
         if !self.use_alternate_buffer && !self.auto_scroll_disabled && top == 0 && bottom == self.rows {
             self.scroll_counter += 1;
+            // 全屏滚动时，选择区域 Y 坐标跟随内容上移
+            if let Some(ref mut sel) = self.selection {
+                sel.y1 -= 1;
+                sel.y2 -= 1;
+            }
         }
     }
 

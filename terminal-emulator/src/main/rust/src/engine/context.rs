@@ -1,6 +1,6 @@
 /// 终端引擎和上下文管理
-use std::sync::RwLock;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, RwLock, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use crate::vte_parser::Parser;
 use crate::engine::state::ScreenState;
@@ -61,10 +61,36 @@ impl TerminalEngine {
     }
 }
 
+/// 光标闪烁线程控制
+pub struct BlinkControl {
+    pub running: AtomicBool,
+    pub rate_ms: AtomicU32,
+    pub handle: Mutex<Option<std::thread::JoinHandle<()>>>,
+}
+
+impl BlinkControl {
+    pub fn new() -> Self {
+        Self {
+            running: AtomicBool::new(false),
+            rate_ms: AtomicU32::new(0),
+            handle: Mutex::new(None),
+        }
+    }
+
+    /// 停止已有的闪烁线程并等待其结束
+    pub fn stop(&self) {
+        self.running.store(false, Ordering::SeqCst);
+        if let Some(handle) = self.handle.lock().unwrap().take() {
+            let _ = handle.join();
+        }
+    }
+}
+
 /// 终端上下文 - 线程安全的引擎包装
 pub struct TerminalContext {
     pub lock: RwLock<TerminalEngine>,
     pub running: AtomicBool,
+    pub blink: BlinkControl,
 }
 
 impl TerminalContext {
@@ -72,6 +98,7 @@ impl TerminalContext {
         Self {
             lock: RwLock::new(engine),
             running: AtomicBool::new(true),
+            blink: BlinkControl::new(),
         }
     }
 }

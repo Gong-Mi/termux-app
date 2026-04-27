@@ -113,7 +113,13 @@ pub fn create_subprocess_with_data(
         let resolved = format!("{}/{}", termux_bin, final_cmd);
         if std::path::Path::new(&resolved).exists() { final_cmd = resolved; }
     }
-    let final_args: Vec<String> = argv.iter().map(|a| a.replace("/data/user/0/", "/data/data/")).collect();
+
+    // 确保 argv[0] 是程序名称，execve 要求 argc > 0
+    let mut final_args: Vec<String> = Vec::new();
+    final_args.push(final_cmd.clone());
+    for arg in argv {
+        final_args.push(arg.replace("/data/user/0/", "/data/data/"));
+    }
 
     let c_cmd = CString::new(final_cmd).unwrap();
     let c_args: Vec<CString> = final_args.iter().map(|a| CString::new(a.clone()).unwrap()).collect();

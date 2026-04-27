@@ -384,9 +384,10 @@ class TerminalView @JvmOverloads constructor(
     fun onScreenUpdated() = onScreenUpdated(false)
 
     fun onScreenUpdated(skipScrolling: Boolean) {
+        if (mEmulator == null) updateSize()
         val emu = mEmulator
         if (emu == null) {
-            Log.w("TerminalView-Engine", "onScreenUpdated called but mEmulator is null")
+            Log.w("TerminalView-Engine", "onScreenUpdated called but mEmulator is still null after updateSize()")
             return
         }
         if (!mEnginePointerSet) {
