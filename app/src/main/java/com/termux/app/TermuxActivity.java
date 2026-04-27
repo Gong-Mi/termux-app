@@ -398,23 +398,18 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         setIntent(null);
 
         if (mTermuxService.isTermuxSessionsEmpty()) {
-            if (mIsVisible) {
-                TermuxInstaller.setupBootstrapIfNeeded(TermuxActivity.this, () -> {
-                    if (mTermuxService == null) return; // Activity might have been destroyed.
-                    try {
-                        boolean launchFailsafe = false;
-                        if (intent != null && intent.getExtras() != null) {
-                            launchFailsafe = intent.getExtras().getBoolean(TERMUX_ACTIVITY.EXTRA_FAILSAFE_SESSION, false);
-                        }
-                        mTermuxTerminalSessionActivityClient.addNewSession(launchFailsafe, null);
-                    } catch (WindowManager.BadTokenException e) {
-                        // Activity finished - ignore.
+            TermuxInstaller.setupBootstrapIfNeeded(TermuxActivity.this, () -> {
+                if (mTermuxService == null) return; // Activity might have been destroyed.
+                try {
+                    boolean launchFailsafe = false;
+                    if (intent != null && intent.getExtras() != null) {
+                        launchFailsafe = intent.getExtras().getBoolean(TERMUX_ACTIVITY.EXTRA_FAILSAFE_SESSION, false);
                     }
-                });
-            } else {
-                // The service connected while not in foreground - just bail out.
-                finishActivityIfNotFinishing();
-            }
+                    mTermuxTerminalSessionActivityClient.addNewSession(launchFailsafe, null);
+                } catch (WindowManager.BadTokenException e) {
+                    // Activity finished - ignore.
+                }
+            });
         } else {
             // If termux was started from launcher "New session" shortcut and activity is recreated,
             // then the original intent will be re-delivered, resulting in a new session being re-added
