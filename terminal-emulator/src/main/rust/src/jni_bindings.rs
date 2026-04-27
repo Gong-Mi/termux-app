@@ -452,8 +452,13 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_startIoThread(
 
             while context.running.load(std::sync::atomic::Ordering::SeqCst) {
                 match file.read(&mut buffer) {
-                    Ok(0) => break,
+                    Ok(0) => {
+                        android_log(LogPriority::INFO, " IO Thread: Received EOF (0 bytes read)");
+                        break;
+                    },
                     Ok(n) => {
+                        let text = String::from_utf8_lossy(&buffer[..n]);
+                        android_log(LogPriority::DEBUG, &format!(" IO Thread: Read {} bytes: {:?}", n, text));
                         let (events, cb) = {
                             let mut engine = context.lock.write().unwrap();
                             engine.process_bytes(&buffer[..n]);
@@ -465,7 +470,10 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_startIoThread(
                         }
                     }
                     Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-                    Err(_) => break,
+                    Err(e) => {
+                        android_log(LogPriority::ERROR, &format!(" IO Thread: Read error: {:?}", e));
+                        break;
+                    },
                 }
             }
             android_log(LogPriority::INFO, " IO Thread stopped");
@@ -1227,54 +1235,66 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
     };
 
     std::thread::spawn(move || {
+        android_log(LogPriority::DEBUG, "[TRACE_SESSION] Thread spawned in createSessionAsync");
         let coordinator = SessionCoordinator::get();
         let session_id = coordinator.register_session();
 
-        android_log(LogPriority::DEBUG, &format!("[TRACE_SESSION] Session ID: {}", session_id));
+        android_log(LogPriority::DEBUG, &format!("[TRACE_SESSION] Session registered with ID: {}", session_id));
 
         let pty_res = crate::pty::create_subprocess_with_data(cmd_str, cwd_str, argv, envp, rows, cols, cw, ch);
         let (pty_fd, pid) = match pty_res {
             Ok(res) => {
-                android_log(LogPriority::DEBUG, &format!("[TRACE_SESSION] PTY created (fd={}, pid={})", res.0, res.1));
+                android_log(LogPriority::INFO, &format!("[TRACE_SESSION] PTY creation SUCCESS (fd={}, pid={})", res.0, res.1));
                 res
             },
             Err(_) => {
-                android_log(LogPriority::ERROR, "[TRACE_SESSION] PTY creation failed");
+                android_log(LogPriority::ERROR, "[TRACE_SESSION] PTY creation FAILED");
                 coordinator.unregister_session(session_id);
                 return;
             }
         };
 
-        android_log(LogPriority::DEBUG, "[TRACE_SESSION] Creating TerminalEngine");
+        android_log(LogPriority::DEBUG, "[TRACE_SESSION] Initializing TerminalEngine struct");
         let mut engine = TerminalEngine::new(cols as i64, rows as i64, transcript_rows as i64, cw, ch);
         if let Some(ref cb) = callback_ref {
+            android_log(LogPriority::DEBUG, "[TRACE_SESSION] Attaching Java callback object to engine state");
             engine.state.java_callback_obj = Some(cb.clone());
         }
 
         let context = Arc::new(TerminalContext::new(engine));
         let context_ptr = Arc::into_raw(context.clone());
 
-        android_log(LogPriority::DEBUG, "[TRACE_SESSION] Engine created, IO thread will be started from Java");
+        android_log(LogPriority::INFO, &format!("[TRACE_SESSION] Engine context created at ptr: {:p}", context_ptr));
 
         if let Some(ref cb) = callback_ref {
-            android_log(LogPriority::DEBUG, "[TRACE_SESSION] Attempting to callback Java");
+            android_log(LogPriority::DEBUG, "[TRACE_SESSION] Attempting JNI callback: onEngineInitialized");
             if let Some(vm) = crate::JAVA_VM.get() {
-                if let Ok(mut env) = vm.attach_current_thread_as_daemon() {
-                    let _ = env.call_method(
-                        cb.as_obj(),
-                        "onEngineInitialized",
-                        "(JII)V",
-                        &[
-                            jni::objects::JValue::Long(context_ptr as jlong),
-                            jni::objects::JValue::Int(pty_fd),
-                            jni::objects::JValue::Int(pid),
-                        ],
-                    );
-                    android_log(LogPriority::DEBUG, "[TRACE_SESSION] Java callback executed");
+                match vm.attach_current_thread_as_daemon() {
+                    Ok(mut env) => {
+                        android_log(LogPriority::DEBUG, "[TRACE_SESSION] Thread attached to JVM successfully");
+                        let res = env.call_method(
+                            cb.as_obj(),
+                            "onEngineInitialized",
+                            "(JII)V",
+                            &[
+                                jni::objects::JValue::Long(context_ptr as jlong),
+                                jni::objects::JValue::Int(pty_fd),
+                                jni::objects::JValue::Int(pid),
+                            ],
+                        );
+                        match res {
+                            Ok(_) => android_log(LogPriority::INFO, "[TRACE_SESSION] JNI callback onEngineInitialized SUCCESS"),
+                            Err(e) => android_log(LogPriority::ERROR, &format!("[TRACE_SESSION] JNI callback onEngineInitialized FAILED: {:?}", e)),
+                        }
+                    },
+                    Err(e) => android_log(LogPriority::ERROR, &format!("[TRACE_SESSION] Failed to attach thread to JVM: {:?}", e)),
                 }
+            } else {
+                android_log(LogPriority::ERROR, "[TRACE_SESSION] JAVA_VM not initialized!");
             }
+        } else {
+            android_log(LogPriority::WARN, "[TRACE_SESSION] No callback object provided for createSessionAsync");
         }
-        android_log(LogPriority::INFO, &format!("Async session creation complete (pid={})", pid));
     });
 }
 

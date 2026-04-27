@@ -246,6 +246,7 @@ class TerminalSession(
 
     /** Cleanup resources when the process exits. */
     private fun cleanupResources(exitStatus: Int) {
+        android.util.Log.i("TermuxTrace", "[TRACE_SESSION] cleanupResources called with status: $exitStatus")
         mShellPid = -1
         mShellExitStatus = exitStatus
         mEmulator?.destroy()

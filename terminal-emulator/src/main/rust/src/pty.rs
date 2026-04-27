@@ -121,6 +121,9 @@ pub fn create_subprocess_with_data(
         final_args.push(arg.replace("/data/user/0/", "/data/data/"));
     }
 
+    android_log(LogPriority::INFO, &format!("[TRACE_SESSION] Preparing to exec: {} with args: {:?}", final_cmd, final_args));
+    android_log(LogPriority::INFO, &format!("[TRACE_SESSION] Working directory: {}", cwd_str));
+
     let c_cmd = CString::new(final_cmd).unwrap();
     let c_args: Vec<CString> = final_args.iter().map(|a| CString::new(a.clone()).unwrap()).collect();
     let c_envs: Vec<CString> = final_env.iter().map(|e| CString::new(e.clone()).unwrap()).collect();
@@ -152,9 +155,15 @@ pub fn create_subprocess_with_data(
 
         match fork() {
             Ok(ForkResult::Parent { child }) => {
+                android_log(LogPriority::DEBUG, &format!("[TRACE_SESSION] Fork successful, child pid: {}", child.as_raw()));
                 Ok((ptm, child.as_raw()))
             }
             Ok(ForkResult::Child) => {
+                // 在子进程中，我们不能安全地使用 android_log
+                // 使用 write(2) 直接写入 stderr (此时 stderr 已重定向到 pts，或者还未重定向)
+                let msg = "Child: Starting execution\n";
+                let _ = libc::write(2, msg.as_ptr() as *const _, msg.len());
+
                 // Clear signals which the Android java process may have blocked.
                 let mut signals_to_unblock: libc::sigset_t = std::mem::zeroed();
                 libc::sigfillset(&mut signals_to_unblock);
@@ -165,29 +174,22 @@ pub fn create_subprocess_with_data(
 
                 let c_pts = CString::new(devname_str).unwrap();
                 let pts = libc::open(c_pts.as_ptr(), libc::O_RDWR);
-                if pts < 0 { libc::_exit(-1); }
+                if pts < 0 { 
+                    let err_msg = "Child: Failed to open pts\n";
+                    let _ = libc::write(2, err_msg.as_ptr() as *const _, err_msg.len());
+                    libc::_exit(-1); 
+                }
 
                 libc::ioctl(pts, libc::TIOCSCTTY as _, 0);
                 libc::dup2(pts, 0);
                 libc::dup2(pts, 1);
                 libc::dup2(pts, 2);
 
-                // Close all other file descriptors.
-                let self_dir = libc::opendir("/proc/self/fd\0".as_ptr() as *const _);
-                if !self_dir.is_null() {
-                    let self_dir_fd = libc::dirfd(self_dir);
-                    loop {
-                        let entry = libc::readdir(self_dir);
-                        if entry.is_null() { break; }
-                        let name = std::ffi::CStr::from_ptr((*entry).d_name.as_ptr()).to_string_lossy();
-                        if let Ok(fd) = name.parse::<i32>() {
-                            if fd > 2 && fd != self_dir_fd {
-                                libc::close(fd);
-                            }
-                        }
-                    }
-                    libc::closedir(self_dir);
-                }
+                if pts > 2 { libc::close(pts); }
+
+                // 此时 stderr 已经指向 PTY
+                let msg2 = "Child: PTY setup complete, about to execve\n";
+                let _ = libc::write(2, msg2.as_ptr() as *const _, msg2.len());
 
                 // Clear environment and rebuild with only the passed variables.
                 libc::clearenv();
