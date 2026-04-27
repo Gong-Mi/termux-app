@@ -78,9 +78,8 @@ impl TerminalRow {
 
     pub fn get_space_used(&self) -> u64 {
         for i in (0..self.text.len()).rev() {
-            // 跳过尾随的空格和 '\0' 占位符
-            // '\0' 是宽字符的第二个单元格，不计入逻辑“空间使用”长度
-            if self.text[i] != ' ' && self.text[i] != '\0' {
+            // '\0' 是宽字符的占位符，占用了物理列，因此计入空间使用
+            if self.text[i] != ' ' {
                 return (i + 1) as u64;
             }
         }
