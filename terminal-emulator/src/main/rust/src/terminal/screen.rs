@@ -314,28 +314,37 @@ impl Screen {
             }
             self.get_row_mut(self.rows - 1).clear_all(style);
         } else {
-            // Partial scroll - move data
-            let to_move = (bottom - top) - 1;
-            for i in 0..to_move {
-                let s = self.internal_row(top + i + 1);
-                let d = self.internal_row(top + i);
+            // Partial scroll - move data up by 1 line
+            // We want to move rows [top+1 .. bottom] to [top .. bottom-1]
+            // We can do this by swapping adjacent rows downwards
+            for i in top..(bottom - 1) {
+                let d = self.internal_row(i);
+                let s = self.internal_row(i + 1);
+                
+                // Safe swap using split_at_mut
                 let (low, high) = if s < d { (s, d) } else { (d, s) };
                 let (left, right) = self.buffer.split_at_mut(high);
                 std::mem::swap(&mut left[low], &mut right[0]);
             }
+            // Clear the newly exposed bottom row
             self.get_row_mut(bottom - 1).clear_all(style);
         }
     }
 
     pub fn scroll_down(&mut self, top: i64, bottom: i64, style: u64) {
-        let to_move = (bottom - top) - 1;
-        for i in (0..to_move).rev() {
-            let s = self.internal_row(top + i);
-            let d = self.internal_row(top + i + 1);
+        // Partial scroll - move data down by 1 line
+        // We want to move rows [top .. bottom-1] to [top+1 .. bottom]
+        // We can do this by swapping adjacent rows upwards, starting from the bottom
+        for i in (top..(bottom - 1)).rev() {
+            let d = self.internal_row(i + 1);
+            let s = self.internal_row(i);
+            
+            // Safe swap using split_at_mut
             let (low, high) = if s < d { (s, d) } else { (d, s) };
             let (left, right) = self.buffer.split_at_mut(high);
             std::mem::swap(&mut left[low], &mut right[0]);
         }
+        // Clear the newly exposed top row
         self.get_row_mut(top).clear_all(style);
     }
 

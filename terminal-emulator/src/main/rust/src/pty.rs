@@ -113,35 +113,10 @@ pub fn create_subprocess_with_data(
         let resolved = format!("{}/{}", termux_bin, final_cmd);
         if std::path::Path::new(&resolved).exists() { final_cmd = resolved; }
     }
-    let mut final_args: Vec<String> = argv.iter().map(|a| a.replace("/data/user/0/", "/data/data/")).collect();
+    let final_args: Vec<String> = argv.iter().map(|a| a.replace("/data/user/0/", "/data/data/")).collect();
 
-    // 4. 简化的 Linker 包装逻辑 (针对 Android 11/SDK 30 环境)
-    let mut is_elf = false;
-    if let Ok(mut f) = std::fs::File::open(&final_cmd) {
-        use std::io::Read;
-        let mut magic = [0u8; 4];
-        if f.read_exact(&mut magic).is_ok() && &magic == b"\x7fELF" { is_elf = true; }
-    }
-
-    if is_elf && final_cmd.contains("/data/data/") {
-        #[cfg(target_pointer_width = "64")] let linker = "/system/bin/linker64";
-        #[cfg(target_pointer_width = "32")] let linker = "/system/bin/linker";
-        if std::path::Path::new(linker).exists() {
-            let mut linker_argv = Vec::new();
-            linker_argv.push(if !final_args.is_empty() { final_args[0].clone() } else { final_cmd.clone() });
-            linker_argv.push(final_cmd.clone());
-            if final_args.len() > 1 { linker_argv.extend(final_args.into_iter().skip(1)); }
-            final_args = linker_argv;
-            final_cmd = linker.to_string();
-        }
-    } else if !is_elf && final_cmd.contains("/data/data/") {
-        let mut sh_argv = Vec::new();
-        sh_argv.push(String::from("sh"));
-        sh_argv.push(final_cmd.clone());
-        if final_args.len() > 1 { sh_argv.extend(final_args.into_iter().skip(1)); }
-        final_args = sh_argv;
-        final_cmd = format!("{}/bin/sh", termux_prefix);
-    }
+    // Removed artificial linker/sh wrapping logic as it breaks standard execution.
+    // The targetSdk is 28, so standard execve works perfectly fine.
 
     let c_cmd = CString::new(final_cmd).unwrap();
     let c_args: Vec<CString> = final_args.iter().map(|a| CString::new(a.clone()).unwrap()).collect();
