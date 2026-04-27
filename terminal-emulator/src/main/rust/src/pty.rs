@@ -115,46 +115,95 @@ pub fn create_subprocess_with_data(
     }
     let final_args: Vec<String> = argv.iter().map(|a| a.replace("/data/user/0/", "/data/data/")).collect();
 
-    // Removed artificial linker/sh wrapping logic as it breaks standard execution.
-    // The targetSdk is 28, so standard execve works perfectly fine.
-
     let c_cmd = CString::new(final_cmd).unwrap();
     let c_args: Vec<CString> = final_args.iter().map(|a| CString::new(a.clone()).unwrap()).collect();
     let c_envs: Vec<CString> = final_env.iter().map(|e| CString::new(e.clone()).unwrap()).collect();
 
     unsafe {
-        let ptm = libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY);
+        let ptm = libc::open("/dev/ptmx\0".as_ptr() as *const _, libc::O_RDWR | libc::O_CLOEXEC);
         if ptm < 0 { return Err(()); }
-        let _ = libc::grantpt(ptm); let _ = libc::unlockpt(ptm);
+
+        let _ = libc::grantpt(ptm);
+        let _ = libc::unlockpt(ptm);
         let devname = libc::ptsname(ptm);
         let devname_str = std::ffi::CStr::from_ptr(devname).to_string_lossy().into_owned();
 
+        // Set initial winsize.
+        let sz = libc::winsize {
+            ws_row: rows as u16,
+            ws_col: cols as u16,
+            ws_xpixel: (cols as u32 * cw as u32) as u16,
+            ws_ypixel: (rows as u32 * ch as u32) as u16,
+        };
+        libc::ioctl(ptm, libc::TIOCSWINSZ, &sz);
+
+        // Enable UTF-8 mode and disable flow control to prevent Ctrl+S from locking up the display.
+        let mut tios: libc::termios = std::mem::zeroed();
+        libc::tcgetattr(ptm, &mut tios);
+        tios.c_iflag |= libc::IUTF8;
+        tios.c_iflag &= !(libc::IXON | libc::IXOFF);
+        libc::tcsetattr(ptm, libc::TCSANOW, &tios);
+
         match fork() {
             Ok(ForkResult::Parent { child }) => {
-                let sz = libc::winsize { ws_row: rows as u16, ws_col: cols as u16, ws_xpixel: (cols as u32 * cw as u32) as u16, ws_ypixel: (rows as u32 * ch as u32) as u16 };
-                libc::ioctl(ptm, libc::TIOCSWINSZ, &sz);
                 Ok((ptm, child.as_raw()))
             }
             Ok(ForkResult::Child) => {
-                let _ = setsid();
-                let c_pts = CString::new(devname_str).unwrap();
-                let pts = libc::open(c_pts.as_ptr(), libc::O_RDWR);
-                libc::ioctl(pts, libc::TIOCSCTTY as _, 0);
-                libc::dup2(pts, 0); libc::dup2(pts, 1); libc::dup2(pts, 2);
-                libc::close(ptm);
-
-                if !cwd_str.is_empty() {
-                    if let Ok(c_cwd) = CString::new(cwd_str.replace("/data/user/0/", "/data/data/")) { let _ = chdir(c_cwd.as_c_str()); }
-                }
-
+                // Clear signals which the Android java process may have blocked.
                 let mut signals_to_unblock: libc::sigset_t = std::mem::zeroed();
                 libc::sigfillset(&mut signals_to_unblock);
                 libc::sigprocmask(libc::SIG_UNBLOCK, &signals_to_unblock, std::ptr::null_mut());
 
-                let ptr_args: Vec<_> = c_args.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
-                let ptr_envs: Vec<_> = c_envs.iter().map(|s| s.as_ptr()).chain(std::iter::once(std::ptr::null())).collect();
+                libc::close(ptm);
+                let _ = setsid();
+
+                let c_pts = CString::new(devname_str).unwrap();
+                let pts = libc::open(c_pts.as_ptr(), libc::O_RDWR);
+                if pts < 0 { libc::_exit(-1); }
+
+                libc::ioctl(pts, libc::TIOCSCTTY as _, 0);
+                libc::dup2(pts, 0);
+                libc::dup2(pts, 1);
+                libc::dup2(pts, 2);
+
+                // Close all other file descriptors.
+                let self_dir = libc::opendir("/proc/self/fd\0".as_ptr() as *const _);
+                if !self_dir.is_null() {
+                    let self_dir_fd = libc::dirfd(self_dir);
+                    loop {
+                        let entry = libc::readdir(self_dir);
+                        if entry.is_null() { break; }
+                        let name = std::ffi::CStr::from_ptr((*entry).d_name.as_ptr()).to_string_lossy();
+                        if let Ok(fd) = name.parse::<i32>() {
+                            if fd > 2 && fd != self_dir_fd {
+                                libc::close(fd);
+                            }
+                        }
+                    }
+                    libc::closedir(self_dir);
+                }
+
+                // Clear environment and rebuild with only the passed variables.
+                libc::clearenv();
+                for env_str in &c_envs {
+                    libc::putenv(env_str.as_ptr() as *mut _);
+                }
+
+                if !cwd_str.is_empty() {
+                    if let Ok(c_cwd) = CString::new(cwd_str.replace("/data/user/0/", "/data/data/")) {
+                        let _ = chdir(c_cwd.as_c_str());
+                    }
+                }
+
+                let ptr_args: Vec<_> = c_args.iter().map(|s| s.as_ptr())
+                    .chain(std::iter::once(std::ptr::null())).collect();
+                let ptr_envs: Vec<_> = c_envs.iter().map(|s| s.as_ptr())
+                    .chain(std::iter::once(std::ptr::null())).collect();
 
                 libc::execve(c_cmd.as_ptr(), ptr_args.as_ptr(), ptr_envs.as_ptr());
+
+                // If execve returns, print error and exit.
+                let _ = libc::perror(c_cmd.as_ptr() as *const _);
                 libc::_exit(1);
             }
             Err(_) => Err(()),
@@ -164,7 +213,12 @@ pub fn create_subprocess_with_data(
 
 pub fn set_pty_window_size(fd: jint, rows: jint, cols: jint, cell_width: jint, cell_height: jint) {
     if fd < 0 { return; }
-    let sz = libc::winsize { ws_row: rows as u16, ws_col: cols as u16, ws_xpixel: (cols as u32 * cell_width as u32) as u16, ws_ypixel: (rows as u32 * cell_height as u32) as u16 };
+    let sz = libc::winsize {
+        ws_row: rows as u16,
+        ws_col: cols as u16,
+        ws_xpixel: (cols as u32 * cell_width as u32) as u16,
+        ws_ypixel: (rows as u32 * cell_height as u32) as u16,
+    };
     unsafe { libc::ioctl(fd, libc::TIOCSWINSZ, &sz); }
 }
 
