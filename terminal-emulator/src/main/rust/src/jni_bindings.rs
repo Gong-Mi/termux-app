@@ -21,7 +21,7 @@ use crate::render_thread;
 /// 设置渲染参数
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeUpdateRenderParams(
-    mut env: JNIEnv,
+    _env: JNIEnv,
     _obj: JObject,
     scale: jfloat,
     scroll_offset: jfloat,
@@ -46,7 +46,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeUpdateRenderParam
 /// 设置字体尺寸
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetFontSize(
-    mut env: JNIEnv,
+    _env: JNIEnv,
     _obj: JObject,
     font_size: jfloat,
 ) {
@@ -88,7 +88,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetFontPath(
 /// 获取字体指标
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
-    env: JNIEnv,
+    _env: JNIEnv,
     _obj: JObject,
     metrics_array: jni::sys::jfloatArray,
 ) {

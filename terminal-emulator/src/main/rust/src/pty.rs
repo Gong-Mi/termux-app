@@ -220,10 +220,21 @@ pub fn create_subprocess_with_data(
 
                 libc::execve(c_cmd.as_ptr(), ptr_args.as_ptr(), ptr_envs.as_ptr());
 
-                // If execve returns, print error and exit.
+                // If execve returns, it failed. Try fallback to system shell.
                 let err = std::io::Error::last_os_error();
-                let err_msg = format!("Child: execve failed: {}\n", err);
+                let err_msg = format!("Child: execve failed: {}. Trying fallback to /system/bin/sh...\n", err);
                 let _ = libc::write(2, err_msg.as_ptr() as *const _, err_msg.len());
+
+                let fallback_cmd = CString::new("/system/bin/sh").unwrap();
+                let fallback_arg0 = CString::new("sh").unwrap();
+                let fallback_args = [fallback_arg0.as_ptr(), std::ptr::null()];
+                
+                libc::execve(fallback_cmd.as_ptr(), fallback_args.as_ptr(), ptr_envs.as_ptr());
+
+                // Even fallback failed
+                let err2 = std::io::Error::last_os_error();
+                let err_msg2 = format!("Child: Fallback execve failed: {}\n", err2);
+                let _ = libc::write(2, err_msg2.as_ptr() as *const _, err_msg2.len());
                 libc::_exit(1);
             }
             Err(_) => Err(()),
