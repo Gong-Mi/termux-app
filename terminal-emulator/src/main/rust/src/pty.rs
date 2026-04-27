@@ -4,6 +4,8 @@ use jni::sys::{JNINativeInterface_, jint, jintArray, jobjectArray, jstring};
 use nix::unistd::{ForkResult, fork, setsid, chdir};
 use std::ffi::CString;
 
+use crate::utils::{android_log, LogPriority};
+
 pub unsafe fn create_subprocess(
     env_ptr: *mut *const JNINativeInterface_,
     cmd: jstring,
