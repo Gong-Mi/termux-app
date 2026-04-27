@@ -126,7 +126,7 @@ pub fn create_subprocess_with_data(
     android_log(LogPriority::INFO, &format!("[TRACE_SESSION] Preparing to exec: {} with args: {:?}", final_cmd, final_args));
     android_log(LogPriority::INFO, &format!("[TRACE_SESSION] Working directory: {}", cwd_str));
 
-    let c_cmd = CString::new(final_cmd).unwrap();
+    let c_cmd = CString::new(final_cmd.clone()).unwrap();
     let c_args: Vec<CString> = final_args.iter().map(|a| CString::new(a.clone()).unwrap()).collect();
     let c_envs: Vec<CString> = final_env.iter().map(|e| CString::new(e.clone()).unwrap()).collect();
 
@@ -194,10 +194,8 @@ pub fn create_subprocess_with_data(
                 let _ = libc::write(2, msg2.as_ptr() as *const _, msg2.len());
 
                 // 强制确保二进制文件具有可执行权限
-                unsafe {
-                    let c_path = CString::new(final_cmd.clone()).unwrap();
-                    libc::chmod(c_path.as_ptr(), 0o700);
-                }
+                let c_path = CString::new(final_cmd.clone()).unwrap();
+                libc::chmod(c_path.as_ptr(), 0o700);
 
                 // Clear environment and rebuild with only the passed variables.
                 libc::clearenv();
