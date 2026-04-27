@@ -138,6 +138,9 @@ class TerminalSession(
             mClient.setTerminalShellPid(this, mShellPid)
             android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 8. Emulator instance created")
 
+            // 启动 Rust 端的数据循环以开始接管 PTY 读取
+            RustTerminal.startIoThread(enginePtr, ptyFd)
+            
             mClient.onTextChanged(this)
 
             if (mTerminalFileDescriptor != -1) {
