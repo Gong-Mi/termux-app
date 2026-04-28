@@ -80,21 +80,30 @@ pub fn create_subprocess_with_data(
     cw: jint,
     ch: jint,
 ) -> Result<(jint, i32), ()> {
-    // 1. 基础路径解析
-    let real_pkg = "com.termux";
-    let termux_data_root = format!("/data/data/{}", real_pkg);
-    let termux_files = format!("{}/files", termux_data_root);
-    let termux_prefix = format!("{}/usr", termux_files);
+    // 1. 动态路径解析 - 不再硬编码 com.termux
+    // 尝试从 cwd_str 中提取前缀，例如 /data/data/com.termux/files/home
+    let data_home_pos = cwd_str.find("/files/home");
+    let (termux_files, termux_prefix) = if let Some(pos) = data_home_pos {
+        let base = &cwd_str[..pos + 6]; // "/data/data/com.termux/files"
+        (base.to_string(), format!("{}/usr", base))
+    } else {
+        // 回退到默认，但尽量保持通用
+        ("/data/data/com.termux/files".to_string(), "/data/data/com.termux/files/usr".to_string())
+    };
+    
     let termux_bin = format!("{}/bin", termux_prefix);
     let termux_home = format!("{}/home", termux_files);
 
     // 2. 环境序列化
     let mut final_env = Vec::new();
+    
+    // 预设核心环境变量
     let old_p = std::env::var("PATH").unwrap_or_else(|_| "/system/bin".to_string());
     final_env.push(format!("PATH={}:{}", termux_bin, old_p.replace("/data/user/0/", "/data/data/")));
     final_env.push(format!("PREFIX={}", termux_prefix));
     final_env.push(format!("HOME={}", termux_home));
     final_env.push(format!("LD_PRELOAD={}/lib/libtermux-exec.so", termux_prefix));
+    final_env.push("TERM=xterm-256color".to_string());
 
     for var in ["ANDROID_DATA", "ANDROID_ROOT", "EXTERNAL_STORAGE", "BOOTCLASSPATH"] {
         if let Ok(val) = std::env::var(var) { final_env.push(format!("{}={}", var, val)); }
@@ -103,6 +112,7 @@ pub fn create_subprocess_with_data(
     for env_var in envp {
         if let Some(pos) = env_var.find('=') {
             let k = &env_var[..pos];
+            // 避免覆盖核心变量，除非是显式传递
             if !["PATH", "PREFIX", "HOME", "LD_PRELOAD"].contains(&k) {
                 final_env.push(env_var.replace("/data/user/0/", "/data/data/"));
             }
@@ -116,7 +126,7 @@ pub fn create_subprocess_with_data(
         if std::path::Path::new(&resolved).exists() { final_cmd = resolved; }
     }
 
-    // 确保 argv[0] 是程序名称，execve 要求 argc > 0
+    // 确保 argv[0] 是程序名称
     let mut final_args: Vec<String> = Vec::new();
     final_args.push(final_cmd.clone());
     for arg in argv {
@@ -124,7 +134,6 @@ pub fn create_subprocess_with_data(
     }
 
     android_log(LogPriority::INFO, &format!("[TRACE_SESSION] Preparing to exec: {} with args: {:?}", final_cmd, final_args));
-    android_log(LogPriority::INFO, &format!("[TRACE_SESSION] Working directory: {}", cwd_str));
 
     let c_cmd = CString::new(final_cmd.clone()).unwrap();
     let c_args: Vec<CString> = final_args.iter().map(|a| CString::new(a.clone()).unwrap()).collect();
@@ -137,6 +146,7 @@ pub fn create_subprocess_with_data(
         let _ = libc::grantpt(ptm);
         let _ = libc::unlockpt(ptm);
         let devname = libc::ptsname(ptm);
+        if devname.is_null() { return Err(()); }
         let devname_str = std::ffi::CStr::from_ptr(devname).to_string_lossy().into_owned();
 
         // Set initial winsize.
@@ -148,7 +158,7 @@ pub fn create_subprocess_with_data(
         };
         libc::ioctl(ptm, libc::TIOCSWINSZ, &sz);
 
-        // Enable UTF-8 mode and disable flow control to prevent Ctrl+S from locking up the display.
+        // Enable UTF-8 mode and disable flow control.
         let mut tios: libc::termios = std::mem::zeroed();
         libc::tcgetattr(ptm, &mut tios);
         tios.c_iflag |= libc::IUTF8;
@@ -156,17 +166,9 @@ pub fn create_subprocess_with_data(
         libc::tcsetattr(ptm, libc::TCSANOW, &tios);
 
         match fork() {
-            Ok(ForkResult::Parent { child }) => {
-                android_log(LogPriority::DEBUG, &format!("[TRACE_SESSION] Fork successful, child pid: {}", child.as_raw()));
-                Ok((ptm, child.as_raw()))
-            }
+            Ok(ForkResult::Parent { child }) => Ok((ptm, child.as_raw())),
             Ok(ForkResult::Child) => {
-                // 在子进程中，我们不能安全地使用 android_log
-                // 使用 write(2) 直接写入 stderr (此时 stderr 已重定向到 pts，或者还未重定向)
-                let msg = "Child: Starting execution\n";
-                let _ = libc::write(2, msg.as_ptr() as *const _, msg.len());
-
-                // Clear signals which the Android java process may have blocked.
+                // Clear signals.
                 let mut signals_to_unblock: libc::sigset_t = std::mem::zeroed();
                 libc::sigfillset(&mut signals_to_unblock);
                 libc::sigprocmask(libc::SIG_UNBLOCK, &signals_to_unblock, std::ptr::null_mut());
@@ -176,11 +178,7 @@ pub fn create_subprocess_with_data(
 
                 let c_pts = CString::new(devname_str).unwrap();
                 let pts = libc::open(c_pts.as_ptr(), libc::O_RDWR);
-                if pts < 0 { 
-                    let err_msg = "Child: Failed to open pts\n";
-                    let _ = libc::write(2, err_msg.as_ptr() as *const _, err_msg.len());
-                    libc::_exit(-1); 
-                }
+                if pts < 0 { libc::_exit(-1); }
 
                 libc::ioctl(pts, libc::TIOCSCTTY as _, 0);
                 libc::dup2(pts, 0);
@@ -189,15 +187,7 @@ pub fn create_subprocess_with_data(
 
                 if pts > 2 { libc::close(pts); }
 
-                // 此时 stderr 已经指向 PTY
-                let msg2 = "Child: PTY setup complete, about to execve\n";
-                let _ = libc::write(2, msg2.as_ptr() as *const _, msg2.len());
-
-                // 强制确保二进制文件具有可执行权限
-                let c_path = CString::new(final_cmd.clone()).unwrap();
-                libc::chmod(c_path.as_ptr(), 0o700);
-
-                // Clear environment and rebuild with only the passed variables.
+                // Clear environment and rebuild.
                 libc::clearenv();
                 for env_str in &c_envs {
                     libc::putenv(env_str.as_ptr() as *mut _);
@@ -206,10 +196,7 @@ pub fn create_subprocess_with_data(
                 if !cwd_str.is_empty() {
                     let final_cwd = cwd_str.replace("/data/user/0/", "/data/data/");
                     if let Ok(c_cwd) = CString::new(final_cwd) {
-                        if let Err(e) = chdir(c_cwd.as_c_str()) {
-                            let err_msg = format!("Child: chdir failed: {:?}\n", e);
-                            let _ = libc::write(2, err_msg.as_ptr() as *const _, err_msg.len());
-                        }
+                        let _ = chdir(c_cwd.as_c_str());
                     }
                 }
 
@@ -220,21 +207,12 @@ pub fn create_subprocess_with_data(
 
                 libc::execve(c_cmd.as_ptr(), ptr_args.as_ptr(), ptr_envs.as_ptr());
 
-                // If execve returns, it failed. Try fallback to system shell.
-                let err = std::io::Error::last_os_error();
-                let err_msg = format!("Child: execve failed: {}. Trying fallback to /system/bin/sh...\n", err);
-                let _ = libc::write(2, err_msg.as_ptr() as *const _, err_msg.len());
-
+                // Fallback to /system/bin/sh
                 let fallback_cmd = CString::new("/system/bin/sh").unwrap();
                 let fallback_arg0 = CString::new("sh").unwrap();
                 let fallback_args = [fallback_arg0.as_ptr(), std::ptr::null()];
                 
                 libc::execve(fallback_cmd.as_ptr(), fallback_args.as_ptr(), ptr_envs.as_ptr());
-
-                // Even fallback failed
-                let err2 = std::io::Error::last_os_error();
-                let err_msg2 = format!("Child: Fallback execve failed: {}\n", err2);
-                let _ = libc::write(2, err_msg2.as_ptr() as *const _, err_msg2.len());
                 libc::_exit(1);
             }
             Err(_) => Err(()),
