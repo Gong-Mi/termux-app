@@ -30,10 +30,12 @@ class RustEngineCallback(private var mClient: TerminalSessionClient?) : Terminal
 
     override fun onScreenUpdated() {
         android.util.Log.v("TermuxTrace", "[JNI_CALLBACK] onScreenUpdated (plural) called")
-        if (mSession != null) {
-            mSession!!.onNativeScreenUpdated()
-        } else if (mClient != null) {
-            mClient!!.logVerbose("RustEngineCallback", "Screen updated but no session available")
+        val session = mSession
+        val client = mClient
+        if (session != null) {
+            session.onNativeScreenUpdated()
+        } else if (client != null) {
+            client.logVerbose("RustEngineCallback", "Screen updated but no session available")
         }
     }
 
@@ -59,8 +61,13 @@ class RustEngineCallback(private var mClient: TerminalSessionClient?) : Terminal
 
     /** Convenience method (no session) - delegates to interface method with session if available. */
     fun onColorsChanged() {
-        mSession?.let { mClient?.onColorsChanged(it) }
-            ?: mClient?.logVerbose("RustEngineCallback", "Colors changed but no session available")
+        val session = mSession
+        val client = mClient
+        if (session != null) {
+            client?.onColorsChanged(session)
+        } else {
+            client?.logVerbose("RustEngineCallback", "Colors changed but no session available")
+        }
     }
 
     fun reportCursorVisibility(visible: Boolean) {
@@ -69,34 +76,47 @@ class RustEngineCallback(private var mClient: TerminalSessionClient?) : Terminal
 
     /** Convenience method (no session). */
     fun onBell() {
-        mSession?.let { mClient?.onBell(it) }
-            ?: mClient?.logVerbose("RustEngineCallback", "Bell but no session available")
+        val session = mSession
+        val client = mClient
+        if (session != null) {
+            client?.onBell(session)
+        } else {
+            client?.logVerbose("RustEngineCallback", "Bell but no session available")
+        }
     }
 
     fun onCopyTextToClipboard(text: String) {
-        mSession?.let { mClient?.onCopyTextToClipboard(it, text) }
+        val session = mSession
+        if (session != null) {
+            mClient?.onCopyTextToClipboard(session, text)
+        }
     }
 
     fun onPasteTextFromClipboard() {
-        mSession?.let { mClient?.onPasteTextFromClipboard(it) }
+        val session = mSession
+        if (session != null) {
+            mClient?.onPasteTextFromClipboard(session)
+        }
     }
 
     fun onWriteToSession(data: String) {
         // 将终端响应（DSR、光标位置、颜色查询等）写回 PTY
         // 否则嵌套 shell 会在等待响应时无限期挂起
-        if (data.isNotEmpty() && mSession != null) {
-            mSession!!.write(data.toByteArray(Charsets.UTF_8))
-        } else if (mClient != null) {
-            mClient.logVerbose("RustEngineCallback", "Write to session: $data")
+        val session = mSession
+        if (data.isNotEmpty() && session != null) {
+            session.write(data.toByteArray(Charsets.UTF_8))
+        } else {
+            mClient?.logVerbose("RustEngineCallback", "Write to session: $data")
         }
     }
 
     fun onWriteToSessionBytes(data: ByteArray) {
         // 二进制数据写入 PTY
-        if (data.isNotEmpty() && mSession != null) {
-            mSession!!.write(data, 0, data.size)
-        } else if (mClient != null) {
-            mClient.logVerbose("RustEngineCallback", "Write ${data.size} bytes to session")
+        val session = mSession
+        if (data.isNotEmpty() && session != null) {
+            session.write(data, 0, data.size)
+        } else {
+            mClient?.logVerbose("RustEngineCallback", "Write ${data.size} bytes to session")
         }
     }
 
@@ -109,13 +129,14 @@ class RustEngineCallback(private var mClient: TerminalSessionClient?) : Terminal
     /**
      * Sixel 图像回调 - 由 Rust 引擎通过 JNI 调用
      */
-    override fun onSixelImage(rgbaData: ByteArray?, width: Int, height: Int, startX: Int, startY: Int) {
-        if (mClient != null) {
-            mClient.logDebug("SixelImage", String.format(
+    override fun onSixelImage(rgbaData: ByteArray?, width: Int, height: Int, start_x: Int, start_y: Int) {
+        val client = mClient
+        if (client != null) {
+            client.logDebug("SixelImage", String.format(
                 "Received Sixel image: %dx%d at (%d,%d), data size: %d",
-                width, height, startX, startY, rgbaData?.size ?: 0
+                width, height, start_x, start_y, rgbaData?.size ?: 0
             ))
-            mClient.onSixelImage(rgbaData, width, height, startX, startY)
+            client.onSixelImage(rgbaData, width, height, start_x, start_y)
         }
     }
 
@@ -123,9 +144,10 @@ class RustEngineCallback(private var mClient: TerminalSessionClient?) : Terminal
      * 清屏回调 - 由 Rust 引擎通过 JNI 调用
      */
     override fun onClearScreen() {
-        if (mClient != null) {
-            mClient.logDebug("TerminalScreen", "Clear screen event received")
-            mClient.onClearScreen()
+        val client = mClient
+        if (client != null) {
+            client.logDebug("TerminalScreen", "Clear screen event received")
+            client.onClearScreen()
         }
     }
 
