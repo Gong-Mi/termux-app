@@ -80,11 +80,11 @@ pub fn create_subprocess_with_data(
     cw: jint,
     ch: jint,
 ) -> Result<(jint, i32), ()> {
-    // 1. 动态路径解析 - 不再硬编码 com.termux
-    // 尝试从 cwd_str 中提取前缀，例如 /data/data/com.termux/files/home
-    let data_home_pos = cwd_str.find("/files/home");
+    // 1. 动态路径解析 - 优先使用 /data/data/ 路径以绕过某些 Android 版本的执行限制
+    let sanitized_cwd = cwd_str.replace("/data/user/0/", "/data/data/");
+    let data_home_pos = sanitized_cwd.find("/files/home");
     let (termux_files, termux_prefix) = if let Some(pos) = data_home_pos {
-        let base = &cwd_str[..pos + 6]; // "/data/data/com.termux/files"
+        let base = &sanitized_cwd[..pos + 6]; // "/data/data/com.termux/files"
         (base.to_string(), format!("{}/usr", base))
     } else {
         // 回退到默认，但尽量保持通用
@@ -99,7 +99,9 @@ pub fn create_subprocess_with_data(
     
     // 预设核心环境变量
     let old_p = std::env::var("PATH").unwrap_or_else(|_| "/system/bin".to_string());
-    final_env.push(format!("PATH={}:{}", termux_bin, old_p.replace("/data/user/0/", "/data/data/")));
+    // 确保 PATH 中只有 /data/data/ 路径
+    let sanitized_path = old_p.replace("/data/user/0/", "/data/data/");
+    final_env.push(format!("PATH={}:{}", termux_bin, sanitized_path));
     final_env.push(format!("PREFIX={}", termux_prefix));
     final_env.push(format!("HOME={}", termux_home));
     final_env.push(format!("LD_PRELOAD={}/lib/libtermux-exec.so", termux_prefix));
@@ -186,6 +188,14 @@ pub fn create_subprocess_with_data(
                 libc::dup2(pts, 2);
 
                 if pts > 2 { libc::close(pts); }
+
+                // 此时 stderr 已经指向 PTY
+                let msg = "Child: PTY setup complete, about to execve\n";
+                let _ = libc::write(2, msg.as_ptr() as *const _, msg.len());
+
+                // 尝试确保二进制文件具有可执行权限
+                let c_path = CString::new(final_cmd.clone()).unwrap();
+                libc::chmod(c_path.as_ptr(), 0o700);
 
                 // Clear environment and rebuild.
                 libc::clearenv();
