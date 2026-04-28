@@ -1429,6 +1429,17 @@ pub extern "system" fn Java_com_termux_terminal_JNI_getKeyCodeFromTermcap(
 #[unsafe(no_mangle)]
 pub extern "system" fn JNI_OnLoad(vm: jni::JavaVM, _reserved: std::ffi::c_void) -> jint {
     android_log(LogPriority::DEBUG, "JNI_OnLoad started");
+
+    // 安装 panic hook，将 Rust panic 信息输出到 Android logcat
+    std::panic::set_hook(Box::new(|info| {
+        let msg = format!("RUST PANIC: {}", info);
+        crate::utils::android_log(crate::utils::LogPriority::FATAL, &msg);
+        if let Some(loc) = info.location() {
+            let loc_msg = format!("RUST PANIC at {}:{}:{}", loc.file(), loc.line(), loc.column());
+            crate::utils::android_log(crate::utils::LogPriority::FATAL, &loc_msg);
+        }
+    }));
+
     let result = crate::JAVA_VM.set(vm);
     match result {
         Ok(()) => android_log(LogPriority::INFO, "JNI_OnLoad: Termux- library loaded successfully and JAVA_VM set"),

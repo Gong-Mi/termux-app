@@ -6,6 +6,7 @@ pub enum LogPriority {
     INFO = 4,
     WARN = 5,
     ERROR = 6,
+    FATAL = 7,
 }
 
 #[cfg(target_os = "android")]
@@ -26,6 +27,7 @@ pub fn android_log(prio: LogPriority, msg: &str) {
     #[cfg(not(target_os = "android"))]
     {
         let prefix = match prio {
+            LogPriority::FATAL => "F",
             LogPriority::ERROR => "E",
             LogPriority::WARN => "W",
             LogPriority::INFO => "I",

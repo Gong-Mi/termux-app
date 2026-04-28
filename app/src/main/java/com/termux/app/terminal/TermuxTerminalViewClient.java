@@ -183,7 +183,16 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
 
     @Override
     public void onSingleTapUp(MotionEvent e) {
-        TerminalEmulator term = mActivity.getCurrentSession().getEmulator();
+        TerminalSession currentSession = mActivity.getCurrentSession();
+        if (currentSession == null) {
+            Logger.logWarn(LOG_TAG, "onSingleTapUp: current session is null, ignoring tap");
+            return;
+        }
+        TerminalEmulator term = currentSession.getEmulator();
+        if (term == null) {
+            Logger.logWarn(LOG_TAG, "onSingleTapUp: emulator is null, ignoring tap");
+            return;
+        }
 
         if (mActivity.getProperties().shouldOpenTerminalTranscriptURLOnClick()) {
             int[] columnAndRow = mActivity.getTerminalView().getColumnAndRow(e, true);

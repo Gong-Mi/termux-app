@@ -105,7 +105,7 @@ unsafe impl Send for FontCache {}
 unsafe impl Sync for FontCache {}
 
 impl FontCache {
-    fn new(font_size: f32, custom_font_path: Option<&str>) -> Self {
+    fn new(font_size: f32, custom_font_path: Option<&str>) -> Option<Self> {
         let font_mgr = Arc::new(FontMgr::new());
 
         // Try to load custom font from file path if provided
@@ -117,8 +117,21 @@ impl FontCache {
         });
 
         let tf_mono = custom_typeface.clone()
-            .or_else(|| font_mgr.match_family_style("monospace", FontStyle::normal()));
-        let tf_mono = tf_mono.expect("monospace font");
+            .or_else(|| font_mgr.match_family_style("monospace", FontStyle::normal()))
+            .or_else(|| font_mgr.match_family_style("sans-serif", FontStyle::normal()))
+            .or_else(|| font_mgr.match_family_style("serif", FontStyle::normal()))
+            .or_else(|| {
+                // Last resort: iterate through all available font families
+                let count = font_mgr.count_families();
+                (0..count).find_map(|i| font_mgr.match_family_style(&font_mgr.family_name(i), FontStyle::normal()))
+            });
+        let tf_mono = match tf_mono {
+            Some(tf) => tf,
+            None => {
+                crate::utils::android_log(crate::utils::LogPriority::ERROR, "FontCache::new: No system font available at all");
+                return None;
+            }
+        };
 
         let tf_bold = custom_typeface.as_ref().map(|tf| tf.clone())
             .or_else(|| font_mgr.match_family_style("monospace",
@@ -157,7 +170,7 @@ impl FontCache {
             f
         };
 
-        Self {
+        Some(Self {
             font_mono,
             font_bold: build_font(&tf_bold),
             font_italic: build_font(&tf_italic),
@@ -168,7 +181,7 @@ impl FontCache {
             font_height,
             font_ascent: metrics.1.ascent,
             font_mgr,
-        }
+        })
     }
 
     fn get_font(&self, bold: bool, italic: bool, has_non_ascii: bool) -> &Font {
@@ -306,8 +319,8 @@ unsafe impl Send for TerminalRenderer {}
 unsafe impl Sync for TerminalRenderer {}
 
 impl TerminalRenderer {
-    pub fn new(_font_data: &[u8], font_size: f32, custom_font_path: Option<&str>) -> Self {
-        let font_cache = FontCache::new(font_size, custom_font_path);
+    pub fn new(_font_data: &[u8], font_size: f32, custom_font_path: Option<&str>) -> Option<Self> {
+        let font_cache = FontCache::new(font_size, custom_font_path)?;
         let ascii_cache = AsciiWidthCache::new(&font_cache.font_mono);
         let font_width = font_cache.font_width;
         let font_height = font_cache.font_height;
@@ -335,7 +348,7 @@ impl TerminalRenderer {
         let mut cursor_paint = Paint::default();
         cursor_paint.set_style(PaintStyle::Fill);
 
-        Self {
+        Some(Self {
             font_size,
             font_path: custom_font_path.map(String::from),
             font_cache,
@@ -350,7 +363,7 @@ impl TerminalRenderer {
             font_height,
             run_buf: String::with_capacity(256),
             selection: SelectionBounds::default(),
-        }
+        })
     }
 
     /// 从 Java 侧设置选区坐标
@@ -1104,7 +1117,7 @@ mod tests {
 
     #[test]
     fn test_font_metrics_calculation() {
-        let renderer = TerminalRenderer::new(&[], 12.0, None);
+        let renderer = TerminalRenderer::new(&[], 12.0, None).expect("TerminalRenderer::new should succeed in tests");
         assert!(renderer.font_width > 0.0);
         assert!(renderer.font_height > 0.0);
     }
@@ -1120,7 +1133,7 @@ mod tests {
 
     #[test]
     fn test_selection_bounds() {
-        let mut renderer = TerminalRenderer::new(&[], 12.0, None);
+        let mut renderer = TerminalRenderer::new(&[], 12.0, None).expect("TerminalRenderer::new should succeed in tests");
         renderer.set_selection(2, 1, 5, 3);
         assert!(renderer.is_cell_selected(3, 2));
         assert!(renderer.is_cell_selected(2, 1));
@@ -1130,7 +1143,7 @@ mod tests {
 
     #[test]
     fn test_selection_reversed() {
-        let mut renderer = TerminalRenderer::new(&[], 12.0, None);
+        let mut renderer = TerminalRenderer::new(&[], 12.0, None).expect("TerminalRenderer::new should succeed in tests");
         renderer.set_selection(5, 3, 2, 1); // 反向设置
         assert!(renderer.is_cell_selected(3, 2));
         assert!(renderer.is_cell_selected(2, 1));

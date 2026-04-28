@@ -229,7 +229,13 @@ fn spawn_render_thread(engine_ptr: jlong) {
                         (r.font_size - font_size).abs() > 0.1 || r.font_path != font_path
                     });
                     if needs_recreate {
-                        *renderer_guard = Some(TerminalRenderer::new(&[], font_size, font_path.as_deref()));
+                        match TerminalRenderer::new(&[], font_size, font_path.as_deref()) {
+                            Some(renderer) => *renderer_guard = Some(renderer),
+                            None => {
+                                android_log(LogPriority::ERROR, "Render: Failed to create TerminalRenderer, skipping frame");
+                                return Err("TerminalRenderer creation failed");
+                            }
+                        }
                     }
 
                     if let Some(renderer) = renderer_guard.as_mut() {

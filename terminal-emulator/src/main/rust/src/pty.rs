@@ -140,16 +140,25 @@ pub fn create_subprocess_with_data(
 
                 if pts > 2 { libc::close(pts); }
 
-                // Close inherited file descriptors (except stdio) to match upstream behavior
-                if let Ok(dir) = std::fs::read_dir("/proc/self/fd") {
-                    for entry in dir.flatten() {
-                        if let Ok(fd_str) = entry.file_name().into_string() {
-                            if let Ok(fd) = fd_str.parse::<i32>() {
-                                if fd > 2 {
-                                    let _ = libc::close(fd);
+                // Close inherited file descriptors (except stdio) to match upstream behavior.
+                // Use raw libc::opendir/readdir/closedir (not Rust std::fs::read_dir) so we
+                // can call dirfd() to exclude the directory's own fd from being closed.
+                unsafe {
+                    let self_dir = libc::opendir(b"/proc/self/fd\0".as_ptr() as *const _);
+                    if !self_dir.is_null() {
+                        let self_dir_fd = libc::dirfd(self_dir);
+                        loop {
+                            let entry = libc::readdir(self_dir);
+                            if entry.is_null() { break; }
+                            let name_ptr = (*entry).d_name.as_ptr();
+                            let name = std::ffi::CStr::from_ptr(name_ptr).to_string_lossy();
+                            if let Ok(fd) = name.parse::<i32>() {
+                                if fd > 2 && fd != self_dir_fd {
+                                    libc::close(fd);
                                 }
                             }
                         }
+                        libc::closedir(self_dir);
                     }
                 }
 

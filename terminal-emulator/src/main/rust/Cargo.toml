@@ -45,7 +45,8 @@ opt-level = 3
 lto = true
 codegen-units = 1
 panic = "unwind"
-strip = true
+# 保留符号以便 native crash 调试（可改为 "debuginfo" 减少体积）
+strip = false
 
 # 测试配置
 [[test]]
