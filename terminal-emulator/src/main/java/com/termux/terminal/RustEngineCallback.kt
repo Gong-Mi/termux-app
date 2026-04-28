@@ -11,7 +11,7 @@ import androidx.annotation.Keep
  * 实现 TerminalSessionClient 接口，以便可以直接传给 Rust JNI
  */
 @Keep
-class RustEngineCallback(private val mClient: TerminalSessionClient?) : TerminalSessionClient {
+class RustEngineCallback(private var mClient: TerminalSessionClient?) : TerminalSessionClient {
 
     private var mSession: TerminalSession? = null
 
@@ -19,15 +19,21 @@ class RustEngineCallback(private val mClient: TerminalSessionClient?) : Terminal
         mSession = session
     }
 
+    fun updateClient(client: TerminalSessionClient?) {
+        mClient = client
+    }
+
     fun onScreenUpdate() {
-        // 屏幕更新通知 - 目前不需要特殊处理
+        android.util.Log.v("TermuxTrace", "[JNI_CALLBACK] onScreenUpdate (singular) called")
+        onScreenUpdated()
     }
 
     override fun onScreenUpdated() {
+        android.util.Log.v("TermuxTrace", "[JNI_CALLBACK] onScreenUpdated (plural) called")
         if (mSession != null) {
             mSession!!.onNativeScreenUpdated()
         } else if (mClient != null) {
-            mClient.logVerbose("RustEngineCallback", "Screen updated but no session available")
+            mClient!!.logVerbose("RustEngineCallback", "Screen updated but no session available")
         }
     }
 
@@ -35,6 +41,7 @@ class RustEngineCallback(private val mClient: TerminalSessionClient?) : Terminal
      * Called when the Rust engine and PTY are initialized asynchronously.
      */
     fun onEngineInitialized(enginePtr: Long, ptyFd: Int, pid: Int) {
+        android.util.Log.d("TermuxTrace", "[JNI_CALLBACK] onEngineInitialized: enginePtr=$enginePtr, ptyFd=$ptyFd, pid=$pid")
         mSession?.onEngineInitialized(enginePtr, ptyFd, pid)
     }
 
@@ -42,6 +49,7 @@ class RustEngineCallback(private val mClient: TerminalSessionClient?) : Terminal
      * Called when the Rust engine initialization fails.
      */
     fun onEngineInitializationFailed(error: String) {
+        android.util.Log.e("TermuxTrace", "[JNI_CALLBACK] onEngineInitializationFailed: $error")
         mSession?.onEngineInitializationFailed(error)
     }
 

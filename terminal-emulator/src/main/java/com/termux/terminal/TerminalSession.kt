@@ -83,6 +83,7 @@ class TerminalSession(
     /** Update the client for this session. */
     fun updateTerminalSessionClient(client: TerminalSessionClient) {
         mClient = client
+        mRustCallback.updateClient(client)
         mEmulator?.takeIf { it.isAlive() }?.updateTerminalSessionClient(client)
     }
 
@@ -118,7 +119,7 @@ class TerminalSession(
         }, 5000)
 
         if (JNI.sNativeLibrariesLoaded) {
-            android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 5. Calling JNI.createSessionAsync")
+            android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 5. Calling JNI.createSessionAsync with callback: $mRustCallback")
             JNI.createSessionAsync(
                 shellPath, cwd ?: "", args, env, rows, columns, cellWidthPixels, cellHeightPixels,
                 transcriptRows ?: TerminalEmulator.DEFAULT_TERMINAL_TRANSCRIPT_ROWS, mRustCallback
