@@ -181,7 +181,18 @@ pub fn create_subprocess_with_data(
                 // Use execvp to search PATH and match upstream behavior
                 libc::execvp(c_cmd.as_ptr(), ptr_args.as_ptr());
 
-                // Fallback to /system/bin/sh
+                // --- If we reach here, execvp failed ---
+                let errno = *libc::__errno();
+                let err_msg = format!("\r\n[Termux] execvp(\"{}\") failed: {} (errno={})\r\n", 
+                    cmd_str, 
+                    std::ffi::CStr::from_ptr(libc::strerror(errno)).to_string_lossy(),
+                    errno
+                );
+                libc::write(2, err_msg.as_ptr() as *const _, err_msg.len());
+
+                // Fallback to /system/bin/sh as last resort
+                android_log(LogPriority::WARN, &format!("[TRACE_SESSION] execvp failed (errno={}), falling back to /system/bin/sh", errno));
+                
                 let fallback_cmd = CString::new("/system/bin/sh").unwrap();
                 let fallback_arg0 = CString::new("sh").unwrap();
                 let fallback_args = [fallback_arg0.as_ptr(), std::ptr::null()];

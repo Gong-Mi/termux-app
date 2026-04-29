@@ -162,9 +162,13 @@ fn extract_zip_to_dir(
 
         // 设置执行权限 (bin/, libexec/ 等目录)
         let path_str = file_path.to_string_lossy();
-        if path_str.starts_with("bin/")
-            || path_str.starts_with("libexec")
+        if path_str.contains("/bin/") 
+            || path_str.starts_with("bin/")
+            || path_str.contains("/libexec/")
+            || path_str.starts_with("libexec/")
+            || path_str.contains("/lib/apt/")
             || path_str.starts_with("lib/apt/")
+            || path_str.ends_with("/bin") // Case like busybox
         {
             #[cfg(unix)]
             {
