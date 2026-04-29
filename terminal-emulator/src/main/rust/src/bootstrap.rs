@@ -17,25 +17,12 @@ use zip::ZipArchive;
 /// - -4: 解压错误
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_app_BootstrapExtractor_extractFromBytes(
-    env_ptr: *mut *const jni::sys::JNINativeInterface_,
+    mut env: jni::JNIEnv,
     _class: jni::objects::JClass,
     zip_bytes: jni::objects::JByteArray,
     target_dir: jni::objects::JString,
 ) -> jni::sys::jlong {
-    use jni::JNIEnv;
-
     eprintln!("[Rust Bootstrap] ========== [Extraction Start] ==========");
-
-    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
-        Ok(e) => {
-            eprintln!("[Rust Bootstrap] [OK] JNI environment initialized");
-            e
-        }
-        Err(e) => {
-            eprintln!("[Rust Bootstrap] [ERROR] JNI environment error: {:?}", e);
-            return -1;
-        }
-    };
 
     // 获取目标目录路径
     let target_dir_str: String = match env.get_string(&target_dir) {

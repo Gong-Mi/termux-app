@@ -7,7 +7,8 @@ use std::ffi::CString;
 use crate::utils::{android_log, LogPriority};
 
 pub unsafe fn create_subprocess(
-    env_ptr: *mut *const JNINativeInterface_,
+    mut env: JNIEnv,
+    _class: jni::objects::JClass,
     cmd: jstring,
     cwd: jstring,
     args: jobjectArray,
@@ -18,11 +19,6 @@ pub unsafe fn create_subprocess(
     cw: jint,
     ch: jint,
 ) -> jint {
-    let mut env = match unsafe { JNIEnv::from_raw(env_ptr) } {
-        Ok(e) => e,
-        Err(_) => return -1,
-    };
-
     let cmd_str = if !cmd.is_null() {
         let js = unsafe { JString::from_raw(cmd) };
         env.get_string(&js).map(|s| s.into()).unwrap_or_default()
@@ -88,6 +84,7 @@ pub fn create_subprocess_with_data(
     
     android_log(LogPriority::INFO, &format!("[TRACE_SESSION] Preparing to exec: {} with argv: {:?}", cmd_str, argv));
 
+    let cmd_log = cmd_str.clone();
     let c_cmd = CString::new(cmd_str).unwrap();
     let c_args: Vec<CString> = argv.iter().map(|a| CString::new(a.clone()).unwrap()).collect();
     let c_envs: Vec<CString> = final_env.iter().map(|e| CString::new(e.clone()).unwrap()).collect();
@@ -184,7 +181,7 @@ pub fn create_subprocess_with_data(
                 // --- If we reach here, execvp failed ---
                 let errno = *libc::__errno();
                 let err_msg = format!("\r\n[Termux] execvp(\"{}\") failed: {} (errno={})\r\n", 
-                    cmd_str, 
+                    cmd_log, 
                     std::ffi::CStr::from_ptr(libc::strerror(errno)).to_string_lossy(),
                     errno
                 );
