@@ -588,7 +588,15 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorStyle(mut 
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let (events, cb) = {
         let mut engine = context.lock.write().unwrap();
-        engine.state.cursor.style = cursor_style as i32;
+        // Java constants: 0=block, 1=bar, 2=underline
+        // Rust internal:   0=block, 1=underline, 2=bar
+        let rust_style = match cursor_style {
+            0 => 0, // block
+            1 => 2, // bar
+            2 => 1, // underline
+            _ => 0,
+        };
+        engine.state.cursor.style = rust_style;
         (engine.take_events(), engine.state.java_callback_obj.clone())
     };
     render_thread::request_render();

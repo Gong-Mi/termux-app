@@ -548,7 +548,7 @@ impl TerminalRenderer {
                 self.cursor_paint.set_color(Color::new(cursor_color));
 
                 let cx = cursor.x as f32 * self.font_width;
-                let cy = cursor.y as f32 * self.font_height;
+                let cy = (cursor.y as f32 - top_row as f32) * self.font_height;
 
                 match cursor.style {
                     0 => {
@@ -709,7 +709,7 @@ impl TerminalRenderer {
             self.cursor_paint.set_color(Color::new(cursor_color));
 
             let cx = frame.cursor_x as f32 * self.font_width;
-            let cy = frame.cursor_y as f32 * self.font_height;
+            let cy = (frame.cursor_y as f32 - frame.top_row as f32) * self.font_height;
 
             match frame.cursor_style {
                 0 => {

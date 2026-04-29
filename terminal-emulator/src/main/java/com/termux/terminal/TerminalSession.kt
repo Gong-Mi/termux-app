@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * This Kotlin class acts as a state synchronization layer for the UI.
  */
 class TerminalSession(
-    val shellPath: String,
+    val shellPath: String?,
     private val cwd: String?,
     val args: Array<String?>?,
     val env: Array<String?>?,
@@ -104,7 +104,7 @@ class TerminalSession(
         if (JNI.sNativeLibrariesLoaded) {
             android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 5. Calling JNI.createSessionAsync with callback: $mRustCallback")
             JNI.createSessionAsync(
-                shellPath, cwd ?: "", args, env, rows, columns, cellWidthPixels, cellHeightPixels,
+                shellPath ?: "", cwd ?: "", args, env, rows, columns, cellWidthPixels, cellHeightPixels,
                 transcriptRows ?: TerminalEmulator.DEFAULT_TERMINAL_TRANSCRIPT_ROWS, mRustCallback
             )
         } else {
