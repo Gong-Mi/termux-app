@@ -75,6 +75,19 @@ pub fn create_subprocess_with_data(
     cw: jint,
     ch: jint,
 ) -> Result<(jint, i32), ()> {
+    let normalize_path = |path: String| -> String {
+        if path.starts_with("/data/user/0/com.termux") {
+            path.replace("/data/user/0/com.termux", "/data/data/com.termux")
+        } else {
+            path
+        }
+    };
+
+    let cmd_str = normalize_path(cmd_str);
+    let cwd_str = normalize_path(cwd_str);
+    let argv: Vec<String> = argv.into_iter().map(normalize_path).collect();
+    let envp: Vec<String> = envp.into_iter().map(normalize_path).collect();
+
     let mut final_env = envp.clone();
     
     // Ensure critical Termux environment variables are set if missing
@@ -142,12 +155,16 @@ pub fn create_subprocess_with_data(
 
     let cmd_log = real_cmd.clone();
     
-    // Shebang parsing logic in Rust
+    // Shebang and ELF parsing logic in Rust (matches upstream TermuxShellUtils)
     let (final_cmd, final_argv) = if let Ok(mut file) = std::fs::File::open(&real_cmd) {
         use std::io::Read;
-        let mut buffer = [0u8; 128];
+        let mut buffer = [0u8; 256];
         if let Ok(n) = file.read(&mut buffer) {
-            if n > 2 && buffer[0] == b'#' && buffer[1] == b'!' {
+            if n > 4 && buffer[0] == 0x7F && buffer[1] == b'E' && buffer[2] == b'L' && buffer[3] == b'F' {
+                // ELF file - execute directly
+                (real_cmd, real_argv)
+            } else if n > 2 && buffer[0] == b'#' && buffer[1] == b'!' {
+                // Shebang detected
                 let line = String::from_utf8_lossy(&buffer[2..n]);
                 if let Some(first_line) = line.lines().next() {
                     let shebang = first_line.trim();
@@ -155,17 +172,16 @@ pub fn create_subprocess_with_data(
                         let mut new_argv = vec![real_cmd.clone()];
                         new_argv.extend(real_argv.clone());
                         
-                        // Handle /usr/bin/env or direct paths
                         let interpreter = if shebang.starts_with("/usr/bin/env") {
                             "/data/data/com.termux/files/usr/bin/env".to_string()
                         } else if shebang.starts_with("/bin/") || shebang.starts_with("/usr/bin/") {
                             let parts: Vec<&str> = shebang.split('/').collect();
                             format!("/data/data/com.termux/files/usr/bin/{}", parts.last().unwrap_or(&"sh"))
                         } else {
-                            shebang.to_string()
+                            normalize_path(shebang.to_string())
                         };
                         
-                        android_log(LogPriority::INFO, &format!("[TRACE_SESSION] Shebang detected, using interpreter: {}", interpreter));
+                        android_log(LogPriority::INFO, &format!("[PTY] Shebang detected, using interpreter: {}", interpreter));
                         (interpreter, new_argv)
                     } else {
                         (real_cmd, real_argv)
@@ -174,7 +190,12 @@ pub fn create_subprocess_with_data(
                     (real_cmd, real_argv)
                 }
             } else {
-                (real_cmd, real_argv)
+                // No shebang and no ELF - default to shell
+                let interpreter = "/data/data/com.termux/files/usr/bin/sh".to_string();
+                let mut new_argv = vec![real_cmd.clone()];
+                new_argv.extend(real_argv.clone());
+                android_log(LogPriority::INFO, &format!("[PTY] No shebang/ELF, defaulting to shell: {}", interpreter));
+                (interpreter, new_argv)
             }
         } else {
             (real_cmd, real_argv)
@@ -183,9 +204,28 @@ pub fn create_subprocess_with_data(
         (real_cmd, real_argv)
     };
 
-    let c_cmd = CString::new(final_cmd).unwrap();
-    let c_args: Vec<CString> = final_argv.iter().map(|a| CString::new(a.clone()).unwrap()).collect();
     let c_envs: Vec<CString> = final_env.iter().map(|e| CString::new(e.clone()).unwrap()).collect();
+
+    // Linker Wrapper Bypass for Android 10+ (W^X)
+    // If the command is in /data/data/, we must execute it via the system linker
+    let use_linker_wrapper = final_cmd.starts_with("/data/data/com.termux/");
+    let linker_path = if std::path::Path::new("/system/bin/linker64").exists() {
+        "/system/bin/linker64"
+    } else {
+        "/system/bin/linker"
+    };
+
+    let (exec_cmd, exec_argv) = if use_linker_wrapper {
+        let mut wrapped_argv = vec![final_cmd.clone()];
+        wrapped_argv.extend(final_argv);
+        android_log(LogPriority::INFO, &format!("[PTY] W^X Bypass: Wrapping {} with {}", final_cmd, linker_path));
+        (linker_path.to_string(), wrapped_argv)
+    } else {
+        (final_cmd, final_argv)
+    };
+
+    let c_exec_cmd = CString::new(exec_cmd).unwrap();
+    let c_exec_args: Vec<CString> = exec_argv.iter().map(|a| CString::new(a.clone()).unwrap()).collect();
 
     unsafe {
         let ptm = libc::open("/dev/ptmx\0".as_ptr() as *const _, libc::O_RDWR | libc::O_CLOEXEC);
@@ -268,11 +308,11 @@ pub fn create_subprocess_with_data(
                     }
                 }
 
-                let ptr_args: Vec<_> = c_args.iter().map(|s| s.as_ptr())
+                let ptr_args: Vec<_> = c_exec_args.iter().map(|s| s.as_ptr())
                     .chain(std::iter::once(std::ptr::null())).collect();
 
                 // Use execvp to search PATH and match upstream behavior
-                libc::execvp(c_cmd.as_ptr(), ptr_args.as_ptr());
+                libc::execvp(c_exec_cmd.as_ptr(), ptr_args.as_ptr());
 
                 // --- If we reach here, execvp failed ---
                 let err = std::io::Error::last_os_error();
