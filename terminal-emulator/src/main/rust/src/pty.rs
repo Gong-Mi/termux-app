@@ -75,17 +75,116 @@ pub fn create_subprocess_with_data(
     cw: jint,
     ch: jint,
 ) -> Result<(jint, i32), ()> {
-    // 2. 环境序列化
-    let mut final_env = Vec::new();
-    for env_var in envp {
-        final_env.push(env_var);
+    let mut final_env = envp.clone();
+    
+    // Ensure critical Termux environment variables are set if missing
+    let has_prefix = final_env.iter().any(|s| s.starts_with("PREFIX="));
+    let has_home = final_env.iter().any(|s| s.starts_with("HOME="));
+    let has_path = final_env.iter().any(|s| s.starts_with("PATH="));
+    let has_ld_preload = final_env.iter().any(|s| s.starts_with("LD_PRELOAD="));
+
+    if !has_prefix {
+        final_env.push("PREFIX=/data/data/com.termux/files/usr".to_string());
+    }
+    if !has_home {
+        final_env.push("HOME=/data/data/com.termux/files/home".to_string());
+    }
+    if !has_path {
+        final_env.push("PATH=/data/data/com.termux/files/usr/bin".to_string());
+    }
+    if !has_ld_preload {
+        // Essential for termux-exec to work
+        final_env.push("LD_PRELOAD=/data/data/com.termux/files/usr/lib/libtermux-exec.so".to_string());
     }
     
-    android_log(LogPriority::INFO, &format!("[TRACE_SESSION] Preparing to exec: {} with argv: {:?}", cmd_str, argv));
+    // Add other defaults
+    if !final_env.iter().any(|s| s.starts_with("TERM=")) {
+        final_env.push("TERM=xterm-256color".to_string());
+    }
+    if !final_env.iter().any(|s| s.starts_with("COLORTERM=")) {
+        final_env.push("COLORTERM=truecolor".to_string());
+    }
+    if !final_env.iter().any(|s| s.starts_with("LANG=")) {
+        final_env.push("LANG=en_US.UTF-8".to_string());
+    }
+    if !final_env.iter().any(|s| s.starts_with("TMPDIR=")) {
+        final_env.push("TMPDIR=/data/data/com.termux/files/usr/tmp".to_string());
+    }
 
-    let cmd_log = cmd_str.clone();
-    let c_cmd = CString::new(cmd_str).unwrap();
-    let c_args: Vec<CString> = argv.iter().map(|a| CString::new(a.clone()).unwrap()).collect();
+    let mut real_cmd = cmd_str.clone();
+    let mut real_argv = argv.clone();
+
+    // Default shell selection logic moved to Rust to reduce Java code
+    if real_cmd.is_empty() {
+        let default_shells = [
+            "/data/data/com.termux/files/usr/bin/login",
+            "/data/data/com.termux/files/usr/bin/bash",
+            "/data/data/com.termux/files/usr/bin/sh",
+            "/system/bin/sh",
+        ];
+        
+        for shell in &default_shells {
+            if std::path::Path::new(shell).exists() {
+                real_cmd = shell.to_string();
+                // If it's a login shell, prefix argv[0] with '-'
+                if shell.ends_with("login") {
+                    real_argv.insert(0, "-login".to_string());
+                } else {
+                    real_argv.insert(0, shell.to_string());
+                }
+                android_log(LogPriority::INFO, &format!("[TRACE_SESSION] No command provided, selected default shell: {}", real_cmd));
+                break;
+            }
+        }
+    }
+
+    android_log(LogPriority::INFO, &format!("[TRACE_SESSION] Preparing to exec: {} with argv: {:?}", real_cmd, real_argv));
+
+    let cmd_log = real_cmd.clone();
+    
+    // Shebang parsing logic in Rust
+    let (final_cmd, final_argv) = if let Ok(mut file) = std::fs::File::open(&real_cmd) {
+        use std::io::Read;
+        let mut buffer = [0u8; 128];
+        if let Ok(n) = file.read(&mut buffer) {
+            if n > 2 && buffer[0] == b'#' && buffer[1] == b'!' {
+                let line = String::from_utf8_lossy(&buffer[2..n]);
+                if let Some(first_line) = line.lines().next() {
+                    let shebang = first_line.trim();
+                    if !shebang.is_empty() {
+                        let mut new_argv = vec![real_cmd.clone()];
+                        new_argv.extend(real_argv.clone());
+                        
+                        // Handle /usr/bin/env or direct paths
+                        let interpreter = if shebang.starts_with("/usr/bin/env") {
+                            "/data/data/com.termux/files/usr/bin/env".to_string()
+                        } else if shebang.starts_with("/bin/") || shebang.starts_with("/usr/bin/") {
+                            let parts: Vec<&str> = shebang.split('/').collect();
+                            format!("/data/data/com.termux/files/usr/bin/{}", parts.last().unwrap_or(&"sh"))
+                        } else {
+                            shebang.to_string()
+                        };
+                        
+                        android_log(LogPriority::INFO, &format!("[TRACE_SESSION] Shebang detected, using interpreter: {}", interpreter));
+                        (interpreter, new_argv)
+                    } else {
+                        (real_cmd, real_argv)
+                    }
+                } else {
+                    (real_cmd, real_argv)
+                }
+            } else {
+                (real_cmd, real_argv)
+            }
+        } else {
+            (real_cmd, real_argv)
+        }
+    } else {
+        (real_cmd, real_argv)
+    };
+
+    let c_cmd = CString::new(final_cmd).unwrap();
+    let c_args: Vec<CString> = final_argv.iter().map(|a| CString::new(a.clone()).unwrap()).collect();
     let c_envs: Vec<CString> = final_env.iter().map(|e| CString::new(e.clone()).unwrap()).collect();
 
     unsafe {
