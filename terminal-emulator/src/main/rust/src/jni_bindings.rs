@@ -527,7 +527,7 @@ pub extern "system" fn Java_com_termux_shared_termux_shell_am_RustLocalSocketBri
 /// 获取标题
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_getTitle(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _class: JClass,
     ptr: jlong,
 ) -> jstring {
@@ -1128,7 +1128,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorBlinkingEn
 /// 获取调试信息
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_getDebugInfo(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _class: JClass,
     ptr: jlong,
 ) -> jstring {
@@ -1337,7 +1337,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_close(
 /// 创建子进程
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _class: JClass,
     cmd: jstring,
     cwd: jstring,
@@ -1380,7 +1380,7 @@ pub extern "system" fn Java_com_termux_terminal_WcWidth_widthRust(mut env: JNIEn
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_JNI_getKeyCode(
-    env: JNIEnv,
+    mut env: JNIEnv,
     _class: JClass,
     key_code: jint,
     key_mode: jint,
