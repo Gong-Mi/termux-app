@@ -14,6 +14,9 @@ interface TerminalSessionClient {
     /** Called when the terminal text changes. */
     fun onTextChanged(@NonNull changedSession: TerminalSession)
 
+    /** Called when the session state changes (e.g. becomes READY). */
+    fun onSessionStateChanged(@NonNull session: TerminalSession) {}
+
     /** Called when the terminal title changes. */
     fun onTitleChanged(@NonNull changedSession: TerminalSession)
 
