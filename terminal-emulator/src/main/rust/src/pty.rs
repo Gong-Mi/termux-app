@@ -88,40 +88,78 @@ pub fn create_subprocess_with_data(
     let argv: Vec<String> = argv.into_iter().map(normalize_path).collect();
     let envp: Vec<String> = envp.into_iter().map(normalize_path).collect();
 
-    let mut final_env = envp.clone();
-    
-    // Ensure critical Termux environment variables are set if missing
-    let has_prefix = final_env.iter().any(|s| s.starts_with("PREFIX="));
-    let has_home = final_env.iter().any(|s| s.starts_with("HOME="));
-    let has_path = final_env.iter().any(|s| s.starts_with("PATH="));
-    let has_ld_preload = final_env.iter().any(|s| s.starts_with("LD_PRELOAD="));
+    let termux_data = "/data/data/com.termux";
+    let termux_files = format!("{}/files", termux_data);
+    let termux_prefix = format!("{}/usr", termux_files);
+    let termux_bin = format!("{}/bin", termux_prefix);
+    let termux_lib = format!("{}/lib", termux_prefix);
+    let termux_tmp = format!("{}/tmp", termux_prefix);
+    let termux_home = format!("{}/home", termux_files);
+    let termux_exec_path = format!("{}/lib/libtermux-exec.so", termux_prefix);
 
-    if !has_prefix {
-        final_env.push("PREFIX=/data/data/com.termux/files/usr".to_string());
+    let mut final_env = envp.clone();
+
+    // Helper: find position of an env var by prefix
+    let find_env = |env: &Vec<String>, key: &str| -> Option<usize> {
+        env.iter().position(|s| s.starts_with(key))
+    };
+
+    // 1. PREFIX: add fallback if missing
+    if find_env(&final_env, "PREFIX=").is_none() {
+        final_env.push(format!("PREFIX={}", termux_prefix));
     }
-    if !has_home {
-        final_env.push("HOME=/data/data/com.termux/files/home".to_string());
+
+    // 2. HOME: override Android defaults (/ or /data/local/tmp) if they somehow got through
+    if let Some(pos) = find_env(&final_env, "HOME=") {
+        let val = final_env[pos].split('=').nth(1).unwrap_or("");
+        if val == "/" || val == "/data/local/tmp" || val.is_empty() {
+            final_env[pos] = format!("HOME={}", termux_home);
+        }
+    } else {
+        final_env.push(format!("HOME={}", termux_home));
     }
-    if !has_path {
-        final_env.push("PATH=/data/data/com.termux/files/usr/bin".to_string());
+
+    // 3. PATH: if missing or does not contain termux bin, prepend it
+    if let Some(pos) = find_env(&final_env, "PATH=") {
+        let val = final_env[pos].split('=').nth(1).unwrap_or("");
+        if !val.contains(&termux_bin) {
+            final_env[pos] = format!("PATH={}:{}", termux_bin, val);
+        }
+    } else {
+        final_env.push(format!("PATH={}:/system/bin:/system/xbin", termux_bin));
     }
-    if !has_ld_preload {
-        // Essential for termux-exec to work
-        final_env.push("LD_PRELOAD=/data/data/com.termux/files/usr/lib/libtermux-exec.so".to_string());
+
+    // 4. LD_LIBRARY_PATH: add fallback if missing
+    if find_env(&final_env, "LD_LIBRARY_PATH=").is_none() {
+        final_env.push(format!("LD_LIBRARY_PATH={}", termux_lib));
     }
-    
-    // Add other defaults
-    if !final_env.iter().any(|s| s.starts_with("TERM=")) {
+
+    // 5. LD_PRELOAD: only set if libtermux-exec.so exists (avoids useless preload on fresh installs)
+    if find_env(&final_env, "LD_PRELOAD=").is_none() {
+        if std::path::Path::new(&termux_exec_path).exists() {
+            final_env.push(format!("LD_PRELOAD={}", termux_exec_path));
+        }
+    }
+
+    // 6. TMPDIR: override Android default if it got through
+    if let Some(pos) = find_env(&final_env, "TMPDIR=") {
+        let val = final_env[pos].split('=').nth(1).unwrap_or("");
+        if val == "/data/local/tmp" || val.is_empty() {
+            final_env[pos] = format!("TMPDIR={}", termux_tmp);
+        }
+    } else {
+        final_env.push(format!("TMPDIR={}", termux_tmp));
+    }
+
+    // 7. Other terminal defaults
+    if find_env(&final_env, "TERM=").is_none() {
         final_env.push("TERM=xterm-256color".to_string());
     }
-    if !final_env.iter().any(|s| s.starts_with("COLORTERM=")) {
+    if find_env(&final_env, "COLORTERM=").is_none() {
         final_env.push("COLORTERM=truecolor".to_string());
     }
-    if !final_env.iter().any(|s| s.starts_with("LANG=")) {
+    if find_env(&final_env, "LANG=").is_none() {
         final_env.push("LANG=en_US.UTF-8".to_string());
-    }
-    if !final_env.iter().any(|s| s.starts_with("TMPDIR=")) {
-        final_env.push("TMPDIR=/data/data/com.termux/files/usr/tmp".to_string());
     }
 
     let mut real_cmd = cmd_str.clone();
