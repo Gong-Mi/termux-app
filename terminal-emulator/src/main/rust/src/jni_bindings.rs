@@ -1351,7 +1351,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
 ) -> jint {
     unsafe {
         crate::pty::create_subprocess(
-            env.get_native_interface(),
+            &mut env,
             cmd,
             cwd,
             args,

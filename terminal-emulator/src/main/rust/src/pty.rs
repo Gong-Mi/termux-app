@@ -7,8 +7,7 @@ use std::ffi::CString;
 use crate::utils::{android_log, LogPriority};
 
 pub unsafe fn create_subprocess(
-    mut env: JNIEnv,
-    _class: jni::objects::JClass,
+    env: &mut JNIEnv,
     cmd: jstring,
     cwd: jstring,
     args: jobjectArray,
@@ -179,10 +178,11 @@ pub fn create_subprocess_with_data(
                 libc::execvp(c_cmd.as_ptr(), ptr_args.as_ptr());
 
                 // --- If we reach here, execvp failed ---
-                let errno = *libc::__errno();
+                let err = std::io::Error::last_os_error();
+                let errno = err.raw_os_error().unwrap_or(0);
                 let err_msg = format!("\r\n[Termux] execvp(\"{}\") failed: {} (errno={})\r\n", 
                     cmd_log, 
-                    std::ffi::CStr::from_ptr(libc::strerror(errno)).to_string_lossy(),
+                    err,
                     errno
                 );
                 libc::write(2, err_msg.as_ptr() as *const _, err_msg.len());
