@@ -1337,7 +1337,8 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_nativeWrite(
     offset: jint,
     count: jint,
 ) -> jint {
-    if let Ok(bytes) = env.convert_byte_array(&data) {
+    let data_obj = unsafe { jni::objects::JByteArray::from_raw(data) };
+    if let Ok(bytes) = env.convert_byte_array(&data_obj) {
         let start = offset as usize;
         let end = (offset + count) as usize;
         if start < bytes.len() && end <= bytes.len() {
@@ -1354,7 +1355,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_close(
     _class: JClass,
     fd: jint,
 ) {
-    libc::close(fd);
+    unsafe { libc::close(fd); }
 }
 
 /// 创建子进程
