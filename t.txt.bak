@@ -1,0 +1,3 @@
+:/data/data/com.termux/files/home $ ls
+sh: /data/data/com.termux/files/usr/bin/ls: Permission denied
+126|:/data/data/com.termux/files/home $

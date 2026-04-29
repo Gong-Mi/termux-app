@@ -301,6 +301,32 @@ pub fn create_subprocess_with_data(
     }
 }
 
+pub fn write_to_fd(fd: jint, data: &[u8]) -> jint {
+    if fd < 0 { return -1; }
+    let res = unsafe { libc::write(fd, data.as_ptr() as *const _, data.len()) };
+    res as jint
+}
+
+pub fn spawn_waiter(pid: i32, callback: jni::objects::GlobalRef) {
+    std::thread::spawn(move || {
+        let exit_code = wait_for(pid);
+        android_log(LogPriority::INFO, &format!("[PTY Waiter] Process {} exited with status {}", pid, exit_code));
+        
+        if let Some(vm) = crate::JAVA_VM.get() {
+            if let Ok(mut env) = vm.attach_current_thread_as_daemon() {
+                // Call Java callback to notify about exit
+                // Assuming callback is the RustEngineCallback or TerminalSession
+                let _ = env.call_method(
+                    callback.as_obj(),
+                    "onProcessExited",
+                    "(I)V",
+                    &[jni::objects::JValue::Int(exit_code)]
+                );
+            }
+        }
+    });
+}
+
 pub fn set_pty_window_size(fd: jint, rows: jint, cols: jint, cell_width: jint, cell_height: jint) {
     if fd < 0 { return; }
     let sz = libc::winsize {

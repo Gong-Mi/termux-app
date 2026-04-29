@@ -1,10 +1,14 @@
-:/data/data/com.termux/files/home $ gemini
-error: expected absolute path: "--max-old-space-size=7499"
-1|:/data/data/com.termux/files/home $ ls
-sh: /data/user/0/com.termux/files/usr/bin/ls: Permission denied
-126|:/data/data/com.termux/files/home $ pkg
-/data/user/0/com.termux/files/usr/bin/pkg: line 5: /data/user/0/com.termux/files/usr/bin/id: Permission denied
-/data/user/0/com.termux/files/usr/bin/pkg: line 23: /data/user/0/com.termux/files/usr/bin/cut: Permission denied
-126|:/data/data/com.termux/files/home $ id
-sh: /data/user/0/com.termux/files/usr/bin/id: Permission denied
-126|:/data/data/com.termux/files/home $
+
+[Termux] execvp("/data/data/com.termux/files/usr/bin/login") failed: Permission denied (os error 13) (errno=13)
+:/data/data/com.termux/files/home $ ls
+sh: /data/data/com.termux/files/usr/bin/ls: Permission denied
+126|:/data/data/com.termux/files/home $ /system/bin/id
+uid=10530(u0_a530) gid=10530(u0_a530) groups=10530(u0_a530),3003(inet),9997(everybody),20530(u0_a530_cache),50530(all_a530) context=u:r:untrusted_app_30:s0:c18,c258,c512,c768
+:/data/data/com.termux/files/home $ echo $LD_PRELOAD
+
+:/data/data/com.termux/files/home $
+
+
+
+
+

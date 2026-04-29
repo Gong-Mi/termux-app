@@ -3,14 +3,9 @@ package com.termux.terminal
 import android.annotation.SuppressLint
 import android.os.Handler
 import android.os.Message
-import android.system.ErrnoException
 import android.system.Os
 import android.system.OsConstants
 import java.io.File
-import java.io.FileDescriptor
-import java.io.FileOutputStream
-import java.io.IOException
-import java.lang.reflect.Field
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
@@ -18,13 +13,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * A terminal session, consisting of a process coupled to a terminal interface.
  *
- * The subprocess will be executed by the constructor, and when the size is made known by a call to
- * [updateSize] terminal emulation will begin and threads will be spawned to handle the subprocess I/O.
- * All terminal emulation and callback methods will be performed on the main thread.
- *
- * The child process may be exited forcefully by using the [finishIfRunning] method.
- *
- * NOTE: The terminal session may outlive the EmulatorView, so be careful with callbacks!
+ * All process I/O and lifecycle management are handled natively in Rust.
+ * This Kotlin class acts as a state synchronization layer for the UI.
  */
 class TerminalSession(
     val shellPath: String,
@@ -36,7 +26,6 @@ class TerminalSession(
 ) : TerminalOutput() {
 
     companion object {
-        private const val MSG_NEW_INPUT = 1
         private const val MSG_PROCESS_EXITED = 4
         private const val MSG_SCREEN_UPDATED = 5
         private const val LOG_TAG = "TerminalSession"
@@ -49,13 +38,7 @@ class TerminalSession(
     @JvmField
     var mSessionName: String? = null
 
-    /** A queue written to from a separate thread when the process outputs, and read by main thread. */
-    internal val mProcessToTerminalIOQueue = ByteQueue(64 * 1024)
-
-    /** A queue written to from the main thread due to user interaction, read by another thread. */
-    internal val mTerminalToProcessIOQueue = ByteQueue(4096)
-
-    /** Buffer to write translate code points into utf8 before writing to mTerminalToProcessIOQueue */
+    /** Buffer to translate code points into utf8 before writing natively */
     private val mUtf8InputBuffer = ByteArray(5)
 
     var mClient: TerminalSessionClient = client
@@ -131,7 +114,6 @@ class TerminalSession(
             mEmulator = TerminalEmulator(this, columns, rows, cellWidthPixels, cellHeightPixels, transcriptRows, mTerminalFileDescriptor, mClient)
             mSessionState = SessionState.READY
             mClient.setTerminalShellPid(this, mShellPid)
-            android.util.Log.d("TermuxTrace", "[TRACE_SESSION] JNI libraries not loaded, using mock")
         }
     }
 
@@ -151,33 +133,8 @@ class TerminalSession(
             // 启动 Rust 端的数据循环以开始接管 PTY 读取
             RustTerminal.startIoThread(enginePtr, ptyFd)
 
+            mClient.onSessionStateChanged(this)
             mClient.onTextChanged(this)
-
-            if (mTerminalFileDescriptor != -1) {
-                val terminalFileDescriptorWrapped = wrapFileDescriptor(mTerminalFileDescriptor, mClient)
-
-                Thread(null, object : Runnable {
-                    override fun run() {
-                        val buffer = ByteArray(4096)
-                        try {
-                            FileOutputStream(terminalFileDescriptorWrapped).use { termOut ->
-                                while (true) {
-                                    val bytesToWrite = mTerminalToProcessIOQueue.read(buffer, true)
-                                    if (bytesToWrite == -1) return
-                                    termOut.write(buffer, 0, bytesToWrite)
-                                }
-                            }
-                        } catch (_: IOException) { }
-                    }
-                }, "TermSessionOutputWriter[pid=$mShellPid]").start()
-
-                Thread(null, object : Runnable {
-                    override fun run() {
-                        val processExitCode = runCatching { JNI.waitFor(mShellPid) }.getOrDefault(0)
-                        mMainThreadHandler.sendMessage(mMainThreadHandler.obtainMessage(MSG_PROCESS_EXITED, processExitCode))
-                    }
-                }, "TermSessionWaiter[pid=$mShellPid]").start()
-            }
 
             notifyScreenUpdate()
         }
@@ -189,16 +146,22 @@ class TerminalSession(
         mMainThreadHandler.post {
             mSessionState = SessionState.IDLE
             mClient.logError(LOG_TAG, "Terminal engine initialization failed: $error")
-            // Optionally notify user
         }
+    }
+
+    /** Called from native waiter thread via RustEngineCallback. */
+    fun onProcessExited(exitCode: Int) {
+        mMainThreadHandler.sendMessage(mMainThreadHandler.obtainMessage(MSG_PROCESS_EXITED, exitCode))
     }
 
     fun isEngineInitialized(): Boolean = mSessionState == SessionState.READY
 
-    /** Write data to the shell process. */
+    /** Write data to the shell process natively. */
     override fun write(data: ByteArray, offset: Int, count: Int) {
         if (mSessionState != SessionState.READY) return
-        if (mShellPid > 0) mTerminalToProcessIOQueue.write(data, offset, count)
+        if (mShellPid > 0 && mTerminalFileDescriptor != -1) {
+            JNI.nativeWrite(mTerminalFileDescriptor, data, offset, count)
+        }
     }
 
     /** Write the Unicode code point to the terminal encoded in UTF-8. */
@@ -271,8 +234,6 @@ class TerminalSession(
         mShellExitStatus = exitStatus
         mEmulator?.destroy()
         mEmulator = null
-        mTerminalToProcessIOQueue.close()
-        mProcessToTerminalIOQueue.close()
     }
 
     val isRunning: Boolean
@@ -307,9 +268,7 @@ class TerminalSession(
     }
 
     @SuppressLint("HandlerLeak")
-    inner class MainThreadHandler : Handler() {
-        val mReceiveBuffer = ByteArray(64 * 1024)
-
+    inner class MainThreadHandler : Handler(android.os.Looper.getMainLooper()) {
         override fun handleMessage(msg: Message) {
             if (msg.what != MSG_PROCESS_EXITED && (mEmulator == null || !mEmulator!!.isAlive())) return
 
@@ -317,9 +276,6 @@ class TerminalSession(
                 notifyScreenUpdate()
                 return
             }
-
-            // 数据解析已完全移交至 Rust IO 线程，此处不再需要 Kotlin 端的解析循环
-            // notifyScreenUpdate() 会由 Rust 侧通过 onNativeScreenUpdated 触发
 
             if (msg.what == MSG_PROCESS_EXITED) {
                 val exitCode = msg.obj as? Int ?: 0
@@ -329,7 +285,7 @@ class TerminalSession(
                     exitCode < 0 -> " (signal ${-exitCode})"
                     else -> ""
                 }
-                exitDescription += " - press Enter]"
+                exitDescription += " - press Enter]\r\n"
 
                 val bytesToWrite = exitDescription.toByteArray(StandardCharsets.UTF_8)
                 if (mEmulator?.isAlive() == true) {
@@ -341,19 +297,4 @@ class TerminalSession(
             }
         }
     }
-}
-
-private fun wrapFileDescriptor(fileDescriptor: Int, client: TerminalSessionClient): FileDescriptor {
-    val result = FileDescriptor()
-    try {
-        val descriptorField = runCatching { FileDescriptor::class.java.getDeclaredField("descriptor") }
-            .recoverCatching { FileDescriptor::class.java.getDeclaredField("fd") }
-            .getOrElse { throw it }
-        descriptorField.isAccessible = true
-        descriptorField.set(result, fileDescriptor)
-    } catch (e: Exception) {
-        client.logStackTraceWithMessage("TerminalSession", "Error accessing FileDescriptor#descriptor private field", e)
-        System.exit(1)
-    }
-    return result
 }

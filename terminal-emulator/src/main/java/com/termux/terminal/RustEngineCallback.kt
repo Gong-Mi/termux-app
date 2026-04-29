@@ -55,6 +55,15 @@ class RustEngineCallback(private var mClient: TerminalSessionClient?) : Terminal
         mSession?.onEngineInitializationFailed(error)
     }
 
+    /**
+     * Called when the subprocess exits (called from native waiter thread).
+     */
+    @Keep
+    fun onProcessExited(exitCode: Int) {
+        android.util.Log.i("TermuxTrace", "[JNI_CALLBACK] onProcessExited: code=$exitCode")
+        mSession?.onProcessExited(exitCode)
+    }
+
     override fun reportTitleChange(title: String?) {
         mClient?.reportTitleChange(title)
     }

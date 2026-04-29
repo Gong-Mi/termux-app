@@ -65,6 +65,7 @@ internal object JNI {
     @JvmStatic external fun setPtyWindowSize(fd: Int, rows: Int, cols: Int, cellWidth: Int, cellHeight: Int)
     @JvmStatic external fun waitFor(processId: Int): Int
     @JvmStatic external fun close(fileDescriptor: Int)
+    @JvmStatic external fun nativeWrite(fd: Int, data: ByteArray, offset: Int, count: Int): Int
 
     // --- Session Coordinator ---
     @JvmStatic external fun registerSession(): Int

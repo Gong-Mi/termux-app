@@ -1299,7 +1299,11 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
                             ],
                         );
                         match res {
-                            Ok(_) => android_log(LogPriority::INFO, "[TRACE_SESSION] JNI callback onEngineInitialized SUCCESS"),
+                            Ok(_) => {
+                                android_log(LogPriority::INFO, "[TRACE_SESSION] JNI callback onEngineInitialized SUCCESS");
+                                // 启动 Native Waiter 线程，不再依赖 Java 侧启动 Waiter 线程
+                                crate::pty::spawn_waiter(pid, cb.clone());
+                            },
                             Err(e) => android_log(LogPriority::ERROR, &format!("[TRACE_SESSION] JNI callback onEngineInitialized FAILED: {:?}", e)),
                         }
                     },
@@ -1323,15 +1327,34 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_waitFor(
 ) -> jint {
     crate::pty::wait_for(pid)
 }
+/// 写入 PTY
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_JNI_nativeWrite(
+    mut env: JNIEnv,
+    _class: JClass,
+    fd: jint,
+    data: jni::sys::jbyteArray,
+    offset: jint,
+    count: jint,
+) -> jint {
+    if let Ok(bytes) = env.convert_byte_array(&data) {
+        let start = offset as usize;
+        let end = (offset + count) as usize;
+        if start < bytes.len() && end <= bytes.len() {
+            return crate::pty::write_to_fd(fd, &bytes[start..end]);
+        }
+    }
+    -1
+}
 
 /// 关闭 FD
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_JNI_close(
-    mut env: JNIEnv,
+    _env: JNIEnv,
     _class: JClass,
     fd: jint,
 ) {
-    unsafe { libc::close(fd); }
+    libc::close(fd);
 }
 
 /// 创建子进程

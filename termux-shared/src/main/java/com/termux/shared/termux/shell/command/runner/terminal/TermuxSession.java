@@ -83,52 +83,15 @@ public class TermuxSession {
             executionCommand.executable = null;
         if (executionCommand.workingDirectory == null || executionCommand.workingDirectory.isEmpty())
             executionCommand.workingDirectory = shellEnvironmentClient.getDefaultWorkingDirectoryPath();
-        if (executionCommand.workingDirectory.isEmpty())
+        if (executionCommand.workingDirectory == null || executionCommand.workingDirectory.isEmpty())
             executionCommand.workingDirectory = "/";
 
-        String defaultBinPath = shellEnvironmentClient.getDefaultBinPath();
-        if (defaultBinPath.isEmpty())
-            defaultBinPath = "/system/bin";
+        // Logic for shell selection and shebang parsing moved to Rust
+        String processName = (executionCommand.executable == null) ? "-login" : ShellUtils.getExecutableBasename(executionCommand.executable);
 
-        boolean isLoginShell = false;
-        if (executionCommand.executable == null) {
-            if (!executionCommand.isFailsafe) {
-                for (String shellBinary : UnixShellEnvironment.LOGIN_SHELL_BINARIES) {
-                    File shellFile = new File(defaultBinPath, shellBinary);
-                    if (shellFile.canExecute()) {
-                        executionCommand.executable = shellFile.getAbsolutePath();
-                        break;
-                    }
-                }
-            }
-
-            if (executionCommand.executable == null) {
-                // Fall back to system shell as last resort:
-                // Do not start a login shell since ~/.profile may cause startup failure if its invalid.
-                // /system/bin/sh is provided by mksh (not toybox) and does load .mkshrc but for android its set
-                // to /system/etc/mkshrc even though its default is ~/.mkshrc.
-                // So /system/etc/mkshrc must still be valid for failsafe session to start properly.
-                // https://cs.android.com/android/platform/superproject/+/android-11.0.0_r3:external/mksh/src/main.c;l=663
-                // https://cs.android.com/android/platform/superproject/+/android-11.0.0_r3:external/mksh/src/main.c;l=41
-                // https://cs.android.com/android/platform/superproject/+/android-11.0.0_r3:external/mksh/Android.bp;l=114
-                executionCommand.executable = "/system/bin/sh";
-            } else {
-                isLoginShell = true;
-            }
-
+        if (executionCommand.arguments == null || executionCommand.arguments.length == 0) {
+            executionCommand.arguments = new String[]{processName};
         }
-
-        // Setup command args
-        String[] commandArgs = shellEnvironmentClient.setupShellCommandArguments(executionCommand.executable, executionCommand.arguments);
-
-        executionCommand.executable = commandArgs[0];
-        String processName = (isLoginShell ? "-" : "") + ShellUtils.getExecutableBasename(executionCommand.executable);
-
-        String[] arguments = new String[commandArgs.length];
-        arguments[0] = processName;
-        if (commandArgs.length > 1) System.arraycopy(commandArgs, 1, arguments, 1, commandArgs.length - 1);
-
-        executionCommand.arguments = arguments;
 
         if (executionCommand.commandLabel == null)
             executionCommand.commandLabel = processName;
