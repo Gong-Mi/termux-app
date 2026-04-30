@@ -25,7 +25,7 @@ public class LocalSocketManager {
     public static final String LOG_TAG = "LocalSocketManager";
 
     /** The native JNI local socket library. */
-    protected static String LOCAL_SOCKET_LIBRARY = "local-socket";
+    protected static String LOCAL_SOCKET_LIBRARY = "termux_shared";
 
     /** Whether {@link #LOCAL_SOCKET_LIBRARY} has been loaded or not. */
     protected static boolean localSocketLibraryLoaded;

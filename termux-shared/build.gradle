@@ -1,11 +1,19 @@
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 apply plugin: 'maven-publish'
+apply plugin: 'com.termux.rust'
 
 android {
     namespace "com.termux.shared"
     compileSdk project.properties.compileSdkVersion.toInteger()
     ndkVersion = System.getenv("JITPACK_NDK_VERSION") ?: project.properties.ndkVersion
+
+    rustAndroid {
+        rustSrcDir = "src/main/rust-shared"
+        jniLibsDestDir = "src/main/jniLibs"
+        libName = "termux_shared"
+        minSdkVersion = project.properties.minSdkVersion.toInteger()
+    }
 
     dependencies {
         implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.24"
@@ -37,12 +45,6 @@ android {
         minSdk project.properties.minSdkVersion.toInteger()
         targetSdk project.properties.targetSdkVersion.toInteger()
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        externalNativeBuild {
-            ndkBuild {
-                cppFlags ''
-                arguments "APP_LDFLAGS=-Wl,-z,max-page-size=16384"
-            }
-        }
     }
 
     buildTypes {
@@ -60,14 +62,14 @@ android {
         targetCompatibility JavaVersion.VERSION_21
     }
 
-    externalNativeBuild {
-        ndkBuild {
-            path file('src/main/cpp/Android.mk')
-        }
-    }
 
     publishing {
         singleVariant("release")
+    }
+
+    // Ensure Rust libs are built before merging JNI libs
+    tasks.matching { it.name.startsWith("merge") && it.name.endsWith("JniLibFolders") }.configureEach {
+        it.dependsOn("buildAllRust")
     }
 }
 

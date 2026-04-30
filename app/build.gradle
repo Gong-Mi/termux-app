@@ -1,6 +1,7 @@
 plugins {
     id "com.android.application"
     id "org.jetbrains.kotlin.android"
+    id "com.termux.rust"
 }
 
 ext {
@@ -68,12 +69,12 @@ android {
         manifestPlaceholders.TERMUX_TASKER_APP_NAME = "Termux:Tasker"
         manifestPlaceholders.TERMUX_WIDGET_APP_NAME = "Termux:Widget"
 
-        externalNativeBuild {
-            cmake {
-                cppFlags "-std=c++17"
-            }
+        rustAndroid {
+            rustSrcDir = "src/main/rust-bootstrap"
+            jniLibsDestDir = "src/main/jniLibs"
+            libName = "termux-bootstrap"
+            minSdkVersion = project.properties.minSdkVersion.toInteger()
         }
-
         splits {
             abi {
                 enable ((gradle.startParameter.taskNames.any { it.contains("Debug") } && splitAPKsForDebugBuilds == "1") ||
@@ -121,11 +122,6 @@ android {
         targetCompatibility JavaVersion.VERSION_21
     }
 
-    externalNativeBuild {
-        cmake {
-            path "src/main/cpp/CMakeLists.txt"
-        }
-    }
 
     sourceSets {
         main {
@@ -266,5 +262,6 @@ afterEvaluate {
     // 关键修复：确保 App 模块合并 JNI 库之前，Rust 库已经编译完成
     tasks.matching { it.name.startsWith("merge") && it.name.endsWith("JniLibFolders") }.configureEach {
         it.dependsOn(":terminal-emulator:buildAllRust")
+        it.dependsOn("buildAllRust")
     }
 }

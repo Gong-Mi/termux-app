@@ -37,6 +37,14 @@ class RustAndroidPlugin implements Plugin<Project> {
                     // 指定输出文件
                     outputs.file("${cargoTargetDir}/${rustArch}/release/lib${extension.libName}.so")
 
+                    // 统一的框架配置：注入 16KB 对齐和目标特性
+                    def globalRustFlags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
+                    if (abi == 'arm64-v8a' || abi == 'armeabi-v7a') {
+                        globalRustFlags << "-C" << "target-feature=+neon"
+                    }
+                    
+                    environment "RUSTFLAGS", globalRustFlags.join(" ")
+
                     commandLine 'cargo', 'ndk', '-t', abi, '-p', extension.minSdkVersion.toString(), 'build', '--release'
 
                     doFirst {
