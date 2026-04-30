@@ -501,3 +501,210 @@ fn in_table(table: &[(u32, u32)], ucs: u32) -> bool {
         }
     }).is_ok()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -------------------------------------------------------------------------
+    // ASCII and basic Latin
+    // -------------------------------------------------------------------------
+    #[test]
+    fn ascii_printable_width_1() {
+        for c in 0x20..0x7F {
+            assert_eq!(wcwidth(c), 1, "ASCII 0x{:02X} should be width 1", c);
+        }
+    }
+
+    #[test]
+    fn ascii_control_width_0() {
+        for c in 0x00..0x20 {
+            assert_eq!(wcwidth(c), 0, "Control 0x{:02X} should be width 0", c);
+        }
+    }
+
+    #[test]
+    fn del_and_high_control_width_0() {
+        assert_eq!(wcwidth(0x7F), 0); // DEL
+        for c in 0x80..0xA0 {
+            assert_eq!(wcwidth(c), 0, "High control 0x{:02X} should be width 0", c);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Zero-width characters
+    // -------------------------------------------------------------------------
+    #[test]
+    fn zero_width_combining_marks() {
+        // Combining grave accent (U+0300)
+        assert_eq!(wcwidth(0x0300), 0);
+        // Combining acute accent (U+0301)
+        assert_eq!(wcwidth(0x0301), 0);
+    }
+
+    #[test]
+    fn zero_width_joiner_and_directional() {
+        assert_eq!(wcwidth(0x200B), 0); // ZERO WIDTH SPACE
+        assert_eq!(wcwidth(0x200C), 0); // ZERO WIDTH NON-JOINER
+        assert_eq!(wcwidth(0x200D), 0); // ZERO WIDTH JOINER
+        assert_eq!(wcwidth(0x200E), 0); // LEFT-TO-RIGHT MARK
+        assert_eq!(wcwidth(0x200F), 0); // RIGHT-TO-LEFT MARK
+    }
+
+    #[test]
+    fn zero_width_variation_selector() {
+        assert_eq!(wcwidth(0x034F), 0); // COMBINING GRAPHEME JOINER
+    }
+
+    #[test]
+    fn zero_width_word_joiner() {
+        assert_eq!(wcwidth(0x2060), 0); // WORD JOINER
+    }
+
+    // -------------------------------------------------------------------------
+    // Wide East Asian characters (CJK)
+    // -------------------------------------------------------------------------
+    #[test]
+    fn cjk_ideographs_width_2() {
+        // Common CJK Unified Ideographs range
+        assert_eq!(wcwidth(0x4E00), 2); // 一
+        assert_eq!(wcwidth(0x9FFF), 2); // end of CJK Unified Ideographs
+    }
+
+    #[test]
+    fn hiragana_width_2() {
+        assert_eq!(wcwidth(0x3042), 2); // あ
+        assert_eq!(wcwidth(0x3093), 2); // ん
+    }
+
+    #[test]
+    fn katakana_width_2() {
+        assert_eq!(wcwidth(0x30A2), 2); // ア
+        assert_eq!(wcwidth(0x30F3), 2); // ン
+    }
+
+    #[test]
+    fn fullwidth_ascii_width_2() {
+        assert_eq!(wcwidth(0xFF01), 2); // ！
+        assert_eq!(wcwidth(0xFF5E), 2); // ～
+    }
+
+    #[test]
+    fn hangul_syllables_width_2() {
+        assert_eq!(wcwidth(0xAC00), 2); // 가
+        assert_eq!(wcwidth(0xD7A3), 2); // end of Hangul Syllables
+    }
+
+    // -------------------------------------------------------------------------
+    // Emoji width 2
+    // -------------------------------------------------------------------------
+    #[test]
+    fn emoji_width_2() {
+        assert_eq!(wcwidth(0x1F600), 2); // 😀
+        assert_eq!(wcwidth(0x1F44D), 2); // 👍
+    }
+
+    #[test]
+    fn heavy_black_heart_width_1() {
+        // U+2764 ❤ is NOT in WIDE_EASTASIAN table; treated as width 1
+        assert_eq!(wcwidth(0x2764), 1);
+    }
+
+    // -------------------------------------------------------------------------
+    // Table boundary values
+    // -------------------------------------------------------------------------
+    #[test]
+    fn just_outside_zero_width_table() {
+        // ZERO_WIDTH table starts at 0x0300, test 0x02FF
+        assert_eq!(wcwidth(0x02FF), 1);
+    }
+
+    #[test]
+    fn just_inside_zero_width_table() {
+        // 0x0300 is the first entry
+        assert_eq!(wcwidth(0x0300), 0);
+    }
+
+    #[test]
+    fn just_outside_wide_table_low_end() {
+        // WIDE_EASTASIAN starts at 0x1100 (Hangul Jamo)
+        assert_eq!(wcwidth(0x10FF), 1);
+    }
+
+    #[test]
+    fn just_inside_wide_table_low_end() {
+        assert_eq!(wcwidth(0x1100), 2);
+    }
+
+    #[test]
+    fn just_outside_wide_table_high_end() {
+        // WIDE_EASTASIAN ends at 0x3FFFD
+        assert_eq!(wcwidth(0x3FFFE), 1);
+    }
+
+    #[test]
+    fn just_inside_wide_table_high_end() {
+        assert_eq!(wcwidth(0x3FFFD), 2);
+    }
+
+    // -------------------------------------------------------------------------
+    // in_table binary search correctness
+    // -------------------------------------------------------------------------
+    #[test]
+    fn in_table_finds_start() {
+        assert!(in_table(ZERO_WIDTH, 0x0300));
+    }
+
+    #[test]
+    fn in_table_finds_end() {
+        assert!(in_table(ZERO_WIDTH, 0x036F));
+    }
+
+    #[test]
+    fn in_table_finds_middle() {
+        assert!(in_table(ZERO_WIDTH, 0x0330));
+    }
+
+    #[test]
+    fn in_table_misses_before() {
+        assert!(!in_table(ZERO_WIDTH, 0x02FF));
+    }
+
+    #[test]
+    fn in_table_misses_after() {
+        assert!(!in_table(ZERO_WIDTH, 0x0370));
+    }
+
+    #[test]
+    fn in_table_gap_between_ranges() {
+        // ZERO_WIDTH has (0x0591, 0x05BD) then (0x05BF, 0x05BF)
+        // 0x05BE should not be in table
+        assert!(!in_table(ZERO_WIDTH, 0x05BE));
+    }
+
+    #[test]
+    fn in_table_single_entry_range() {
+        // (0x05BF, 0x05BF) is a single-codepoint range
+        assert!(in_table(ZERO_WIDTH, 0x05BF));
+    }
+
+    // -------------------------------------------------------------------------
+    // Special cases hardcoded in wcwidth
+    // -------------------------------------------------------------------------
+    #[test]
+    fn null_byte_width_0() {
+        assert_eq!(wcwidth(0), 0);
+    }
+
+    #[test]
+    fn line_separator_width_0() {
+        assert_eq!(wcwidth(0x2028), 0);
+        assert_eq!(wcwidth(0x2029), 0);
+    }
+
+    #[test]
+    fn latin_extended_width_1() {
+        assert_eq!(wcwidth(0x00A0), 1); // NO-BREAK SPACE
+        assert_eq!(wcwidth(0x00FF), 1); // ÿ
+    }
+}

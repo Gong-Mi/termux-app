@@ -240,3 +240,184 @@ mod tests {
         let _ = std::fs::remove_dir_all(target_dir_path);
     }
 }
+
+#[cfg(test)]
+mod additional_tests {
+    use super::*;
+    use std::io::Write;
+
+    // -------------------------------------------------------------------------
+    // Path traversal protection
+    // -------------------------------------------------------------------------
+    #[test]
+    fn extract_zip_rejects_path_traversal() {
+        let target_dir = "test_extract_traversal";
+        let _ = std::fs::remove_dir_all(target_dir);
+
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+            // zip crate's enclosed_name() should reject this
+            zip.start_file("../../etc/passwd", zip::write::SimpleFileOptions::default()).unwrap();
+            zip.write_all(b"root").unwrap();
+            zip.finish().unwrap();
+        }
+
+        let result = extract_zip_to_dir(&buf, target_dir);
+        // enclosed_name returns None for paths with .. components,
+        // causing ok_or("Invalid file path") to fail the entire extraction
+        assert!(result.is_err());
+
+        let _ = std::fs::remove_dir_all(target_dir);
+    }
+
+    #[test]
+    fn extract_zip_rejects_absolute_path() {
+        // Note: ZipWriter normalizes absolute paths to relative, so /etc/passwd
+        // becomes etc/passwd. The enclosed_name() in zip crate also strips leading /.
+        // We test that the extraction still lands inside target_dir (not /etc).
+        let target_dir = "test_extract_absolute";
+        let _ = std::fs::remove_dir_all(target_dir);
+
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+            zip.start_file("/etc/passwd", zip::write::SimpleFileOptions::default()).unwrap();
+            zip.write_all(b"root").unwrap();
+            zip.finish().unwrap();
+        }
+
+        // Should succeed but extract to target_dir/etc/passwd, NOT /etc/passwd
+        let count = extract_zip_to_dir(&buf, target_dir).unwrap();
+        assert_eq!(count, 1);
+        let extracted = std::path::Path::new(target_dir).join("etc/passwd");
+        assert!(extracted.exists());
+        // Verify it did not write to the real /etc/passwd by comparing content
+        let real_content = std::fs::read_to_string("/etc/passwd").unwrap_or_default();
+        let extracted_content = std::fs::read_to_string(&extracted).unwrap();
+        assert_ne!(real_content, extracted_content);
+
+        let _ = std::fs::remove_dir_all(target_dir);
+    }
+
+    // -------------------------------------------------------------------------
+    // File extraction with parent directories
+    // -------------------------------------------------------------------------
+    #[test]
+    fn extract_zip_nested_directories() {
+        let target_dir = "test_extract_nested";
+        let _ = std::fs::remove_dir_all(target_dir);
+
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+            zip.add_directory("a/", zip::write::SimpleFileOptions::default()).unwrap();
+            zip.add_directory("a/b/", zip::write::SimpleFileOptions::default()).unwrap();
+            zip.start_file("a/b/c.txt", zip::write::SimpleFileOptions::default()).unwrap();
+            zip.write_all(b"nested").unwrap();
+            zip.finish().unwrap();
+        }
+
+        let count = extract_zip_to_dir(&buf, target_dir).unwrap();
+        assert_eq!(count, 3); // 2 dirs + 1 file
+
+        let file_path = std::path::Path::new(target_dir).join("a/b/c.txt");
+        assert!(file_path.exists());
+        let mut content = String::new();
+        File::open(file_path).unwrap().read_to_string(&mut content).unwrap();
+        assert_eq!(content, "nested");
+
+        let _ = std::fs::remove_dir_all(target_dir);
+    }
+
+    // -------------------------------------------------------------------------
+    // Empty zip
+    // -------------------------------------------------------------------------
+    #[test]
+    fn extract_empty_zip() {
+        let target_dir = "test_extract_empty";
+        let _ = std::fs::remove_dir_all(target_dir);
+
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+            zip.finish().unwrap();
+        }
+
+        let count = extract_zip_to_dir(&buf, target_dir).unwrap();
+        assert_eq!(count, 0);
+
+        let _ = std::fs::remove_dir_all(target_dir);
+    }
+
+    // -------------------------------------------------------------------------
+    // SYMLINKS.txt parsing
+    // -------------------------------------------------------------------------
+    #[test]
+    fn extract_zip_with_symlinks() {
+        let target_dir = "test_extract_symlinks";
+        let _ = std::fs::remove_dir_all(target_dir);
+        std::fs::create_dir_all(target_dir).unwrap();
+
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+            zip.start_file("SYMLINKS.txt", zip::write::SimpleFileOptions::default()).unwrap();
+            zip.write_all("old1←new1\nold2←new2\n".as_bytes()).unwrap();
+            zip.start_file("real_file", zip::write::SimpleFileOptions::default()).unwrap();
+            zip.write_all(b"data").unwrap();
+            zip.finish().unwrap();
+        }
+
+        let count = extract_zip_to_dir(&buf, target_dir).unwrap();
+        // 1 file + SYMLINKS.txt processed but not counted as extracted
+        // + 2 symlinks created afterwards
+        // extracted_count counts SYMLINKS.txt as skipped, real_file = 1, plus 2 symlinks
+        // Wait, SYMLINKS.txt is skipped via `continue`, so extracted_count only gets real_file (1)
+        // Then symlinks are created but not counted in extracted_count
+        assert_eq!(count, 1);
+
+        #[cfg(unix)]
+        {
+            let link1 = std::path::Path::new(target_dir).join("new1");
+            let link2 = std::path::Path::new(target_dir).join("new2");
+            // symlink_metadata checks the link itself, not the target
+            assert!(std::fs::symlink_metadata(&link1).is_ok());
+            assert!(std::fs::symlink_metadata(&link2).is_ok());
+            assert!(link1.is_symlink());
+            assert!(link2.is_symlink());
+        }
+
+        let _ = std::fs::remove_dir_all(target_dir);
+    }
+
+    // -------------------------------------------------------------------------
+    // Overwriting existing files
+    // -------------------------------------------------------------------------
+    #[test]
+    fn extract_zip_overwrites_existing() {
+        let target_dir = "test_extract_overwrite";
+        let _ = std::fs::remove_dir_all(target_dir);
+        std::fs::create_dir_all(target_dir).unwrap();
+
+        // Pre-create file with old content
+        let existing = std::path::Path::new(target_dir).join("file.txt");
+        std::fs::write(&existing, "old").unwrap();
+
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+            zip.start_file("file.txt", zip::write::SimpleFileOptions::default()).unwrap();
+            zip.write_all(b"new").unwrap();
+            zip.finish().unwrap();
+        }
+
+        let count = extract_zip_to_dir(&buf, target_dir).unwrap();
+        assert_eq!(count, 1);
+
+        let content = std::fs::read_to_string(&existing).unwrap();
+        assert_eq!(content, "new");
+
+        let _ = std::fs::remove_dir_all(target_dir);
+    }
+}
