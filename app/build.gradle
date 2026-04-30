@@ -72,7 +72,7 @@ android {
         rustAndroid {
             rustSrcDir = "src/main/rust-bootstrap"
             jniLibsDestDir = "src/main/jniLibs"
-            libName = "termux-bootstrap"
+            libName = "termux_bootstrap"
             minSdkVersion = project.properties.minSdkVersion.toInteger()
         }
         splits {
@@ -220,13 +220,7 @@ def downloadBootstrap(String arch, String expectedChecksum, String version) {
     }
 }
 
-clean {
-    doLast {
-        def tree = fileTree(new File(projectDir, 'src/main/cpp'))
-        tree.include 'bootstrap-*.zip'
-        tree.each { it.delete() }
-    }
-}
+
 
 task downloadBootstraps() {
     doLast {

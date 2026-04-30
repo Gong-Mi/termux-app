@@ -2,21 +2,23 @@ use jni::JNIEnv;
 use jni::objects::{JClass, JObject, JString};
 use jni::sys::jint;
 use std::os::unix::io::RawFd;
+use std::os::fd::BorrowedFd;
 use nix::sys::socket::{getsockopt, sockopt::PeerCredentials};
 
 /// Rust implementation of LocalSocketManager.getPeerCredNative
 #[no_mangle]
-pub extern "system" fn Java_com_termux_shared_net_socket_local_LocalSocketManager_getPeerCredNative(
-    mut env: JNIEnv,
-    _class: JClass,
-    _log_title: JString,
+pub extern "system" fn Java_com_termux_shared_net_socket_local_LocalSocketManager_getPeerCredNative<'a>(
+    mut env: JNIEnv<'a>,
+    _class: JClass<'a>,
+    _log_title: JString<'a>,
     fd: jint,
-    peer_cred: JObject,
-) -> JObject {
-    let creds = match getsockopt(fd as RawFd, PeerCredentials) {
+    peer_cred: JObject<'a>,
+) -> JObject<'a> {
+    let fd = unsafe { BorrowedFd::borrow_raw(fd as RawFd) };
+    let creds = match getsockopt(&fd, PeerCredentials) {
         Ok(c) => c,
         Err(e) => {
-            return create_jni_result(&mut env, -1, e.raw_os_error().unwrap_or(0), "getsockopt failed");
+            return create_jni_result(&mut env, -1, e as i32, "getsockopt failed");
         }
     };
 
