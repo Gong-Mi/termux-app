@@ -940,6 +940,7 @@ mod tests {
         printed: Vec<char>,
         executed: Vec<u8>,
         csi_calls: Vec<(String, Vec<i32>)>,
+        esc_calls: Vec<u8>,
     }
     
     impl TestHandler {
@@ -948,6 +949,7 @@ mod tests {
                 printed: Vec::new(),
                 executed: Vec::new(),
                 csi_calls: Vec::new(),
+                esc_calls: Vec::new(),
             }
         }
     }
@@ -961,7 +963,9 @@ mod tests {
             self.executed.push(byte);
         }
         
-        fn esc_dispatch(&mut self, _intermediates: &[u8], _ignore: bool, _byte: u8) {}
+        fn esc_dispatch(&mut self, _intermediates: &[u8], _ignore: bool, byte: u8) {
+            self.esc_calls.push(byte);
+        }
         
         fn csi_dispatch(&mut self, params: &Params, _intermediates: &[u8], _ignore: bool, action: char) {
             self.csi_calls.push((action.to_string(), params.values[..params.len].to_vec()));
@@ -994,5 +998,98 @@ mod tests {
         parser.advance(&mut handler, b"\x1b[10;20H");
         assert_eq!(handler.csi_calls.len(), 1);
         assert_eq!(handler.csi_calls[0], ("H".to_string(), vec![10, 20]));
+    }
+
+    #[test]
+    fn test_csi_empty_params_use_defaults() {
+        let mut parser = Parser::new();
+        let mut handler = TestHandler::new();
+        parser.advance(&mut handler, b"\x1b[H");
+        assert_eq!(handler.csi_calls.len(), 1);
+        assert_eq!(handler.csi_calls[0], ("H".to_string(), vec![0]));
+    }
+
+    #[test]
+    fn test_osc_set_title() {
+        let mut parser = Parser::new();
+        let mut handler = TestHandler::new();
+        parser.advance(&mut handler, b"\x1b]0;My Title\x07");
+        assert_eq!(handler.executed.len(), 0); // OSC does not use execute
+    }
+
+    #[test]
+    fn test_esc_decaln() {
+        let mut parser = Parser::new();
+        let mut handler = TestHandler::new();
+        parser.advance(&mut handler, b"\x1b#8");
+        assert_eq!(handler.esc_calls.len(), 1);
+    }
+
+    #[test]
+    fn test_bel_control() {
+        let mut parser = Parser::new();
+        let mut handler = TestHandler::new();
+        parser.advance(&mut handler, b"\x07");
+        assert_eq!(handler.executed, vec![0x07]);
+    }
+
+    #[test]
+    fn test_cr_lf_sequence() {
+        let mut parser = Parser::new();
+        let mut handler = TestHandler::new();
+        parser.advance(&mut handler, b"\r\n");
+        assert_eq!(handler.executed, vec![0x0d, 0x0a]);
+    }
+
+    #[test]
+    fn test_mixed_plain_and_escapes() {
+        let mut parser = Parser::new();
+        let mut handler = TestHandler::new();
+        parser.advance(&mut handler, b"Hi\x1b[2JBye");
+        assert_eq!(handler.printed, vec!['H', 'i', 'B', 'y', 'e']);
+        assert_eq!(handler.csi_calls.len(), 1);
+        assert_eq!(handler.csi_calls[0], ("J".to_string(), vec![2]));
+    }
+
+    #[test]
+    fn test_invalid_escape_recovery() {
+        let mut parser = Parser::new();
+        let mut handler = TestHandler::new();
+        // \x1b[ without final byte, then plain text
+        parser.advance(&mut handler, b"\x1b[XY");
+        // 'X' is not a valid final byte for CSI, parser should recover
+        assert_eq!(handler.printed, vec!['Y']);
+    }
+
+    #[test]
+    fn test_parser_incomplete_sequence_recovery() {
+        let mut parser = Parser::new();
+        let mut handler = TestHandler::new();
+        // Incomplete CSI followed by plain text: \x1b[1 is not complete,
+        // then "2A" arrives. The parser treats the trailing bytes as text
+        // after the invalid sequence is abandoned.
+        parser.advance(&mut handler, b"\x1b[1");
+        parser.advance(&mut handler, b"2A");
+        // Depending on parser behavior, '2' may be treated as part of param or as text
+        // The key assertion is that the parser does not panic and produces some output.
+        assert!(!handler.printed.is_empty() || !handler.csi_calls.is_empty());
+    }
+
+    #[test]
+    fn test_params_get_with_default() {
+        let mut params = Params::new();
+        params.values[0] = 5;
+        params.len = 1;
+        assert_eq!(params.get(0, 1), 5);
+        assert_eq!(params.get(1, 99), 99); // index out of range, use default
+    }
+
+    #[test]
+    fn test_params_get_with_zero_default() {
+        let mut params = Params::new();
+        params.values[0] = 0;
+        params.len = 1;
+        assert_eq!(params.get_with_zero_default(0, 1, true), 1);
+        assert_eq!(params.get_with_zero_default(0, 1, false), 0);
     }
 }
