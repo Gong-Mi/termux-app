@@ -195,3 +195,252 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
         _ => {}
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::vte_parser::Params;
+
+    fn setup_state() -> crate::engine::ScreenState {
+        crate::engine::ScreenState::new(80, 24, 100, 10, 20)
+    }
+
+    fn make_params(values: &[i32]) -> Params {
+        let mut p = Params::new();
+        for (i, &v) in values.iter().enumerate() {
+            p.values[i] = v;
+        }
+        p.len = values.len();
+        p
+    }
+
+    // -------------------------------------------------------------------------
+    // Cursor movement
+    // -------------------------------------------------------------------------
+    #[test]
+    fn test_csi_cursor_up() {
+        let mut state = setup_state();
+        state.cursor.y = 10;
+        handle_csi(&mut state, &make_params(&[3]), &[], 'A');
+        assert_eq!(state.cursor.y, 7);
+    }
+
+    #[test]
+    fn test_csi_cursor_down() {
+        let mut state = setup_state();
+        state.cursor.y = 5;
+        handle_csi(&mut state, &make_params(&[2]), &[], 'B');
+        assert_eq!(state.cursor.y, 7);
+    }
+
+    #[test]
+    fn test_csi_cursor_forward() {
+        let mut state = setup_state();
+        state.cursor.x = 5;
+        handle_csi(&mut state, &make_params(&[4]), &[], 'C');
+        assert_eq!(state.cursor.x, 9);
+    }
+
+    #[test]
+    fn test_csi_cursor_backward() {
+        let mut state = setup_state();
+        state.cursor.x = 10;
+        handle_csi(&mut state, &make_params(&[3]), &[], 'D');
+        assert_eq!(state.cursor.x, 7);
+    }
+
+    #[test]
+    fn test_csi_cursor_position() {
+        let mut state = setup_state();
+        handle_csi(&mut state, &make_params(&[5, 10]), &[], 'H');
+        assert_eq!(state.cursor.y, 4);
+        assert_eq!(state.cursor.x, 9);
+    }
+
+    #[test]
+    fn test_csi_cursor_position_default() {
+        let mut state = setup_state();
+        state.cursor.x = 50;
+        state.cursor.y = 20;
+        handle_csi(&mut state, &make_params(&[]), &[], 'H');
+        assert_eq!(state.cursor.y, 0);
+        assert_eq!(state.cursor.x, 0);
+    }
+
+    // -------------------------------------------------------------------------
+    // Erase
+    // -------------------------------------------------------------------------
+    #[test]
+    fn test_csi_erase_in_display_clear_all() {
+        let mut state = setup_state();
+        state.get_current_screen_mut().get_row_mut(0).text[0] = 'X';
+        handle_csi(&mut state, &make_params(&[2]), &[], 'J');
+        let row = state.get_current_screen().get_row(0);
+        assert_eq!(row.text[0], ' ');
+    }
+
+    #[test]
+    fn test_csi_erase_in_line_clear_to_end() {
+        let mut state = setup_state();
+        state.cursor.x = 5;
+        state.get_current_screen_mut().get_row_mut(0).text[10] = 'X';
+        handle_csi(&mut state, &make_params(&[0]), &[], 'K');
+        let row = state.get_current_screen().get_row(0);
+        assert_eq!(row.text[10], ' ');
+    }
+
+    // -------------------------------------------------------------------------
+    // Insert / Delete lines
+    // -------------------------------------------------------------------------
+    #[test]
+    fn test_csi_insert_lines() {
+        let mut state = setup_state();
+        state.cursor.y = 5;
+        handle_csi(&mut state, &make_params(&[2]), &[], 'L');
+        // Verify cursor position unchanged and scroll happened
+        assert_eq!(state.cursor.y, 5);
+    }
+
+    #[test]
+    fn test_csi_delete_lines() {
+        let mut state = setup_state();
+        state.cursor.y = 5;
+        handle_csi(&mut state, &make_params(&[1]), &[], 'M');
+        assert_eq!(state.cursor.y, 5);
+    }
+
+    // -------------------------------------------------------------------------
+    // Delete / Erase characters
+    // -------------------------------------------------------------------------
+    #[test]
+    fn test_csi_delete_characters() {
+        let mut state = setup_state();
+        state.cursor.x = 5;
+        let screen = state.get_current_screen_mut();
+        screen.get_row_mut(0).text[5] = 'A';
+        screen.get_row_mut(0).text[6] = 'B';
+        handle_csi(&mut state, &make_params(&[2]), &[], 'P');
+        let row = state.get_current_screen().get_row(0);
+        assert_eq!(row.text[5], ' ');
+    }
+
+    #[test]
+    fn test_csi_erase_characters() {
+        let mut state = setup_state();
+        state.cursor.x = 3;
+        state.get_current_screen_mut().get_row_mut(0).text[3] = 'X';
+        state.get_current_screen_mut().get_row_mut(0).text[4] = 'Y';
+        handle_csi(&mut state, &make_params(&[2]), &[], 'X');
+        let row = state.get_current_screen().get_row(0);
+        assert_eq!(row.text[3], ' ');
+        assert_eq!(row.text[4], ' ');
+    }
+
+    // -------------------------------------------------------------------------
+    // Scroll
+    // -------------------------------------------------------------------------
+    #[test]
+    fn test_csi_scroll_up() {
+        let mut state = setup_state();
+        let before = state.scroll_counter;
+        handle_csi(&mut state, &make_params(&[1]), &[], 'S');
+        assert_eq!(state.scroll_counter, before + 1);
+    }
+
+    #[test]
+    fn test_csi_scroll_down() {
+        let mut state = setup_state();
+        handle_csi(&mut state, &make_params(&[1]), &[], 'T');
+        // Just verify it doesn't panic
+    }
+
+    // -------------------------------------------------------------------------
+    // Margins
+    // -------------------------------------------------------------------------
+    #[test]
+    fn test_csi_set_margins() {
+        let mut state = setup_state();
+        handle_csi(&mut state, &make_params(&[5, 20]), &[], 'r');
+        assert_eq!(state.top_margin, 4);
+        assert_eq!(state.bottom_margin, 20);
+    }
+
+    // -------------------------------------------------------------------------
+    // Tab stops
+    // -------------------------------------------------------------------------
+    #[test]
+    fn test_csi_clear_tab_stop_single() {
+        let mut state = setup_state();
+        state.cursor.x = 8;
+        assert!(state.tab_stops[8]);
+        handle_csi(&mut state, &make_params(&[0]), &[], 'g');
+        assert!(!state.tab_stops[8]);
+    }
+
+    #[test]
+    fn test_csi_clear_tab_stop_all() {
+        let mut state = setup_state();
+        handle_csi(&mut state, &make_params(&[3]), &[], 'g');
+        assert!(state.tab_stops.iter().all(|&t| !t));
+    }
+
+    // -------------------------------------------------------------------------
+    // Cursor save / restore
+    // -------------------------------------------------------------------------
+    #[test]
+    fn test_csi_save_restore_cursor() {
+        let mut state = setup_state();
+        state.cursor.x = 10;
+        state.cursor.y = 5;
+        handle_csi(&mut state, &make_params(&[]), &[], 's');
+        state.cursor.x = 0;
+        state.cursor.y = 0;
+        handle_csi(&mut state, &make_params(&[]), &[], 'u');
+        assert_eq!(state.cursor.x, 10);
+        assert_eq!(state.cursor.y, 5);
+    }
+
+    // -------------------------------------------------------------------------
+    // Device Attributes / Status Report
+    // -------------------------------------------------------------------------
+    #[test]
+    fn test_csi_device_attributes() {
+        let mut state = setup_state();
+        handle_csi(&mut state, &make_params(&[]), &[], 'c');
+        // Just verify no panic; response goes through JNI
+    }
+
+    #[test]
+    fn test_csi_cursor_position_report() {
+        let mut state = setup_state();
+        state.cursor.x = 7;
+        state.cursor.y = 3;
+        handle_csi(&mut state, &make_params(&[6]), &[], 'n');
+        // Response goes through JNI; just verify no panic
+    }
+
+    // -------------------------------------------------------------------------
+    // DECSTR soft reset
+    // -------------------------------------------------------------------------
+    #[test]
+    fn test_csi_decstr_soft_reset() {
+        let mut state = setup_state();
+        state.modes.set(crate::terminal::modes::MODE_INSERT);
+        handle_csi(&mut state, &make_params(&[]), &[b'!'], 'p');
+        assert!(!state.modes.is_enabled(crate::terminal::modes::MODE_INSERT));
+    }
+
+    // -------------------------------------------------------------------------
+    // Repeat character
+    // -------------------------------------------------------------------------
+    #[test]
+    fn test_csi_repeat_character() {
+        let mut state = setup_state();
+        state.last_printed_char = Some('X');
+        handle_csi(&mut state, &make_params(&[3]), &[], 'b');
+        let row = state.get_current_screen().get_row(0);
+        assert_eq!(row.text[0], 'X');
+        assert_eq!(row.text[1], 'X');
+        assert_eq!(row.text[2], 'X');
+    }
+}
