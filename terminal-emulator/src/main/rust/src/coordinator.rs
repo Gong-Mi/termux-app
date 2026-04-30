@@ -311,3 +311,206 @@ pub extern "system" fn Java_com_termux_terminal_JNI_getAllSessionStates(
         Err(_) => std::ptr::null_mut(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn new_coordinator() -> SessionCoordinator {
+        SessionCoordinator {
+            pkg_lock: AtomicBool::new(false),
+            pkg_lock_owner: AtomicUsize::new(0),
+            session_counter: AtomicUsize::new(0),
+            session_states: Mutex::new(HashMap::new()),
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // SessionState
+    // -------------------------------------------------------------------------
+    #[test]
+    fn session_state_as_str() {
+        assert_eq!(SessionState::Idle.as_str(), "Idle");
+        assert_eq!(SessionState::Running.as_str(), "Running");
+        assert_eq!(SessionState::Busy.as_str(), "Busy");
+        assert_eq!(SessionState::WaitingLock.as_str(), "WaitingLock");
+        assert_eq!(SessionState::Finished.as_str(), "Finished");
+    }
+
+    // -------------------------------------------------------------------------
+    // Registration
+    // -------------------------------------------------------------------------
+    #[test]
+    fn register_session_returns_incrementing_ids() {
+        let coord = new_coordinator();
+        let id0 = coord.register_session();
+        let id1 = coord.register_session();
+        let id2 = coord.register_session();
+        assert_eq!(id0, 0);
+        assert_eq!(id1, 1);
+        assert_eq!(id2, 2);
+    }
+
+    #[test]
+    fn register_session_sets_idle_state() {
+        let coord = new_coordinator();
+        let id = coord.register_session();
+        assert_eq!(coord.get_session_state(id), Some(SessionState::Idle));
+    }
+
+    // -------------------------------------------------------------------------
+    // Unregistration
+    // -------------------------------------------------------------------------
+    #[test]
+    fn unregister_session_sets_finished() {
+        let coord = new_coordinator();
+        let id = coord.register_session();
+        coord.unregister_session(id);
+        assert_eq!(coord.get_session_state(id), None); // removed from map
+    }
+
+    #[test]
+    fn unregister_session_removes_from_all_states() {
+        let coord = new_coordinator();
+        let id = coord.register_session();
+        coord.unregister_session(id);
+        let all = coord.get_all_session_states();
+        assert!(!all.iter().any(|(k, _)| *k == id));
+    }
+
+    // -------------------------------------------------------------------------
+    // Pkg lock - basic acquire/release
+    // -------------------------------------------------------------------------
+    #[test]
+    fn try_acquire_pkg_lock_succeeds_when_free() {
+        let coord = new_coordinator();
+        let id = coord.register_session();
+        assert!(coord.try_acquire_pkg_lock(id));
+        assert!(coord.is_pkg_lock_held());
+        assert_eq!(coord.get_pkg_lock_owner(), id);
+        assert_eq!(coord.get_session_state(id), Some(SessionState::Busy));
+    }
+
+    #[test]
+    fn release_pkg_lock_frees_lock() {
+        let coord = new_coordinator();
+        let id = coord.register_session();
+        coord.try_acquire_pkg_lock(id);
+        coord.release_pkg_lock(id);
+        assert!(!coord.is_pkg_lock_held());
+        assert_eq!(coord.get_pkg_lock_owner(), 0);
+    }
+
+    #[test]
+    fn release_pkg_lock_changes_state_to_running() {
+        let coord = new_coordinator();
+        let id = coord.register_session();
+        coord.try_acquire_pkg_lock(id);
+        coord.release_pkg_lock(id);
+        assert_eq!(coord.get_session_state(id), Some(SessionState::Running));
+    }
+
+    // -------------------------------------------------------------------------
+    // Pkg lock - contention
+    // -------------------------------------------------------------------------
+    #[test]
+    fn try_acquire_pkg_lock_fails_when_held() {
+        let coord = new_coordinator();
+        let id1 = coord.register_session();
+        let id2 = coord.register_session();
+        coord.try_acquire_pkg_lock(id1);
+        assert!(!coord.try_acquire_pkg_lock(id2));
+    }
+
+    #[test]
+    fn contending_session_gets_waiting_lock_state() {
+        let coord = new_coordinator();
+        let id1 = coord.register_session();
+        let id2 = coord.register_session();
+        coord.try_acquire_pkg_lock(id1);
+        coord.try_acquire_pkg_lock(id2);
+        assert_eq!(coord.get_session_state(id2), Some(SessionState::WaitingLock));
+    }
+
+    #[test]
+    fn release_pkg_lock_not_owner_does_nothing() {
+        let coord = new_coordinator();
+        let id1 = coord.register_session();
+        let id2 = coord.register_session();
+        coord.try_acquire_pkg_lock(id1);
+        coord.release_pkg_lock(id2); // id2 does not own the lock
+        assert!(coord.is_pkg_lock_held());
+        assert_eq!(coord.get_pkg_lock_owner(), id1);
+    }
+
+    // -------------------------------------------------------------------------
+    // Unregister releases lock
+    // -------------------------------------------------------------------------
+    #[test]
+    fn unregister_releases_owned_lock() {
+        let coord = new_coordinator();
+        let id = coord.register_session();
+        coord.try_acquire_pkg_lock(id);
+        coord.unregister_session(id);
+        assert!(!coord.is_pkg_lock_held());
+        assert_eq!(coord.get_pkg_lock_owner(), 0);
+    }
+
+    #[test]
+    fn unregister_does_not_release_others_lock() {
+        let coord = new_coordinator();
+        let id1 = coord.register_session();
+        let id2 = coord.register_session();
+        coord.try_acquire_pkg_lock(id1);
+        coord.unregister_session(id2); // id2 doesn't own the lock
+        assert!(coord.is_pkg_lock_held());
+        assert_eq!(coord.get_pkg_lock_owner(), id1);
+    }
+
+    // -------------------------------------------------------------------------
+    // State queries
+    // -------------------------------------------------------------------------
+    #[test]
+    fn get_session_state_unknown_returns_none() {
+        let coord = new_coordinator();
+        assert_eq!(coord.get_session_state(999), None);
+    }
+
+    #[test]
+    fn get_all_session_states_reflects_changes() {
+        let coord = new_coordinator();
+        let id1 = coord.register_session();
+        let id2 = coord.register_session();
+        coord.try_acquire_pkg_lock(id1);
+        let all = coord.get_all_session_states();
+        assert_eq!(all.len(), 2);
+        let states: HashMap<usize, SessionState> = all.into_iter().collect();
+        assert_eq!(states[&id1], SessionState::Busy);
+        assert_eq!(states[&id2], SessionState::Idle);
+    }
+
+    #[test]
+    fn has_waiting_sessions_true() {
+        let coord = new_coordinator();
+        let id1 = coord.register_session();
+        let id2 = coord.register_session();
+        coord.try_acquire_pkg_lock(id1);
+        coord.try_acquire_pkg_lock(id2);
+        assert!(coord.has_waiting_sessions());
+    }
+
+    #[test]
+    fn has_waiting_sessions_false() {
+        let coord = new_coordinator();
+        let id1 = coord.register_session();
+        let id2 = coord.register_session();
+        coord.try_acquire_pkg_lock(id1);
+        assert!(!coord.has_waiting_sessions());
+    }
+
+    #[test]
+    fn has_waiting_sessions_empty() {
+        let coord = new_coordinator();
+        assert!(!coord.has_waiting_sessions());
+    }
+}
