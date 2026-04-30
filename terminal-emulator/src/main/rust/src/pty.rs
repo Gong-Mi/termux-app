@@ -1,6 +1,6 @@
 use jni::JNIEnv;
 use jni::objects::{JObjectArray, JString, JIntArray};
-use jni::sys::{JNINativeInterface_, jint, jintArray, jobjectArray, jstring};
+use jni::sys::{jint, jintArray, jobjectArray, jstring};
 use nix::unistd::{ForkResult, fork, setsid, chdir};
 use std::ffi::CString;
 use std::io::Read;
@@ -63,6 +63,46 @@ pub unsafe fn create_subprocess(
             fd
         }
         Err(_) => -1,
+    }
+}
+
+/// Parse a shebang line into (interpreter_path, optional_args).
+/// Handles spaces in the shebang, e.g. "#!/usr/bin/env bash" -> ("/usr/bin/env", Some("bash"))
+pub fn parse_shebang(buffer: &[u8]) -> Option<(String, Option<String>)> {
+    if buffer.len() < 2 || buffer[0] != b'#' || buffer[1] != b'!' {
+        return None;
+    }
+    // Shebang line ends at first newline (or end of buffer)
+    let line_end = buffer.iter().position(|&b| b == b'\n').unwrap_or(buffer.len());
+    let line = String::from_utf8_lossy(&buffer[2..line_end]);
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+    if tokens.is_empty() {
+        return None;
+    }
+    let interpreter = tokens[0].to_string();
+    let args = if tokens.len() > 1 {
+        Some(tokens[1..].join(" "))
+    } else {
+        None
+    };
+    Some((interpreter, args))
+}
+
+/// Map an interpreter path to the Termux prefix, matching upstream logic.
+pub fn map_interpreter(interp: &str, normalize: &dyn Fn(String) -> String) -> String {
+    if interp.starts_with("/usr/bin/env") {
+        "/data/data/com.termux/files/usr/bin/env".to_string()
+    } else if interp.starts_with("/bin/") || interp.starts_with("/usr/bin/") {
+        let binary = interp.rsplit('/').next().unwrap_or("sh");
+        format!("/data/data/com.termux/files/usr/bin/{}", binary)
+    } else if interp.starts_with("/data/data/com.termux/") || interp.starts_with("/data/user/0/com.termux/") {
+        normalize(interp.to_string())
+    } else {
+        interp.to_string()
     }
 }
 
@@ -195,46 +235,6 @@ pub fn create_subprocess_with_data(
     android_log(LogPriority::INFO, &format!("[TRACE_SESSION] Preparing to exec: {} with argv: {:?}", real_cmd, real_argv));
 
     let cmd_log = real_cmd.clone();
-
-    // Parse a shebang line into (interpreter_path, optional_args).
-    // Handles spaces in the shebang, e.g. "#!/usr/bin/env bash" -> ("/usr/bin/env", Some("bash"))
-    fn parse_shebang(buffer: &[u8]) -> Option<(String, Option<String>)> {
-        if buffer.len() < 2 || buffer[0] != b'#' || buffer[1] != b'!' {
-            return None;
-        }
-        // Shebang line ends at first newline (or end of buffer)
-        let line_end = buffer.iter().position(|&b| b == b'\n').unwrap_or(buffer.len());
-        let line = String::from_utf8_lossy(&buffer[2..line_end]);
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            return None;
-        }
-        let tokens: Vec<&str> = trimmed.split_whitespace().collect();
-        if tokens.is_empty() {
-            return None;
-        }
-        let interpreter = tokens[0].to_string();
-        let args = if tokens.len() > 1 {
-            Some(tokens[1..].join(" "))
-        } else {
-            None
-        };
-        Some((interpreter, args))
-    }
-
-    // Map an interpreter path to the Termux prefix, matching upstream logic.
-    fn map_interpreter(interp: &str, normalize: &dyn Fn(String) -> String) -> String {
-        if interp.starts_with("/usr/bin/env") {
-            "/data/data/com.termux/files/usr/bin/env".to_string()
-        } else if interp.starts_with("/bin/") || interp.starts_with("/usr/bin/") {
-            let binary = interp.rsplit('/').next().unwrap_or("sh");
-            format!("/data/data/com.termux/files/usr/bin/{}", binary)
-        } else if interp.starts_with("/data/data/com.termux/") || interp.starts_with("/data/user/0/com.termux/") {
-            normalize(interp.to_string())
-        } else {
-            interp.to_string()
-        }
-    }
 
     // Read the first 256 bytes of the target file to determine ELF / shebang / plain script.
     let (final_cmd, final_argv) = if let Ok(mut file) = std::fs::File::open(&real_cmd) {
@@ -488,5 +488,128 @@ pub fn wait_for(pid: i32) -> jint {
         if libc::WIFEXITED(status) { libc::WEXITSTATUS(status) }
         else if libc::WIFSIGNALED(status) { -libc::WTERMSIG(status) }
         else { 0 }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -------------------------------------------------------------------------
+    // parse_shebang
+    // -------------------------------------------------------------------------
+    #[test]
+    fn parse_shebang_basic() {
+        let data = b"#!/bin/bash\necho hello";
+        let result = parse_shebang(data);
+        assert_eq!(result, Some(("/bin/bash".to_string(), None)));
+    }
+
+    #[test]
+    fn parse_shebang_with_env() {
+        let data = b"#!/usr/bin/env bash\necho hello";
+        let result = parse_shebang(data);
+        assert_eq!(result, Some(("/usr/bin/env".to_string(), Some("bash".to_string()))));
+    }
+
+    #[test]
+    fn parse_shebang_with_args() {
+        let data = b"#!/usr/bin/env python3 -u\nprint(1)";
+        let result = parse_shebang(data);
+        assert_eq!(result, Some(("/usr/bin/env".to_string(), Some("python3 -u".to_string()))));
+    }
+
+    #[test]
+    fn parse_shebang_no_shebang() {
+        let data = b"echo hello";
+        assert_eq!(parse_shebang(data), None);
+    }
+
+    #[test]
+    fn parse_shebang_empty_after_hashbang() {
+        let data = b"#!   \necho hello";
+        assert_eq!(parse_shebang(data), None);
+    }
+
+    #[test]
+    fn parse_shebang_too_short() {
+        let data = b"#";
+        assert_eq!(parse_shebang(data), None);
+    }
+
+    #[test]
+    fn parse_shebang_no_newline() {
+        let data = b"#!/bin/sh";
+        assert_eq!(parse_shebang(data), Some(("/bin/sh".to_string(), None)));
+    }
+
+    #[test]
+    fn parse_shebang_extra_spaces() {
+        let data = b"#!   /bin/bash   \n";
+        assert_eq!(parse_shebang(data), Some(("/bin/bash".to_string(), None)));
+    }
+
+    // -------------------------------------------------------------------------
+    // map_interpreter
+    // -------------------------------------------------------------------------
+    fn noop_normalize(s: String) -> String { s }
+
+    #[test]
+    fn map_interpreter_env() {
+        assert_eq!(
+            map_interpreter("/usr/bin/env", &noop_normalize),
+            "/data/data/com.termux/files/usr/bin/env"
+        );
+    }
+
+    #[test]
+    fn map_interpreter_bin_sh() {
+        assert_eq!(
+            map_interpreter("/bin/sh", &noop_normalize),
+            "/data/data/com.termux/files/usr/bin/sh"
+        );
+    }
+
+    #[test]
+    fn map_interpreter_usr_bin_awk() {
+        assert_eq!(
+            map_interpreter("/usr/bin/awk", &noop_normalize),
+            "/data/data/com.termux/files/usr/bin/awk"
+        );
+    }
+
+    #[test]
+    fn map_interpreter_termux_path() {
+        assert_eq!(
+            map_interpreter("/data/data/com.termux/files/usr/bin/python", &noop_normalize),
+            "/data/data/com.termux/files/usr/bin/python"
+        );
+    }
+
+    #[test]
+    fn map_interpreter_user_path() {
+        assert_eq!(
+            map_interpreter("/data/user/0/com.termux/files/usr/bin/ruby", &noop_normalize),
+            "/data/user/0/com.termux/files/usr/bin/ruby"
+        );
+    }
+
+    #[test]
+    fn map_interpreter_custom_untouched() {
+        assert_eq!(
+            map_interpreter("/opt/local/bin/myapp", &noop_normalize),
+            "/opt/local/bin/myapp"
+        );
+    }
+
+    #[test]
+    fn map_interpreter_absolute_termux() {
+        let normalize = |s: String| -> String {
+            s.replace("/data/user/0/com.termux", "/data/data/com.termux")
+        };
+        assert_eq!(
+            map_interpreter("/data/user/0/com.termux/files/usr/bin/perl", &normalize),
+            "/data/data/com.termux/files/usr/bin/perl"
+        );
     }
 }

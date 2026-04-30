@@ -4,7 +4,6 @@
 use skia_safe::{
     surfaces, Color, Paint, PaintStyle, Rect, Font, FontMgr, FontStyle,
 };
-use std::cmp::{min, max};
 
 // ============================================================
 // 辅助函数：从 pixmap 获取指定坐标的 ARGB 颜色
@@ -512,7 +511,7 @@ fn test_full_frame_rendering_simulation() {
     let text_r = (text_area >> 16) & 0xFF;
     let text_g = (text_area >> 8) & 0xFF;
     let text_b = text_area & 0xFF;
-    let text_a = (text_area >> 24) & 0xFF;
+    let _text_a = (text_area >> 24) & 0xFF;
     // 亮红色 (palette[9] = 0xFFFF0000) 应该高红色分量
     assert!(text_r > 200, "Text area should have red component: R={} G={} B={} A={:#010X}", text_r, text_g, text_b, text_area);
 

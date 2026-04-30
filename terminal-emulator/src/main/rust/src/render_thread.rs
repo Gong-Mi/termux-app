@@ -4,7 +4,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use jni::sys::{jint, jlong};
 
 use crate::utils::{android_log, LogPriority};
-use crate::engine::TerminalContext;
 use crate::vulkan_context::VulkanContext;
 use crate::renderer::{TerminalRenderer, RenderFrame};
 use once_cell::sync::OnceCell;

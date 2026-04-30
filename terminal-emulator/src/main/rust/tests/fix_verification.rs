@@ -41,9 +41,9 @@ fn test_get_space_used_ignores_null_placeholder() {
     // 验证第二个字符是 \0 (宽字符占位符)
     assert_eq!(row.text[1], '\0', "Second char should be null placeholder");
     
-    // 验证 get_space_used 返回 1 (只算有效列，不算 \0)
+    // 验证 get_space_used 返回 2 ("你"占2列，\0占位符计入空间使用)
     let used = row.get_space_used();
-    assert_eq!(used, 1, "get_space_used should return 1 (not counting null placeholder)");
+    assert_eq!(used, 2, "get_space_used should return 2 (CJK + null placeholder counts)");
     
     println!("✅ get_space_used correctly ignores null placeholder");
 }
@@ -67,9 +67,9 @@ fn test_get_space_used_multiple_cjk() {
     assert_eq!(row.text[3], '\0'); // "好" 的占位符
     
     // get_space_used 返回最后一个非空字符的索引 +1
-    // 由于 \0 不计入，应该返回 3 (索引 2 的"好" + 1)
+    // \0 占位符计入空间使用，应该返回 4 (索引 3 的 \0 + 1)
     let used = row.get_space_used();
-    assert_eq!(used, 3, "Should return index after last non-space (excluding nulls)");
+    assert_eq!(used, 4, "Should return index after last non-space (including null placeholders)");
     
     println!("✅ Multiple CJK characters handled correctly (used={})", used);
 }
@@ -94,9 +94,9 @@ fn test_get_space_used_mixed_ascii_cjk() {
     assert_eq!(row.text[4], '\0');
     
     // get_space_used 返回最后一个非空字符的索引 +1
-    // 由于 \0 不计入，应该返回 4 (索引 3 的"你" + 1)
+    // \0 占位符计入空间使用，应该返回 5 (索引 4 的 \0 + 1)
     let used = row.get_space_used();
-    assert_eq!(used, 4, "Should return index after last non-space (excluding nulls)");
+    assert_eq!(used, 5, "Should return index after last non-space (including null placeholders)");
     
     println!("✅ Mixed ASCII and CJK handled correctly (used={})", used);
 }

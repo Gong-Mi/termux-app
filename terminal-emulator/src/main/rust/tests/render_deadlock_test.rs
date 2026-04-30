@@ -38,7 +38,7 @@ fn test_rwlock_write_starvation() {
 
     // 读线程：模拟渲染循环的 try_read 行为
     let reader_ctx = ctx.clone();
-    let reader_fail_count = _reader_fail_count.clone();
+    let _reader_fail_count = _reader_fail_count.clone();
     let reader = thread::spawn(move || {
         let mut failures = 0;
         for _ in 0..100 {

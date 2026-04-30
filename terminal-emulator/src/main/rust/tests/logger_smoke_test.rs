@@ -1,8 +1,9 @@
-use log::LevelFilter;
-use android_logger::Config;
-
+#[cfg(target_os = "android")]
 #[test]
 fn test_logger_config_is_valid() {
+    use log::LevelFilter;
+    use android_logger::Config;
+
     // 验证能够通过编译并初始化配置
     let config = Config::default()
         .with_max_level(LevelFilter::Debug)

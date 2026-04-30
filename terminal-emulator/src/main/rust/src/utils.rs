@@ -1,4 +1,3 @@
-use std::ffi::CString;
 
 pub enum LogPriority {
     VERBOSE = 2,

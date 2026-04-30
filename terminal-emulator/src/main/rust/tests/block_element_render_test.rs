@@ -286,7 +286,7 @@ fn test_eighth_block_characters() {
 /// Test that block element characters are routed to the correct font (not sans-serif fallback)
 #[test]
 fn test_block_element_font_routing() {
-    let renderer = TerminalRenderer::new(&[], 12.0, None);
+    let renderer = TerminalRenderer::new(&[], 12.0, None).unwrap();
 
     // Block elements are in the 0x2500-0x25FF range, which is > 127,
     // so get_font() will route them based on has_non_ascii

@@ -676,3 +676,291 @@ impl ScreenState {
         // Implementation of flat buffer sync if needed
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -------------------------------------------------------------------------
+    // Selection::normalize
+    // -------------------------------------------------------------------------
+    #[test]
+    fn selection_normalize_forward() {
+        let sel = Selection { x1: 2, y1: 1, x2: 5, y2: 3 };
+        assert_eq!(sel.normalize(), (2, 1, 5, 3));
+    }
+
+    #[test]
+    fn selection_normalize_backward() {
+        let sel = Selection { x1: 5, y1: 3, x2: 2, y2: 1 };
+        assert_eq!(sel.normalize(), (2, 1, 5, 3));
+    }
+
+    #[test]
+    fn selection_normalize_same_row_reversed() {
+        let sel = Selection { x1: 5, y1: 2, x2: 1, y2: 2 };
+        assert_eq!(sel.normalize(), (1, 2, 5, 2));
+    }
+
+    // -------------------------------------------------------------------------
+    // ScreenState initialization
+    // -------------------------------------------------------------------------
+    #[test]
+    fn screen_state_new_defaults() {
+        let state = ScreenState::new(80, 24, 1000, 10, 20);
+        assert_eq!(state.cols, 80);
+        assert_eq!(state.rows, 24);
+        assert!(!state.use_alternate_buffer);
+        assert_eq!(state.cursor.x, 0);
+        assert_eq!(state.cursor.y, 0);
+        assert!(state.cursor_enabled);
+        assert!(state.auto_wrap());
+        assert_eq!(state.top_margin, 0);
+        assert_eq!(state.bottom_margin, 24);
+        assert_eq!(state.left_margin, 0);
+        assert_eq!(state.right_margin, 80);
+        assert!(state.selection.is_none());
+    }
+
+    #[test]
+    fn screen_state_tab_stops_initialized() {
+        let state = ScreenState::new(80, 24, 100, 8, 16);
+        assert!(!state.tab_stops[0]);
+        assert!(!state.tab_stops[7]);
+        assert!(state.tab_stops[8]);
+        assert!(!state.tab_stops[9]);
+        assert!(state.tab_stops[16]);
+        assert!(state.tab_stops[72]);
+        assert!(!state.tab_stops[79]);
+    }
+
+    // -------------------------------------------------------------------------
+    // Selection management
+    // -------------------------------------------------------------------------
+    #[test]
+    fn set_and_clear_selection() {
+        let mut state = ScreenState::new(80, 24, 100, 8, 16);
+        assert!(!state.is_selection_active());
+        state.set_selection(1, 2, 3, 4);
+        assert!(state.is_selection_active());
+        state.clear_selection();
+        assert!(!state.is_selection_active());
+    }
+
+    // -------------------------------------------------------------------------
+    // Alternate buffer switching
+    // -------------------------------------------------------------------------
+    #[test]
+    fn alternate_buffer_switch() {
+        let mut state = ScreenState::new(80, 24, 1000, 8, 16);
+        assert!(!state.is_alternate_buffer_active());
+        assert_eq!(state.get_current_screen().buffer.len(), 1000);
+
+        state.set_alternate_buffer(true);
+        assert!(state.is_alternate_buffer_active());
+        assert_eq!(state.get_current_screen().buffer.len(), 24);
+
+        state.set_alternate_buffer(false);
+        assert!(!state.is_alternate_buffer_active());
+        assert_eq!(state.get_current_screen().buffer.len(), 1000);
+    }
+
+    // -------------------------------------------------------------------------
+    // Resize
+    // -------------------------------------------------------------------------
+    #[test]
+    fn resize_updates_dimensions() {
+        let mut state = ScreenState::new(80, 24, 100, 8, 16);
+        state.resize(100, 30);
+        assert_eq!(state.cols, 100);
+        assert_eq!(state.rows, 30);
+        assert_eq!(state.top_margin, 0);
+        assert_eq!(state.bottom_margin, 30);
+        assert_eq!(state.right_margin, 100);
+    }
+
+    #[test]
+    fn resize_clamps_cursor() {
+        let mut state = ScreenState::new(10, 5, 100, 8, 16);
+        state.cursor.x = 8;
+        state.cursor.y = 4;
+        state.resize(5, 3);
+        assert!(state.cursor.x < state.cols);
+        assert!(state.cursor.y < state.rows);
+    }
+
+    // -------------------------------------------------------------------------
+    // Margins
+    // -------------------------------------------------------------------------
+    #[test]
+    fn set_margins_clamps() {
+        let mut state = ScreenState::new(80, 24, 100, 8, 16);
+        state.set_margins(5, 20);
+        assert_eq!(state.top_margin, 4);
+        assert_eq!(state.bottom_margin, 20);
+    }
+
+    #[test]
+    fn set_margins_out_of_bounds() {
+        let mut state = ScreenState::new(10, 5, 100, 8, 16);
+        state.set_margins(0, 100);
+        assert_eq!(state.top_margin, 0);
+        assert_eq!(state.bottom_margin, 5);
+    }
+
+    #[test]
+    fn set_left_right_margins() {
+        let mut state = ScreenState::new(80, 24, 100, 8, 16);
+        state.set_left_right_margins(10, 70);
+        assert_eq!(state.left_margin, 9);
+        assert_eq!(state.right_margin, 70);
+    }
+
+    // -------------------------------------------------------------------------
+    // Cursor absolute positioning
+    // -------------------------------------------------------------------------
+    #[test]
+    fn cursor_horizontal_absolute() {
+        let mut state = ScreenState::new(80, 24, 100, 8, 16);
+        state.cursor_horizontal_absolute(10);
+        assert_eq!(state.cursor.x, 9);
+    }
+
+    #[test]
+    fn cursor_horizontal_absolute_clamps() {
+        let mut state = ScreenState::new(10, 5, 100, 8, 16);
+        state.cursor_horizontal_absolute(100);
+        assert_eq!(state.cursor.x, 9);
+        state.cursor_horizontal_absolute(0);
+        assert_eq!(state.cursor.x, 0);
+    }
+
+    #[test]
+    fn cursor_vertical_absolute() {
+        let mut state = ScreenState::new(80, 24, 100, 8, 16);
+        state.cursor_vertical_absolute(12);
+        assert_eq!(state.cursor.y, 11);
+    }
+
+    // -------------------------------------------------------------------------
+    // Tab stops
+    // -------------------------------------------------------------------------
+    #[test]
+    fn clear_tab_stop_single() {
+        let mut state = ScreenState::new(80, 24, 100, 8, 16);
+        assert!(state.tab_stops[16]);
+        state.cursor.x = 16;
+        state.clear_tab_stop(0);
+        assert!(!state.tab_stops[16]);
+    }
+
+    #[test]
+    fn clear_all_tab_stops() {
+        let mut state = ScreenState::new(80, 24, 100, 8, 16);
+        state.clear_tab_stop(3);
+        assert!(state.tab_stops.iter().all(|&t| !t));
+    }
+
+    // -------------------------------------------------------------------------
+    // Reset commands
+    // -------------------------------------------------------------------------
+    #[test]
+    fn reset_to_initial_state_clears() {
+        let mut state = ScreenState::new(80, 24, 100, 8, 16);
+        state.set_alternate_buffer(true);
+        state.cursor.x = 10;
+        state.cursor.y = 5;
+        state.selection = Some(Selection { x1: 0, y1: 0, x2: 1, y2: 1 });
+        state.reset_to_initial_state();
+        assert!(!state.is_alternate_buffer_active());
+        assert_eq!(state.cursor.x, 0);
+        assert_eq!(state.cursor.y, 0);
+        assert!(state.auto_wrap());
+    }
+
+    #[test]
+    fn decstr_soft_reset() {
+        let mut state = ScreenState::new(80, 24, 100, 8, 16);
+        state.modes.set(MODE_INSERT);
+        state.modes.set(MODE_LNM);
+        state.cursor_enabled = false;
+        state.application_cursor_keys = true;
+        state.mouse_tracking = true;
+        state.decstr_soft_reset();
+        assert!(!state.modes.is_enabled(MODE_INSERT));
+        assert!(!state.modes.is_enabled(MODE_LNM));
+        assert!(state.cursor_enabled);
+        assert!(!state.application_cursor_keys);
+        assert!(!state.mouse_tracking);
+        assert!(state.auto_wrap());
+    }
+
+    // -------------------------------------------------------------------------
+    // Scroll counter with selection tracking
+    // -------------------------------------------------------------------------
+    #[test]
+    fn scroll_up_increments_counter_on_full_screen() {
+        let mut state = ScreenState::new(80, 24, 100, 8, 16);
+        state.scroll_up();
+        assert_eq!(state.scroll_counter, 1);
+        state.scroll_up();
+        assert_eq!(state.scroll_counter, 2);
+    }
+
+    #[test]
+    fn scroll_up_does_not_increment_with_margins() {
+        let mut state = ScreenState::new(80, 24, 100, 8, 16);
+        state.set_margins(2, 10);
+        state.scroll_up();
+        assert_eq!(state.scroll_counter, 0);
+    }
+
+    #[test]
+    fn scroll_up_moves_selection() {
+        let mut state = ScreenState::new(80, 24, 100, 8, 16);
+        state.set_selection(0, 5, 10, 8);
+        state.scroll_up();
+        let sel = state.selection.unwrap();
+        assert_eq!(sel.y1, 4);
+        assert_eq!(sel.y2, 7);
+    }
+
+    #[test]
+    fn erase_in_display_mode3_clears_scroll_counter() {
+        let mut state = ScreenState::new(80, 24, 100, 8, 16);
+        state.scroll_counter = 42;
+        state.erase_in_display(3);
+        assert_eq!(state.scroll_counter, 0);
+    }
+
+    // -------------------------------------------------------------------------
+    // Paste / bracketed paste
+    // -------------------------------------------------------------------------
+    #[test]
+    fn paste_bracketed_enabled() {
+        let mut state = ScreenState::new(80, 24, 100, 8, 16);
+        state.bracketed_paste = true;
+        // We can't easily test report_terminal_response without JNI,
+        // but we can verify the mode is respected structurally.
+        assert!(state.bracketed_paste);
+    }
+
+    #[test]
+    fn paste_bracketed_disabled() {
+        let mut state = ScreenState::new(80, 24, 100, 8, 16);
+        state.bracketed_paste = false;
+        assert!(!state.bracketed_paste);
+    }
+
+    // -------------------------------------------------------------------------
+    // Debug info
+    // -------------------------------------------------------------------------
+    #[test]
+    fn debug_info_contains_dimensions() {
+        let state = ScreenState::new(80, 24, 100, 8, 16);
+        let info = state.get_debug_info();
+        assert!(info.contains("80"));
+        assert!(info.contains("24"));
+        assert!(info.contains("cursor="));
+    }
+}

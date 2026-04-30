@@ -25,7 +25,7 @@ fn main() {
     let base_w = 11.0f32; // "sans-serif" 的基准宽度
 
     for row in rows {
-        let (cp, actual_w, expected_w, direction, category) = row.unwrap();
+        let (cp, actual_w, expected_w, _direction, category) = row.unwrap();
         let ch = std::char::from_u32(cp).unwrap_or(' ');
         let units = actual_w / base_w;
         

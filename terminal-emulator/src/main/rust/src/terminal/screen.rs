@@ -1061,7 +1061,7 @@ mod tests {
         // Rows 1-4 are blank.
         // Cursor is at (0, 3) - row 3.
         
-        let (nx, ny) = s.resize_with_reflow(10, 5, 0, 0, 3);
+        let (_nx, ny) = s.resize_with_reflow(10, 5, 0, 0, 3);
         
         // The cursor position should be preserved relative to the content.
         // If blank lines are skipped and not accounted for, ny might become 1.

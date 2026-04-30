@@ -1,8 +1,4 @@
 use rusqlite::{Connection, OpenFlags};
-use argon2::{
-    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
-    Argon2,
-};
 use std::fs;
 use std::path::Path;
 use std::os::unix::fs::PermissionsExt;
