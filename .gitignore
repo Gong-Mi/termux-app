@@ -41,3 +41,8 @@ local_gemini_*.log
 
 # Git worktree for comparing with master branch
 .gitignore-workspaces/
+
+# Rust build artifacts
+**/target/
+**/jniLibs/*.so
+**/*.rs.bk
