@@ -30,7 +30,6 @@ import android.widget.OverScroller
 import androidx.annotation.RequiresApi
 import com.termux.terminal.TerminalEmulator
 import com.termux.terminal.TerminalSession
-import com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences
 import com.termux.view.textselection.TextSelectionCursorController
 
 /** View displaying and interacting with a [TerminalSession]. */
@@ -38,10 +37,6 @@ class TerminalView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
 ) : SurfaceView(context, attrs), SurfaceHolder.Callback {
-
-    private val mPreferences: TermuxAppSharedPreferences by lazy {
-        TermuxAppSharedPreferences.build(context) ?: throw IllegalStateException("Failed to build preferences")
-    }
 
     companion object {
         private var TERMINAL_VIEW_KEY_LOGGING_ENABLED = false
@@ -181,7 +176,7 @@ class TerminalView @JvmOverloads constructor(
                 } else {
                     scrolledWithFinger = true
                     
-                    val algorithm = mPreferences.getTouchAlgorithm()
+                    val algorithm = mClient?.getTouchAlgorithm() ?: "adaptive"
                     val distY = when (algorithm) {
                         "adaptive" -> {
                             // 核心逻辑：实现类似亮度调节的非线性对数阻尼 (Logarithmic Damping)
@@ -232,7 +227,7 @@ class TerminalView @JvmOverloads constructor(
                 val mouseTracking = emu.isMouseTrackingActive()
                 val lineSpacing = getFontLineSpacing()
 
-                val algorithm = mPreferences.getTouchAlgorithm()
+                val algorithm = mClient?.getTouchAlgorithm() ?: "adaptive"
                 updateScrollerFriction(algorithm)
                 
                 val scaledVelocity = when (algorithm) {
@@ -316,7 +311,6 @@ class TerminalView @JvmOverloads constructor(
         })
 
         mScroller = OverScroller(context)
-        updateScrollerFriction(mPreferences.getTouchAlgorithm())
         val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
         mAccessibilityEnabled = am.isEnabled
     }
