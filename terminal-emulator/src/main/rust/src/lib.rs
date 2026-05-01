@@ -8,6 +8,10 @@
 //! - JNI 接口供 Java 层调用
 
 use once_cell::sync::OnceCell;
+use std::sync::Mutex;
+
+/// 全局存储 Termux 应用版本号（由 Java 层通过 JNI 传入）
+pub static TERMUX_VERSION: OnceCell<Mutex<String>> = OnceCell::new();
 
 // 声明子模块
 pub mod wcwidth;

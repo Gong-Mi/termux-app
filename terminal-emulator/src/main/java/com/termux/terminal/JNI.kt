@@ -83,6 +83,9 @@ internal object JNI {
     @JvmStatic external fun sessionGetPtyFd(enginePtr: Long): Int
     @JvmStatic external fun sessionIsRunning(enginePtr: Long): Boolean
 
+    // --- Termux 元数据 ---
+    @JvmStatic external fun setTermuxVersion(version: String)
+
     // --- KeyHandler (Rust) ---
     @JvmStatic external fun getKeyCode(keyCode: Int, keyMode: Int, cursorApp: Boolean, keypad: Boolean): String?
     @JvmStatic external fun getKeyCodeFromTermcap(termcap: String, cursorApp: Boolean, keypad: Boolean): String?

@@ -7,7 +7,7 @@
 use jni::JNIEnv;
 use jni::objects::{JClass, JString, JObject, JValue};
 use jni::sys::{jint, jlong, jbyteArray, jboolean, jintArray, jstring, jfloat};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::os::fd::FromRawFd;
 use std::io::Read;
 
@@ -1322,6 +1322,20 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
             android_log(LogPriority::WARN, "[TRACE_SESSION] No callback object provided for createSessionAsync");
         }
     });
+}
+
+/// 设置 Termux 版本号（由 Java Application 初始化时传入）
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_JNI_setTermuxVersion(
+    mut env: JNIEnv,
+    _class: JClass,
+    version: JString,
+) {
+    if let Ok(v) = env.get_string(&version) {
+        let version_str: String = v.into();
+        let _ = crate::TERMUX_VERSION.get_or_init(|| Mutex::new(version_str.clone()));
+        android_log(LogPriority::INFO, &format!("[JNI] TERMUX_VERSION set to: {}", version_str));
+    }
 }
 
 /// 等待进程

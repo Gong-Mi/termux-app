@@ -16,6 +16,7 @@ import com.termux.shared.termux.shell.command.environment.TermuxShellEnvironment
 import com.termux.shared.termux.shell.am.TermuxAmSocketServer;
 import com.termux.shared.termux.shell.TermuxShellManager;
 import com.termux.shared.termux.theme.TermuxThemeUtils;
+import com.termux.terminal.JNI;
 
 public class TermuxApplication extends Application {
 
@@ -33,6 +34,9 @@ public class TermuxApplication extends Application {
         setLogConfig(context);
 
         Logger.logDebug("Starting Application");
+
+        // 将应用版本号传给 Rust 层，供 env_builder 注入 TERMUX_VERSION 环境变量
+        JNI.setTermuxVersion(BuildConfig.VERSION_NAME);
 
         // Set TermuxBootstrap.TERMUX_APP_PACKAGE_MANAGER and TermuxBootstrap.TERMUX_APP_PACKAGE_VARIANT
         TermuxBootstrap.setTermuxPackageManagerAndVariant(BuildConfig.TERMUX_PACKAGE_VARIANT);

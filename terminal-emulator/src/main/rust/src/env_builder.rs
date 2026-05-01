@@ -73,7 +73,7 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
         // 正常模式：注入 Termux 路径
         // Android 7+ 的 upstream 只放 TERMUX_BIN_PREFIX_DIR_PATH，不加 applets。
         // 但当前项目代码历史原因 hardcoded 了 applets，为兼容保留。
-        let termux_bin_path = format!("{}:{}:{}", termux_prefix, "usr/bin", "usr/bin/applets");
+        let termux_bin_path = format!("{}/bin:{}/bin/applets", termux_prefix, termux_prefix);
         if let Ok(sys_path) = std::env::var("PATH") {
             // Prepend Termux 路径，保持系统路径作为 fallback
             env.insert("PATH".to_string(), format!("{}:{}", termux_bin_path, sys_path));
@@ -92,7 +92,16 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
     }
 
     // ------------------------------------------------------------------
-    // 5. PWD（工作目录）
+    // 5. Termux 版本号（clipboardy 等库依赖此变量检测 Termux 环境）
+    // ------------------------------------------------------------------
+    if let Some(version_mutex) = crate::TERMUX_VERSION.get() {
+        if let Ok(version) = version_mutex.lock() {
+            env.insert("TERMUX_VERSION".to_string(), version.clone());
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 6. PWD（工作目录）
     // ------------------------------------------------------------------
     let pwd = if !cwd.is_empty() {
         // 尽量使用绝对路径；如果 cwd 是相对路径，保留原样（shell 自己会处理）
