@@ -284,6 +284,19 @@ pub fn create_subprocess_with_data(
         tios.c_iflag &= !(libc::IXON | libc::IXOFF);
         libc::tcsetattr(ptm, libc::TCSANOW, &tios);
 
+        // ------------------------------------------------------------------
+        // 预分配所有子进程需要的 CString / Vec —— 必须在 fork() 之前完成。
+        // fork 后子进程中只有一个线程，若其他 Rust 线程在 fork 前持有
+        // 全局分配器锁，子进程再 malloc 会死锁（phantom thread 问题）。
+        // ------------------------------------------------------------------
+        let c_pts = CString::new(devname_str).unwrap();
+        let c_cwd = if cwd_str.is_empty() { None } else { CString::new(cwd_str).ok() };
+        let ptr_args: Vec<_> = c_exec_args.iter().map(|s| s.as_ptr())
+            .chain(std::iter::once(std::ptr::null())).collect();
+        let fallback_cmd = CString::new("/system/bin/sh").unwrap();
+        let fallback_arg0 = CString::new("sh").unwrap();
+        let fallback_args = [fallback_arg0.as_ptr(), std::ptr::null()];
+
         match fork() {
             Ok(ForkResult::Parent { child }) => Ok((ptm, child.as_raw())),
             Ok(ForkResult::Child) => {
@@ -295,7 +308,6 @@ pub fn create_subprocess_with_data(
                 libc::close(ptm);
                 let _ = setsid();
 
-                let c_pts = CString::new(devname_str).unwrap();
                 let pts = libc::open(c_pts.as_ptr(), libc::O_RDWR);
                 if pts < 0 { libc::_exit(-1); }
 
@@ -307,8 +319,7 @@ pub fn create_subprocess_with_data(
                 if pts > 2 { libc::close(pts); }
 
                 // Close inherited file descriptors (except stdio) to match upstream behavior.
-                // Use raw libc::opendir/readdir/closedir (not Rust std::fs::read_dir) so we
-                // can call dirfd() to exclude the directory's own fd from being closed.
+                // 使用纯 libc atoi（无分配），避免 fork 后调用 Rust 分配器。
                 let self_dir = libc::opendir(b"/proc/self/fd\0".as_ptr() as *const _);
                 if !self_dir.is_null() {
                     let self_dir_fd = libc::dirfd(self_dir);
@@ -316,11 +327,9 @@ pub fn create_subprocess_with_data(
                         let entry = libc::readdir(self_dir);
                         if entry.is_null() { break; }
                         let name_ptr = (*entry).d_name.as_ptr();
-                        let name = std::ffi::CStr::from_ptr(name_ptr).to_string_lossy();
-                        if let Ok(fd) = name.parse::<i32>() {
-                            if fd > 2 && fd != self_dir_fd {
-                                libc::close(fd);
-                            }
+                        let fd = libc::atoi(name_ptr);
+                        if fd > 2 && fd != self_dir_fd {
+                            libc::close(fd);
                         }
                     }
                     libc::closedir(self_dir);
@@ -333,35 +342,22 @@ pub fn create_subprocess_with_data(
                 }
 
                 // Change directory.
-                if !cwd_str.is_empty() {
-                    if let Ok(c_cwd) = CString::new(cwd_str) {
-                        let _ = chdir(c_cwd.as_c_str());
-                    }
+                if let Some(ref c_cwd) = c_cwd {
+                    let _ = chdir(c_cwd.as_c_str());
                 }
-
-                let ptr_args: Vec<_> = c_exec_args.iter().map(|s| s.as_ptr())
-                    .chain(std::iter::once(std::ptr::null())).collect();
 
                 // Use execvp to search PATH and match upstream behavior
                 libc::execvp(c_exec_cmd.as_ptr(), ptr_args.as_ptr());
 
                 // --- If we reach here, execvp failed ---
-                let err = std::io::Error::last_os_error();
-                let errno = err.raw_os_error().unwrap_or(0);
-                let err_msg = format!("\r\n[Termux] execvp(\"{}\") failed: {} (errno={})\r\n", 
-                    cmd_log, 
-                    err,
-                    errno
-                );
-                libc::write(2, err_msg.as_ptr() as *const _, err_msg.len());
+                // 使用栈上静态缓冲区，避免 fork 后分配
+                let mut buf = [0u8; 256];
+                let msg = b"\r\n[Termux] execvp() failed (see errno)\r\n";
+                let len = msg.len().min(buf.len());
+                buf[..len].copy_from_slice(&msg[..len]);
+                libc::write(2, buf.as_ptr() as *const _, len);
 
                 // Fallback to /system/bin/sh as last resort
-                android_log(LogPriority::WARN, &format!("[TRACE_SESSION] execvp failed (errno={}), falling back to /system/bin/sh", errno));
-                
-                let fallback_cmd = CString::new("/system/bin/sh").unwrap();
-                let fallback_arg0 = CString::new("sh").unwrap();
-                let fallback_args = [fallback_arg0.as_ptr(), std::ptr::null()];
-                
                 libc::execvp(fallback_cmd.as_ptr(), fallback_args.as_ptr());
                 libc::_exit(1);
             }
