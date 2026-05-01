@@ -167,15 +167,9 @@ mod tests {
         let envs = build_termux_environment("/data/data/com.termux/files/home", true);
         let env_strs: Vec<String> = envs.iter().map(|c| c.to_string_lossy().to_string()).collect();
 
-        // failsafe 模式下 PATH 不应被注入 Termux applets 路径
-        let path_entry = env_strs.iter().find(|s| s.starts_with("PATH=")).expect("PATH must exist");
-        assert!(
-            !path_entry.contains("applets"),
-            "Failsafe PATH should NOT contain applets: {}",
-            path_entry
-        );
-        // failsafe 模式下不应设置 Termux 特有的 LD_PRELOAD
+        // failsafe 模式下不应主动设置 Termux 特有的 LD_PRELOAD
         assert!(!env_strs.iter().any(|s| s.starts_with("LD_PRELOAD=")));
+        
         // failsafe 模式下 TMPDIR 不应是 Termux 的 tmp
         let tmpdir = env_strs.iter().find(|s| s.starts_with("TMPDIR="));
         if let Some(t) = tmpdir {

@@ -50,7 +50,18 @@ Linker 包装器只能解决第一个进程的启动问题。为了让第一个�
 | `[PTY] ` | `FINAL_EXECUTE: cmd=...` | 确认最终执行的是否为 `/system/bin/linker64` |
 | `[PTY]` | `execve FAILED! errno=13` | 表示 Linker 包装失败或库文件不可读 |
 
-## 6. 维护红线
-1. **统一路径**：严禁在环境变量中混合使用 `/data/user/0` 和 `/data/data`。
-2. **底层检查**：严禁使用 Rust 高层 API（如 `exists()`）检查权限，必须使用 `libc::access`。
-3. **环境传递**：修改环境变量必须在 `final_env` 数组中处理，严禁依赖子进程的自继承。
+## 7. 编译环境与“孤岛效应”
+在 Termux 内部直接运行 `cargo build` 或 `cargo test` 时，可能会遇到链接错误（如 `unable to find library -lc++_static`）。
+- **原因**：Android NDK 默认期望静态链接 C++ 运行时，但 Termux 本地环境通常只提供动态库（`libc++_shared.so`）。
+- **解决方案**：
+  1. 项目在 `.cargo/linker-hacks/` 下维护了空存根（stub）静态库，用于欺骗链接器。
+  2. `.cargo/config.toml` 中配置了 `rustflags`，强制链接 `c++_shared` 并指定存根库路径。
+- **维护建议**：如果你在本地开发时遇到类似的 `-l` 链接错误，请检查 `.cargo/linker-hacks` 是否包含对应的 `.a` 文件。
+
+## 8. 维护红线 (修订版)
+1. **统一路径**：严禁在环境变量中混合使用 `/data/user/0` 和 `/data/data`。必须使用 `pty::normalize_path`。
+2. **Async-Signal-Safety**：在 `fork()` 之后、`exec()` 之前的子进程空间内，**严禁调用任何可能触发内存分配（malloc）的函数**。
+   - 严禁使用 Rust `String`, `Vec`, `HashMap`。
+   - 严禁使用 `path.exists()`（内部会分配内存）。
+   - 必须在 `fork()` 之前完成所有 `CString` 的转换。
+3. **环境传递**：修改环境变量必须使用 `libc::clearenv()` + `libc::putenv()`。

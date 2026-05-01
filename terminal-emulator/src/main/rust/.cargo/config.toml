@@ -9,6 +9,8 @@ protocol = "sparse"
 #
 rustflags = [
     "-C", "link-arg=-Wl,-z,max-page-size=16384",
+    "-L", "native=./.cargo/linker-hacks",
+    "-l", "c++_shared",
 ]
 
 # Android ARM64 特定配置
@@ -18,6 +20,8 @@ rustflags = [
 rustflags = [
     "-C", "link-arg=-Wl,-z,max-page-size=16384",
     "-C", "target-feature=+neon",
+    "-L", "native=./.cargo/linker-hacks",
+    "-l", "c++_shared",
 ]
 
 # Android ARMv7 特定配置
