@@ -16,10 +16,10 @@ class RustAndroidPlugin implements Plugin<Project> {
 
             def ndkAbis = project.android.defaultConfig.ndk.abiFilters
             if (!ndkAbis) {
-                // Fall back to splits.abi.include if ndk.abiFilters is not set
-                def abiSplit = project.android.splits.abi
-                if (abiSplit.include) {
-                    ndkAbis = abiSplit.include
+                // Respect FAST_BUILD_ABI env var used by CI, otherwise build all ABIs
+                def fastBuildAbi = System.getenv("FAST_BUILD_ABI")
+                if (fastBuildAbi) {
+                    ndkAbis = [fastBuildAbi]
                 } else {
                     ndkAbis = ['arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'] as Set
                 }
