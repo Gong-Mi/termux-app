@@ -235,4 +235,16 @@
     <!-- Donate Preference -->
     <string name="donate_preference_title">Donate</string>
 
-</resources>
+<string name="termux_terminal_view_touch_algorithm_title">Touch Scrolling Algorithm</string>
+<string-array name="termux_terminal_view_touch_algorithm_entries">
+    <item>Standard (Linear)</item>
+    <item>Adaptive (Logarithmic)</item>
+    <item>Natural (Square Root)</item>
+    <item>Momentum (Accelerated)</item>
+</string-array>
+<string-array name="termux_terminal_view_touch_algorithm_values">
+    <item>standard</item>
+    <item>adaptive</item>
+    <item>natural</item>
+    <item>momentum</item>
+</string-array></resources>

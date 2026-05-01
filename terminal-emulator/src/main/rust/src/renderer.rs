@@ -604,14 +604,19 @@ impl TerminalRenderer {
         canvas.save();
         canvas.scale((scale, scale));
 
-        // canvas.translate((0.0, -scroll_offset)); // 不再使用 translate，因为我们已经截取了正确的可见行
+        // 重新启用平移以支持平滑的像素级滚动（子行滚动）
+        // 我们只平移 scroll_offset 相对于行高的余数部分
+        let fine_offset = _scroll_offset % self.font_height;
+        canvas.translate((0.0, -fine_offset));
 
         let rows = frame.rows;
         let cols = frame.cols;
         let global_reverse = frame.reverse_video;
         let top_row = frame.top_row;
 
-        // 先绘制文本行 - 使用预计算的数据，不需要任何锁
+        // 先绘制文本行
+        // 注意：平滑滚动时，最后一行可能会露出部分，所以可能需要多绘制一行
+        // 但 RenderFrame 已经预取了数据，我们尽量在现有数据内绘制
         for r in 0..rows as i32 {
             let absolute_row = top_row + r;
             let row = &frame.row_data[r as usize];

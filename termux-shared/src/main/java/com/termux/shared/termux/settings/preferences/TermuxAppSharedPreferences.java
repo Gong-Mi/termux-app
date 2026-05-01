@@ -228,10 +228,18 @@ public class TermuxAppSharedPreferences extends AppSharedPreferences {
         return SharedPreferenceUtils.getBoolean(mSharedPreferences, TERMUX_APP.KEY_TERMINAL_VIEW_KEY_LOGGING_ENABLED, TERMUX_APP.DEFAULT_VALUE_TERMINAL_VIEW_KEY_LOGGING_ENABLED);
     }
 
-    public void setTerminalViewKeyLoggingEnabled(boolean value) {
+    public void setTerminalViewKey_loggingEnabled(boolean value) {
         SharedPreferenceUtils.setBoolean(mSharedPreferences, TERMUX_APP.KEY_TERMINAL_VIEW_KEY_LOGGING_ENABLED, value, false);
     }
 
+
+    public String getTouchAlgorithm() {
+        return SharedPreferenceUtils.getString(mSharedPreferences, TERMUX_APP.KEY_TOUCH_ALGORITHM, TERMUX_APP.DEFAULT_VALUE_TOUCH_ALGORITHM);
+    }
+
+    public void setTouchAlgorithm(String value) {
+        SharedPreferenceUtils.setString(mSharedPreferences, TERMUX_APP.KEY_TOUCH_ALGORITHM, value, false);
+    }
 
 
     public boolean arePluginErrorNotificationsEnabled(boolean readFromFile) {

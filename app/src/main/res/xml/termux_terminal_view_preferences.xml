@@ -10,6 +10,13 @@
             app:summaryOn="@string/termux_terminal_view_terminal_margin_adjustment_on"
             app:title="@string/termux_terminal_view_terminal_margin_adjustment_title" />
 
+        <ListPreference
+            app:defaultValue="adaptive"
+            app:entries="@array/termux_terminal_view_touch_algorithm_entries"
+            app:entryValues="@array/termux_terminal_view_touch_algorithm_values"
+            app:key="touch_algorithm"
+            app:title="@string/termux_terminal_view_touch_algorithm_title" />
+
     </PreferenceCategory>
 
 </PreferenceScreen>

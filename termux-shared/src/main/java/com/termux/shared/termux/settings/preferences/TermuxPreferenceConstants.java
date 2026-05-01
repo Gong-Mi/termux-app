@@ -169,6 +169,13 @@ public final class TermuxPreferenceConstants {
         public static final boolean DEFAULT_VALUE_TERMINAL_VIEW_KEY_LOGGING_ENABLED = false;
 
         /**
+         * Defines the key for terminal view touch/scroll algorithm.
+         * Values: "standard", "adaptive"
+         */
+        public static final String KEY_TOUCH_ALGORITHM = "touch_algorithm";
+        public static final String DEFAULT_VALUE_TOUCH_ALGORITHM = "adaptive";
+
+        /**
          * Defines the key for whether flashes and notifications for plugin errors are enabled or not.
          */
         public static final String KEY_PLUGIN_ERROR_NOTIFICATIONS_ENABLED = "plugin_error_notifications_enabled";

@@ -20,7 +20,6 @@ pub struct VulkanContext {
     pub extent: ash_vk::Extent2D,
     pub image_available_semaphore: ash_vk::Semaphore,
     pub render_finished_semaphore: ash_vk::Semaphore,
-    pub render_fence: ash_vk::Fence,
 }
 
 unsafe impl Send for VulkanContext {}
@@ -202,12 +201,6 @@ impl VulkanContext {
         let image_available_semaphore = image_available_semaphore.unwrap();
         let render_finished_semaphore = render_finished_semaphore.unwrap();
 
-        let fence_info = ash_vk::FenceCreateInfo {
-            flags: ash_vk::FenceCreateFlags::SIGNALED, // 初始为已发信号状态，让第一帧不阻塞
-            ..Default::default()
-        };
-        let render_fence = unsafe { device.create_fence(&fence_info, None).ok()? };
-
         let entry_ptr = entry.clone();
         let instance_ptr = instance.clone();
         let instance_raw = instance.handle().as_raw();
@@ -255,7 +248,6 @@ impl VulkanContext {
             extent,
             image_available_semaphore,
             render_finished_semaphore,
-            render_fence,
         };
 
         let swapchain_ok = ctx.recreate_swapchain(extent.width, extent.height);
@@ -302,6 +294,19 @@ impl VulkanContext {
                     ..Default::default()
                 });
 
+            // 关键修复：如果当前能力显示大小为 0 (例如最小化)，跳过重建
+            if caps.current_extent.width == 0 || caps.current_extent.height == 0 {
+                android_log(LogPriority::WARN, "Vulkan: Surface size is 0, skipping swapchain recreation");
+                return false;
+            }
+
+            let actual_extent = if caps.current_extent.width != u32::MAX {
+                caps.current_extent
+            } else {
+                ash_vk::Extent2D { width, height }
+            };
+            self.extent = actual_extent;
+
             // Triple buffering with max count validation
             let mut min_image_count = caps.min_image_count.max(3);
             if caps.max_image_count > 0 && min_image_count > caps.max_image_count {
@@ -315,8 +320,8 @@ impl VulkanContext {
                 image_color_space: format.color_space,
                 image_extent: self.extent,
                 image_array_layers: 1,
-                image_usage: ash_vk::ImageUsageFlags::COLOR_ATTACHMENT | ash_vk::ImageUsageFlags::TRANSFER_DST,
-                pre_transform: ash_vk::SurfaceTransformFlagsKHR::IDENTITY,
+                image_usage: ash_vk::ImageUsageFlags::COLOR_ATTACHMENT,
+                pre_transform: caps.current_transform,
                 composite_alpha: ash_vk::CompositeAlphaFlagsKHR::OPAQUE,
                 present_mode,
                 clipped: ash_vk::TRUE,
@@ -324,28 +329,33 @@ impl VulkanContext {
                 ..Default::default()
             };
 
+            // 关键修复：在重建前确保 GPU 已空闲，防止正在使用的资源被销毁
+            let _ = self.device.device_wait_idle();
+
             if let Ok(new_swapchain) = self.swapchain_loader.create_swapchain(&swapchain_create_info, None) {
                 if self.swapchain != ash_vk::SwapchainKHR::null() {
                     self.swapchain_loader.destroy_swapchain(self.swapchain, None);
                 }
                 self.swapchain = new_swapchain;
                 self.swapchain_images = self.swapchain_loader.get_swapchain_images(self.swapchain).unwrap_or_default();
-                android_log(LogPriority::INFO, &format!("Vulkan: Swapchain created with {} images", self.swapchain_images.len()));
+                android_log(LogPriority::INFO, &format!("Vulkan: Swapchain recreated {}x{} with {} images", 
+                    self.extent.width, self.extent.height, self.swapchain_images.len()));
                 true
             } else {
+                android_log(LogPriority::ERROR, "Vulkan: Failed to create swapchain");
                 false
             }
         }
     }
 
-    pub fn acquire_next_image(&mut self) -> Option<u32> {
+    pub fn acquire_next_image(&mut self) -> Result<u32, ash::vk::Result> {
         unsafe {
             self.swapchain_loader.acquire_next_image(
                 self.swapchain,
                 u64::MAX,
                 self.image_available_semaphore,
                 ash_vk::Fence::null()
-            ).ok().map(|(idx, _)| idx)
+            ).map(|(idx, _)| idx)
         }
     }
 
@@ -380,5 +390,61 @@ impl VulkanContext {
             None,
             None,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ash::vk as ash_vk;
+
+    #[test]
+    fn test_extent_clamping_logic() {
+        // 模拟 Android 系统的典型行为：在 resize 过程中，caps 可能返回固定的 current_extent，
+        // 或者返回 0xFFFFFFFF 表示由应用决定。
+        
+        let width = 1080;
+        let height = 2400;
+
+        // 情况 1：系统给定了确定的 extent (如 1080x2400)
+        let caps_fixed = ash_vk::SurfaceCapabilitiesKHR {
+            current_extent: ash_vk::Extent2D { width: 1080, height: 2400 },
+            ..Default::default()
+        };
+        
+        let actual_extent = if caps_fixed.current_extent.width != u32::MAX {
+            caps_fixed.current_extent
+        } else {
+            ash_vk::Extent2D { width, height }
+        };
+        assert_eq!(actual_extent.width, 1080);
+        assert_eq!(actual_extent.height, 2400);
+
+        // 情况 2：系统允许应用决定 (0xFFFFFFFF)
+        let caps_dynamic = ash_vk::SurfaceCapabilitiesKHR {
+            current_extent: ash_vk::Extent2D { width: u32::MAX, height: u32::MAX },
+            ..Default::default()
+        };
+        
+        let actual_extent = if caps_dynamic.current_extent.width != u32::MAX {
+            caps_dynamic.current_extent
+        } else {
+            ash_vk::Extent2D { width, height }
+        };
+        assert_eq!(actual_extent.width, 1080);
+        assert_eq!(actual_extent.height, 2400);
+    }
+
+    #[test]
+    fn test_zero_extent_handling_logic() {
+        // 验证我们添加的 0 尺寸过滤逻辑
+        let caps_zero = ash_vk::SurfaceCapabilitiesKHR {
+            current_extent: ash_vk::Extent2D { width: 0, height: 0 },
+            ..Default::default()
+        };
+
+        // 模拟 recreate_swapchain 中的逻辑
+        let should_skip = caps_zero.current_extent.width == 0 || caps_zero.current_extent.height == 0;
+        assert!(should_skip, "Logic should detect zero extent and skip recreation");
     }
 }

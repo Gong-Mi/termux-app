@@ -159,8 +159,11 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
             // 3. 销毁 Vulkan 上下文
             if let Some(mutex) = render_thread::get_vulkan_context().get() {
                 let mut guard = mutex.lock().unwrap();
+                if let Some(ctx) = guard.as_mut() {
+                    unsafe { let _ = ctx.device.device_wait_idle(); }
+                }
                 *guard = None;
-                android_log(LogPriority::INFO, "nativeSetSurface: Vulkan context destroyed");
+                android_log(LogPriority::INFO, "nativeSetSurface: Vulkan context destroyed after wait_idle");
             }
             return;
         }

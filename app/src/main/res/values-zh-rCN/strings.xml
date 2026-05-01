@@ -165,4 +165,11 @@
     <string name="about_preference_title">关于</string>
     <string name="donate_preference_title">捐赠</string>
 
+    <string name="termux_terminal_view_touch_algorithm_title">觸摸滾動算法</string>
+    <string-array name="termux_terminal_view_touch_algorithm_entries">
+        <item>標準 (線性)</item>
+        <item>自適應 (對數)</item>
+        <item>自然 (平方根)</item>
+        <item>加速 (冪律)</item>
+    </string-array>
 </resources>

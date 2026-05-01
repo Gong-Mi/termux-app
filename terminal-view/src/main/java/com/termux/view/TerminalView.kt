@@ -26,10 +26,11 @@ import android.view.autofill.AutofillValue
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
-import android.widget.Scroller
+import android.widget.OverScroller
 import androidx.annotation.RequiresApi
 import com.termux.terminal.TerminalEmulator
 import com.termux.terminal.TerminalSession
+import com.termux.shared.termux.settings.preferences.TermuxAppSharedPreferences
 import com.termux.view.textselection.TextSelectionCursorController
 
 /** View displaying and interacting with a [TerminalSession]. */
@@ -37,6 +38,10 @@ class TerminalView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
 ) : SurfaceView(context, attrs), SurfaceHolder.Callback {
+
+    private val mPreferences: TermuxAppSharedPreferences by lazy {
+        TermuxAppSharedPreferences.build(context) ?: throw IllegalStateException("Failed to build preferences")
+    }
 
     companion object {
         private var TERMINAL_VIEW_KEY_LOGGING_ENABLED = false
@@ -103,7 +108,7 @@ class TerminalView @JvmOverloads constructor(
 
     private var mScaleFactor = 1f
     private lateinit var mGestureRecognizer: GestureAndScaleRecognizer
-    private lateinit var mScroller: Scroller
+    private lateinit var mScroller: OverScroller
     private var mMouseScrollStartX = -1
     private var mMouseScrollStartY = -1
     private var mMouseStartDownTime = -1L
@@ -175,10 +180,38 @@ class TerminalView @JvmOverloads constructor(
                     sendMouseEventCode(e, TerminalEmulator.MOUSE_LEFT_BUTTON_MOVED, true)
                 } else {
                     scrolledWithFinger = true
-                    val distY = distanceY + mScrollRemainder
-                    val deltaRows = (distY / getFontLineSpacing()).toInt()
-                    mScrollRemainder = distY - deltaRows * getFontLineSpacing()
+                    
+                    val algorithm = mPreferences.getTouchAlgorithm()
+                    val distY = when (algorithm) {
+                        "adaptive" -> {
+                            // 核心逻辑：实现类似亮度调节的非线性对数阻尼 (Logarithmic Damping)
+                            val absD = Math.abs(distanceY)
+                            val sign = Math.signum(distanceY)
+                            val k = 20.0f // 阻尼拐点
+                            sign * (Math.log(1.0 + absD / k) * k).toFloat()
+                        }
+                        "natural" -> {
+                            // 自然模式：使用平方根压缩 (Square Root Scaling)
+                            // 提供一种平滑但比对数更轻盈的反馈
+                            val absD = Math.abs(distanceY)
+                            val sign = Math.signum(distanceY)
+                            sign * (Math.sqrt(absD.toDouble() * 15.0)).toFloat()
+                        }
+                        "momentum" -> {
+                            // 加速模式：使用幂律加速 (Power-law Acceleration)
+                            // 越快越有力，适合需要快速翻阅数万行日志的用户
+                            val absD = Math.abs(distanceY)
+                            val sign = Math.signum(distanceY)
+                            sign * (absD * (1.0f + absD / 100.0f))
+                        }
+                        else -> distanceY // 标准线性模式
+                    }
+                    
+                    val totalDistY = distY + mScrollRemainder
+                    val deltaRows = (totalDistY / getFontLineSpacing()).toInt()
+                    mScrollRemainder = totalDistY - deltaRows * getFontLineSpacing()
                     doScroll(e, deltaRows)
+                    updateRenderParamsToRust()
                 }
                 return true
             }
@@ -194,27 +227,75 @@ class TerminalView @JvmOverloads constructor(
 
             override fun onFling(e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
                 val emu = mEmulator ?: return true
-                if (!mScroller.isFinished) return true
+                if (!mScroller.isFinished) mScroller.forceFinished(true)
+
                 val mouseTracking = emu.isMouseTrackingActive()
-                val SCALE = 0.25f
-                if (mouseTracking) {
-                    mScroller.fling(0, 0, 0, -(velocityY * SCALE).toInt(), 0, 0, -emu.getCols() / 2, emu.getCols() / 2)
-                } else {
-                    mScroller.fling(0, mTopRow, 0, -(velocityY * SCALE).toInt(), 0, 0, -emu.getActiveTranscriptRows(), 0)
+                val lineSpacing = getFontLineSpacing()
+
+                val algorithm = mPreferences.getTouchAlgorithm()
+                updateScrollerFriction(algorithm)
+                
+                val scaledVelocity = when (algorithm) {
+                    "adaptive" -> {
+                        // 对数压缩：适合日常使用，防止失控
+                        val absV = Math.abs(velocityY)
+                        val signV = Math.signum(velocityY)
+                        val k = 1500.0f
+                        signV * (Math.log(1.0 + absV / k) * k).toFloat() * 1.5f
+                    }
+                    "natural" -> {
+                        // 平方根映射：手感更轻盈
+                        val absV = Math.abs(velocityY)
+                        val signV = Math.signum(velocityY)
+                        signV * (Math.sqrt(absV.toDouble() * 2000.0)).toFloat()
+                    }
+                    "momentum" -> {
+                        // 幂律加速：让高速滑动更远
+                        velocityY * (1.0f + Math.abs(velocityY) / 8000.0f)
+                    }
+                    else -> velocityY * 0.25f // 标准模式
                 }
+
+                if (mouseTracking) {
+                    mScroller.fling(0, 0, 0, -scaledVelocity.toInt(), 0, 0, -1000, 1000)
+                } else {
+                    val startYPixels = mTopRow * lineSpacing
+                    val minScrollPixels = -emu.getActiveTranscriptRows() * lineSpacing
+
+                    mScroller.fling(
+                        0, startYPixels.toInt(), 
+                        0, if (algorithm == "standard") scaledVelocity.toInt() else -scaledVelocity.toInt(), 
+                        0, 0, 
+                        minScrollPixels.toInt(), 0
+                    )
+                }
+
                 post(object : Runnable {
-                    var mLastY = 0
+                    var mLastYPixels = if (mouseTracking) 0f else mTopRow * lineSpacing
+                    var mRemainder = 0f
+
                     override fun run() {
                         if (mouseTracking != mEmulator?.isMouseTrackingActive()) {
                             mScroller.abortAnimation()
                             return
                         }
                         if (mScroller.isFinished) return
+
                         val more = mScroller.computeScrollOffset()
-                        val newY = mScroller.currY
-                        val diff = if (mouseTracking) (newY - mLastY) else (newY - mTopRow)
-                        doScroll(e2, diff)
-                        mLastY = newY
+                        val currYPixels = mScroller.currY.toFloat()
+                        val diffPixels = (currYPixels - mLastYPixels) + mRemainder
+
+                        // 转换为行数
+                        val deltaRows = (diffPixels / lineSpacing).toInt()
+                        if (deltaRows != 0) {
+                            doScroll(e2, deltaRows)
+                            mRemainder = diffPixels - deltaRows * lineSpacing
+                        } else {
+                            mRemainder = diffPixels
+                        }
+
+                        mLastYPixels = currYPixels
+                        updateRenderParamsToRust()
                         if (more) post(this)
                     }
                 })
@@ -234,9 +315,19 @@ class TerminalView @JvmOverloads constructor(
             }
         })
 
-        mScroller = Scroller(context)
+        mScroller = OverScroller(context)
+        updateScrollerFriction(mPreferences.getTouchAlgorithm())
         val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
         mAccessibilityEnabled = am.isEnabled
+    }
+
+    fun updateScrollerFriction(algorithm: String) {
+        when (algorithm) {
+            "adaptive" -> mScroller.setFriction(ViewConfiguration.getScrollFriction() * 1.5f)
+            "natural" -> mScroller.setFriction(ViewConfiguration.getScrollFriction() * 1.2f)
+            "momentum" -> mScroller.setFriction(ViewConfiguration.getScrollFriction() * 0.8f) // 降低摩擦力以实现长距离冲刺
+            else -> mScroller.setFriction(ViewConfiguration.getScrollFriction())
+        }
     }
 
     fun setTerminalViewClient(client: TerminalViewClient) { mClient = client }
@@ -488,17 +579,23 @@ class TerminalView @JvmOverloads constructor(
 
     private fun doScroll(event: MotionEvent, rowsDown: Int) {
         val emu = mEmulator ?: return
+        if (rowsDown == 0) return
+        
         val up = rowsDown < 0
-        repeat(Math.abs(rowsDown)) {
-            if (emu.isMouseTrackingActive()) {
+        val absRows = Math.abs(rowsDown)
+        
+        if (emu.isMouseTrackingActive()) {
+            repeat(absRows) {
                 sendMouseEventCode(event, if (up) TerminalEmulator.MOUSE_WHEELUP_BUTTON else TerminalEmulator.MOUSE_WHEELDOWN_BUTTON, true)
-            } else if (emu.isAlternateBufferActive()) {
-                handleKeyCode(if (up) KeyEvent.KEYCODE_DPAD_UP else KeyEvent.KEYCODE_DPAD_DOWN, 0)
-            } else {
-                mTopRow = Math.min(0, Math.max(-emu.getActiveTranscriptRows(), mTopRow + if (up) -1 else 1))
-                updateRenderParamsToRust()
-                if (!awakenScrollBars()) invalidate()
             }
+        } else if (emu.isAlternateBufferActive()) {
+            repeat(absRows) {
+                handleKeyCode(if (up) KeyEvent.KEYCODE_DPAD_UP else KeyEvent.KEYCODE_DPAD_DOWN, 0)
+            }
+        } else {
+            mTopRow = Math.min(0, Math.max(-emu.getActiveTranscriptRows(), mTopRow + rowsDown))
+            updateRenderParamsToRust()
+            if (!awakenScrollBars()) invalidate()
         }
     }
 

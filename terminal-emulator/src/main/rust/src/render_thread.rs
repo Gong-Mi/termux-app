@@ -2,7 +2,6 @@
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use jni::sys::{jint, jlong};
-use skia_safe::gpu::SyncCpu;
 
 use crate::utils::{android_log, LogPriority};
 use crate::vulkan_context::VulkanContext;
@@ -164,12 +163,6 @@ fn spawn_render_thread(engine_ptr: jlong) {
                     }
                 };
 
-                // 0. CPU 限速：等待上一帧完全渲染完成，防止缓冲区耗尽 (Fix for NO_BUFFER_AVAILABLE)
-                unsafe {
-                    let _ = ctx.device.wait_for_fences(&[ctx.render_fence], true, u64::MAX);
-                    let _ = ctx.device.reset_fences(&[ctx.render_fence]);
-                }
-
                 // 获取 Engine 实例 - 增加引用计数确保在渲染期间不会被释放
                 let engine_arc = {
                     let guard = ENGINE_POINTER.lock().unwrap();
@@ -211,14 +204,20 @@ fn spawn_render_thread(engine_ptr: jlong) {
                 let render_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     // 1. 获取下一个交换链图像索引
                     let image_index = match ctx.acquire_next_image() {
-                        Some(idx) => idx,
-                        None => return Err("acquire_next_image failed"),
+                        Ok(idx) => idx,
+                        Err(e) => {
+                            if e == ash::vk::Result::ERROR_OUT_OF_DATE_KHR || e == ash::vk::Result::SUBOPTIMAL_KHR {
+                                android_log(LogPriority::INFO, "Render: acquire_next_image returned OUT_OF_DATE/SUBOPTIMAL, triggering recreation");
+                                SURFACE_SIZE_CHANGED.store(true, Ordering::SeqCst);
+                            }
+                            return Err(format!("acquire_next_image failed: {:?}", e));
+                        }
                     };
 
                     // 2. 获取 Skia Surface
                     let mut sk_surface = match ctx.get_sk_surface(image_index) {
                         Some(s) => s,
-                        None => return Err("get_sk_surface returned None"),
+                        None => return Err("get_sk_surface returned None".to_string()),
                     };
                     let canvas = sk_surface.canvas();
 
@@ -226,7 +225,7 @@ fn spawn_render_thread(engine_ptr: jlong) {
                     let renderer_mutex = TERMINAL_RENDERER.get_or_init(|| Mutex::new(None));
                     let mut renderer_guard = match renderer_mutex.try_lock() {
                         Ok(g) => g,
-                        Err(_) => return Err("renderer lock contention"),
+                        Err(_) => return Err("renderer lock contention".to_string()),
                     };
 
                     let font_size = *RENDER_FONT_SIZE.lock().unwrap();
@@ -239,7 +238,7 @@ fn spawn_render_thread(engine_ptr: jlong) {
                             Some(renderer) => *renderer_guard = Some(renderer),
                             None => {
                                 android_log(LogPriority::ERROR, "Render: Failed to create TerminalRenderer, skipping frame");
-                                return Err("TerminalRenderer creation failed");
+                                return Err("TerminalRenderer creation failed".to_string());
                             }
                         }
                     }
@@ -262,8 +261,8 @@ fn spawn_render_thread(engine_ptr: jlong) {
                         renderer.draw_frame(canvas, &frame, scale, scroll_offset);
                     }
 
-                    // 提交绘制并同步等待 GPU 完成 (阻塞限速，解决 NO_BUFFER_AVAILABLE)
-                    ctx.context.flush_and_submit_surface(&mut sk_surface, SyncCpu::Yes);
+                    // 提交绘制
+                    ctx.context.flush_and_submit();
 
                     // 4. 呈现图像
                     let present_info = ash::vk::PresentInfoKHR {
@@ -281,7 +280,7 @@ fn spawn_render_thread(engine_ptr: jlong) {
                                 if e == ash::vk::Result::ERROR_OUT_OF_DATE_KHR || e == ash::vk::Result::SUBOPTIMAL_KHR {
                                     SURFACE_SIZE_CHANGED.store(true, Ordering::SeqCst);
                                 }
-                                Err("present failed")
+                                Err(format!("present failed: {:?}", e))
                             }
                         }
                     }
