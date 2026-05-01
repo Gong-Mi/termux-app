@@ -1,0 +1,116 @@
+package termux.rust.android
+
+import org.gradle.api.Plugin
+import org.gradle.api.Project
+import org.gradle.api.provider.ListProperty
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.Copy
+import org.gradle.api.tasks.Exec
+import org.gradle.kotlin.dsl.*
+
+class RustAndroidPlugin : Plugin<Project> {
+    override fun apply(project: Project) {
+        val extension = project.extensions.create<RustAndroidExtension>("rustAndroid")
+
+        project.pluginManager.withPlugin("com.android.library") {
+            val abiList = extension.abiFilters.get()
+                .ifEmpty { listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64") }
+
+            val rustSrc = extension.rustSrcDir.get()
+            val libName = extension.libName.get()
+            val jniDest = extension.jniLibsDestDir.get()
+            val minSdk = extension.minSdkVersion.get()
+
+            val buildTasks = abiList.map { abi ->
+                val rustArch = abiToRustTarget(abi)
+                val safeAbi = abi.replace("-", "_")
+                val taskName = "cargoNdkBuild_${safeAbi}"
+
+                project.tasks.register<Exec>(taskName) {
+                    group = "rust"
+                    description = "Build Rust $libName for $abi"
+
+                    inputs.file(project.file("$rustSrc/Cargo.toml"))
+                    inputs.dir(project.file("$rustSrc/src"))
+
+                    val cargoLock = project.file("$rustSrc/Cargo.lock")
+                    if (cargoLock.exists()) {
+                        inputs.file(cargoLock)
+                    }
+
+                    outputs.file(
+                        project.file("$rustSrc/target/$rustArch/release/lib$libName.so")
+                    )
+
+                    workingDir = project.file(rustSrc)
+
+                    val rustFlags = mutableListOf("-C", "link-arg=-Wl,-z,max-page-size=16384")
+                    if (abi == "arm64-v8a" || abi == "armeabi-v7a") {
+                        rustFlags.addAll(listOf("-C", "target-feature=+neon"))
+                    }
+
+                    environment("RUSTFLAGS", rustFlags.joinToString(" "))
+
+                    commandLine(
+                        "cargo", "ndk",
+                        "-t", abi,
+                        "-p", minSdk.toString(),
+                        "build", "--release"
+                    )
+                }
+            }
+
+            val copyTasks = abiList.map { abi ->
+                val rustArch = abiToRustTarget(abi)
+                val safeAbi = abi.replace("-", "_")
+                val buildTaskName = "cargoNdkBuild_${safeAbi}"
+                val copyTaskName = "copyRust_${safeAbi}"
+
+                project.tasks.register<Copy>(copyTaskName) {
+                    group = "rust"
+                    dependsOn(buildTaskName)
+
+                    from(project.file("$rustSrc/target/$rustArch/release/lib$libName.so"))
+                    into(project.file("$jniDest/$abi"))
+                }
+            }
+
+            project.tasks.register("buildAllRust") {
+                group = "rust"
+                description = "Build Rust $libName for all ABIs"
+                dependsOn(copyTasks)
+            }
+
+            // Hook into merge*JniLibFolders without afterEvaluate
+            project.tasks.configureEach {
+                if (name.startsWith("merge") && name.endsWith("JniLibFolders")) {
+                    dependsOn("buildAllRust")
+                }
+            }
+        }
+    }
+
+    private fun abiToRustTarget(abi: String): String = when (abi) {
+        "arm64-v8a" -> "aarch64-linux-android"
+        "armeabi-v7a" -> "armv7-linux-androideabi"
+        "x86" -> "i686-linux-android"
+        "x86_64" -> "x86_64-linux-android"
+        else -> throw IllegalArgumentException("Unknown ABI: $abi")
+    }
+}
+
+abstract class RustAndroidExtension {
+    abstract val rustSrcDir: Property<String>
+    abstract val jniLibsDestDir: Property<String>
+    abstract val libName: Property<String>
+    abstract val minSdkVersion: Property<Int>
+    abstract val abiFilters: ListProperty<String>
+
+    init {
+        rustSrcDir.convention("src/main/rust")
+        jniLibsDestDir.convention("src/main/jniLibs")
+        libName.convention("termux_rust")
+        minSdkVersion.convention(24)
+        abiFilters.convention(emptyList())
+    }
+}

@@ -1,5 +1,6 @@
 plugins {
     id("com.android.library")
+    id("termux.rust.android")
 }
 
 android {
@@ -25,16 +26,18 @@ android {
         }
     }
 
-    externalNativeBuild {
-        ndkBuild {
-            path = File("src/main/jni/Android.mk")
-        }
-    }
-
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
+}
+
+rustAndroid {
+    rustSrcDir = "src/main/rust"
+    jniLibsDestDir = "src/main/jniLibs"
+    libName = "termux_rust"
+    minSdkVersion = providers.gradleProperty("minSdkVersion").get().toInt()
+    abiFilters = listOf("x86", "x86_64", "armeabi-v7a", "arm64-v8a")
 }
 
 dependencies {
