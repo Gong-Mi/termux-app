@@ -251,6 +251,11 @@ afterEvaluate {
         tasks.matching { it.name.contains("externalNativeBuild") }.configureEach {
             it.dependsOn(downloadBootstraps)
         }
+
+        // 确保 Rust NDK 构建也依赖于下载任务（bootstrap zip 被嵌入到 Rust 库中）
+        tasks.matching { it.name.startsWith("cargoNdkBuild") }.configureEach {
+            it.dependsOn(downloadBootstraps)
+        }
     }
 
     // 关键修复：确保 App 模块合并 JNI 库之前，Rust 库已经编译完成
