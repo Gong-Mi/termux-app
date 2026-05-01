@@ -12,12 +12,13 @@ pub unsafe fn create_subprocess(
     cmd: jstring,
     cwd: jstring,
     args: jobjectArray,
-    env_vars: jobjectArray,
+    _env_vars: jobjectArray,
     process_id_array: jintArray,
     rows: jint,
     cols: jint,
     cw: jint,
     ch: jint,
+    is_failsafe: bool,
 ) -> jint {
     let cmd_str = if !cmd.is_null() {
         let js = unsafe { JString::from_raw(cmd) };
@@ -42,20 +43,9 @@ pub unsafe fn create_subprocess(
         }
     }
 
-    let mut envp = Vec::new();
-    let env_vars_obj = unsafe { JObjectArray::from_raw(env_vars) };
-    if !env_vars_obj.is_null() {
-        if let Ok(len) = env.get_array_length(&env_vars_obj) {
-            for i in 0..len {
-                if let Ok(env_obj) = env.get_object_array_element(&env_vars_obj, i) {
-                    let env_java: JString = env_obj.into();
-                    if let Ok(s) = env.get_string(&env_java) { envp.push(String::from(s)); }
-                }
-            }
-        }
-    }
-
-    match create_subprocess_with_data(cmd_str, cwd_str, argv, envp, rows, cols, cw, ch) {
+    // 环境变量由 Rust 层完全自主构建，不再解析 Java 层传递的 env_vars。
+    // _env_vars 参数保留以保持 JNI 签名兼容，但内容被忽略。
+    match create_subprocess_with_data(cmd_str, cwd_str, argv, rows, cols, cw, ch, is_failsafe) {
         Ok((fd, pid)) => {
             let pid_val = [pid as jint];
             let j_pid_array = unsafe { JIntArray::from_raw(process_id_array) };
@@ -110,11 +100,11 @@ pub fn create_subprocess_with_data(
     cmd_str: String,
     cwd_str: String,
     argv: Vec<String>,
-    envp: Vec<String>,
     rows: jint,
     cols: jint,
     cw: jint,
     ch: jint,
+    is_failsafe: bool,
 ) -> Result<(jint, i32), ()> {
     let normalize_path = |path: String| -> String {
         if path.starts_with("/data/user/0/com.termux") {
@@ -127,76 +117,12 @@ pub fn create_subprocess_with_data(
     let cmd_str = normalize_path(cmd_str);
     let cwd_str = normalize_path(cwd_str);
     let argv: Vec<String> = argv.into_iter().map(normalize_path).collect();
-    let envp: Vec<String> = envp.into_iter().map(normalize_path).collect();
 
-    let mut final_env = envp.clone();
-    
-    // Ensure critical Termux environment variables are set if missing
-    let has_prefix = final_env.iter().any(|s| s.starts_with("PREFIX="));
-    let has_home = final_env.iter().any(|s| s.starts_with("HOME="));
-    let has_path = final_env.iter().any(|s| s.starts_with("PATH="));
-    let has_ld_preload = final_env.iter().any(|s| s.starts_with("LD_PRELOAD="));
-
-    if !has_prefix {
-        final_env.push("PREFIX=/data/data/com.termux/files/usr".to_string());
-    }
-    // Ensure HOME is set to Termux home, not Android root (/).
-    // Java layer passes ENV_HOME = "/" which breaks ~ expansion.
-    let termux_home = "/data/data/com.termux/files/home";
-    if has_home {
-        if let Some(idx) = final_env.iter().position(|s| s.starts_with("HOME=")) {
-            final_env[idx] = format!("HOME={}", termux_home);
-        } else {
-            final_env.push(format!("HOME={}", termux_home));
-        }
-    } else {
-        final_env.push(format!("HOME={}", termux_home));
-    }
-    // Ensure PATH always includes Termux bin directories.
-    // Java layer passes System.getenv("PATH") which is the Android system PATH
-    // and lacks Termux paths. We prepend Termux paths to maintain priority.
-    let termux_paths = "/data/data/com.termux/files/usr/bin:/data/data/com.termux/files/usr/bin/applets";
-    let new_path = if has_path {
-        if let Some(existing) = final_env.iter().find(|s| s.starts_with("PATH=")) {
-            let existing_val = existing.strip_prefix("PATH=").unwrap_or("");
-            if existing_val.contains(termux_paths.split(':').next().unwrap_or("")) {
-                existing.clone()
-            } else {
-                format!("PATH={}:{}:{}", termux_paths, existing_val, "/system/bin")
-            }
-        } else {
-            format!("PATH={}:/system/bin", termux_paths)
-        }
-    } else {
-        format!("PATH={}:/system/bin", termux_paths)
-    };
-    if has_path {
-        if let Some(idx) = final_env.iter().position(|s| s.starts_with("PATH=")) {
-            final_env[idx] = new_path;
-        } else {
-            final_env.push(new_path);
-        }
-    } else {
-        final_env.push(new_path);
-    }
-    if !has_ld_preload {
-        // Use the real file instead of symlink to avoid preload resolution issues
-        final_env.push("LD_PRELOAD=/data/data/com.termux/files/usr/lib/libtermux-exec-ld-preload.so".to_string());
-    }
-    
-    // Add other defaults
-    if !final_env.iter().any(|s| s.starts_with("TERM=")) {
-        final_env.push("TERM=xterm-256color".to_string());
-    }
-    if !final_env.iter().any(|s| s.starts_with("COLORTERM=")) {
-        final_env.push("COLORTERM=truecolor".to_string());
-    }
-    if !final_env.iter().any(|s| s.starts_with("LANG=")) {
-        final_env.push("LANG=en_US.UTF-8".to_string());
-    }
-    if !final_env.iter().any(|s| s.starts_with("TMPDIR=")) {
-        final_env.push("TMPDIR=/data/data/com.termux/files/usr/tmp".to_string());
-    }
+    // ------------------------------------------------------------------
+    // 环境变量由 Rust 层完全自主构建，不再接收/修补 Java 层传递的 envp。
+    // 这消除了 Java ↔ Native 之间的“中间状态”不一致。
+    // ------------------------------------------------------------------
+    let c_envs = crate::env_builder::build_termux_environment(&cwd_str, is_failsafe);
 
     let mut real_cmd = cmd_str.clone();
     let mut real_argv = argv.clone();
@@ -292,7 +218,7 @@ pub fn create_subprocess_with_data(
         (real_cmd, real_argv)
     };
 
-    let c_envs: Vec<CString> = final_env.iter().map(|e| CString::new(e.clone()).unwrap()).collect();
+
 
     // Linker Wrapper Bypass for Android 10+ (W^X)
     // Only wrap actual ELF binaries with the system linker; skip shebang scripts

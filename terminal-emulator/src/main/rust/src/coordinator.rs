@@ -38,6 +38,16 @@ impl SessionState {
     }
 }
 
+/// Session 的 Native 端完整状态
+/// Rust 层是唯一真相源，Java 层通过 JNI 查询这些字段
+#[derive(Debug, Clone, Copy)]
+pub struct SessionData {
+    pub pty_fd: i32,
+    pub pid: i32,
+    pub context_ptr: usize, // Arc<TerminalContext> 的 raw pointer
+    pub state: SessionState,
+}
+
 /// Session 协调器
 pub struct SessionCoordinator {
     /// pkg 操作锁（true = 已锁定）
@@ -46,8 +56,12 @@ pub struct SessionCoordinator {
     pkg_lock_owner: AtomicUsize,
     /// Session 计数器（用于生成唯一 ID）
     session_counter: AtomicUsize,
-    /// Session 状态表
+    /// Session 状态表（兼容旧接口）
     session_states: Mutex<HashMap<usize, SessionState>>,
+    /// Session 完整数据表（新增）
+    session_data: Mutex<HashMap<usize, SessionData>>,
+    /// context_ptr → session_id 反向索引（新增）
+    ptr_to_session: Mutex<HashMap<usize, usize>>,
 }
 
 impl SessionCoordinator {
@@ -58,10 +72,12 @@ impl SessionCoordinator {
             pkg_lock_owner: AtomicUsize::new(0),
             session_counter: AtomicUsize::new(0),
             session_states: Mutex::new(HashMap::new()),
+            session_data: Mutex::new(HashMap::new()),
+            ptr_to_session: Mutex::new(HashMap::new()),
         })
     }
     
-    /// 注册新 Session
+    /// 注册新 Session（仅分配 ID，不绑定数据）
     /// 返回唯一的 Session ID
     pub fn register_session(&self) -> usize {
         let id = self.session_counter.fetch_add(1, Ordering::SeqCst);
@@ -73,6 +89,31 @@ impl SessionCoordinator {
         id
     }
     
+    /// 绑定 Session 完整数据（PTY fd、PID、engine context）
+    /// 调用时机：PTY 和引擎创建成功后
+    pub fn bind_session_data(&self, session_id: usize, pty_fd: i32, pid: i32, context_ptr: usize) {
+        let data = SessionData {
+            pty_fd,
+            pid,
+            context_ptr,
+            state: SessionState::Running,
+        };
+        if let Ok(mut map) = self.session_data.lock() {
+            map.insert(session_id, data);
+        }
+        if let Ok(mut ptr_map) = self.ptr_to_session.lock() {
+            ptr_map.insert(context_ptr, session_id);
+        }
+        self.update_session_state(session_id, SessionState::Running);
+        android_log(
+            LogPriority::INFO,
+            &format!(
+                "[SessionCoordinator] Bound session {}: pty_fd={}, pid={}, context_ptr={:p}",
+                session_id, pty_fd, pid, context_ptr as *const ()
+            )
+        );
+    }
+    
     /// 注销 Session
     pub fn unregister_session(&self, session_id: usize) {
         self.update_session_state(session_id, SessionState::Finished);
@@ -81,6 +122,15 @@ impl SessionCoordinator {
         let owner = self.pkg_lock_owner.load(Ordering::SeqCst);
         if owner == session_id {
             self.release_pkg_lock(session_id);
+        }
+        
+        // 从数据表中移除，并清理反向索引
+        if let Ok(mut data_map) = self.session_data.lock() {
+            if let Some(data) = data_map.remove(&session_id) {
+                if let Ok(mut ptr_map) = self.ptr_to_session.lock() {
+                    ptr_map.remove(&data.context_ptr);
+                }
+            }
         }
         
         // 从状态表中移除
@@ -176,6 +226,39 @@ impl SessionCoordinator {
     /// 获取 Session 状态
     pub fn get_session_state(&self, session_id: usize) -> Option<SessionState> {
         self.session_states.lock().ok().and_then(|states| states.get(&session_id).copied())
+    }
+    
+    /// 通过 session_id 获取 Session 数据
+    pub fn get_session_data(&self, session_id: usize) -> Option<SessionData> {
+        self.session_data.lock().ok().and_then(|data| data.get(&session_id).cloned())
+    }
+    
+    /// 通过 context_ptr 获取 session_id
+    pub fn get_session_id_by_ptr(&self, context_ptr: usize) -> Option<usize> {
+        self.ptr_to_session.lock().ok().and_then(|map| map.get(&context_ptr).copied())
+    }
+    
+    /// 通过 context_ptr 获取 Session 数据
+    pub fn get_session_data_by_ptr(&self, context_ptr: usize) -> Option<SessionData> {
+        let session_id = self.get_session_id_by_ptr(context_ptr)?;
+        self.get_session_data(session_id)
+    }
+    
+    /// 获取 Session 的 PID（供 JNI 查询）
+    pub fn get_session_pid(&self, session_id: usize) -> i32 {
+        self.get_session_data(session_id).map(|d| d.pid).unwrap_or(-1)
+    }
+    
+    /// 获取 Session 的 PTY fd（供 JNI 查询）
+    pub fn get_session_pty_fd(&self, session_id: usize) -> i32 {
+        self.get_session_data(session_id).map(|d| d.pty_fd).unwrap_or(-1)
+    }
+    
+    /// 检查 Session 是否仍在运行（进程存活）
+    pub fn is_session_running(&self, session_id: usize) -> bool {
+        self.get_session_data(session_id)
+            .map(|d| d.state != SessionState::Finished && d.pid > 0)
+            .unwrap_or(false)
     }
     
     /// 获取所有 Session 的状态列表（用于调试）
@@ -312,6 +395,39 @@ pub extern "system" fn Java_com_termux_terminal_JNI_getAllSessionStates(
     }
 }
 
+/// 通过 engine ptr 获取 PID
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_JNI_sessionGetPid(
+    _env: JNIEnv,
+    _class: JClass,
+    engine_ptr: jni::sys::jlong,
+) -> jint {
+    let coordinator = SessionCoordinator::get();
+    coordinator.get_session_pid(engine_ptr as usize) as jint
+}
+
+/// 通过 engine ptr 获取 PTY fd
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_JNI_sessionGetPtyFd(
+    _env: JNIEnv,
+    _class: JClass,
+    engine_ptr: jni::sys::jlong,
+) -> jint {
+    let coordinator = SessionCoordinator::get();
+    coordinator.get_session_pty_fd(engine_ptr as usize) as jint
+}
+
+/// 通过 engine ptr 检查 session 是否仍在运行
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_JNI_sessionIsRunning(
+    _env: JNIEnv,
+    _class: JClass,
+    engine_ptr: jni::sys::jlong,
+) -> jboolean {
+    let coordinator = SessionCoordinator::get();
+    if coordinator.is_session_running(engine_ptr as usize) { 1 } else { 0 }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -322,6 +438,8 @@ mod tests {
             pkg_lock_owner: AtomicUsize::new(0),
             session_counter: AtomicUsize::new(0),
             session_states: Mutex::new(HashMap::new()),
+            session_data: Mutex::new(HashMap::new()),
+            ptr_to_session: Mutex::new(HashMap::new()),
         }
     }
 
@@ -512,5 +630,80 @@ mod tests {
     fn has_waiting_sessions_empty() {
         let coord = new_coordinator();
         assert!(!coord.has_waiting_sessions());
+    }
+
+    // -------------------------------------------------------------------------
+    // SessionData binding and queries
+    // -------------------------------------------------------------------------
+    #[test]
+    fn bind_session_data_stores_all_fields() {
+        let coord = new_coordinator();
+        let id = coord.register_session();
+        coord.bind_session_data(id, 42, 12345, 0xDEADBEEF);
+
+        let data = coord.get_session_data(id).unwrap();
+        assert_eq!(data.pty_fd, 42);
+        assert_eq!(data.pid, 12345);
+        assert_eq!(data.context_ptr, 0xDEADBEEF);
+        assert_eq!(data.state, SessionState::Running);
+    }
+
+    #[test]
+    fn get_session_id_by_ptr_reverse_lookup() {
+        let coord = new_coordinator();
+        let id = coord.register_session();
+        coord.bind_session_data(id, 1, 100, 0xABC);
+
+        assert_eq!(coord.get_session_id_by_ptr(0xABC), Some(id));
+        assert_eq!(coord.get_session_id_by_ptr(0x999), None);
+    }
+
+    #[test]
+    fn get_session_data_by_ptr_works() {
+        let coord = new_coordinator();
+        let id = coord.register_session();
+        coord.bind_session_data(id, 3, 300, 0x123);
+
+        let data = coord.get_session_data_by_ptr(0x123).unwrap();
+        assert_eq!(data.pty_fd, 3);
+        assert_eq!(data.pid, 300);
+    }
+
+    #[test]
+    fn get_session_pid_and_pty_fd() {
+        let coord = new_coordinator();
+        let id = coord.register_session();
+        coord.bind_session_data(id, 99, 7777, 0x0);
+
+        assert_eq!(coord.get_session_pid(id), 7777);
+        assert_eq!(coord.get_session_pty_fd(id), 99);
+    }
+
+    #[test]
+    fn is_session_running_true_after_bind() {
+        let coord = new_coordinator();
+        let id = coord.register_session();
+        coord.bind_session_data(id, 1, 1, 0x0);
+        assert!(coord.is_session_running(id));
+    }
+
+    #[test]
+    fn is_session_running_false_after_unregister() {
+        let coord = new_coordinator();
+        let id = coord.register_session();
+        coord.bind_session_data(id, 1, 1, 0x0);
+        coord.unregister_session(id);
+        assert!(!coord.is_session_running(id));
+        assert_eq!(coord.get_session_pid(id), -1);
+        assert_eq!(coord.get_session_pty_fd(id), -1);
+    }
+
+    #[test]
+    fn unregister_cleans_ptr_to_session_index() {
+        let coord = new_coordinator();
+        let id = coord.register_session();
+        coord.bind_session_data(id, 1, 1, 0xBEEF);
+        coord.unregister_session(id);
+        assert_eq!(coord.get_session_id_by_ptr(0xBEEF), None);
     }
 }

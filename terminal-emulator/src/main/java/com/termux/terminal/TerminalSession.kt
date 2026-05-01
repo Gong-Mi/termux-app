@@ -22,6 +22,7 @@ class TerminalSession(
     val args: Array<String?>?,
     val env: Array<String?>?,
     val transcriptRows: Int?,
+    val isFailSafe: Boolean = false,
     client: TerminalSessionClient
 ) : TerminalOutput() {
 
@@ -105,7 +106,8 @@ class TerminalSession(
             android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 5. Calling JNI.createSessionAsync with callback: $mRustCallback")
             JNI.createSessionAsync(
                 shellPath ?: "", cwd ?: "", args, env, rows, columns, cellWidthPixels, cellHeightPixels,
-                transcriptRows ?: TerminalEmulator.DEFAULT_TERMINAL_TRANSCRIPT_ROWS, mRustCallback
+                transcriptRows ?: TerminalEmulator.DEFAULT_TERMINAL_TRANSCRIPT_ROWS, mRustCallback,
+                isFailSafe
             )
         } else {
             android.util.Log.w("TermuxTrace", "[TRACE_SESSION] JNI libraries not loaded, using mock")

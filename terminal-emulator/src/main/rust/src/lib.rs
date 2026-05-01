@@ -22,6 +22,7 @@ pub mod renderer;
 pub mod vulkan_context;
 pub mod render_thread;
 pub mod jni_bindings;
+pub mod env_builder;
 
 // 重新导出主要类型，保持向后兼容
 pub use crate::engine::{TerminalEngine, TerminalContext, TerminalEvent};

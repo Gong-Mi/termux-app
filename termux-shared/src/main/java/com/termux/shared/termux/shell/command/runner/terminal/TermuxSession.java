@@ -96,7 +96,8 @@ public class TermuxSession {
         if (executionCommand.commandLabel == null)
             executionCommand.commandLabel = processName;
 
-        // Setup command environment
+        // Rust 层已完全接管环境变量构建，Java 层不再传递完整环境数组。
+        // 保留旧环境构建逻辑仅用于日志对比（可选），实际传空数组给 TerminalSession。
         HashMap<String, String> environment = shellEnvironmentClient.setupShellCommandEnvironment(currentPackageContext,
             executionCommand);
         if (additionalEnvironment != null)
@@ -112,13 +113,14 @@ public class TermuxSession {
         }
 
         Logger.logDebugExtended(LOG_TAG, executionCommand.toString());
-        Logger.logVerboseExtended(LOG_TAG, "\"" + executionCommand.getCommandIdAndLabelLogString() + "\" TermuxSession Environment:\n" +
+        Logger.logVerboseExtended(LOG_TAG, "\"" + executionCommand.getCommandIdAndLabelLogString() + "\" Legacy Java Environment (for logging only):\n" +
             Joiner.on("\n").join(environmentArray));
 
         Logger.logDebug(LOG_TAG, "Running \"" + executionCommand.getCommandIdAndLabelLogString() + "\" TermuxSession");
+        // 传空环境数组：Rust 层通过 env_builder 从零自主构建，消除 Java ↔ Native 中间状态冲突。
         TerminalSession terminalSession = new TerminalSession(executionCommand.executable,
-            executionCommand.workingDirectory, executionCommand.arguments, environmentArray,
-            executionCommand.terminalTranscriptRows, terminalSessionClient);
+            executionCommand.workingDirectory, executionCommand.arguments, new String[0],
+            executionCommand.terminalTranscriptRows, executionCommand.isFailsafe, terminalSessionClient);
 
         if (executionCommand.shellName != null) {
             terminalSession.mSessionName = executionCommand.shellName;

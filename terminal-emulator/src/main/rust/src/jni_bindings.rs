@@ -133,9 +133,9 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
 /// 设置 Surface
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
-    _env: JNIEnv,
+    env: JNIEnv,
     _obj: JObject,
-    _surface: JObject,
+    surface: JObject,
 ) {
     #[cfg(target_os = "android")]
     {
@@ -1184,13 +1184,14 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
     cmd: jstring,
     cwd: jstring,
     args: jni::sys::jobjectArray,
-    env_vars: jni::sys::jobjectArray,
+    _env_vars: jni::sys::jobjectArray,
     rows: jint,
     cols: jint,
     cw: jint,
     ch: jint,
     transcript_rows: jint,
     callback: JObject,
+    is_failsafe: jni::sys::jboolean,
 ) {
     let cmd_str = if !cmd.is_null() {
         let js = unsafe { JString::from_raw(cmd) };
@@ -1221,20 +1222,8 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
         }
     }
 
-    let mut envp = Vec::new();
-    let env_vars_obj = unsafe { jni::objects::JObjectArray::from_raw(env_vars) };
-    if !env_vars_obj.is_null() {
-        if let Ok(len) = env.get_array_length(&env_vars_obj) {
-            for i in 0..len {
-                if let Ok(env_obj) = env.get_object_array_element(&env_vars_obj, i) {
-                    let env_java: JString = env_obj.into();
-                    if let Ok(s) = env.get_string(&env_java) {
-                        envp.push(String::from(s));
-                    }
-                }
-            }
-        }
-    }
+    // 环境变量由 Rust 层完全自主构建，忽略 Java 层传递的 env_vars。
+    let is_failsafe_bool = is_failsafe != 0;
 
     let callback_ref = if !callback.is_null() {
         env.new_global_ref(callback).ok()
@@ -1249,7 +1238,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
 
         android_log(LogPriority::DEBUG, &format!("[TRACE_SESSION] Session registered with ID: {}", session_id));
 
-        let pty_res = crate::pty::create_subprocess_with_data(cmd_str, cwd_str, argv, envp, rows, cols, cw, ch);
+        let pty_res = crate::pty::create_subprocess_with_data(cmd_str, cwd_str, argv, rows, cols, cw, ch, is_failsafe_bool);
         let (pty_fd, pid) = match pty_res {
             Ok(res) => {
                 android_log(LogPriority::INFO, &format!("[TRACE_SESSION] PTY creation SUCCESS (fd={}, pid={})", res.0, res.1));
@@ -1287,6 +1276,15 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
 
         let context = Arc::new(TerminalContext::new(engine));
         let context_ptr = Arc::into_raw(context.clone());
+
+        // ★ 关键：把 session 的完整数据绑定到 Rust 协调器
+        // Java 层后续通过 enginePtr 反向查询 PID/fd/state
+        coordinator.bind_session_data(
+            session_id,
+            pty_fd,
+            pid,
+            context_ptr as usize,
+        );
 
         android_log(LogPriority::INFO, &format!("[TRACE_SESSION] Engine context created at ptr: {:p}", context_ptr));
 
@@ -1366,7 +1364,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_close(
     unsafe { libc::close(fd); }
 }
 
-/// 创建子进程
+/// 创建子进程（同步旧接口，保留 JNI 签名兼容）
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
     mut env: JNIEnv,
@@ -1393,6 +1391,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
             cols,
             cw,
             ch,
+            false, // 旧接口默认非 failsafe
         )
     }
 }

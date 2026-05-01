@@ -80,17 +80,19 @@ fn test_pty_resource_independence() {
     // 这个测试验证底层 PTY 分配是否冲突
     // 注意：在某些受限测试环境下可能失败
     let res1 = pty::create_subprocess_with_data(
-        "/bin/sh".to_string(), 
-        "/tmp".to_string(), 
-        vec!["-c".to_string(), "echo hello".to_string()], 
-        vec![], 24, 80, 10, 20
+        "/bin/sh".to_string(),
+        "/tmp".to_string(),
+        vec!["-c".to_string(), "echo hello".to_string()],
+        24, 80, 10, 20,
+        false
     );
 
     let res2 = pty::create_subprocess_with_data(
-        "/bin/sh".to_string(), 
-        "/tmp".to_string(), 
-        vec!["-c".to_string(), "echo world".to_string()], 
-        vec![], 24, 80, 10, 20
+        "/bin/sh".to_string(),
+        "/tmp".to_string(),
+        vec!["-c".to_string(), "echo world".to_string()],
+        24, 80, 10, 20,
+        false
     );
 
     if let (Ok(p1), Ok(p2)) = (res1, res2) {

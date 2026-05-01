@@ -59,7 +59,8 @@ internal object JNI {
     @JvmStatic external fun createSessionAsync(
         cmd: String, cwd: String, args: Array<String?>?, envVars: Array<String?>?,
         rows: Int, columns: Int, cellWidth: Int, cellHeight: Int,
-        transcriptRows: Int, callback: RustEngineCallback
+        transcriptRows: Int, callback: RustEngineCallback,
+        isFailSafe: Boolean
     )
 
     @JvmStatic external fun setPtyWindowSize(fd: Int, rows: Int, cols: Int, cellWidth: Int, cellHeight: Int)
@@ -76,6 +77,11 @@ internal object JNI {
     @JvmStatic external fun getPkgLockOwner(): Int
     @JvmStatic external fun getSessionState(sessionId: Int): String?
     @JvmStatic external fun getAllSessionStates(): String?
+
+    // --- Session 状态查询（Rust 为唯一真相源） ---
+    @JvmStatic external fun sessionGetPid(enginePtr: Long): Int
+    @JvmStatic external fun sessionGetPtyFd(enginePtr: Long): Int
+    @JvmStatic external fun sessionIsRunning(enginePtr: Long): Boolean
 
     // --- KeyHandler (Rust) ---
     @JvmStatic external fun getKeyCode(keyCode: Int, keyMode: Int, cursorApp: Boolean, keypad: Boolean): String?
