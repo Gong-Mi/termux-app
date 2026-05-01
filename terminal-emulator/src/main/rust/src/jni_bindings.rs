@@ -1338,6 +1338,20 @@ pub extern "system" fn Java_com_termux_terminal_JNI_setTermuxVersion(
     }
 }
 
+/// 设置 Termux Prefix 路径（由 Java Application 初始化时传入）
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_setTermuxPrefix(
+    mut env: JNIEnv,
+    _class: JClass,
+    prefix: JString,
+) {
+    if let Ok(v) = env.get_string(&prefix) {
+        let prefix_str: String = v.into();
+        let _ = crate::TERMUX_PREFIX.get_or_init(|| Mutex::new(prefix_str.clone()));
+        android_log(LogPriority::INFO, &format!("[JNI] TERMUX_PREFIX set to: {}", prefix_str));
+    }
+}
+
 /// 设置扩展环境变量（由 Java Application 初始化时批量传入 TERMUX_APP__* 等）
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_JNI_setExtendedEnvironment(

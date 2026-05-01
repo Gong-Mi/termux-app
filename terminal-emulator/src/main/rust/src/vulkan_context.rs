@@ -20,6 +20,7 @@ pub struct VulkanContext {
     pub extent: ash_vk::Extent2D,
     pub image_available_semaphore: ash_vk::Semaphore,
     pub render_finished_semaphore: ash_vk::Semaphore,
+    pub render_fence: ash_vk::Fence,
 }
 
 unsafe impl Send for VulkanContext {}
@@ -201,6 +202,12 @@ impl VulkanContext {
         let image_available_semaphore = image_available_semaphore.unwrap();
         let render_finished_semaphore = render_finished_semaphore.unwrap();
 
+        let fence_info = ash_vk::FenceCreateInfo {
+            flags: ash_vk::FenceCreateFlags::SIGNALED, // 初始为已发信号状态，让第一帧不阻塞
+            ..Default::default()
+        };
+        let render_fence = unsafe { device.create_fence(&fence_info, None).ok()? };
+
         let entry_ptr = entry.clone();
         let instance_ptr = instance.clone();
         let instance_raw = instance.handle().as_raw();
@@ -248,6 +255,7 @@ impl VulkanContext {
             extent,
             image_available_semaphore,
             render_finished_semaphore,
+            render_fence,
         };
 
         let swapchain_ok = ctx.recreate_swapchain(extent.width, extent.height);
@@ -307,7 +315,7 @@ impl VulkanContext {
                 image_color_space: format.color_space,
                 image_extent: self.extent,
                 image_array_layers: 1,
-                image_usage: ash_vk::ImageUsageFlags::COLOR_ATTACHMENT,
+                image_usage: ash_vk::ImageUsageFlags::COLOR_ATTACHMENT | ash_vk::ImageUsageFlags::TRANSFER_DST,
                 pre_transform: ash_vk::SurfaceTransformFlagsKHR::IDENTITY,
                 composite_alpha: ash_vk::CompositeAlphaFlagsKHR::OPAQUE,
                 present_mode,

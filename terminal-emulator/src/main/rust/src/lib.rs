@@ -13,6 +13,9 @@ use std::sync::Mutex;
 /// 全局存储 Termux 应用版本号（由 Java 层通过 JNI 传入）
 pub static TERMUX_VERSION: OnceCell<Mutex<String>> = OnceCell::new();
 
+/// 全局存储 Termux Prefix 路径（由 Java 层通过 JNI 传入，通常为 /data/data/com.termux/files/usr）
+pub static TERMUX_PREFIX: OnceCell<Mutex<String>> = OnceCell::new();
+
 // 声明子模块
 pub mod wcwidth;
 pub mod terminal;

@@ -2,6 +2,7 @@
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use jni::sys::{jint, jlong};
+use skia_safe::gpu::SyncCpu;
 
 use crate::utils::{android_log, LogPriority};
 use crate::vulkan_context::VulkanContext;
@@ -163,6 +164,12 @@ fn spawn_render_thread(engine_ptr: jlong) {
                     }
                 };
 
+                // 0. CPU 限速：等待上一帧完全渲染完成，防止缓冲区耗尽 (Fix for NO_BUFFER_AVAILABLE)
+                unsafe {
+                    let _ = ctx.device.wait_for_fences(&[ctx.render_fence], true, u64::MAX);
+                    let _ = ctx.device.reset_fences(&[ctx.render_fence]);
+                }
+
                 // 获取 Engine 实例 - 增加引用计数确保在渲染期间不会被释放
                 let engine_arc = {
                     let guard = ENGINE_POINTER.lock().unwrap();
@@ -255,7 +262,8 @@ fn spawn_render_thread(engine_ptr: jlong) {
                         renderer.draw_frame(canvas, &frame, scale, scroll_offset);
                     }
 
-                    ctx.context.flush_and_submit();
+                    // 提交绘制并同步等待 GPU 完成 (阻塞限速，解决 NO_BUFFER_AVAILABLE)
+                    ctx.context.flush_and_submit_surface(&mut sk_surface, SyncCpu::Yes);
 
                     // 4. 呈现图像
                     let present_info = ash::vk::PresentInfoKHR {

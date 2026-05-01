@@ -12,6 +12,11 @@ import androidx.annotation.Keep
 @Keep
 object RustTerminal {
 
+    // --- 全局配置 ---
+
+    @JvmStatic
+    external fun setTermuxPrefix(prefix: String)
+
     // --- 创建和销毁 ---
 
     @JvmStatic

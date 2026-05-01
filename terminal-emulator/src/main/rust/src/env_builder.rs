@@ -43,12 +43,16 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
     // ------------------------------------------------------------------
     // 3. Termux 核心路径（与 upstream Java 的 TermuxShellEnvironment 对齐）
     // ------------------------------------------------------------------
-    let termux_home = "/data/data/com.termux/files/home";
-    let termux_prefix = "/data/data/com.termux/files/usr";
-    let termux_tmp = "/data/data/com.termux/files/usr/tmp";
+    let termux_prefix = if let Some(prefix_mutex) = crate::TERMUX_PREFIX.get() {
+        prefix_mutex.lock().unwrap().clone()
+    } else {
+        "/data/data/com.termux/files/usr".to_string()
+    };
+    let termux_home = termux_prefix.replace("/usr", "/home");
+    let termux_tmp = format!("{}/tmp", termux_prefix);
 
-    env.insert("HOME".to_string(), termux_home.to_string());
-    env.insert("PREFIX".to_string(), termux_prefix.to_string());
+    env.insert("HOME".to_string(), termux_home.clone());
+    env.insert("PREFIX".to_string(), termux_prefix.clone());
 
     // ------------------------------------------------------------------
     // 4. PATH / TMPDIR / LD_PRELOAD 的 failsafe 差异化处理
@@ -69,7 +73,7 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
         // 但当前项目代码历史原因 hardcoded 了 applets，为兼容保留。
         let termux_bin_path = format!("{}/bin:{}/bin/applets", termux_prefix, termux_prefix);
         if let Ok(sys_path) = std::env::var("PATH") {
-            // Prepend Termux 路径，保持系统路径作为 fallback
+            // Prepend Termux 路径，保持 system 路径作为 fallback
             env.insert("PATH".to_string(), format!("{}:{}", termux_bin_path, sys_path));
         } else {
             env.insert("PATH".to_string(), format!("{}:/system/bin", termux_bin_path));
@@ -79,8 +83,8 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
 
         // LD_PRELOAD 用于 termux-exec 的 shebang 修复。upstream C 代码未设置，
         // 但 Termux 运行时需要。Rust 层自主决定是否注入，避免与 Java 层冲突。
-        let ld_preload_path = "/data/data/com.termux/files/usr/lib/libtermux-exec-ld-preload.so";
-        if std::path::Path::new(ld_preload_path).exists() {
+        let ld_preload_path = format!("{}/lib/libtermux-exec-ld-preload.so", termux_prefix);
+        if std::path::Path::new(&ld_preload_path).exists() {
             env.insert("LD_PRELOAD".to_string(), ld_preload_path.to_string());
         }
     }
