@@ -1338,6 +1338,37 @@ pub extern "system" fn Java_com_termux_terminal_JNI_setTermuxVersion(
     }
 }
 
+/// 设置扩展环境变量（由 Java Application 初始化时批量传入 TERMUX_APP__* 等）
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_JNI_setExtendedEnvironment(
+    mut env: JNIEnv,
+    _class: JClass,
+    keys: jni::sys::jobjectArray,
+    values: jni::sys::jobjectArray,
+) {
+    let keys_obj = unsafe { jni::objects::JObjectArray::from_raw(keys) };
+    let values_obj = unsafe { jni::objects::JObjectArray::from_raw(values) };
+    if keys_obj.is_null() || values_obj.is_null() { return; }
+
+    let mut map = std::collections::HashMap::new();
+
+    if let (Ok(k_len), Ok(v_len)) = (env.get_array_length(&keys_obj), env.get_array_length(&values_obj)) {
+        let len = std::cmp::min(k_len, v_len);
+        for i in 0..len {
+            if let (Ok(k_obj), Ok(v_obj)) = (env.get_object_array_element(&keys_obj, i), env.get_object_array_element(&values_obj, i)) {
+                let k_str: JString = k_obj.into();
+                let v_str: JString = v_obj.into();
+                if let (Ok(k), Ok(v)) = (env.get_string(&k_str), env.get_string(&v_str)) {
+                    map.insert(k.into(), v.into());
+                }
+            }
+        }
+    }
+
+    let _ = crate::EXTENDED_ENV.get_or_init(|| Mutex::new(map.clone()));
+    android_log(LogPriority::INFO, &format!("[JNI] Extended environment set with {} vars", map.len()));
+}
+
 /// 等待进程
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_JNI_waitFor(

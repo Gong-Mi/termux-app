@@ -37,3 +37,6 @@ pub use crate::terminal::colors::*;
 pub use crate::terminal::sixel::{SixelDecoder, SixelState, SixelColor};
 
 pub static JAVA_VM: OnceCell<jni::JavaVM> = OnceCell::new();
+
+/// 全局存储 Java 层传递的扩展环境变量（TERMUX_APP__* 等）
+pub static EXTENDED_ENV: OnceCell<Mutex<std::collections::HashMap<String, String>>> = OnceCell::new();

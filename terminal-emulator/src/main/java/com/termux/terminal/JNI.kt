@@ -85,6 +85,7 @@ internal object JNI {
 
     // --- Termux 元数据 ---
     @JvmStatic external fun setTermuxVersion(version: String)
+    @JvmStatic external fun setExtendedEnvironment(keys: Array<String>, values: Array<String>)
 
     // --- KeyHandler (Rust) ---
     @JvmStatic external fun getKeyCode(keyCode: Int, keyMode: Int, cursorApp: Boolean, keypad: Boolean): String?

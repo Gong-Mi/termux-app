@@ -22,22 +22,16 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
 
     // ------------------------------------------------------------------
     // 1. 继承必要的 Android 系统环境变量（从当前进程读取）
-    //    这些变量只能由宿主进程提供，Rust 无法自行推断。
+    //    只保留对 Termux shell 实际有用的，过滤掉 Android framework 内部变量。
     // ------------------------------------------------------------------
-    inherit_system_var(&mut env, "ANDROID_ASSETS");
     inherit_system_var(&mut env, "ANDROID_DATA");
     inherit_system_var(&mut env, "ANDROID_ROOT");
     inherit_system_var(&mut env, "ANDROID_STORAGE");
     inherit_system_var(&mut env, "EXTERNAL_STORAGE");
-    inherit_system_var(&mut env, "ASEC_MOUNTPOINT");
-    inherit_system_var(&mut env, "LOOP_MOUNTPOINT");
     inherit_system_var(&mut env, "ANDROID_RUNTIME_ROOT");
     inherit_system_var(&mut env, "ANDROID_ART_ROOT");
     inherit_system_var(&mut env, "ANDROID_I18N_ROOT");
     inherit_system_var(&mut env, "ANDROID_TZDATA_ROOT");
-    inherit_system_var(&mut env, "BOOTCLASSPATH");
-    inherit_system_var(&mut env, "DEX2OATBOOTCLASSPATH");
-    inherit_system_var(&mut env, "SYSTEMSERVERCLASSPATH");
 
     // ------------------------------------------------------------------
     // 2. 基础终端环境（与 upstream Java 的 AndroidShellEnvironment 对齐）
@@ -101,7 +95,12 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
     }
 
     // ------------------------------------------------------------------
-    // 6. PWD（工作目录）
+    // 6. SHELL（默认 bash）
+    // ------------------------------------------------------------------
+    env.insert("SHELL".to_string(), format!("{}/bin/bash", termux_prefix));
+
+    // ------------------------------------------------------------------
+    // 7. PWD（工作目录）
     // ------------------------------------------------------------------
     let pwd = if !cwd.is_empty() {
         // 尽量使用绝对路径；如果 cwd 是相对路径，保留原样（shell 自己会处理）
@@ -112,7 +111,18 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
     env.insert("PWD".to_string(), pwd);
 
     // ------------------------------------------------------------------
-    // 6. 转换为 CString 数组（按 key 排序，便于日志对比）
+    // 8. 合并 Java 层传递的扩展环境变量（TERMUX_APP__* 等）
+    // ------------------------------------------------------------------
+    if let Some(ext_mutex) = crate::EXTENDED_ENV.get() {
+        if let Ok(ext_map) = ext_mutex.lock() {
+            for (k, v) in ext_map.iter() {
+                env.insert(k.clone(), v.clone());
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 9. 转换为 CString 数组（按 key 排序，便于日志对比）
     // ------------------------------------------------------------------
     let mut pairs: Vec<(String, String)> = env.into_iter().collect();
     pairs.sort_by(|a, b| a.0.cmp(&b.0));
