@@ -16,7 +16,13 @@ class RustAndroidPlugin implements Plugin<Project> {
 
             def ndkAbis = project.android.defaultConfig.ndk.abiFilters
             if (!ndkAbis) {
-                ndkAbis = ['arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'] as Set
+                // Fall back to splits.abi.include if ndk.abiFilters is not set
+                def abiSplit = project.android.splits.abi
+                if (abiSplit.include) {
+                    ndkAbis = abiSplit.include
+                } else {
+                    ndkAbis = ['arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'] as Set
+                }
             }
 
             // Build Rust libraries for each ABI
