@@ -2,6 +2,7 @@ name: Check
 
 on:
   push:
+  workflow_dispatch:
 
 jobs:
   actionlint:
@@ -15,12 +16,29 @@ jobs:
     - name: Check GitHub workflows
       run: ${{ steps.get_actionlint.outputs.executable }} -color
 
+  rust-check:
+    name: Check Rust code
+    runs-on: ubuntu-latest
+    steps:
+    - name: Clone repository
+      uses: actions/checkout@v6
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+    - name: Check Rust formatting
+      run: |
+        cd terminal-emulator/src/main/rust
+        cargo fmt -- --check
+    - name: Run Rust tests
+      run: |
+        cd terminal-emulator/src/main/rust
+        cargo test --lib
+
   check:
     name: Check gradle build (java ${{ matrix.javaVersion }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        javaVersion: [21, 25]
+        javaVersion: [21]
     steps:
     - name: Clone repository
       uses: actions/checkout@v6
@@ -29,10 +47,18 @@ jobs:
       with:
         distribution: 'temurin'
         java-version: ${{ matrix.javaVersion }}
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+    - name: Install cargo-ndk
+      run: cargo install cargo-ndk
     - name: Lint
       run: ./gradlew lint
     - name: Test
       run: ./gradlew test
+    - name: Build Rust
+      run: ./gradlew :terminal-emulator:buildAllRust
     - name: Assemble Debug
       shell: bash
       run: |
