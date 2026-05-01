@@ -43,6 +43,9 @@ interface TerminalViewClient {
 
     fun onEmulatorSet()
 
+    /** Get the touch scrolling algorithm to use. */
+    fun getTouchAlgorithm(): String = "adaptive"
+
     fun logError(tag: String, message: String)
 
     fun logWarn(tag: String, message: String)

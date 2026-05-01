@@ -167,6 +167,11 @@ public class TermuxTerminalViewClient extends TermuxTerminalViewClientBase {
         }
     }
 
+    @Override
+    public String getTouchAlgorithm() {
+        return mActivity.getPreferences().getTouchAlgorithm();
+    }
+
 
 
     @Override

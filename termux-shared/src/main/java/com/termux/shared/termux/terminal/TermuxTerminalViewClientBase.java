@@ -86,7 +86,11 @@ public class TermuxTerminalViewClientBase implements TerminalViewClient {
 
     @Override
     public void onEmulatorSet() {
+    }
 
+    @Override
+    public String getTouchAlgorithm() {
+        return "adaptive";
     }
 
     @Override
