@@ -44,6 +44,12 @@
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
 
+    <!-- Android 11+ 包可见性 -->
+    <queries>
+        <package android:name="com.termux.x11"/>
+        <intent><action android:name="android.speech.RecognitionService"/></intent>
+    </queries>
+
     <application
         android:name=".app.TermuxApplication"
         android:allowBackup="false"
@@ -51,6 +57,7 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/application_name"
         android:requestLegacyExternalStorage="true"
+        android:enableOnBackInvokedCallback="true"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="false"
         android:theme="@style/Theme.TermuxApp.DayNight.DarkActionBar"
@@ -203,7 +210,11 @@
         <service
             android:name=".app.TermuxService"
             android:exported="false"
-            android:foregroundServiceType="specialUse" />
+            android:foregroundServiceType="specialUse">
+            <!-- Android 14+ 前台服务必须声明用途 -->
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="As a Linux environment Termux needs to ensure that running tasks are not killed or paused while the app is in the background." />
+        </service>
 
         <service
             android:name=".app.RunCommandService"
