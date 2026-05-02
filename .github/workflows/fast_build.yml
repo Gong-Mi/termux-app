@@ -9,11 +9,13 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - work/googleplay-base
       - feature/rust-integration
       - fix/android-12-compat
       - legacy/sdk-28-compat
   pull_request:
     branches:
+      - work/googleplay-base
       - feature/rust-integration
       - fix/android-12-compat
       - legacy/sdk-28-compat
