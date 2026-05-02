@@ -19,8 +19,8 @@ android {
     this.ndkVersion = ndkVersion
 
     defaultConfig {
-        versionCode = 140
-        versionName = "googleplay.2026.02.11"
+        versionCode = 118
+        versionName = "0.118.0"
 
         val minSdkVersion: String by project
         val targetSdkVersion: String by project
