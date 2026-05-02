@@ -159,6 +159,7 @@ jobs:
           # 关键：使用 --parallel 和 -PabiFilter=arm64-v8a 限制只编译 arm64
           # 同时启用 Gradle 配置缓存
           ./gradlew assembleDebug \
+            -PabiFilter=arm64-v8a \
             --parallel \
             --no-daemon \
             -Dorg.gradle.parallel=true \

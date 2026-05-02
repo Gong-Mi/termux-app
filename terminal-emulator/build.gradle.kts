@@ -15,7 +15,11 @@ android {
         minSdk = minSdkVersion.toInt()
         compileSdk = compileSdkVersion.toInt()
         ndk {
-            abiFilters += listOf("x86", "x86_64", "armeabi-v7a", "arm64-v8a")
+            if (project.hasProperty("abiFilter")) {
+                abiFilters += listOf(project.property("abiFilter") as String)
+            } else {
+                abiFilters += listOf("x86", "x86_64", "armeabi-v7a", "arm64-v8a")
+            }
         }
     }
 
@@ -37,7 +41,11 @@ rustAndroid {
     jniLibsDestDir = "src/main/jniLibs"
     libName = "termux_rust"
     minSdkVersion = providers.gradleProperty("minSdkVersion").get().toInt()
-    abiFilters = listOf("x86", "x86_64", "armeabi-v7a", "arm64-v8a")
+    if (project.hasProperty("abiFilter")) {
+        abiFilters = listOf(project.property("abiFilter") as String)
+    } else {
+        abiFilters = listOf("x86", "x86_64", "armeabi-v7a", "arm64-v8a")
+    }
 }
 
 dependencies {

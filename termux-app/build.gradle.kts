@@ -29,7 +29,11 @@ android {
         targetSdk = targetSdkVersion.toInt()
         compileSdk = compileSdkVersion.toInt()
         ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
+            if (project.hasProperty("abiFilter")) {
+                abiFilters += listOf(project.property("abiFilter") as String)
+            } else {
+                abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
+            }
         }
 
         buildConfigField("String", "TERMUX_PACKAGE_VARIANT", "\"$packageVariant\"")
