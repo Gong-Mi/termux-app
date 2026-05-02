@@ -174,7 +174,7 @@ jobs:
         with:
           name: ${{ env.APK_BASENAME_PREFIX }}_arm64-v8a
           path: |
-            ${{ env.APK_DIR_PATH }}/${{ env.APK_BASENAME_PREFIX }}_arm64-v8a.apk
+            ${{ env.APK_DIR_PATH }}/*.apk
             ${{ env.APK_DIR_PATH }}/output-metadata.json
 
       - name: Upload Build Report
