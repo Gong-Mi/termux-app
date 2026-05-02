@@ -482,6 +482,12 @@ impl VulkanContext {
             // 关键修复：在重建前确保 GPU 已空闲，防止正在使用的资源被销毁
             let _ = self.device.device_wait_idle();
 
+            // 预清理 Skia Surface 并提交上下文，防止旧 Surface 继续引用即将被销毁的 Swapchain Images
+            self.sk_surfaces.clear();
+            if let Some(ctx) = self.context.as_mut() {
+                ctx.flush_and_submit();
+            }
+
             if let Ok(new_swapchain) = self.swapchain_loader.create_swapchain(&swapchain_create_info, None) {
                 if self.swapchain != ash_vk::SwapchainKHR::null() {
                     self.swapchain_loader.destroy_swapchain(self.swapchain, None);
@@ -489,7 +495,6 @@ impl VulkanContext {
                 self.swapchain = new_swapchain;
                 self.swapchain_images = self.swapchain_loader.get_swapchain_images(self.swapchain).unwrap_or_default();
                 // 预创建并缓存 Skia Surface，避免每帧重复创建 BackendRenderTarget 包装器
-                self.sk_surfaces.clear();
                 self.sk_surfaces.reserve(self.swapchain_images.len());
                 for i in 0..self.swapchain_images.len() {
                     let surface = self.create_sk_surface(i as u32);
@@ -524,9 +529,11 @@ impl VulkanContext {
         let _ = unsafe { self.device.device_wait_idle() };
 
         // 2. 销毁旧的 swapchain 和 sk_surfaces
-        for surface in self.sk_surfaces.drain(..) {
-            drop(surface);
+        self.sk_surfaces.clear();
+        if let Some(ctx) = self.context.as_mut() {
+            ctx.flush_and_submit();
         }
+        
         if self.swapchain != ash_vk::SwapchainKHR::null() {
             unsafe { self.swapchain_loader.destroy_swapchain(self.swapchain, None); }
             self.swapchain = ash_vk::SwapchainKHR::null();
