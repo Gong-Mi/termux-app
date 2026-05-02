@@ -1,4 +1,4 @@
-use skia_safe::{gpu::vk, gpu::DirectContext, Surface as SkSurface, ColorType};
+use skia_safe::{gpu::vk, gpu::DirectContext, gpu::ContextOptions, Surface as SkSurface, ColorType};
 use ash::{vk as ash_vk, Entry, Instance, Device};
 use ash::khr::swapchain;
 use ash::vk::Handle;
@@ -20,6 +20,8 @@ pub struct VulkanContext {
     pub extent: ash_vk::Extent2D,
     pub image_available_semaphore: ash_vk::Semaphore,
     pub render_finished_semaphore: ash_vk::Semaphore,
+    /// 缓存的 Skia Surface，避免每帧重新创建 wrap_backend_render_target
+    sk_surfaces: Vec<Option<SkSurface>>,
 }
 
 unsafe impl Send for VulkanContext {}
@@ -232,13 +234,25 @@ impl VulkanContext {
         };
 
         android_log(LogPriority::INFO, "VulkanContext::new: Creating Skia context");
-        let context = skia_safe::gpu::direct_contexts::make_vulkan(&backend_context, None);
+        let mut context_options = ContextOptions::new();
+        // 限制字形 atlas 纹理大小，防止大字体场景下内存暴涨
+        context_options.glyph_cache_texture_maximum_bytes = 8 * 1024 * 1024;
+        // 增大运行时着色器程序缓存，减少重复编译
+        context_options.runtime_program_cache_size = 256;
+        // 允许字形 atlas 使用多张纹理，提升大字符集渲染效率
+        context_options.allow_multiple_glyph_cache_textures = skia_safe::gpu::ganesh::context_options::Enable::Yes;
+        // 缓存 Vulkan 二级命令缓冲，减少命令构建开销
+        context_options.max_cached_vulkan_secondary_command_buffers = 64;
+
+        let context = skia_safe::gpu::direct_contexts::make_vulkan(&backend_context, Some(&context_options));
         if context.is_none() {
             android_log(LogPriority::ERROR, "VulkanContext::new: Skia make_vulkan failed");
             return None;
         }
-        let context = context.unwrap();
-        android_log(LogPriority::INFO, "VulkanContext::new: Skia context created");
+        let mut context = context.unwrap();
+        // 设置 GPU 资源缓存上限为 64MB（纹理、缓冲区等）
+        context.set_resource_cache_limit(64 * 1024 * 1024);
+        android_log(LogPriority::INFO, "VulkanContext::new: Skia context created with cache limits");
 
         let mut ctx = Self {
             instance, device, context, queue, graphics_queue_index: queue_family_index,
@@ -248,6 +262,7 @@ impl VulkanContext {
             extent,
             image_available_semaphore,
             render_finished_semaphore,
+            sk_surfaces: vec![],
         };
 
         let swapchain_ok = ctx.recreate_swapchain(extent.width, extent.height);
@@ -338,8 +353,15 @@ impl VulkanContext {
                 }
                 self.swapchain = new_swapchain;
                 self.swapchain_images = self.swapchain_loader.get_swapchain_images(self.swapchain).unwrap_or_default();
-                android_log(LogPriority::INFO, &format!("Vulkan: Swapchain recreated {}x{} with {} images", 
-                    self.extent.width, self.extent.height, self.swapchain_images.len()));
+                // 预创建并缓存 Skia Surface，避免每帧重复创建 BackendRenderTarget 包装器
+                self.sk_surfaces.clear();
+                self.sk_surfaces.reserve(self.swapchain_images.len());
+                for i in 0..self.swapchain_images.len() {
+                    let surface = self.create_sk_surface(i as u32);
+                    self.sk_surfaces.push(surface);
+                }
+                android_log(LogPriority::INFO, &format!("Vulkan: Swapchain recreated {}x{} with {} images ({} surfaces cached)", 
+                    self.extent.width, self.extent.height, self.swapchain_images.len(), self.sk_surfaces.len()));
                 true
             } else {
                 android_log(LogPriority::ERROR, "Vulkan: Failed to create swapchain");
@@ -359,7 +381,21 @@ impl VulkanContext {
         }
     }
 
+    /// 从缓存中获取 Skia Surface（若缓存未命中则创建）
     pub fn get_sk_surface(&mut self, index: u32) -> Option<SkSurface> {
+        let idx = index as usize;
+        if idx < self.sk_surfaces.len() && self.sk_surfaces[idx].is_some() {
+            // 返回缓存的 Surface 克隆引用（SkSurface 支持 clone/ref）
+            // 注意：skia_safe 的 Surface 通常通过 &mut 借用，这里直接返回引用
+            // 实际上 wrap_backend_render_target 返回 Option<Surface>，我们可以 clone 它
+            self.sk_surfaces[idx].as_ref().map(|s| s.clone())
+        } else {
+            // 缓存未命中时回退到创建（如运行时扩展）
+            self.create_sk_surface(index)
+        }
+    }
+
+    fn create_sk_surface(&mut self, index: u32) -> Option<SkSurface> {
         let image = self.swapchain_images.get(index as usize)?;
 
         let vk_image_info = unsafe {

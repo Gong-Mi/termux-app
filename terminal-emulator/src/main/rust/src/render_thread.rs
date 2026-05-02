@@ -114,6 +114,8 @@ fn spawn_render_thread(engine_ptr: jlong) {
             let mut frame_count: u64 = 0;
 
             while RENDER_THREAD_RUNNING.load(Ordering::SeqCst) {
+                let frame_start = std::time::Instant::now();
+
                 // 1. 检查是否需要重建 swapchain
                 if SURFACE_SIZE_CHANGED.load(Ordering::SeqCst) {
                     let new_width = *SURFACE_NEW_WIDTH.lock().unwrap();
@@ -261,8 +263,9 @@ fn spawn_render_thread(engine_ptr: jlong) {
                         renderer.draw_frame(canvas, &frame, scale, scroll_offset);
                     }
 
-                    // 提交绘制并确保 GPU 完成后再 present，防止滑动时画面撕裂/闪烁
-                    ctx.context.flush_submit_and_sync_cpu();
+                    // 提交绘制（不强制 CPU 等待 GPU，让 CPU/GPU 并行工作）
+                    // 三重缓冲 + MAILBOX present mode 本身已防止撕裂
+                    ctx.context.flush_and_submit();
 
                     // 4. 呈现图像
                     let present_info = ash::vk::PresentInfoKHR {
@@ -285,6 +288,12 @@ fn spawn_render_thread(engine_ptr: jlong) {
                         }
                     }
                 }));
+
+                let frame_elapsed = std::time::Instant::now() - frame_start;
+                let target_frame_time = std::time::Duration::from_millis(16); // 60 FPS cap
+                if frame_elapsed < target_frame_time {
+                    std::thread::sleep(target_frame_time - frame_elapsed);
+                }
 
                 match render_result {
                     Ok(Ok(_)) => {
