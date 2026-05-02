@@ -14,7 +14,7 @@ class RustAndroidPlugin : Plugin<Project> {
         val extension = project.extensions.create<RustAndroidExtension>("rustAndroid")
 
         // Read NDK path from local.properties (if available) to set ANDROID_NDK for cargo/skia builds
-        val ndkPath = runCatching {
+        var ndkPath = runCatching {
             val localProps = java.util.Properties()
             val localPropsFile = project.rootProject.file("local.properties")
             if (localPropsFile.exists()) {
@@ -22,6 +22,8 @@ class RustAndroidPlugin : Plugin<Project> {
                 localProps.getProperty("ndk.dir")
             } else null
         }.getOrNull()
+        if (ndkPath.isNullOrBlank()) ndkPath = System.getenv("ANDROID_NDK_HOME")
+        if (ndkPath.isNullOrBlank()) ndkPath = System.getenv("ANDROID_NDK_ROOT")
 
         fun configureRustBuilds(pluginId: String) {
             project.pluginManager.withPlugin(pluginId) {
