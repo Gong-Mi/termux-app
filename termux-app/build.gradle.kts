@@ -8,8 +8,9 @@ import java.security.MessageDigest
 
 plugins {
     id("com.android.application")
-    id("termux.rust.android")
 }
+
+val packageVariant = System.getenv("TERMUX_PACKAGE_VARIANT") ?: "apt-android-7"
 
 android {
     namespace = "com.termux"
@@ -30,6 +31,8 @@ android {
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
         }
+
+        buildConfigField("String", "TERMUX_PACKAGE_VARIANT", "\"$packageVariant\"")
     }
 
     signingConfigs {
@@ -62,11 +65,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_21
     }
 
-    externalNativeBuild {
-        ndkBuild {
-            path = File("src/main/cpp/Android.mk")
-        }
-    }
 
     testOptions {
         unitTests {
@@ -85,13 +83,8 @@ android {
     }
 }
 
-rustAndroid {
-    rustSrcDir = "src/main/rust-bootstrap"
-    jniLibsDestDir = "src/main/jniLibs"
-    libName = "termux_bootstrap"
-    minSdkVersion = providers.gradleProperty("minSdkVersion").get().toInt()
-    abiFilters = listOf("armeabi-v7a", "arm64-v8a", "x86_64")
-}
+// Bootstrap zip is embedded in libtermux_rust.so via build.rs + include_bytes!().
+// The legacy C ndkBuild and libtermux-bootstrap.so have been removed.
 
 dependencies {
     implementation("androidx.annotation:annotation:1.10.0")
@@ -132,71 +125,81 @@ tasks.named("clean") {
     dependsOn("cleanBootstraps")
 }
 
-tasks.register("downloadPrebuilt") {
-    fun downloadFile(projectDir: Directory, localUrl: String, remoteUrl: String, expectedChecksum: String) {
-        val digest = MessageDigest.getInstance("SHA-256")
+tasks.register("downloadBootstraps") {
+    val projectDirPath = project.layout.projectDirectory.asFile.absolutePath
+    val variant = packageVariant
+    doLast {
+        val projectDir = File(projectDirPath)
 
-        val file = File(projectDir.asFile, localUrl)
-        if (file.exists()) {
-            val buffer = ByteArray(8192)
-            val input = FileInputStream(file)
-            while (true) {
-                val readBytes = input.read(buffer)
-                if (readBytes < 0) break
-                digest.update(buffer, 0, readBytes)
+        fun download(arch: String, defaultChecksum: String, version: String) {
+            val digest = MessageDigest.getInstance("SHA-256")
+            val localUrl = "src/main/cpp/bootstrap-$arch.zip"
+            val file = File(projectDir, localUrl)
+
+            val sha256File = File(projectDir, "$localUrl.sha256sum")
+            val expectedChecksum = if (sha256File.exists()) {
+                val content = sha256File.readText().trim()
+                val hash = content.split(Regex("\\s+")).first()
+                println("Using local sha256sum for bootstrap-$arch.zip: $hash")
+                hash
+            } else {
+                defaultChecksum
             }
+
+            if (file.exists()) {
+                val buffer = ByteArray(8192)
+                val input = FileInputStream(file)
+                while (true) {
+                    val readBytes = input.read(buffer)
+                    if (readBytes < 0) break
+                    digest.update(buffer, 0, readBytes)
+                }
+                var checksum = BigInteger(1, digest.digest()).toString(16)
+                while (checksum.length < 64) { checksum = "0$checksum" }
+                if (checksum == expectedChecksum) {
+                    return
+                } else {
+                    println("Deleting old local file with wrong hash: $localUrl: expected: $expectedChecksum, actual: $checksum")
+                    file.delete()
+                }
+            }
+
+            val remoteUrl = "https://github.com/Gong-Mi/termux-packages/releases/download/bootstrap-$version/bootstrap-$arch.zip"
+            println("Downloading $remoteUrl ...")
+
+            file.parentFile.mkdirs()
+            val out = BufferedOutputStream(FileOutputStream(file))
+            val connection = URI(remoteUrl).toURL().openConnection()
+            val digestStream = DigestInputStream(connection.inputStream, digest)
+            digestStream.transferTo(out)
+            out.close()
+
             var checksum = BigInteger(1, digest.digest()).toString(16)
             while (checksum.length < 64) { checksum = "0$checksum" }
-            if (checksum == expectedChecksum) {
-                return
-            } else {
-                logger.warn("Deleting old local file with wrong hash: $localUrl: expected: $expectedChecksum, actual: $checksum")
+            if (checksum != expectedChecksum) {
                 file.delete()
+                throw GradleException("Wrong checksum for $remoteUrl:\n Expected: $expectedChecksum\n Actual:   $checksum")
             }
         }
 
-        logger.quiet("Downloading $remoteUrl ...")
-
-        file.parentFile.mkdirs()
-        val out = BufferedOutputStream(FileOutputStream(file))
-
-        val connection = URI(remoteUrl).toURL().openConnection()
-        val digestStream = DigestInputStream(connection.inputStream, digest)
-        digestStream.transferTo(out)
-        out.close()
-
-        var checksum = BigInteger(1, digest.digest()).toString(16)
-        while (checksum.length < 64) { checksum = "0$checksum" }
-        if (checksum != expectedChecksum) {
-            file.delete()
-            throw GradleException("Wrong checksum for $remoteUrl:\n Expected: $expectedChecksum\n Actual:   $checksum")
+        if (variant == "apt-android-7") {
+            val version = "2026.03.01-r1+apt.android-7"
+            download("aarch64", "dd2040ad9ba1445eaf0818f3305bf190e8bdd04bcc0019faf0279181c48e71e3", version)
+            download("arm",     "b8bdc78f2d22c63bf32d51daf02d2128685427abe72341884704060a3fe654a7", version)
+            download("i686",    "cc44c1d405d4adff679cb23d3c4555be8a254b517000e894bfed87e182335fa8", version)
+            download("x86_64",  "6dad9cd8317e9b2a474f9234f7013857a5813cfd2d28d1d57b169d5cdc09570d", version)
+        } else if (variant == "apt-android-5") {
+            val version = "2022.04.28-r6+" + variant
+            download("aarch64", "913609d439415c828c5640be1b0561467e539cb1c7080662decaaca2fb4820e7", version)
+            download("arm",     "26bfb45304c946170db69108e5eb6e3641aad751406ce106c80df80cad2eccf8", version)
+            download("i686",    "46dcfeb5eef67ba765498db9fe4c50dc4690805139aa0dd141a9d8ee0693cd27", version)
+            download("x86_64",  "615b590679ee6cd885b7fd2ff9473c845e920f9b422f790bb158c63fe42b8481", version)
+        } else {
+            throw GradleException("Unsupported TERMUX_PACKAGE_VARIANT \"$variant\"")
         }
-    }
-
-    val projectDir = layout.projectDirectory
-
-    doLast {
-        val bootstrapVersion = "2026.02.10-r1"
-        val arches = mapOf(
-            "aarch64" to "986bb236bee4c1b9f7abdc4c3864ac318f7e11092e2b4fa7631ff7169bd9dfda",
-            "arm" to "b40236c18a01cac61f2964e27bb8a53229dee61809df46ce0773c576c4570877",
-            "x86_64" to "dc0eb2eaf02a2937ae919904bd750c3a57d7785597120ec2cb555d99cd06a287"
-        )
-        arches.forEach { (arch, checksum) ->
-            val downloadTo = "src/main/cpp/bootstrap-${arch}.zip"
-            val url = "https://github.com/termux-play-store/termux-packages/releases/download/bootstrap-${bootstrapVersion}/bootstrap-${arch}.zip"
-            downloadFile(projectDir, downloadTo, url, checksum)
-        }
-
-        val prootTag = "proot-2026.01.22-r1"
-        val prootVersion = "5.1.107-70"
-        var prootUrl = "https://github.com/termux-play-store/termux-packages/releases/download/${prootTag}/libproot-loader-ARCH-${prootVersion}.so"
-        downloadFile(projectDir, "src/main/jniLibs/armeabi-v7a/libproot-loader.so", prootUrl.replace("ARCH", "arm"), "09729047155df0c1a6b55c265ff4e272107775961d7efaff06bdd7cf37904050")
-        downloadFile(projectDir, "src/main/jniLibs/arm64-v8a/libproot-loader.so", prootUrl.replace("ARCH", "aarch64"), "f7e3211e4c210c2a39a1f22b7f38666d99aee172fd009c0d19b84108cf20bb42")
-        downloadFile(projectDir, "src/main/jniLibs/x86_64/libproot-loader.so", prootUrl.replace("ARCH", "x86_64"), "86e22d456255417e1d4ee874986571578ff26675ae2e372458e0d87f26454c63")
     }
 }
 
 tasks.named("preBuild") {
-    dependsOn("downloadPrebuilt")
+    dependsOn("downloadBootstraps")
 }

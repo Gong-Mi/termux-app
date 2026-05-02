@@ -12,7 +12,7 @@ public final class TermuxProperties {
 
     private final Properties properties = new Properties();
 
-    public static final String EXTRA_KEYS_DEFAULT = "[['ESC','/',{key: '-', popup: '|'},'HOME','UP','END','PGUP'], ['TAB','CTRL','ALT','LEFT','DOWN','RIGHT','PGDN']]";
+    public static final String EXTRA_KEYS_DEFAULT = "[['ESC',{key: 'DRAWER', popup: 'PASTE'},'SCROLL','HOME','UP','END','PGUP'], ['TAB','CTRL','ALT','LEFT','DOWN','RIGHT','PGDN']]";
     public static final String EXTRA_KEYS_STYLE_DEFAULT = "default";
 
     void reloadProperties(TermuxActivity activity) {

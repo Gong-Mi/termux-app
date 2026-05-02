@@ -141,7 +141,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
     {
         // 关键修复：确保在访问 surface 之前检查其是否为 null
         if surface.as_raw().is_null() {
-            android_log(LogPriority::INFO, "nativeSetSurface: Surface is NULL, stopping render thread");
+            android_log(LogPriority::INFO, "nativeSetSurface: Surface is NULL, stopping render thread (keeping Vulkan context alive)");
             
             // 1. 设置标志停止渲染循环
             render_thread::get_surface_ready().store(false, std::sync::atomic::Ordering::SeqCst);
@@ -156,15 +156,11 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
                 android_log(LogPriority::INFO, "nativeSetSurface: Render thread stopped");
             }
 
-            // 3. 销毁 Vulkan 上下文
-            if let Some(mutex) = render_thread::get_vulkan_context().get() {
-                let mut guard = mutex.lock().unwrap();
-                if let Some(ctx) = guard.as_mut() {
-                    unsafe { let _ = ctx.device.device_wait_idle(); }
-                }
-                *guard = None;
-                android_log(LogPriority::INFO, "nativeSetSurface: Vulkan context destroyed after wait_idle");
-            }
+            // 3. 【关键修复】不销毁 Vulkan 上下文，保持存活等待 surfaceCreated 再次调用。
+            // MIUI/HyperOS 在 surfaceDestroyed 后可能长时间不回调 surfaceCreated（数分钟），
+            // 如果销毁 Vulkan 上下文，恢复时需要从头初始化（Entry/Instance/Device/Skia），
+            // 耗时且可能导致闪烁。保持上下文存活，surfaceCreated 时只需 update_surface。
+            android_log(LogPriority::INFO, "nativeSetSurface: Vulkan context KEPT ALIVE (not destroyed)");
             return;
         }
 
@@ -183,6 +179,25 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
         android_log(LogPriority::DEBUG, &format!("nativeSetSurface: ANativeWindow acquired: {:p}", window));
 
         unsafe {
+            // 检查是否已有 Vulkan 上下文（surfaceDestroyed 后 surfaceCreated 复用场景）
+            if let Some(mutex) = render_thread::get_vulkan_context().get() {
+                let mut guard = mutex.lock().unwrap();
+                if guard.is_some() {
+                    android_log(LogPriority::INFO, "nativeSetSurface: Existing Vulkan context found, calling update_surface()");
+                    if let Some(ctx) = guard.as_mut() {
+                        if ctx.update_surface(window as _) {
+                            android_log(LogPriority::INFO, "nativeSetSurface: Surface updated successfully");
+                            render_thread::get_surface_ready().store(true, std::sync::atomic::Ordering::SeqCst);
+                            render_thread::try_start_render_thread();
+                            return;
+                        } else {
+                            android_log(LogPriority::ERROR, "nativeSetSurface: update_surface failed, falling back to full re-initialization");
+                        }
+                    }
+                }
+            }
+
+            // 没有现有上下文或 update_surface 失败，创建新的
             android_log(LogPriority::DEBUG, "nativeSetSurface: Attempting VulkanContext::new()");
             if let Some(ctx) = crate::vulkan_context::VulkanContext::new(window as _) {
                 let mutex = render_thread::get_vulkan_context().get_or_init(|| std::sync::Mutex::new(None));
@@ -205,7 +220,7 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
     }
 }
 
-/// 尺寸变化通知
+/// 尺寸变化通知（带 debounce，IME 切换时不阻塞 GPU）
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeOnSizeChanged(
     _env: JNIEnv,
@@ -214,12 +229,8 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeOnSizeChanged(
     height: jint,
 ) {
     android_log(LogPriority::INFO, &format!("nativeOnSizeChanged: {}x{}", width, height));
-
-    *render_thread::get_surface_new_width().lock().unwrap() = width as u32;
-    *render_thread::get_surface_new_height().lock().unwrap() = height as u32;
-    render_thread::get_surface_size_changed().store(true, std::sync::atomic::Ordering::SeqCst);
-    render_thread::request_render();
-    android_log(LogPriority::DEBUG, "nativeOnSizeChanged: Set SURFACE_SIZE_CHANGED=true");
+    // 使用 debounce 延迟重建 swapchain，避免 IME 动画期间 device_wait_idle 阻塞 GPU
+    render_thread::notify_size_change(width as u32, height as u32);
 }
 
 /// 设置引擎指针

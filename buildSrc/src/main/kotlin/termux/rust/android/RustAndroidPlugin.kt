@@ -1,5 +1,6 @@
 package termux.rust.android
 
+import java.io.File
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.provider.ListProperty
@@ -11,6 +12,16 @@ import org.gradle.kotlin.dsl.*
 class RustAndroidPlugin : Plugin<Project> {
     override fun apply(project: Project) {
         val extension = project.extensions.create<RustAndroidExtension>("rustAndroid")
+
+        // Read NDK path from local.properties (if available) to set ANDROID_NDK for cargo/skia builds
+        val ndkPath = runCatching {
+            val localProps = java.util.Properties()
+            val localPropsFile = project.rootProject.file("local.properties")
+            if (localPropsFile.exists()) {
+                localPropsFile.inputStream().use { localProps.load(it) }
+                localProps.getProperty("ndk.dir")
+            } else null
+        }.getOrNull()
 
         fun configureRustBuilds(pluginId: String) {
             project.pluginManager.withPlugin(pluginId) {
@@ -46,6 +57,11 @@ class RustAndroidPlugin : Plugin<Project> {
 
                             workingDir = project.file(rustSrc)
 
+                            // Export ANDROID_NDK for skia-bindings and cargo-ndk
+                            if (!ndkPath.isNullOrBlank()) {
+                                environment("ANDROID_NDK", ndkPath)
+                            }
+
                             commandLine(
                                 "cargo", "ndk",
                                 "-t", abi,
@@ -67,6 +83,21 @@ class RustAndroidPlugin : Plugin<Project> {
 
                             from(project.file("$rustSrc/target/$rustArch/release/lib$libName.so"))
                             into(project.file("$jniDest/$abi"))
+
+                            // Also copy libc++_shared.so from NDK if available (required by Skia/Rust builds)
+                            if (!ndkPath.isNullOrBlank()) {
+                                val triple = when (abi) {
+                                    "arm64-v8a" -> "aarch64-linux-android"
+                                    "armeabi-v7a" -> "arm-linux-androideabi"
+                                    "x86" -> "i686-linux-android"
+                                    "x86_64" -> "x86_64-linux-android"
+                                    else -> rustArch
+                                }
+                                val cxxShared = File(ndkPath, "toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/$triple/libc++_shared.so")
+                                if (cxxShared.exists()) {
+                                    from(cxxShared)
+                                }
+                            }
                         }
                     }
 

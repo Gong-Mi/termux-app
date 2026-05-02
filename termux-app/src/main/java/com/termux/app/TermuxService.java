@@ -354,6 +354,53 @@ public final class TermuxService extends Service {
                     mTerminalSessionClient.onTerminalCursorStateChange(state);
                 }
             }
+
+            @Override
+            public void setTerminalShellPid(@NonNull TerminalSession session, int pid) {
+                if (mTerminalSessionClient != null) {
+                    mTerminalSessionClient.setTerminalShellPid(session, pid);
+                }
+            }
+
+            @Override
+            public Integer getTerminalCursorStyle() {
+                return mTerminalSessionClient != null ? mTerminalSessionClient.getTerminalCursorStyle() : null;
+            }
+
+            @Override
+            public void logError(String tag, String message) {
+                if (mTerminalSessionClient != null) mTerminalSessionClient.logError(tag, message);
+            }
+
+            @Override
+            public void logWarn(String tag, String message) {
+                if (mTerminalSessionClient != null) mTerminalSessionClient.logWarn(tag, message);
+            }
+
+            @Override
+            public void logInfo(String tag, String message) {
+                if (mTerminalSessionClient != null) mTerminalSessionClient.logInfo(tag, message);
+            }
+
+            @Override
+            public void logDebug(String tag, String message) {
+                if (mTerminalSessionClient != null) mTerminalSessionClient.logDebug(tag, message);
+            }
+
+            @Override
+            public void logVerbose(String tag, String message) {
+                if (mTerminalSessionClient != null) mTerminalSessionClient.logVerbose(tag, message);
+            }
+
+            @Override
+            public void logStackTraceWithMessage(String tag, String message, Exception e) {
+                if (mTerminalSessionClient != null) mTerminalSessionClient.logStackTraceWithMessage(tag, message, e);
+            }
+
+            @Override
+            public void logStackTrace(String tag, Exception e) {
+                if (mTerminalSessionClient != null) mTerminalSessionClient.logStackTrace(tag, e);
+            }
         };
 
         // If the execution command was started for a plugin, only then will the stdout be set

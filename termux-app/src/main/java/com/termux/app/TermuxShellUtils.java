@@ -203,6 +203,7 @@ public class TermuxShellUtils {
             command.arguments,
             environmentArray,
             4000,
+            false,
             terminalSessionClient
         );
     }

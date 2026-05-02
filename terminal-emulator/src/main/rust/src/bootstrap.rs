@@ -1,11 +1,28 @@
 //! Bootstrap Extractor Module
 //!
 //! Provides functionality to extract bootstrap zip to target directory.
+//! Also embeds the bootstrap zip data at compile time and exposes JNI getZip().
 
 use std::fs::{File, create_dir_all};
 use std::io::Read;
 use std::path::Path;
 use zip::ZipArchive;
+
+/// 编译时嵌入的 bootstrap zip 数据（路径由 build.rs 根据目标架构设置）
+static BOOTSTRAP_ZIP: &[u8] = include_bytes!(env!("BOOTSTRAP_ZIP_PATH"));
+
+/// JNI: 返回嵌入的 bootstrap zip 字节数组
+/// 对应 com.termux.app.TermuxInstaller.getZip()
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_app_TermuxInstaller_getZip(
+    env: jni::JNIEnv,
+    _class: jni::objects::JClass,
+) -> jni::sys::jbyteArray {
+    match env.byte_array_from_slice(BOOTSTRAP_ZIP) {
+        Ok(array) => array.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
 
 /// 从 Java 传入的字节数组解压 bootstrap zip 到指定目录
 ///

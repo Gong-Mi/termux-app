@@ -1,6 +1,7 @@
 /// 渲染线程管理
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 use jni::sys::{jint, jlong};
 
 use crate::utils::{android_log, LogPriority};
@@ -40,21 +41,41 @@ pub fn get_render_font_path() -> Option<String> {
     RENDER_FONT_PATH.lock().unwrap().clone()
 }
 
-pub fn set_render_cache_dir(_path: &str) {
-    // Stub: cache directory setting not yet implemented
+pub fn set_render_cache_dir(path: &str) {
+    let cache_file = format!("{}/vulkan_pipeline_cache.bin", path);
+    crate::vulkan_context::set_pipeline_cache_file_path(&cache_file);
 }
 
 pub fn set_render_font_path(path: &str) {
     *RENDER_FONT_PATH.lock().unwrap() = Some(path.to_string());
 }
 
-/// 通知渲染线程重建 swapchain
+/// 通知渲染线程重建 swapchain（立即执行，用于 OUT_OF_DATE 等场景）
 static SURFACE_SIZE_CHANGED: AtomicBool = AtomicBool::new(false);
 static SURFACE_NEW_WIDTH: Mutex<u32> = Mutex::new(0);
 static SURFACE_NEW_HEIGHT: Mutex<u32> = Mutex::new(0);
 
+/// Debounce 延迟重建 swapchain（用于 nativeOnSizeChanged IME 尺寸变化）
+static SIZE_CHANGE_PENDING: AtomicBool = AtomicBool::new(false);
+static SIZE_CHANGE_DEBOUNCE_UNTIL: Mutex<Option<Instant>> = Mutex::new(None);
+const SWAPCHAIN_RECREATE_DEBOUNCE_MS: u64 = 150;
+
 /// 屏幕脏标记
 static SCREEN_DIRTY: AtomicBool = AtomicBool::new(false);
+
+/// 通知渲染线程尺寸变化（带 debounce，用于 IME 等场景）
+pub fn notify_size_change(width: u32, height: u32) {
+    *SURFACE_NEW_WIDTH.lock().unwrap() = width;
+    *SURFACE_NEW_HEIGHT.lock().unwrap() = height;
+    SIZE_CHANGE_PENDING.store(true, Ordering::SeqCst);
+    *SIZE_CHANGE_DEBOUNCE_UNTIL.lock().unwrap() = Some(
+        Instant::now() + Duration::from_millis(SWAPCHAIN_RECREATE_DEBOUNCE_MS)
+    );
+    android_log(LogPriority::DEBUG, &format!(
+        "notify_size_change: {}x{}, debounce {}ms", width, height, SWAPCHAIN_RECREATE_DEBOUNCE_MS
+    ));
+    request_render();
+}
 
 /// 触发重绘并唤醒渲染线程
 pub fn request_render() {
@@ -117,7 +138,21 @@ fn spawn_render_thread(engine_ptr: jlong) {
                 let frame_start = std::time::Instant::now();
 
                 // 1. 检查是否需要重建 swapchain
-                if SURFACE_SIZE_CHANGED.load(Ordering::SeqCst) {
+                //    区分：SIZE_CHANGE_PENDING（debounce，来自 nativeOnSizeChanged/IME）
+                //          SURFACE_SIZE_CHANGED（立即，来自 OUT_OF_DATE/SUBOPTIMAL）
+                let (needs_recreate, is_debounced) = if SIZE_CHANGE_PENDING.load(Ordering::SeqCst) {
+                    let should_rebuild = {
+                        let guard = SIZE_CHANGE_DEBOUNCE_UNTIL.lock().unwrap();
+                        guard.map_or(false, |deadline| Instant::now() >= deadline)
+                    };
+                    (should_rebuild, true)
+                } else if SURFACE_SIZE_CHANGED.load(Ordering::SeqCst) {
+                    (true, false)
+                } else {
+                    (false, false)
+                };
+
+                if needs_recreate {
                     let new_width = *SURFACE_NEW_WIDTH.lock().unwrap();
                     let new_height = *SURFACE_NEW_HEIGHT.lock().unwrap();
 
@@ -126,13 +161,22 @@ fn spawn_render_thread(engine_ptr: jlong) {
                             if let Some(ctx) = ctx_guard.as_mut() {
                                 let ok = ctx.recreate_swapchain(new_width, new_height);
                                 android_log(LogPriority::INFO, &format!(
-                                    "Render: Swapchain recreated {}x{} success={}", new_width, new_height, ok
+                                    "Render: Swapchain recreated {}x{} debounced={} success={}",
+                                    new_width, new_height, is_debounced, ok
                                 ));
                                 SURFACE_SIZE_CHANGED.store(false, Ordering::SeqCst);
+                                if is_debounced {
+                                    SIZE_CHANGE_PENDING.store(false, Ordering::SeqCst);
+                                    *SIZE_CHANGE_DEBOUNCE_UNTIL.lock().unwrap() = None;
+                                }
                                 request_render();
                             }
                         }
                     }
+                } else if SIZE_CHANGE_PENDING.load(Ordering::SeqCst) {
+                    // debounce 窗口内（IME 动画期间）：继续用旧 swapchain 渲染，不阻塞 GPU
+                    // 每帧都 request_render 保持动画流畅
+                    request_render();
                 }
 
                 // 2. 事件驱动与轮询结合的节流
@@ -211,6 +255,10 @@ fn spawn_render_thread(engine_ptr: jlong) {
                             if e == ash::vk::Result::ERROR_OUT_OF_DATE_KHR || e == ash::vk::Result::SUBOPTIMAL_KHR {
                                 android_log(LogPriority::INFO, "Render: acquire_next_image returned OUT_OF_DATE/SUBOPTIMAL, triggering recreation");
                                 SURFACE_SIZE_CHANGED.store(true, Ordering::SeqCst);
+                            } else if e == ash::vk::Result::ERROR_SURFACE_LOST_KHR {
+                                android_log(LogPriority::ERROR, "Render: acquire_next_image returned SURFACE_LOST, Surface may be disconnected by system");
+                                SURFACE_READY.store(false, Ordering::SeqCst);
+                                return Err("Surface lost, waiting for surfaceCreated".to_string());
                             } else if e == ash::vk::Result::TIMEOUT {
                                 android_log(LogPriority::DEBUG, "Render: acquire_next_image timeout, skipping frame");
                                 return Err("acquire_next_image timeout".to_string());
@@ -268,7 +316,7 @@ fn spawn_render_thread(engine_ptr: jlong) {
 
                     // 提交绘制（不强制 CPU 等待 GPU，让 CPU/GPU 并行工作）
                     // 三重缓冲 + MAILBOX present mode 本身已防止撕裂
-                    ctx.context.flush_and_submit();
+                    ctx.context.as_mut().unwrap().flush_and_submit();
 
                     // 4. 呈现图像
                     let present_info = ash::vk::PresentInfoKHR {
@@ -285,6 +333,9 @@ fn spawn_render_thread(engine_ptr: jlong) {
                                 // 如果发现交换链由于窗口变化失效，标记为脏以便下帧重建
                                 if e == ash::vk::Result::ERROR_OUT_OF_DATE_KHR || e == ash::vk::Result::SUBOPTIMAL_KHR {
                                     SURFACE_SIZE_CHANGED.store(true, Ordering::SeqCst);
+                                } else if e == ash::vk::Result::ERROR_SURFACE_LOST_KHR {
+                                    android_log(LogPriority::ERROR, "Render: present returned SURFACE_LOST, Surface may be disconnected by system");
+                                    SURFACE_READY.store(false, Ordering::SeqCst);
                                 }
                                 Err(format!("present failed: {:?}", e))
                             }
@@ -301,6 +352,15 @@ fn spawn_render_thread(engine_ptr: jlong) {
                 match render_result {
                     Ok(Ok(_)) => {
                         frame_count += 1;
+                        // 每 300 帧（约 5 秒）清理一次未锁定的 GPU 资源，防止内存泄漏
+                        if frame_count % 300 == 0 {
+                            if let Ok(mut ctx_guard) = ctx_mutex.try_lock() {
+                                if let Some(ctx) = ctx_guard.as_mut() {
+                                    use skia_safe::gpu::ganesh::PurgeResourceOptions;
+                                    ctx.context.as_mut().unwrap().purge_unlocked_resources(PurgeResourceOptions::AllResources);
+                                }
+                            }
+                        }
                     }
                     Ok(Err(msg)) => {
                         if frame_count % 60 == 0 {

@@ -9,6 +9,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.SurfaceTexture
 import android.graphics.Typeface
 import android.os.Build
 import android.os.Handler
@@ -120,6 +121,11 @@ class TerminalView @JvmOverloads constructor(
 
     /// Surface 重建 workaround 状态标志
     private var mSurfaceRecreatePending = false
+    /// 独立 Handler，避免 removeView 触发 onDetachedFromWindow 时清除 postDelayed 任务
+    private val mSurfaceRecreateHandler = Handler(Looper.getMainLooper())
+    /// 记录上次 surfaceChanged 尺寸，避免频繁重复调用 nativeOnSizeChanged
+    private var mLastSurfaceWidth = 0
+    private var mLastSurfaceHeight = 0
 
     /// 自定义字体文件路径（同步到 Rust 侧）
     private var mFontFilePath: String? = null
@@ -798,7 +804,22 @@ class TerminalView @JvmOverloads constructor(
         return true
     }
 
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { updateSize() }
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        updateSize()
+        // 同步通知 Rust 渲染层 Surface 尺寸变化。
+        // SurfaceView 在 IME 弹出/收起等场景下，surfaceChanged 可能不会被调用或延迟调用，
+        // 因此必须在 onSizeChanged 中直接通知，确保 swapchain 尺寸始终与 View 尺寸同步。
+        // 与 surfaceChanged 共享 mLastSurfaceWidth/Height，避免重复调用 nativeOnSizeChanged。
+        if (w > 0 && h > 0 && (w != mLastSurfaceWidth || h != mLastSurfaceHeight)) {
+            mLastSurfaceWidth = w
+            mLastSurfaceHeight = h
+            try {
+                nativeOnSizeChanged(w, h)
+            } catch (e: Exception) {
+                Log.e("TerminalView-Surface", "!!! onSizeChanged nativeOnSizeChanged: ${e.message}", e)
+            }
+        }
+    }
 
     fun updateSize() {
         val currentTime = SystemClock.elapsedRealtime()
@@ -854,23 +875,8 @@ class TerminalView @JvmOverloads constructor(
             selX1, selY1, selX2, selY2, selActive)
     }
 
-    override fun onDraw(canvas: Canvas) {
-        if (!mOnDrawCalledAtLeastOnce) {
-            mOnDrawCalledAtLeastOnce = true
-            Log.i("TerminalView-onDraw", ">>> FIRST onDraw call - emulator=${mEmulator != null}, font metrics ok=${mNativeFontWidth > 0}")
-        }
-        updateRenderParamsToRust()
-        val bitmap = mSixelBitmap
-        if (bitmap != null && !bitmap.isRecycled) {
-            canvas.save()
-            canvas.scale(mScaleFactor, mScaleFactor)
-            val pixelX = mSixelStartX * getFontWidth()
-            val pixelY = (mSixelStartY - mTopRow) * getFontLineSpacing() + getFontLineSpacingAndAscent()
-            canvas.drawBitmap(bitmap, pixelX, pixelY, mSixelPaint)
-            canvas.restore()
-        }
-        renderTextSelection()
-    }
+    // onDraw 在 TextureView 中是 final 的，无法重写。
+    // 绘制逻辑已移到 draw(Canvas) 中，在 super.draw 之后执行。
 
     fun getCurrentSession(): TerminalSession? = mTermSession
 
@@ -892,6 +898,8 @@ class TerminalView @JvmOverloads constructor(
         Log.i("TerminalView-Surface", ">>> surfaceCreated")
         // 取消 pending 的 Surface 重建 workaround（如果系统已自动重建）
         mSurfaceRecreatePending = false
+        mLastSurfaceWidth = 0
+        mLastSurfaceHeight = 0
         try {
             nativeSetSurface(holder.surface)
             refreshFontMetrics()
@@ -902,6 +910,14 @@ class TerminalView @JvmOverloads constructor(
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
         Log.i("TerminalView-Surface", ">>> surfaceChanged: ${width}x${height}")
+        // 性能优化：如果尺寸与上次相同，跳过 nativeOnSizeChanged
+        // 避免 MIUI/HyperOS 频繁调用 surfaceChanged 导致 swapchain 反复重建
+        if (width == mLastSurfaceWidth && height == mLastSurfaceHeight) {
+            Log.d("TerminalView-Surface", "surfaceChanged: size unchanged, skipping nativeOnSizeChanged")
+            return
+        }
+        mLastSurfaceWidth = width
+        mLastSurfaceHeight = height
         try { nativeOnSizeChanged(width, height) }
         catch (e: Exception) { Log.e("TerminalView-Surface", "!!! surfaceChanged: ${e.message}", e) }
     }
@@ -911,21 +927,78 @@ class TerminalView @JvmOverloads constructor(
         try { nativeSetSurface(null) }
         catch (e: Exception) { Log.e("TerminalView-Surface", "!!! surfaceDestroyed: ${e.message}", e) }
 
-        // Workaround: 某些系统（尤其 MIUI/HyperOS）在 IME 弹出时销毁 Surface 后
-        // 不会自动调用 surfaceCreated。通过切换可见性强制系统重新评估 SurfaceView。
+        // Workaround: 某些系统（尤其 MIUI/HyperOS）在 IME 弹出/Activity transition 时
+        // 销毁 Surface 后不会自动调用 surfaceCreated。通过触发 onConfigurationChanged
+        // + 重新 attach 到 parent 强制系统重新评估 SurfaceView。
         mSurfaceRecreatePending = true
-        postDelayed({
+        mSurfaceRecreateHandler.postDelayed({
             if (!mSurfaceRecreatePending) return@postDelayed
             if (holder.surface == null || !holder.surface.isValid) {
-                Log.w("TerminalView-Surface", "Surface still invalid after 200ms, forcing recreation via visibility toggle")
-                visibility = GONE
-                post {
-                    if (!mSurfaceRecreatePending) return@post
-                    visibility = VISIBLE
-                    Log.i("TerminalView-Surface", "Visibility toggled GONE->VISIBLE to force surface recreation")
+                Log.w("TerminalView-Surface", "Surface still invalid after 800ms, forcing recreation")
+                // 触发 SurfaceView 的 onConfigurationChanged，内部会调用 updateSurface()
+                try {
+                    onConfigurationChanged(resources.configuration)
+                } catch (e: Exception) {
+                    Log.w("TerminalView-Surface", "onConfigurationChanged failed: ${e.message}")
                 }
+                val parentView = parent as? android.view.ViewGroup
+                val lp = layoutParams
+                if (parentView != null && lp != null) {
+                    parentView.removeView(this)
+                    mSurfaceRecreateHandler.postDelayed({
+                        if (!mSurfaceRecreatePending) return@postDelayed
+                        parentView.addView(this, lp)
+                        parentView.requestLayout()
+                        Log.i("TerminalView-Surface", "Re-attached to parent to force surface recreation")
+                    }, 200)
+                } else {
+                    // fallback: toggle visibility
+                    visibility = GONE
+                    mSurfaceRecreateHandler.postDelayed({
+                        if (!mSurfaceRecreatePending) return@postDelayed
+                        visibility = VISIBLE
+                        requestLayout()
+                        invalidate()
+                        Log.i("TerminalView-Surface", "Visibility toggled GONE->VISIBLE fallback")
+                    }, 100)
+                }
+                // 关键修复：强制触发 ViewRootImpl 的 performTraversals，从而调用 SurfaceView.updateSurface()
+                mSurfaceRecreateHandler.postDelayed({
+                    if (!mSurfaceRecreatePending) return@postDelayed
+                    val root = rootView
+                    root.requestLayout()
+                    root.invalidate()
+                    // 强制窗口重新布局，触发 SurfaceView 的 Surface 重建
+                    (context as? Activity)?.let { activity ->
+                        try {
+                            val attrs = activity.window.attributes
+                            activity.window.attributes = attrs
+                            Log.i("TerminalView-Surface", "Forced window attributes update to trigger relayout")
+                        } catch (e: Exception) {
+                            Log.w("TerminalView-Surface", "Window attributes update failed: ${e.message}")
+                        }
+                    }
+                }, 300)
             }
-        }, 200)
+        }, 800)
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        if (!mOnDrawCalledAtLeastOnce) {
+            mOnDrawCalledAtLeastOnce = true
+            Log.i("TerminalView-onDraw", ">>> FIRST onDraw call - emulator=${mEmulator != null}, font metrics ok=${mNativeFontWidth > 0}")
+        }
+        updateRenderParamsToRust()
+        val bitmap = mSixelBitmap
+        if (bitmap != null && !bitmap.isRecycled) {
+            canvas.save()
+            canvas.scale(mScaleFactor, mScaleFactor)
+            val pixelX = mSixelStartX * getFontWidth()
+            val pixelY = (mSixelStartY - mTopRow) * getFontLineSpacing() + getFontLineSpacingAndAscent()
+            canvas.drawBitmap(bitmap, pixelX, pixelY, mSixelPaint)
+            canvas.restore()
+        }
+        renderTextSelection()
     }
 
     // --- AutoFill API ---

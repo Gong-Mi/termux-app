@@ -14,8 +14,6 @@ import android.widget.ListView;
 
 import com.termux.R;
 import com.termux.app.extrakeys.SpecialButton;
-import com.termux.terminal.KeyHandler;
-import com.termux.terminal.TerminalBuffer;
 import com.termux.terminal.TerminalEmulator;
 import com.termux.terminal.TerminalSession;
 import com.termux.view.TerminalViewClient;
@@ -334,7 +332,11 @@ public final class TermuxTerminalViewClient implements TerminalViewClient {
 
             if (resultingKeyCode != -1) {
                 TerminalEmulator term = session.getEmulator();
-                session.write(KeyHandler.getCode(resultingKeyCode, 0, term.isCursorKeysApplicationMode(), term.isKeypadApplicationMode()));
+                String keySequence = term.sendKeyEvent(resultingKeyCode, 0);
+                if (keySequence != null) {
+                    byte[] bytes = keySequence.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                    session.write(bytes, 0, bytes.length);
+                }
             } else if (resultingCodePoint != -1) {
                 session.writeCodePoint(altDown, resultingCodePoint);
             }
@@ -368,9 +370,7 @@ public final class TermuxTerminalViewClient implements TerminalViewClient {
         if (session == null) return;
         TerminalEmulator terminalEmulator = session.getEmulator();
         if (terminalEmulator == null) return;
-        TerminalBuffer terminalBuffer = terminalEmulator.getScreen();
-        if (terminalBuffer == null) return;
-        String sessionTranscript = terminalBuffer.getTranscriptTextWithoutJoinedLines().trim();
+        String sessionTranscript = terminalEmulator.getTranscriptText().trim();
         TermuxUrlUtils.shareText(mActivity, mActivity.getString(R.string.title_share_transcript),
             sessionTranscript, mActivity.getString(R.string.title_share_transcript_with));
     }
@@ -388,9 +388,7 @@ public final class TermuxTerminalViewClient implements TerminalViewClient {
         if (session == null) return;
         TerminalEmulator terminalEmulator = session.getEmulator();
         if (terminalEmulator == null) return;
-        TerminalBuffer terminalBuffer = terminalEmulator.getScreen();
-        if (terminalBuffer == null) return;
-        String sessionTranscript = terminalBuffer.getTranscriptTextWithFullLinesJoined().trim();
+        String sessionTranscript = terminalEmulator.getTranscriptText().trim();
 
         LinkedHashSet<CharSequence> urlSet = TermuxUrlUtils.extractUrls(sessionTranscript);
         if (urlSet.isEmpty()) {
@@ -431,6 +429,50 @@ public final class TermuxTerminalViewClient implements TerminalViewClient {
         if (text != null) {
             session.getEmulator().paste(text);
         }
+    }
+
+    @Override
+    public void logError(String tag, String message) {
+        android.util.Log.e(tag, message);
+    }
+
+    @Override
+    public void logWarn(String tag, String message) {
+        android.util.Log.w(tag, message);
+    }
+
+    @Override
+    public void logInfo(String tag, String message) {
+        android.util.Log.i(tag, message);
+    }
+
+    @Override
+    public void logDebug(String tag, String message) {
+        android.util.Log.d(tag, message);
+    }
+
+    @Override
+    public void logVerbose(String tag, String message) {
+        android.util.Log.v(tag, message);
+    }
+
+    @Override
+    public void logStackTraceWithMessage(String tag, String message, Exception e) {
+        android.util.Log.e(tag, message, e);
+    }
+
+    @Override
+    public void logStackTrace(String tag, Exception e) {
+        android.util.Log.e(tag, "", e);
+    }
+
+    @Override
+    public void onEmulatorSet() {
+    }
+
+    @Override
+    public boolean shouldUseCtrlSpaceWorkaround() {
+        return false;
     }
 
 }

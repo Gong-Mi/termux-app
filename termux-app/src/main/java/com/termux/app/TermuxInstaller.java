@@ -304,8 +304,9 @@ final class TermuxInstaller {
     }
 
     public static byte[] loadZipBytes() {
-        // Only load the shared library when necessary to save memory usage.
-        System.loadLibrary("termux-bootstrap");
+        // Bootstrap zip is embedded in libtermux_rust.so (Rust implementation).
+        // The legacy libtermux-bootstrap.so (C + asm) has been removed.
+        System.loadLibrary("termux_rust");
         return getZip();
     }
 

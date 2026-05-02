@@ -164,6 +164,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // 关键修复：禁用窗口动画，避免 SurfaceView 在 MIUI/HyperOS 的 transition 动画中
+        // 被创建后销毁但不重建。
+        getWindow().setWindowAnimations(0);
+
         if (savedInstanceState != null) {
             // mIsActivityRecreated = savedInstanceState.getBoolean(ARG_ACTIVITY_RECREATED, false);
         }
@@ -597,10 +601,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                 mTermuxTerminalViewClient.shareSelectedText();
                 return true;
             case CONTEXT_MENU_AUTOFILL_USERNAME:
-                mTerminalView.requestAutoFill(View.AUTOFILL_HINT_USERNAME);
+                mTerminalView.requestAutoFillUsername();
                 return true;
             case CONTEXT_MENU_AUTOFILL_PASSWORD:
-                mTerminalView.requestAutoFill(View.AUTOFILL_HINT_PASSWORD);
+                mTerminalView.requestAutoFillPassword();
                 return true;
             case CONTEXT_MENU_RESET_TERMINAL_ID:
                 if (session != null) {

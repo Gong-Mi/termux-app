@@ -3,12 +3,92 @@ use ash::{vk as ash_vk, Entry, Instance, Device};
 use ash::khr::swapchain;
 use ash::vk::Handle;
 use std::ffi::CStr;
+use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, Ordering};
+use std::os::raw::c_void;
 use crate::utils::{android_log, LogPriority};
 
+// === Pipeline Cache Persistence Hooks ===
+static ORIGINAL_CREATE_PIPELINE_CACHE: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
+static ORIGINAL_DESTROY_PIPELINE_CACHE: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
+static HOOKED_PIPELINE_CACHE: AtomicU64 = AtomicU64::new(0);
+static PIPELINE_CACHE_INITIALIZED: AtomicBool = AtomicBool::new(false);
+
+/// Set by Java/Kotlin via JNI to the app's cache directory
+static PIPELINE_CACHE_FILE_PATH: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+pub fn set_pipeline_cache_file_path(path: &str) {
+    *PIPELINE_CACHE_FILE_PATH.lock().unwrap() = Some(path.to_string());
+}
+
+unsafe extern "C" fn hooked_vk_create_pipeline_cache(
+    _device: u64,
+    _p_create_info: *const c_void,
+    _p_allocator: *const c_void,
+    p_pipeline_cache: *mut u64,
+) -> i32 {
+    let cache = HOOKED_PIPELINE_CACHE.load(Ordering::SeqCst);
+    if cache != 0 {
+        unsafe { *p_pipeline_cache = cache; }
+        0 // VK_SUCCESS
+    } else {
+        let original = ORIGINAL_CREATE_PIPELINE_CACHE.load(Ordering::SeqCst);
+        if original.is_null() {
+            return -1; // VK_ERROR_INITIALIZATION_FAILED
+        }
+        let fn_ptr: unsafe extern "C" fn(u64, *const c_void, *const c_void, *mut u64) -> i32 =
+            unsafe { std::mem::transmute(original) };
+        unsafe { fn_ptr(_device, _p_create_info, _p_allocator, p_pipeline_cache) }
+    }
+}
+
+unsafe extern "C" fn hooked_vk_destroy_pipeline_cache(
+    _device: u64,
+    _pipeline_cache: u64,
+    _p_allocator: *const c_void,
+) {
+    // Ignore: lifetime managed by VulkanContext::drop
+}
+
+fn load_pipeline_cache_data() -> Vec<u8> {
+    if let Ok(guard) = PIPELINE_CACHE_FILE_PATH.lock() {
+        if let Some(path) = guard.as_ref() {
+            return std::fs::read(path).unwrap_or_default();
+        }
+    }
+    Vec::new()
+}
+
+fn save_pipeline_cache_data(device: &Device, cache: ash_vk::PipelineCache) {
+    let path_guard = PIPELINE_CACHE_FILE_PATH.lock().unwrap();
+    let path = match path_guard.as_ref() {
+        Some(p) => p,
+        None => return,
+    };
+
+    unsafe {
+        match device.get_pipeline_cache_data(cache) {
+            Ok(data) if !data.is_empty() => {
+                if let Err(e) = std::fs::write(path, &data) {
+                    android_log(LogPriority::WARN, &format!("Failed to save pipeline cache: {:?}", e));
+                } else {
+                    android_log(LogPriority::INFO, &format!("Pipeline cache saved: {} bytes to {}", data.len(), path));
+                }
+            }
+            Ok(_) => {
+                android_log(LogPriority::DEBUG, "Pipeline cache empty, nothing to save");
+            }
+            Err(e) => {
+                android_log(LogPriority::WARN, &format!("Failed to get pipeline cache data: {:?}", e));
+            }
+        }
+    }
+}
+
 pub struct VulkanContext {
+    pub entry: Entry,
     pub instance: Instance,
     pub device: Device,
-    pub context: DirectContext,
+    pub context: Option<DirectContext>,
     pub queue: ash_vk::Queue,
     pub graphics_queue_index: u32,
     pub pdevice: ash_vk::PhysicalDevice,
@@ -22,6 +102,10 @@ pub struct VulkanContext {
     pub render_finished_semaphore: ash_vk::Semaphore,
     /// 缓存的 Skia Surface，避免每帧重新创建 wrap_backend_render_target
     sk_surfaces: Vec<Option<SkSurface>>,
+    /// 持久化的 Vulkan Pipeline Cache
+    pipeline_cache: ash_vk::PipelineCache,
+    /// Keep cache data alive until after pipeline cache creation
+    _pipeline_cache_data: Vec<u8>,
 }
 
 unsafe impl Send for VulkanContext {}
@@ -208,6 +292,36 @@ impl VulkanContext {
         let instance_raw = instance.handle().as_raw();
         let device_raw = device.handle().as_raw();
 
+        // === Pipeline Cache: load previous data and create cache before Skia initializes ===
+        let pipeline_cache_data = load_pipeline_cache_data();
+        let cache_create_info = ash_vk::PipelineCacheCreateInfo {
+            flags: ash_vk::PipelineCacheCreateFlags::empty(),
+            initial_data_size: pipeline_cache_data.len(),
+            p_initial_data: if pipeline_cache_data.is_empty() {
+                std::ptr::null()
+            } else {
+                pipeline_cache_data.as_ptr() as _
+            },
+            ..Default::default()
+        };
+        let pipeline_cache = match unsafe { device.create_pipeline_cache(&cache_create_info, None) } {
+            Ok(cache) => {
+                android_log(LogPriority::INFO, &format!(
+                    "VulkanContext::new: Pipeline cache created ({} bytes initial data)",
+                    pipeline_cache_data.len()
+                ));
+                cache
+            }
+            Err(e) => {
+                android_log(LogPriority::WARN, &format!("VulkanContext::new: Failed to create pipeline cache: {:?}, continuing without cache", e));
+                ash_vk::PipelineCache::null()
+            }
+        };
+
+        // Set up hooks so Skia uses our pipeline cache instead of creating its own
+        HOOKED_PIPELINE_CACHE.store(pipeline_cache.as_raw(), Ordering::SeqCst);
+        PIPELINE_CACHE_INITIALIZED.store(true, Ordering::SeqCst);
+
         let get_proc = move |of: vk::GetProcOf| {
             unsafe {
                 match of {
@@ -217,7 +331,21 @@ impl VulkanContext {
                     }
                     vk::GetProcOf::Device(dev, name) => {
                         let name_cstr = CStr::from_ptr(name);
-                        instance_ptr.get_device_proc_addr(ash_vk::Device::from_raw(dev as _), name_cstr.as_ptr()).map(|f| f as _).unwrap_or(std::ptr::null())
+                        let ptr = instance_ptr.get_device_proc_addr(ash_vk::Device::from_raw(dev as _), name_cstr.as_ptr())
+                            .map(|f| f as *mut c_void).unwrap_or(std::ptr::null_mut());
+                        if ptr.is_null() {
+                            return std::ptr::null();
+                        }
+                        let name_str = name_cstr.to_str().unwrap_or("");
+                        if name_str == "vkCreatePipelineCache" {
+                            ORIGINAL_CREATE_PIPELINE_CACHE.store(ptr, Ordering::SeqCst);
+                            hooked_vk_create_pipeline_cache as usize as *const c_void
+                        } else if name_str == "vkDestroyPipelineCache" {
+                            ORIGINAL_DESTROY_PIPELINE_CACHE.store(ptr, Ordering::SeqCst);
+                            hooked_vk_destroy_pipeline_cache as usize as *const c_void
+                        } else {
+                            ptr as *const c_void
+                        }
                     }
                 }
             }
@@ -255,7 +383,7 @@ impl VulkanContext {
         android_log(LogPriority::INFO, "VulkanContext::new: Skia context created with cache limits");
 
         let mut ctx = Self {
-            instance, device, context, queue, graphics_queue_index: queue_family_index,
+            entry, instance, device, context: Some(context), queue, graphics_queue_index: queue_family_index,
             pdevice, surface, surface_loader, swapchain_loader,
             swapchain: ash_vk::SwapchainKHR::null(),
             swapchain_images: vec![],
@@ -263,6 +391,8 @@ impl VulkanContext {
             image_available_semaphore,
             render_finished_semaphore,
             sk_surfaces: vec![],
+            pipeline_cache,
+            _pipeline_cache_data: pipeline_cache_data,
         };
 
         let swapchain_ok = ctx.recreate_swapchain(extent.width, extent.height);
@@ -275,6 +405,11 @@ impl VulkanContext {
     }
 
     pub fn recreate_swapchain(&mut self, width: u32, height: u32) -> bool {
+        // 性能优化：如果尺寸与当前相同，跳过重建
+        if self.extent.width == width && self.extent.height == height && self.swapchain != ash_vk::SwapchainKHR::null() {
+            android_log(LogPriority::DEBUG, &format!("Vulkan: Swapchain size {}x{} unchanged, skipping recreation", width, height));
+            return true;
+        }
         unsafe {
             self.extent = ash_vk::Extent2D { width, height };
 
@@ -381,6 +516,62 @@ impl VulkanContext {
         }
     }
 
+    /// 更新 Surface（用于 SurfaceView surfaceDestroyed 后 surfaceCreated 复用 Vulkan 上下文）
+    pub unsafe fn update_surface(&mut self, window: *mut std::ffi::c_void) -> bool {
+        android_log(LogPriority::INFO, "VulkanContext::update_surface: Starting");
+
+        // 1. 等待 GPU 完成所有工作
+        let _ = unsafe { self.device.device_wait_idle() };
+
+        // 2. 销毁旧的 swapchain 和 sk_surfaces
+        for surface in self.sk_surfaces.drain(..) {
+            drop(surface);
+        }
+        if self.swapchain != ash_vk::SwapchainKHR::null() {
+            unsafe { self.swapchain_loader.destroy_swapchain(self.swapchain, None); }
+            self.swapchain = ash_vk::SwapchainKHR::null();
+        }
+
+        // 3. 销毁旧的 Surface
+        unsafe { self.surface_loader.destroy_surface(self.surface, None); }
+
+        // 4. 创建新的 Android Surface
+        let android_surface_loader = ash::khr::android_surface::Instance::new(&self.entry, &self.instance);
+        match unsafe { android_surface_loader.create_android_surface(
+            &ash_vk::AndroidSurfaceCreateInfoKHR { window, ..Default::default() },
+            None
+        ) } {
+            Ok(new_surface) => {
+                self.surface = new_surface;
+                android_log(LogPriority::INFO, "VulkanContext::update_surface: New surface created");
+            }
+            Err(e) => {
+                android_log(LogPriority::ERROR, &format!("VulkanContext::update_surface: create_android_surface failed: {:?}", e));
+                return false;
+            }
+        }
+
+        // 5. 获取新的 surface capabilities
+        let caps = match unsafe { self.surface_loader.get_physical_device_surface_capabilities(self.pdevice, self.surface) } {
+            Ok(c) => c,
+            Err(e) => {
+                android_log(LogPriority::ERROR, &format!("VulkanContext::update_surface: get_capabilities failed: {:?}", e));
+                return false;
+            }
+        };
+        self.extent = caps.current_extent;
+
+        // 6. 重新创建 swapchain
+        let swapchain_ok = self.recreate_swapchain(self.extent.width, self.extent.height);
+        if !swapchain_ok {
+            android_log(LogPriority::ERROR, "VulkanContext::update_surface: recreate_swapchain failed");
+            return false;
+        }
+
+        android_log(LogPriority::INFO, "VulkanContext::update_surface: SUCCESS");
+        true
+    }
+
     /// 从缓存中获取 Skia Surface（若缓存未命中则创建）
     pub fn get_sk_surface(&mut self, index: u32) -> Option<SkSurface> {
         let idx = index as usize;
@@ -419,13 +610,61 @@ impl VulkanContext {
         );
 
         skia_safe::gpu::surfaces::wrap_backend_render_target(
-            &mut self.context,
+            self.context.as_mut().unwrap(),
             &render_target,
             skia_safe::gpu::SurfaceOrigin::TopLeft,
             ColorType::RGBA8888,
             None,
             None,
         )
+    }
+}
+
+impl Drop for VulkanContext {
+    fn drop(&mut self) {
+        android_log(LogPriority::INFO, "VulkanContext::drop: Cleaning up Vulkan resources");
+        
+        // Save pipeline cache data before destruction
+        if self.pipeline_cache != ash_vk::PipelineCache::null() {
+            save_pipeline_cache_data(&self.device, self.pipeline_cache);
+        }
+
+        unsafe {
+            // Wait for GPU to finish before destroying resources
+            let _ = self.device.device_wait_idle();
+
+            for surface in self.sk_surfaces.drain(..) {
+                drop(surface);
+            }
+
+            // 关键修复：在销毁 Vulkan Device 之前，先让 Skia 释放所有 GPU 资源，
+            // 然后用 std::mem::forget 阻止 Rust 调用 DirectContext 的 Drop/C++ 析构函数。
+            // Skia 的 GrDirectContext 析构函数不检查 abandoned 状态，会在无效 Device 上
+            // 调用 vkDestroyCommandPool，导致 Adreno 驱动空指针解引用（SIGSEGV）。
+            if let Some(mut ctx) = self.context.take() {
+                ctx.release_resources_and_abandon();
+                std::mem::forget(ctx);
+            }
+
+            if self.swapchain != ash_vk::SwapchainKHR::null() {
+                self.swapchain_loader.destroy_swapchain(self.swapchain, None);
+            }
+            self.surface_loader.destroy_surface(self.surface, None);
+            self.device.destroy_semaphore(self.image_available_semaphore, None);
+            self.device.destroy_semaphore(self.render_finished_semaphore, None);
+            
+            // Destroy our pipeline cache (Skia's hook ignores vkDestroyPipelineCache)
+            if self.pipeline_cache != ash_vk::PipelineCache::null() {
+                self.device.destroy_pipeline_cache(self.pipeline_cache, None);
+            }
+            
+            self.device.destroy_device(None);
+            self.instance.destroy_instance(None);
+        }
+        
+        HOOKED_PIPELINE_CACHE.store(0, Ordering::SeqCst);
+        PIPELINE_CACHE_INITIALIZED.store(false, Ordering::SeqCst);
+        android_log(LogPriority::INFO, "VulkanContext::drop: Cleanup complete");
     }
 }
 

@@ -23,7 +23,6 @@ import androidx.annotation.Nullable;
 import androidx.core.graphics.ColorUtils;
 
 import com.termux.R;
-import com.termux.terminal.TerminalColors;
 import com.termux.terminal.TerminalSession;
 import com.termux.terminal.TerminalSessionClient;
 import com.termux.terminal.TextStyle;
@@ -157,10 +156,10 @@ public final class TermuxTerminalSessionActivityClient implements TerminalSessio
                 }
             }
 
-            TerminalColors.COLOR_SCHEME.updateWith(props);
             TerminalSession session = mActivity.getCurrentSession();
             if (session != null && session.getEmulator() != null) {
-                session.getEmulator().mColors.reset();
+                session.getEmulator().updateColorsFromProperties(props);
+                session.getEmulator().resetColors();
             }
             updateBackgroundColor();
 
@@ -275,6 +274,51 @@ public final class TermuxTerminalSessionActivityClient implements TerminalSessio
     @Override
     public void onTerminalCursorStateChange(boolean state) {
 
+    }
+
+    @Override
+    public void logError(String tag, String message) {
+        Log.e(tag, message);
+    }
+
+    @Override
+    public void logWarn(String tag, String message) {
+        Log.w(tag, message);
+    }
+
+    @Override
+    public void logInfo(String tag, String message) {
+        Log.i(tag, message);
+    }
+
+    @Override
+    public void logDebug(String tag, String message) {
+        Log.d(tag, message);
+    }
+
+    @Override
+    public void logVerbose(String tag, String message) {
+        Log.v(tag, message);
+    }
+
+    @Override
+    public void logStackTraceWithMessage(String tag, String message, Exception e) {
+        Log.e(tag, message, e);
+    }
+
+    @Override
+    public void logStackTrace(String tag, Exception e) {
+        Log.e(tag, "", e);
+    }
+
+    @Override
+    public Integer getTerminalCursorStyle() {
+        return null;
+    }
+
+    @Override
+    public void setTerminalShellPid(@NonNull TerminalSession session, int pid) {
+        // Shell PID is tracked by the service, no UI action needed here
     }
 
     /**
@@ -499,7 +543,7 @@ public final class TermuxTerminalSessionActivityClient implements TerminalSessio
         if (!mActivity.isVisible()) return;
         TerminalSession session = mActivity.getCurrentSession();
         if (session != null && session.getEmulator() != null) {
-            var backgroundColor = session.getEmulator().mColors.mCurrentColors[TextStyle.COLOR_INDEX_BACKGROUND];
+            var backgroundColor = session.getEmulator().getCurrentColors()[TextStyle.COLOR_INDEX_BACKGROUND];
             var decorView = mActivity.getWindow().getDecorView();
             decorView.setBackgroundColor(backgroundColor);
             var wic = decorView.getWindowInsetsController();
