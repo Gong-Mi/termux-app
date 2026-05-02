@@ -211,6 +211,9 @@ fn spawn_render_thread(engine_ptr: jlong) {
                             if e == ash::vk::Result::ERROR_OUT_OF_DATE_KHR || e == ash::vk::Result::SUBOPTIMAL_KHR {
                                 android_log(LogPriority::INFO, "Render: acquire_next_image returned OUT_OF_DATE/SUBOPTIMAL, triggering recreation");
                                 SURFACE_SIZE_CHANGED.store(true, Ordering::SeqCst);
+                            } else if e == ash::vk::Result::TIMEOUT {
+                                android_log(LogPriority::DEBUG, "Render: acquire_next_image timeout, skipping frame");
+                                return Err("acquire_next_image timeout".to_string());
                             }
                             return Err(format!("acquire_next_image failed: {:?}", e));
                         }

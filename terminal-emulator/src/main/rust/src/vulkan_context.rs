@@ -374,7 +374,7 @@ impl VulkanContext {
         unsafe {
             self.swapchain_loader.acquire_next_image(
                 self.swapchain,
-                u64::MAX,
+                1_000_000_000, // 1 秒超时，防止 swapchain 损坏时永远阻塞
                 self.image_available_semaphore,
                 ash_vk::Fence::null()
             ).map(|(idx, _)| idx)
