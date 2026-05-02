@@ -1,7 +1,45 @@
-// Termux Rust Terminal Engine
-// Placeholder - will be expanded with VTE parser, screen buffer, etc.
+//! Termux Rust 终端模拟器库
+//!
+//! 模块化的终端模拟器实现，提供：
+//! - VTE 兼容的终端状态管理
+//! - 256色/真彩色支持
+//! - Sixel 图像渲染
+//! - Vulkan/Skia GPU 渲染
+//! - JNI 接口供 Java 层调用
 
-#[no_mangle]
-pub extern "C" fn termux_rust_init() {
-    // Initialization hook for JNI
-}
+use once_cell::sync::OnceCell;
+use std::sync::Mutex;
+
+/// 全局存储 Termux 应用版本号（由 Java 层通过 JNI 传入）
+pub static TERMUX_VERSION: OnceCell<Mutex<String>> = OnceCell::new();
+
+/// 全局存储 Termux Prefix 路径（由 Java 层通过 JNI 传入，通常为 /data/data/com.termux/files/usr）
+pub static TERMUX_PREFIX: OnceCell<Mutex<String>> = OnceCell::new();
+
+// 声明子模块
+pub mod wcwidth;
+pub mod terminal;
+pub mod utils;
+pub mod engine;
+pub mod bootstrap;
+pub mod pty;
+pub mod vte_parser;
+pub mod coordinator;
+pub mod renderer;
+pub mod vulkan_context;
+pub mod render_thread;
+pub mod jni_bindings;
+pub mod env_builder;
+
+// 重新导出主要类型，保持向后兼容
+pub use crate::engine::{TerminalEngine, TerminalContext, TerminalEvent};
+pub use crate::coordinator::{SessionCoordinator, SessionState};
+pub use crate::terminal::style::*;
+pub use crate::terminal::modes::*;
+pub use crate::terminal::colors::*;
+pub use crate::terminal::sixel::{SixelDecoder, SixelState, SixelColor};
+
+pub static JAVA_VM: OnceCell<jni::JavaVM> = OnceCell::new();
+
+/// 全局存储 Java 层传递的扩展环境变量（TERMUX_APP__* 等）
+pub static EXTENDED_ENV: OnceCell<Mutex<std::collections::HashMap<String, String>>> = OnceCell::new();

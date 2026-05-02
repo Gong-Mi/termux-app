@@ -1,17 +1,98 @@
 [package]
-name = "termux-rust"
+name = "termux-rust-new"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [lib]
 name = "termux_rust"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "termux-rust-engine"
+path = "standalone/src/main.rs"
 
 [dependencies]
+jni = "0.21.1"
+unicode-width = "0.2.2"
+nix = { version = "0.31.2", features = ["process", "signal", "term", "ioctl", "fs", "user"] }
+libc = "0.2"
+rayon = "1.11.0"
+simdutf8 = "0.1.4"
+base64 = "0.22.1"
+zip = "8.2.0"
+once_cell = "1.19.0"
+crossterm = "0.28.1"
+log = "0.4"
+skia-safe = { version = "0.93.1", features = ["vulkan"] }
+raw-window-handle = "0.6.2"
+ash = "0.38.0"
+ash-window = "0.13.0"
+
+[target.'cfg(target_os = "android")'.dependencies]
+ndk = "0.9.0"
+ndk-sys = "0.6.0"
+android_logger = "0.13"
+
+[dev-dependencies]
+md5 = "0.7"
+rusqlite = { version = "0.31.0", features = ["bundled"] }
+unicode-properties = "0.1.0"
+unicode-bidi = "0.3.15"
+argon2 = "0.5.3"
 
 [profile.release]
 opt-level = 3
 lto = true
 codegen-units = 1
-panic = "abort"
+panic = "unwind"
+# 保留符号以便 native crash 调试（可改为 "debuginfo" 减少体积）
 strip = false
+
+# 测试配置
+[[test]]
+name = "font_calibration"
+path = "tests/font_calibration.rs"
+
+[[test]]
+name = "consistency"
+path = "tests/consistency.rs"
+
+[[test]]
+name = "extended_features"
+path = "tests/extended_features.rs"
+
+[[test]]
+name = "performance"
+path = "tests/performance.rs"
+
+[[test]]
+name = "check_width"
+path = "tests/check_width.rs"
+
+[[test]]
+name = "fix_verification"
+path = "tests/fix_verification.rs"
+
+[[test]]
+name = "key_event_handling"
+path = "tests/key_event_handling.rs"
+
+[[test]]
+name = "skia_render_test"
+path = "tests/skia_render_test.rs"
+
+[[test]]
+name = "vulkan_render_benchmark"
+path = "tests/vulkan_render_benchmark.rs"
+
+[[test]]
+name = "render_deadlock_test"
+path = "tests/render_deadlock_test.rs"
+
+[[test]]
+name = "selection_test"
+path = "tests/selection_test.rs"
+
+[[test]]
+name = "selection_pipeline_test"
+path = "tests/selection_pipeline_test.rs"

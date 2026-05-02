@@ -12,82 +12,82 @@ class RustAndroidPlugin : Plugin<Project> {
     override fun apply(project: Project) {
         val extension = project.extensions.create<RustAndroidExtension>("rustAndroid")
 
-        project.pluginManager.withPlugin("com.android.library") {
-            val abiList = extension.abiFilters.get()
-                .ifEmpty { listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64") }
+        fun configureRustBuilds(pluginId: String) {
+            project.pluginManager.withPlugin(pluginId) {
+                project.afterEvaluate {
+                    val abiList = extension.abiFilters.get()
+                        .ifEmpty { listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64") }
 
-            val rustSrc = extension.rustSrcDir.get()
-            val libName = extension.libName.get()
-            val jniDest = extension.jniLibsDestDir.get()
-            val minSdk = extension.minSdkVersion.get()
+                    val rustSrc = extension.rustSrcDir.get()
+                    val libName = extension.libName.get()
+                    val jniDest = extension.jniLibsDestDir.get()
+                    val minSdk = extension.minSdkVersion.get()
 
-            val buildTasks = abiList.map { abi ->
-                val rustArch = abiToRustTarget(abi)
-                val safeAbi = abi.replace("-", "_")
-                val taskName = "cargoNdkBuild_${safeAbi}"
+                    val buildTasks = abiList.map { abi ->
+                        val rustArch = abiToRustTarget(abi)
+                        val safeAbi = abi.replace("-", "_")
+                        val taskName = "cargoNdkBuild_${safeAbi}"
 
-                project.tasks.register<Exec>(taskName) {
-                    group = "rust"
-                    description = "Build Rust $libName for $abi"
+                        project.tasks.register<Exec>(taskName) {
+                            group = "rust"
+                            description = "Build Rust $libName for $abi"
 
-                    inputs.file(project.file("$rustSrc/Cargo.toml"))
-                    inputs.dir(project.file("$rustSrc/src"))
+                            inputs.file(project.file("$rustSrc/Cargo.toml"))
+                            inputs.dir(project.file("$rustSrc/src"))
 
-                    val cargoLock = project.file("$rustSrc/Cargo.lock")
-                    if (cargoLock.exists()) {
-                        inputs.file(cargoLock)
+                            val cargoLock = project.file("$rustSrc/Cargo.lock")
+                            if (cargoLock.exists()) {
+                                inputs.file(cargoLock)
+                            }
+
+                            outputs.file(
+                                project.file("$rustSrc/target/$rustArch/release/lib$libName.so")
+                            )
+
+                            workingDir = project.file(rustSrc)
+
+                            commandLine(
+                                "cargo", "ndk",
+                                "-t", abi,
+                                "-p", minSdk.toString(),
+                                "build", "--release"
+                            )
+                        }
                     }
 
-                    outputs.file(
-                        project.file("$rustSrc/target/$rustArch/release/lib$libName.so")
-                    )
+                    val copyTasks = abiList.map { abi ->
+                        val rustArch = abiToRustTarget(abi)
+                        val safeAbi = abi.replace("-", "_")
+                        val buildTaskName = "cargoNdkBuild_${safeAbi}"
+                        val copyTaskName = "copyRust_${safeAbi}"
 
-                    workingDir = project.file(rustSrc)
+                        project.tasks.register<Copy>(copyTaskName) {
+                            group = "rust"
+                            dependsOn(buildTaskName)
 
-                    val rustFlags = mutableListOf("-C", "link-arg=-Wl,-z,max-page-size=16384")
-                    if (abi == "arm64-v8a" || abi == "armeabi-v7a") {
-                        rustFlags.addAll(listOf("-C", "target-feature=+neon"))
+                            from(project.file("$rustSrc/target/$rustArch/release/lib$libName.so"))
+                            into(project.file("$jniDest/$abi"))
+                        }
                     }
 
-                    environment("RUSTFLAGS", rustFlags.joinToString(" "))
+                    project.tasks.register("buildAllRust") {
+                        group = "rust"
+                        description = "Build Rust $libName for all ABIs"
+                        dependsOn(copyTasks)
+                    }
 
-                    commandLine(
-                        "cargo", "ndk",
-                        "-t", abi,
-                        "-p", minSdk.toString(),
-                        "build", "--release"
-                    )
-                }
-            }
-
-            val copyTasks = abiList.map { abi ->
-                val rustArch = abiToRustTarget(abi)
-                val safeAbi = abi.replace("-", "_")
-                val buildTaskName = "cargoNdkBuild_${safeAbi}"
-                val copyTaskName = "copyRust_${safeAbi}"
-
-                project.tasks.register<Copy>(copyTaskName) {
-                    group = "rust"
-                    dependsOn(buildTaskName)
-
-                    from(project.file("$rustSrc/target/$rustArch/release/lib$libName.so"))
-                    into(project.file("$jniDest/$abi"))
-                }
-            }
-
-            project.tasks.register("buildAllRust") {
-                group = "rust"
-                description = "Build Rust $libName for all ABIs"
-                dependsOn(copyTasks)
-            }
-
-            // Hook into merge*JniLibFolders without afterEvaluate
-            project.tasks.configureEach {
-                if (name.startsWith("merge") && name.endsWith("JniLibFolders")) {
-                    dependsOn("buildAllRust")
+                    // Hook into merge*JniLibFolders
+                    project.tasks.configureEach {
+                        if (name.startsWith("merge") && name.endsWith("JniLibFolders")) {
+                            dependsOn("buildAllRust")
+                        }
+                    }
                 }
             }
         }
+
+        configureRustBuilds("com.android.library")
+        configureRustBuilds("com.android.application")
     }
 
     private fun abiToRustTarget(abi: String): String = when (abi) {

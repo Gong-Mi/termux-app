@@ -8,6 +8,7 @@ import java.security.MessageDigest
 
 plugins {
     id("com.android.application")
+    id("termux.rust.android")
 }
 
 android {
@@ -82,6 +83,14 @@ android {
     lint {
         warningsAsErrors = true
     }
+}
+
+rustAndroid {
+    rustSrcDir = "src/main/rust-bootstrap"
+    jniLibsDestDir = "src/main/jniLibs"
+    libName = "termux_bootstrap"
+    minSdkVersion = providers.gradleProperty("minSdkVersion").get().toInt()
+    abiFilters = listOf("armeabi-v7a", "arm64-v8a", "x86_64")
 }
 
 dependencies {

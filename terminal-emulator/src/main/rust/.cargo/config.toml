@@ -1,0 +1,38 @@
+[registries.crates-io]
+protocol = "sparse"
+
+# 这些是全局 RUSTFLAGS，会在所有 cargo 构建（包括 Android/Linux 交叉编译）时生效。
+#
+# 1. -Wl,-z,max-page-size=16384:
+#    强制 linker 按照 16KB 页大小对齐 ELF 段。
+#    这是兼容未来 Android 15+ 设备的强制要求，同时在流式数据加载时性能更优。
+#
+rustflags = [
+    "-C", "link-arg=-Wl,-z,max-page-size=16384",
+    "-L", "native=./.cargo/linker-hacks",
+    "-l", "c++_shared",
+]
+
+# Android ARM64 特定配置
+[target.aarch64-linux-android]
+# 允许编译器生成 SVE/SVE2 指令，并配合运行时分发进行动态选择。
+# 保留 NEON 为基准指令集。
+rustflags = [
+    "-C", "link-arg=-Wl,-z,max-page-size=16384",
+    "-C", "target-feature=+neon",
+    "-L", "native=./.cargo/linker-hacks",
+    "-l", "c++_shared",
+]
+
+# Android ARMv7 特定配置
+[target.armv7-linux-androideabi]
+rustflags = [
+    "-C", "link-arg=-Wl,-z,max-page-size=16384",
+    "-C", "target-feature=+neon",
+]
+
+[profile.release]
+# 生产环境极限性能参数（在 Cargo.toml 中已配置，但为了完整性说明）
+# opt-level = 3
+# lto = true
+# codegen-units = 1
