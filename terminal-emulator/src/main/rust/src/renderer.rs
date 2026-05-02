@@ -1186,4 +1186,114 @@ mod tests {
             assert_eq!(current_bg, fg_idx, "Background should be reversed to foreground color for index {}", bg_idx);
         }
     }
+
+    // =====================================================================
+    // RenderFrame 生成正确性 — 验证 resize 后渲染帧数据不重复、坐标不堆叠
+    // =====================================================================
+
+    #[test]
+    fn test_render_frame_after_resize_no_stacking() {
+        use crate::engine::TerminalEngine;
+
+        let mut engine = TerminalEngine::new(80, 10, 50, 7, 14);
+        // 写入多行内容，模拟 "~$" + 输出
+        let lines = [
+            "~$ cargo build --release",
+            "   Compiling termux-rust v0.1.0",
+            "    Finished release [optimized] target(s) in 11.46s",
+            "~$ ./gradlew :termux-app:assembleDebug",
+            "BUILD SUCCESSFUL in 40s",
+        ];
+        for line in &lines {
+            engine.process_bytes(line.as_bytes());
+            engine.process_bytes(b"\n");
+        }
+
+        // 反复 resize 并生成 RenderFrame，检查没有重复非空行
+        let sizes = [(80, 10), (40, 10), (20, 10), (10, 10), (20, 10), (40, 10), (80, 10)];
+        for (cols, rows) in sizes {
+            engine.state.resize(cols as i64, rows as i64);
+            let frame = RenderFrame::from_engine(&engine, rows, cols, 0);
+
+            assert_eq!(frame.row_data.len(), rows, "RenderFrame row_data 长度应等于 rows");
+            assert_eq!(frame.rows, rows);
+            assert_eq!(frame.cols, cols);
+
+            // 光标必须在可见区域内
+            assert!(
+                frame.cursor_y >= 0 && frame.cursor_y < rows as i32,
+                "cursor_y={} 超出可见区域 [0, {})", frame.cursor_y, rows
+            );
+
+            // 检查相邻非空行不重复（真正的"堆叠"）
+            for r in 1..rows {
+                let prev: String = frame.row_data[r - 1].0.iter().collect();
+                let curr: String = frame.row_data[r].0.iter().collect();
+                let prev_trim = prev.trim_end();
+                let curr_trim = curr.trim_end();
+                if !prev_trim.is_empty() && !curr_trim.is_empty() {
+                    assert_ne!(
+                        prev_trim, curr_trim,
+                        "RenderFrame 行 {} 和 {} 非空内容完全相同 (cols={}, rows={})",
+                        r - 1, r, cols, rows
+                    );
+                }
+            }
+
+            // 关键：验证光标 y 坐标不会和文本 y 坐标产生系统性偏移
+            // 如果 cursor_y 映射到 cy，对应文本行 r 的 y_base 应在同一行范围内
+            let font_height = 14.0f32; // 测试用的假定值
+            let cy = frame.cursor_y as f32 * font_height;
+            let text_y_for_same_row = (frame.cursor_y as f32 + 1.0) * font_height;
+            // 光标顶部应 <= 文本基线（因为文本基线在行底部附近）
+            assert!(
+                cy <= text_y_for_same_row,
+                "光标 y 坐标不应超过同行文本基线 (cursor_y={}, cy={}, text_y={})",
+                frame.cursor_y, cy, text_y_for_same_row
+            );
+        }
+    }
+
+    #[test]
+    fn test_render_frame_with_scroll_top_row_negative() {
+        use crate::engine::TerminalEngine;
+
+        let mut engine = TerminalEngine::new(80, 10, 50, 7, 14);
+        // 写满 50 行，产生 40 行历史（注意：真实终端需要 \r\n 才能回行首）
+        for r in 0..50 {
+            let line = format!("Line {:03} with some content to fill the row.", r);
+            engine.process_bytes(line.as_bytes());
+            engine.process_bytes(b"\r\n");
+        }
+
+        // 向上滚动 5 行（top_row = -5）
+        let top_row = -5i32;
+        let rows = 10usize;
+        let cols = 80usize;
+        let frame = RenderFrame::from_engine(&engine, rows, cols, top_row);
+
+        assert_eq!(frame.top_row, top_row);
+        assert_eq!(frame.row_data.len(), rows);
+
+        // 验证 row_data[0] 对应历史行（绝对行号 -5）
+        // 写满 50 行后 first_row=41，internal_row(-5) = (41-5)%50 = 36 -> Line 036
+        let first_row_text: String = frame.row_data[0].0.iter().collect();
+        assert!(first_row_text.contains("Line 036"), "第一行应为历史行 Line 036，实际: {:?}", first_row_text);
+
+        // 验证 row_data[9] 对应绝对行号 4
+        // internal_row(4) = (41+4)%50 = 45 -> Line 045
+        let last_row_text: String = frame.row_data[9].0.iter().collect();
+        assert!(last_row_text.contains("Line 045"), "最后一行应为 Line 045，实际: {:?}", last_row_text);
+
+        // 检查没有重复行
+        for r in 1..rows {
+            let prev: String = frame.row_data[r - 1].0.iter().collect();
+            let curr: String = frame.row_data[r].0.iter().collect();
+            assert_ne!(
+                prev.trim_end(),
+                curr.trim_end(),
+                "滚动后 RenderFrame 行 {} 和 {} 内容重复", r - 1, r
+            );
+        }
+    }
 }

@@ -6,3 +6,4 @@ pub mod sixel;
 pub mod cursor;
 pub mod handlers;
 pub mod key_handler;
+pub mod test_reflow_bug;

@@ -472,7 +472,7 @@ impl Screen {
                 old_line.get_space_used()
             };
 
-            let _just_to_cursor = cursor_at_this_row;
+            let just_to_cursor = cursor_at_this_row;
 
             // Process each character in the old line
             let mut i = 0u64;
@@ -480,6 +480,22 @@ impl Screen {
             let mut style_at_col = current_style;
 
             while i < last_non_space_index {
+                // BUG FIX: Emulate Java's justToCursor early break
+                // Stop processing trailing spaces on the cursor row once we pass the cursor
+                if just_to_cursor && i > cursor_x as u64 && last_non_space_index == old_line.text.len() as u64 {
+                    // Check if the rest of the line is actually empty
+                    let mut is_empty = true;
+                    for j in i..last_non_space_index {
+                        if old_line.text[j as usize] != ' ' {
+                            is_empty = false;
+                            break;
+                        }
+                    }
+                    if is_empty {
+                        break;
+                    }
+                }
+
                 let c = old_line.text[i as usize];
                 let code_point = c as u32;
                 let display_width = local_get_width(code_point);
@@ -1110,5 +1126,249 @@ mod tests {
         s.resize_with_reflow(80, 24, 0, 0, 0);
         let duration = start.elapsed();
         println!("5000行重排(Reflow)耗时: {:?}", duration);
+    }
+
+    // =====================================================================
+    // 缩放/resize 正确性断言 — 针对 "反复缩放时内容堆叠" 的回归测试
+    // =====================================================================
+
+    /// 辅助：检查可见区域内是否存在两行映射到同一个物理 TerminalRow
+    fn assert_no_duplicate_visible_rows(screen: &Screen) {
+        let mut ptrs = std::collections::HashSet::new();
+        for r in 0..screen.rows {
+            let row_ref = screen.get_row(r);
+            let ptr = row_ref as *const TerminalRow as usize;
+            assert!(
+                ptrs.insert(ptr),
+                "可见行 {} 和 {} 映射到同一个物理行 (first_row={}, rows={}, active_transcript_rows={}, buf_len={})",
+                r,
+                ptrs.len() - 1,
+                screen.first_row,
+                screen.rows,
+                screen.active_transcript_rows,
+                screen.buffer.len()
+            );
+        }
+    }
+
+    /// 辅助：检查整个缓冲区范围内 (含历史) 的 get_row 唯一性
+    fn assert_all_rows_unique(screen: &Screen) {
+        let min_row = -(screen.active_transcript_rows as i64);
+        let max_row = screen.rows - 1;
+        let total = (max_row - min_row + 1) as usize;
+        let mut ptrs = std::collections::HashSet::with_capacity(total);
+        for r in min_row..=max_row {
+            let row_ref = screen.get_row(r);
+            let ptr = row_ref as *const TerminalRow as usize;
+            assert!(
+                ptrs.insert(ptr),
+                "逻辑行 {} 映射到已存在的物理行 (first_row={}, rows={}, active={})",
+                r, screen.first_row, screen.rows, screen.active_transcript_rows
+            );
+        }
+    }
+
+    #[test]
+    fn test_repeated_resize_rows_only_no_duplicate_rows() {
+        let mut s = Screen::new(80, 25, 100);
+        // 给可见区域每行写入不同标记，方便识别
+        for r in 0..25 {
+            s.get_row_mut(r).set_char(0, (b'A' + r as u8) as u32, 0);
+        }
+        // 模拟反复缩放：先缩到 15 行，再扩到 30，再缩到 20，再扩到 25
+        s.resize_rows_only(15, 0, 24, 0);
+        assert_no_duplicate_visible_rows(&s);
+
+        s.resize_rows_only(30, 0, 14, 0);
+        assert_no_duplicate_visible_rows(&s);
+
+        s.resize_rows_only(20, 0, 19, 0);
+        assert_no_duplicate_visible_rows(&s);
+
+        s.resize_rows_only(25, 0, 19, 0);
+        assert_no_duplicate_visible_rows(&s);
+
+        // 更激进的反复缩放
+        for rows in [10, 40, 5, 50, 25] {
+            s.resize_rows_only(rows, 0, (rows - 1).max(0), 0);
+            assert_no_duplicate_visible_rows(&s);
+            assert_all_rows_unique(&s);
+        }
+    }
+
+    #[test]
+    fn test_repeated_resize_reflow_no_duplicate_rows() {
+        let mut s = Screen::new(80, 25, 100);
+        for r in 0..25 {
+            s.get_row_mut(r).set_char(0, (b'A' + r as u8) as u32, 0);
+        }
+        // 反复改变列数（触发慢路径 reflow）
+        let sizes = [(40, 25), (80, 25), (20, 25), (100, 25), (80, 20), (80, 30), (80, 25)];
+        for (cols, rows) in sizes {
+            s.resize_with_reflow(cols, rows, 0, 0, 0);
+            assert_no_duplicate_visible_rows(&s);
+            assert_all_rows_unique(&s);
+        }
+    }
+
+    #[test]
+    fn test_resize_rows_only_invariants() {
+        let mut s = Screen::new(80, 10, 20);
+        // 写满可见区并产生 5 行历史
+        for r in 0..15 {
+            s.get_row_mut(r).set_char(0, (b'0' + (r % 10) as u8) as u32, 0);
+            if r >= 10 {
+                s.scroll_up(0, 10, 0);
+            }
+        }
+        let orig_active = s.active_transcript_rows;
+        assert!(orig_active > 0);
+
+        // 缩到 5 行
+        s.resize_rows_only(5, 0, 4, 0);
+        assert!(s.active_transcript_rows >= orig_active, "缩小时历史行不应丢失");
+        assert!(s.active_transcript_rows <= (s.buffer.len() as u64).saturating_sub(s.rows as u64));
+        assert_no_duplicate_visible_rows(&s);
+
+        // 扩到 15 行
+        s.resize_rows_only(15, 0, 4, 0);
+        assert!(s.active_transcript_rows <= (s.buffer.len() as u64).saturating_sub(s.rows as u64));
+        assert_no_duplicate_visible_rows(&s);
+    }
+
+    #[test]
+    fn test_resize_reflow_tilde_dollar_content_integrity() {
+        // 模拟 "~$" 提示符 + 一段长文本，resize 后不应出现重复行
+        let mut s = Screen::new(40, 10, 20);
+        let input = "~$ echo hello world";
+        let mut col = 0;
+        for c in input.chars() {
+            s.get_row_mut(0).set_char(col, c as u32, 0);
+            col += 1;
+        }
+
+        // 缩到 10 列，内容应该换行，但不应产生重复行
+        s.resize_with_reflow(10, 10, 0, 0, 0);
+        assert_no_duplicate_visible_rows(&s);
+
+        // 再扩回 40 列
+        s.resize_with_reflow(40, 10, 0, 0, 0);
+        assert_no_duplicate_visible_rows(&s);
+
+        // 验证首行内容未被截断或重复
+        let first_row = s.get_row(0);
+        let text: String = first_row.text.iter().take(input.len()).collect();
+        assert!(text.starts_with("~$"), "resize 后首行应仍保留 ~$ 提示符，实际得到: {:?}", text);
+    }
+
+    #[test]
+    fn test_resize_reflow_long_content_no_stacking() {
+        // 扩大字数：写入多行长内容，模拟真实终端输出后反复缩放
+        let mut s = Screen::new(80, 24, 100);
+        let lines = [
+            "~$ cargo build --release --verbose --target aarch64-linux-android",
+            "   Compiling termux-rust v0.1.0 (/home/termux)",
+            "    Finished release [optimized] target(s) in 11.46s",
+            "~$ ./gradlew :termux-app:assembleDebug",
+            "BUILD SUCCESSFUL in 40s",
+            "~$ echo '这是一段中文测试内容，用于验证宽字符在 resize 后的完整性'",
+            "这是一段中文测试内容，用于验证宽字符在 resize 后的完整性",
+        ];
+        for (row_idx, line) in lines.iter().enumerate() {
+            let mut col = 0;
+            for c in line.chars() {
+                if col >= 80 { break; }
+                s.get_row_mut(row_idx as i64).set_char(col as u64, c as u32, 0);
+                col += crate::wcwidth::wcwidth(c as u32) as usize;
+            }
+        }
+
+        // 反复缩放列数，模拟用户双指缩放导致列数频繁变化
+        let col_sizes = [80, 40, 20, 10, 5, 10, 20, 40, 80, 120, 80];
+        for (i, &cols) in col_sizes.iter().enumerate() {
+            s.resize_with_reflow(cols, 24, 0, 0, 0);
+            assert_no_duplicate_visible_rows(&s);
+            assert_all_rows_unique(&s);
+
+            // 额外断言：检查可见区域内没有连续两行"同时为非空且完全相同"
+            // 空白行连续是正常的，但非空内容重复才是真正的"堆叠"
+            for r in 1..s.rows {
+                let prev = s.get_row(r - 1);
+                let curr = s.get_row(r);
+                let prev_text: String = prev.text.iter().collect();
+                let curr_text: String = curr.text.iter().collect();
+                let prev_trimmed = prev_text.trim_end();
+                let curr_trimmed = curr_text.trim_end();
+                if !prev_trimmed.is_empty() && !curr_trimmed.is_empty() {
+                    assert_ne!(
+                        prev_trimmed,
+                        curr_trimmed,
+                        "第 {} 次 resize 后，行 {} 和行 {} 非空内容完全相同，疑似堆叠 (cols={})",
+                        i, r - 1, r, cols
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_resize_rows_only_long_history() {
+        // 扩大历史行数和内容长度，测试 resize_rows_only 在大量历史下的稳定性
+        let mut s = Screen::new(80, 10, 50);
+        // 写满 50 行，产生 40 行历史
+        for r in 0..50 {
+            let content = format!("Line {:03}: This is a test line with enough length to fill most columns.", r);
+            let mut col = 0;
+            for c in content.chars() {
+                if col >= 80 { break; }
+                s.get_row_mut(r).set_char(col as u64, c as u32, 0);
+                col += 1;
+            }
+            if r >= 10 {
+                s.scroll_up(0, 10, 0);
+            }
+        }
+
+        assert!(s.active_transcript_rows > 0, "应产生历史行");
+
+        // 反复改变行数
+        for rows in [10, 5, 20, 50, 10, 30, 10] {
+            s.resize_rows_only(rows, 0, (rows - 1).min(s.rows as i32 - 1).max(0), 0);
+            assert_no_duplicate_visible_rows(&s);
+            assert_all_rows_unique(&s);
+            assert!(
+                s.active_transcript_rows <= (s.buffer.len() as u64).saturating_sub(s.rows as u64),
+                "rows={} 时 active_transcript_rows 越界", rows
+            );
+        }
+    }
+
+    #[test]
+    fn test_resize_aggressive_stress() {
+        // 压力测试：100 次随机 resize，每次检查不变量
+        let mut s = Screen::new(80, 24, 100);
+        for r in 0..24 {
+            for c in 0..80 {
+                s.get_row_mut(r).set_char(c as u64, ((c + r * 80) % 95 + 32) as u32, 0);
+            }
+        }
+        let mut rng = 12345u32;
+        let sizes = [(80, 24), (40, 12), (120, 48), (20, 6), (80, 50), (80, 24)];
+        for i in 0..100 {
+            rng = rng.wrapping_mul(1103515245).wrapping_add(12345);
+            let idx = (rng % sizes.len() as u32) as usize;
+            let (cols, rows) = sizes[idx];
+            if cols == 80 && s.rows == rows as i64 {
+                // 快速路径
+                s.resize_rows_only(rows, 0, (rows - 1).min(s.rows as i32 - 1).max(0), 0);
+            } else {
+                s.resize_with_reflow(cols, rows, 0, 0, 0);
+            }
+            assert_no_duplicate_visible_rows(&s);
+            assert!(s.active_transcript_rows <= (s.buffer.len() as u64).saturating_sub(s.rows as u64),
+                "第 {} 次 resize 后 active_transcript_rows 越界", i);
+            assert!(s.rows > 0, "rows 不应为 0 或负数");
+            assert!(s.cols > 0, "cols 不应为 0 或负数");
+        }
     }
 }
