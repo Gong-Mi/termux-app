@@ -107,6 +107,9 @@ jobs:
       # ================================
       # 仅运行 Rust 测试（不编译 Skia）
       # ================================
+      - name: Download Bootstraps (Needed for build.rs)
+        run: ./gradlew :termux-app:downloadBootstraps
+
       - name: Run Rust Tests
         run: |
           cd terminal-emulator/src/main/rust
