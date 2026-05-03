@@ -85,6 +85,21 @@ class RustAndroidPlugin : Plugin<Project> {
 
                             from(project.file("$rustSrc/target/$rustArch/release/lib$libName.so"))
                             into(project.file("$jniDest/$abi"))
+
+                            // Also copy libc++_shared.so from NDK if available (required by Skia/Rust builds)
+                            if (!ndkPath.isNullOrBlank()) {
+                                val triple = when (abi) {
+                                    "arm64-v8a" -> "aarch64-linux-android"
+                                    "armeabi-v7a" -> "arm-linux-androideabi"
+                                    "x86" -> "i686-linux-android"
+                                    "x86_64" -> "x86_64-linux-android"
+                                    else -> rustArch
+                                }
+                                val cxxShared = File(ndkPath, "toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/$triple/libc++_shared.so")
+                                if (cxxShared.exists()) {
+                                    from(cxxShared)
+                                }
+                            }
                         }
                     }
 
