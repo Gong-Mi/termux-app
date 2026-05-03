@@ -33,6 +33,12 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
     inherit_system_var(&mut env, "ANDROID_I18N_ROOT");
     inherit_system_var(&mut env, "ANDROID_TZDATA_ROOT");
 
+    // BUG FIX: On Android 12+, app_process (am command) REQUIRES these variables 
+    // to find core Java classes. Without them, it will Abort immediately.
+    inherit_system_var(&mut env, "BOOTCLASSPATH");
+    inherit_system_var(&mut env, "DEX2OATBOOTCLASSPATH");
+    inherit_system_var(&mut env, "SYSTEMSERVERCLASSPATH");
+
     // ------------------------------------------------------------------
     // 2. 基础终端环境（与 upstream Java 的 AndroidShellEnvironment 对齐）
     // ------------------------------------------------------------------
