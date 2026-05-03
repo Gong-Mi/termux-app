@@ -178,20 +178,11 @@ fn extract_zip_to_dir(
             {
                 use std::os::unix::fs::PermissionsExt;
                 let mut perms = std::fs::metadata(&out_path)?.permissions();
-                
-                if path_str.ends_with(".apk") {
-                    // BUG FIX: Android 14+ requires DEX/APK files to be non-writable.
-                    perms.set_mode(0o400);
-                } else {
-                    // RESTORE: Keep directories and other binaries writable (0o700)
-                    // so that `pkg` and `apt` can still install/upgrade packages.
-                    perms.set_mode(0o700);
-                }
-                
+                perms.set_mode(0o700);
                 std::fs::set_permissions(&out_path, perms)?;
                 eprintln!(
-                    "[Rust Extract] [{}] Set permissions: {} (mode: {:o})",
-                    i, path_str, std::fs::metadata(&out_path)?.permissions().mode()
+                    "[Rust Extract] [{}] Set executable permission (0700): {}",
+                    i, path_str
                 );
             }
         }
