@@ -178,11 +178,22 @@ fn extract_zip_to_dir(
             {
                 use std::os::unix::fs::PermissionsExt;
                 let mut perms = std::fs::metadata(&out_path)?.permissions();
-                perms.set_mode(0o700);
+                
+                // BUG FIX: For Android 14+ compatibility, DEX files and their directories
+                // MUST NOT be writable. 0o700 was causing `am` (app_process) to Abort.
+                // We use 0o500 (read-execute) for binaries/dirs and 0o400 for data/apks.
+                if path_str.ends_with(".apk") {
+                    perms.set_mode(0o400);
+                } else if file.is_dir() {
+                    perms.set_mode(0o500);
+                } else {
+                    perms.set_mode(0o500);
+                }
+                
                 std::fs::set_permissions(&out_path, perms)?;
                 eprintln!(
-                    "[Rust Extract] [{}] Set executable permission: {}",
-                    i, path_str
+                    "[Rust Extract] [{}] Set secure permissions: {} (mode: {:o})",
+                    i, path_str, std::fs::metadata(&out_path)?.permissions().mode()
                 );
             }
         }
