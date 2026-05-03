@@ -6,9 +6,40 @@ pub fn handle_print(state: &mut ScreenState, c: char) {
     handle_print_internal(state, c);
 }
 
-/// 批量打印字符流入口 - 精简版（消除预扫描开销）
+/// 批量打印字符流入口 - 稳定版
 pub fn handle_print_str(state: &mut ScreenState, s: &str) {
-    // 记录最后一个字符用于状态追踪（只需一次迭代）
+    let bytes = s.as_bytes();
+    if bytes.is_empty() {
+        return;
+    }
+
+    // Fast path: bulk ASCII with no special modes active and no wrap needed.
+    // The VTE parser's ASCII fast path guarantees all bytes are in 0x20-0x7E.
+    if !state.modes.is_enabled(modes::MODE_INSERT)
+        && !state.cursor.about_to_wrap
+        && state.cursor.x >= 0
+        && state.cursor.x + (bytes.len() as i64) < state.right_margin
+        && !(state.use_line_drawing_uses_g0 && state.use_line_drawing_g0)
+        && !(!state.use_line_drawing_uses_g0 && state.use_line_drawing_g1)
+    {
+        let cy = state.cursor.y;
+        let style = state.current_style;
+        let start_x = state.cursor.x as usize;
+        let screen = state.get_current_screen_mut();
+        let y_internal = screen.internal_row(cy);
+        let row = &mut screen.buffer[y_internal];
+
+        for (i, &b) in bytes.iter().enumerate() {
+            row.text[start_x + i] = b as char;
+            row.styles[start_x + i] = style;
+        }
+
+        state.cursor.x += bytes.len() as i64;
+        state.last_printed_char = Some(bytes[bytes.len() - 1] as char);
+        return;
+    }
+
+    // Slow path: per-character handling for wraps, inserts, wide chars, etc.
     let mut last_c = None;
     for c in s.chars() {
         handle_print_internal(state, c);

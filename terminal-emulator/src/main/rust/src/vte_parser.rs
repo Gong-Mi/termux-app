@@ -338,11 +338,73 @@ impl Parser {
         }
     }
     
-    /// 处理输入字节
+    /// 处理输入字节 - 核心性能热点
     pub fn advance<P: Perform>(&mut self, handler: &mut P, data: &[u8]) {
-        let text = String::from_utf8_lossy(data);
-        for c in text.chars() {
-            self.process_char(handler, c);
+        let mut i = 0;
+        let len = data.len();
+        
+        while i < len {
+            // 性能优化：ESC_NONE 状态下的可打印 ASCII 快速通道
+            if self.escape_state == ESC_NONE {
+                let start = i;
+                // 批量收集连续的可打印 ASCII 字符 (0x20 - 0x7E)
+                // 避开控制字符 (0x00-0x1F) 和 转义起始符 (0x1B)
+                while i < len {
+                    let b = data[i];
+                    if b >= 0x20 && b <= 0x7E {
+                        i += 1;
+                    } else {
+                        break;
+                    }
+                }
+                
+                if i > start {
+                    // 安全性：i 之前的所有字节都在 0x20-0x7E 范围内，是合法的 UTF-8
+                    let s = unsafe { std::str::from_utf8_unchecked(&data[start..i]) };
+                    handler.print_str(s);
+                    if i == len { break; }
+                }
+            }
+
+            // 处理非 ASCII 或控制字符/转义序列
+            let b = data[i];
+            if b <= 127 {
+                self.process_char(handler, b as char);
+                i += 1;
+            } else {
+                // 处理多字节 UTF-8
+                // 查找当前字符的边界
+                let mut char_len = 1;
+                if (b & 0xE0) == 0xC0 { char_len = 2; }
+                else if (b & 0xF0) == 0xE0 { char_len = 3; }
+                else if (b & 0xF8) == 0xF0 { char_len = 4; }
+                
+                if i + char_len <= len {
+                    let sub = &data[i..i + char_len];
+                    if let Ok(s) = std::str::from_utf8(sub) {
+                        if let Some(c) = s.chars().next() {
+                            self.process_char(handler, c);
+                        }
+                        i += char_len;
+                    } else {
+                        // 无效 UTF-8 序列，替换成替换字符 (U+FFFD)
+                        self.process_char(handler, '\u{FFFD}');
+                        i += 1;
+                        // 跳过后续的 UTF-8 延续字节 (0x80-0xBF)，它们不能作为字符首字节
+                        while i < len && (data[i] & 0xC0) == 0x80 {
+                            i += 1;
+                        }
+                    }
+                } else {
+                    // 截断的 UTF-8，替换成替换字符 (U+FFFD)
+                    self.process_char(handler, '\u{FFFD}');
+                    i += 1;
+                    // 跳过后续的 UTF-8 延续字节 (0x80-0xBF)，它们不能作为字符首字节
+                    while i < len && (data[i] & 0xC0) == 0x80 {
+                        i += 1;
+                    }
+                }
+            }
         }
     }
     

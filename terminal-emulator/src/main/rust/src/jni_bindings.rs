@@ -8,7 +8,7 @@ use jni::JNIEnv;
 use jni::objects::{JClass, JString, JObject, JValue};
 use jni::sys::{jint, jlong, jbyteArray, jboolean, jintArray, jstring, jfloat};
 use std::sync::{Arc, Mutex};
-use std::os::fd::{FromRawFd, IntoRawFd};
+use std::os::fd::{FromRawFd, IntoRawFd, AsRawFd};
 use std::io::Read;
 
 use crate::utils::{android_log, LogPriority};
@@ -478,32 +478,59 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_startIoThread(
             });
 
             let mut file = unsafe { std::fs::File::from_raw_fd(pty_fd) };
-            let mut buffer = [0u8; 8192];
+            // 使用大累积缓冲区减少 lock/unlock 和系统调用次数
+            let mut read_buf = Vec::with_capacity(65536);
+            let mut temp = [0u8; 16384];
 
             while context.running.load(std::sync::atomic::Ordering::SeqCst) {
-                match file.read(&mut buffer) {
+                read_buf.clear();
+
+                // 1) blocking read 等待数据
+                match file.read(&mut temp) {
                     Ok(0) => {
                         android_log(LogPriority::INFO, " IO Thread: Received EOF (0 bytes read)");
                         break;
-                    },
-                    Ok(n) => {
-                        let text = String::from_utf8_lossy(&buffer[..n]);
-                        android_log(LogPriority::DEBUG, &format!(" IO Thread: Read {} bytes: {:?}", n, text));
-                        let (events, cb) = {
-                            let mut engine = context.lock.write().unwrap();
-                            engine.process_bytes(&buffer[..n]);
-                            (engine.take_events(), engine.state.java_callback_obj.clone())
-                        };
-                        render_thread::request_render();
-                        if let Some(ref mut env) = attached_env {
-                            flush_events_to_java(env, &cb, events);
-                        }
                     }
+                    Ok(n) => read_buf.extend_from_slice(&temp[..n]),
                     Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
                     Err(e) => {
                         android_log(LogPriority::ERROR, &format!(" IO Thread: Read error: {:?}", e));
                         break;
-                    },
+                    }
+                }
+
+                // 2) 批量排空 PTY 缓冲区（减少后续系统调用）
+                let fd = file.as_raw_fd();
+                loop {
+                    let mut available = 0i32;
+                    let rc = unsafe { libc::ioctl(fd, libc::FIONREAD, &mut available) };
+                    if rc < 0 || available <= 0 { break; }
+
+                    if read_buf.len() + (available as usize) > read_buf.capacity() {
+                        break;
+                    }
+
+                    match file.read(&mut temp) {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            read_buf.extend_from_slice(&temp[..n]);
+                        }
+                        Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                        Err(_) => break,
+                    }
+                }
+
+                // 3) 一次性处理积累的所有数据
+                if !read_buf.is_empty() {
+                    let (events, cb) = {
+                        let mut engine = context.lock.write().unwrap();
+                        engine.process_bytes(&read_buf);
+                        (engine.take_events(), engine.state.java_callback_obj.clone())
+                    };
+                    render_thread::request_render();
+                    if let Some(ref mut env) = attached_env {
+                        flush_events_to_java(env, &cb, events);
+                    }
                 }
             }
             // 释放 fd 所有权，不自动 close，由 destroyEngine 统一关闭

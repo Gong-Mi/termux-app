@@ -470,6 +470,11 @@ pub const WIDE_EASTASIAN: &[(u32, u32)] = &[
 ];
 
 pub fn wcwidth(ucs: u32) -> usize {
+    // 快速路径：终端内容中 90%+ 是可打印 ASCII，固定返回 1
+    if ucs >= 0x20 && ucs <= 0x7E {
+        return 1;
+    }
+
     if ucs == 0 ||
         ucs == 0x034F ||
         (ucs >= 0x200B && ucs <= 0x200F) ||

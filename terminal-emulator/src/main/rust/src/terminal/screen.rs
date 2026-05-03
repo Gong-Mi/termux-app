@@ -10,9 +10,13 @@ pub struct TerminalRow {
 
 impl TerminalRow {
     pub fn new(cols: u64) -> Self {
+        Self::new_with_style(cols, STYLE_NORMAL)
+    }
+
+    pub fn new_with_style(cols: u64, style: u64) -> Self {
         Self {
             text: vec![' '; cols as usize],
-            styles: vec![STYLE_NORMAL; cols as usize],
+            styles: vec![style; cols as usize],
             line_wrap: false,
         }
     }
@@ -21,22 +25,15 @@ impl TerminalRow {
         let len = self.text.len() as u64;
         let end = min(end, len);
         if start < end {
-            for i in (start as usize)..(end as usize) {
-                self.text[i] = ' ';
-                self.styles[i] = style;
-            }
+            self.text[(start as usize)..(end as usize)].fill(' ');
+            self.styles[(start as usize)..(end as usize)].fill(style);
         }
     }
 
     /// 清空整行，对齐官方 Java TerminalRow.clear() 方法
     pub fn clear_all(&mut self, style: u64) {
-        for i in 0..self.text.len() {
-            self.text[i] = ' ';
-            self.styles[i] = style;
-        }
-        // 注意：Java 版本 clear() 不重置 line_wrap
-        // 只重置 mSpaceUsed 和 mHasNonOneWidthOrSurrogateChars
-        // Rust 版本没有这些字段，所以不需要额外操作
+        self.text.fill(' ');
+        self.styles.fill(style);
     }
 
     pub fn set_char(&mut self, column: u64, code_point: u32, style: u64) {
@@ -47,43 +44,32 @@ impl TerminalRow {
     }
 
     pub fn insert_spaces(&mut self, column: u64, n: u64, style: u64) {
-        let len = self.text.len() as u64;
-        if column < len {
-            let n = min(n, len - column);
-            for i in ((column + n) as usize..(len as usize)).rev() {
-                self.text[i] = self.text[i - n as usize];
-                self.styles[i] = self.styles[i - n as usize];
-            }
-            for i in (column as usize)..(column as usize + n as usize) {
-                self.text[i] = ' ';
-                self.styles[i] = style;
-            }
+        let len = self.text.len();
+        let col = column as usize;
+        if col < len {
+            let n = min(n as usize, len - col);
+            self.text.copy_within(col..len - n, col + n);
+            self.styles.copy_within(col..len - n, col + n);
+            self.text[col..col + n].fill(' ');
+            self.styles[col..col + n].fill(style);
         }
     }
 
     pub fn delete_characters(&mut self, column: u64, n: u64, style: u64) {
-        let len = self.text.len() as u64;
-        if column < len {
-            let n = min(n, len - column);
-            for i in (column as usize)..(len as usize - n as usize) {
-                self.text[i] = self.text[i + n as usize];
-                self.styles[i] = self.styles[i + n as usize];
-            }
-            for i in (len as usize - n as usize)..(len as usize) {
-                self.text[i] = ' ';
-                self.styles[i] = style;
-            }
+        let len = self.text.len();
+        let col = column as usize;
+        if col < len {
+            let n = min(n as usize, len - col);
+            self.text.copy_within(col + n..len, col);
+            self.styles.copy_within(col + n..len, col);
+            self.text[len - n..len].fill(' ');
+            self.styles[len - n..len].fill(style);
         }
     }
 
     pub fn get_space_used(&self) -> u64 {
-        for i in (0..self.text.len()).rev() {
-            // '\0' 是宽字符的占位符，占用了物理列，因此计入空间使用
-            if self.text[i] != ' ' {
-                return (i + 1) as u64;
-            }
-        }
-        0
+        // 使用 rfind 替代手写 reverse 循环，编译器更容易优化（可能自动向量化）
+        self.text.iter().rposition(|&c| c != ' ').map(|i| (i + 1) as u64).unwrap_or(0)
     }
 
     pub fn copy_text(&self, start: u64, end: u64, dest: &mut [u16]) {
@@ -146,15 +132,26 @@ impl Screen {
     pub fn new(cols: i64, rows: i64, total_rows: i64) -> Self {
         let t_u = max(rows as u64, total_rows as u64);
         let mut b = Vec::with_capacity(t_u as usize);
-        for _ in 0..t_u { b.push(TerminalRow::new(max(1, cols as u64))); }
+        for _ in 0..t_u { b.push(TerminalRow::new_with_style(max(1, cols as u64), STYLE_NORMAL)); }
         Self { rows, cols, buffer: b, first_row: 0, active_transcript_rows: 0 }
     }
 
     #[inline]
     pub fn internal_row(&self, row: i64) -> usize {
-        let t = self.buffer.len() as i128; // Use i128 to prevent overflow during intermediate calculations
+        let t = self.buffer.len() as i64;
         if t == 0 { return 0; }
-        (((self.first_row as i128 + row as i128) % t + t) % t) as usize
+        // Fast path: i64 checked_add avoids overflow while keeping native register width.
+        let first = self.first_row as i64;
+        if let Some(sum) = first.checked_add(row) {
+            if sum >= 0 && sum < t {
+                return sum as usize;
+            }
+        }
+        // Slow path: i128 for absolute safety with extreme inputs.
+        let t128 = self.buffer.len() as i128;
+        let sum128 = self.first_row as i128 + row as i128;
+        let idx = sum128 % t128;
+        if idx < 0 { (idx + t128) as usize } else { idx as usize }
     }
 
     /// Get a row by external row number (e.g., 0 = first visible row, -1 = last history row)
@@ -180,8 +177,10 @@ impl Screen {
     pub fn block_clear(&mut self, top: u64, left: u64, bottom: u64, right: u64, style: u64) {
         let cols = self.cols as u64;
         let rows = self.rows as u64;
+        let right = min(right, cols);
         for row in top..min(bottom, rows) {
-            self.get_row_mut(row as i64).clear(left, min(right, cols), style);
+            let idx = self.internal_row(row as i64);
+            self.buffer[idx].clear(left, right, style);
         }
     }
 
@@ -227,14 +226,26 @@ impl Screen {
             0 => {
                 // Erase from cursor to end of screen (including current row from cursor)
                 self.get_row_mut(cursor_y).clear(cursor_x as u64, c, style);
-                for y in (cursor_y + 1)..self.rows { self.get_row_mut(y).clear(0, c, style); }
+                for y in (cursor_y + 1)..self.rows {
+                    let idx = self.internal_row(y);
+                    self.buffer[idx].clear(0, c, style);
+                }
             }
             1 => {
                 // Erase from start of screen to cursor (including current row up to cursor)
-                for y in 0..cursor_y { self.get_row_mut(y).clear(0, c, style); }
+                for y in 0..cursor_y {
+                    let idx = self.internal_row(y);
+                    self.buffer[idx].clear(0, c, style);
+                }
                 self.get_row_mut(cursor_y).clear(0, (cursor_x + 1) as u64, style);
             }
-            2 => { for y in 0..self.rows { self.get_row_mut(y).clear(0, c, style); } }
+            2 => {
+                // Full screen clear - bypass clamping since y is always in [0, rows)
+                for y in 0..self.rows {
+                    let idx = self.internal_row(y);
+                    self.buffer[idx].clear(0, c, style);
+                }
+            }
             3 => {
                 // CSI 3 J - 清除滚动历史 (Transcript)，保留屏幕上的可见内容
                 // 对齐 Java TerminalBuffer.clearTranscript() 和 xterm 的行为
@@ -386,9 +397,7 @@ impl Screen {
         // Create new buffer with sufficient capacity
         let mut new_buffer: Vec<TerminalRow> = Vec::with_capacity(new_total_rows);
         for _ in 0..new_total_rows {
-            let mut row = TerminalRow::new(n_cols as u64);
-            row.clear_all(current_style);
-            new_buffer.push(row);
+            new_buffer.push(TerminalRow::new_with_style(n_cols as u64, current_style));
         }
 
         let mut new_cursor_x: i32 = 0;
@@ -437,10 +446,8 @@ impl Screen {
             let cursor_at_this_row = external_old_row == cursor_y as i64;
 
             // Check if line is blank (skip logic like Java)
-            let is_blank = {
-                let used = old_line.get_space_used();
-                used == 0 || (0..used).all(|i| old_line.text[i as usize] == ' ')
-            };
+            // get_space_used() == 0 means entirely blank; > 0 guarantees at least one non-space
+            let is_blank = old_line.get_space_used() == 0;
 
             // Skip blank lines unless cursor is on this row
             if is_blank && !cursor_at_this_row {
@@ -484,14 +491,7 @@ impl Screen {
                 // Stop processing trailing spaces on the cursor row once we pass the cursor
                 if just_to_cursor && i > cursor_x as u64 && last_non_space_index == old_line.text.len() as u64 {
                     // Check if the rest of the line is actually empty
-                    let mut is_empty = true;
-                    for j in i..last_non_space_index {
-                        if old_line.text[j as usize] != ' ' {
-                            is_empty = false;
-                            break;
-                        }
-                    }
-                    if is_empty {
+                    if old_line.text[(i as usize)..(last_non_space_index as usize)].iter().all(|&c| c == ' ') {
                         break;
                     }
                 }
@@ -620,11 +620,7 @@ impl Screen {
                     break;
                 }
                 let internal_row = self.internal_row(i as i64);
-                let row_is_blank = {
-                    let line = &self.buffer[internal_row];
-                    let used = line.get_space_used();
-                    used == 0 || (0..used).all(|j| line.text[j as usize] == ' ')
-                };
+                let row_is_blank = self.buffer[internal_row].get_space_used() == 0;
                 if row_is_blank {
                     shift_down_of_top_row -= 1;
                     if shift_down_of_top_row == 0 {
@@ -694,7 +690,7 @@ impl Screen {
             let internal_row = self.internal_row(i);
             let line = &self.buffer[internal_row];
             let used = line.get_space_used();
-            let is_blank = used == 0 || (0..used).all(|j| line.text[j as usize] == ' ');
+            let is_blank = used == 0;
             if !is_blank { break; }
             first_blank = i;
         }
