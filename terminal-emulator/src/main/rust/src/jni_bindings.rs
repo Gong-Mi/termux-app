@@ -112,7 +112,9 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
         .or_else(|| font_mgr.match_family_style("monospace", FontStyle::normal()))
     {
         Some(tf) => {
-            let font = Font::new(tf, Some(safe_font_size));
+            let mut font = Font::new(tf, Some(safe_font_size));
+            font.set_edging(skia_safe::font::Edging::SubpixelAntiAlias);
+            font.set_subpixel(true);
             let metrics = font.metrics();
             let h = (metrics.1.descent - metrics.1.ascent + metrics.1.leading).ceil();
             let (w, _) = font.measure_str("M", None);
@@ -1338,6 +1340,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
                         match res {
                             Ok(_) => {
                                 android_log(LogPriority::INFO, "[TRACE_SESSION] JNI callback onEngineInitialized SUCCESS");
+
+                                // 关键：触发一次屏幕更新回调，迫使 Java 侧刷新侧边栏 Session 列表
+                                let _ = env.call_method(cb.as_obj(), "onScreenUpdated", "()V", &[]);
+
                                 // 启动 Native Waiter 线程，不再依赖 Java 侧启动 Waiter 线程
                                 crate::pty::spawn_waiter(pid, cb.clone());
                             },
