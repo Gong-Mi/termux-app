@@ -51,7 +51,11 @@ public class TermuxOpenReceiver extends BroadcastReceiver {
             }
             urlIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             try {
-                context.startActivity(urlIntent);
+                android.app.ActivityOptions options = android.app.ActivityOptions.makeBasic();
+                if (android.os.Build.VERSION.SDK_INT >= 34) {
+                    options.setPendingIntentBackgroundActivityStartMode(android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED);
+                }
+                context.startActivity(urlIntent, options.toBundle());
             } catch (ActivityNotFoundException e) {
                 Log.e(LOG_TAG, "No app handles the url " + data);
             }
@@ -96,7 +100,11 @@ public class TermuxOpenReceiver extends BroadcastReceiver {
         }
 
         try {
-            context.startActivity(sendIntent);
+            android.app.ActivityOptions options = android.app.ActivityOptions.makeBasic();
+            if (android.os.Build.VERSION.SDK_INT >= 34) {
+                options.setPendingIntentBackgroundActivityStartMode(android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED);
+            }
+            context.startActivity(sendIntent, options.toBundle());
         } catch (ActivityNotFoundException e) {
             Log.e(LOG_TAG, "No app handles the url " + data);
         }
