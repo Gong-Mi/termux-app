@@ -175,6 +175,9 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         mProperties.reloadProperties(this);
         mPreferences = new TermuxPreferences(this);
 
+        // Ensure Rust engine knows our version for environment variable injection
+        com.termux.terminal.JNI.setTermuxVersion(BuildConfig.VERSION_NAME);
+
         setContentView(R.layout.activity_termux);
 
         mTermuxTerminalViewClient = new TermuxTerminalViewClient(this, mTermuxTerminalSessionActivityClient);
