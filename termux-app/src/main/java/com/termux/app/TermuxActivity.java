@@ -31,6 +31,7 @@ import android.widget.ListView;
 import android.widget.Toast;
 
 import com.termux.R;
+import com.termux.BuildConfig;
 import com.termux.app.extrakeys.ExtraKeysView;
 import com.termux.app.extrakeys.TermuxTerminalExtraKeys;
 import com.termux.app.extrakeys.TerminalToolbarViewPager;

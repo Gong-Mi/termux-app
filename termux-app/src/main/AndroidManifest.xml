@@ -71,6 +71,7 @@
         android:requestLegacyExternalStorage="true"
         android:supportsRtl="false"
         android:theme="@style/Theme.TermuxActivity.DayNight.NoActionBar"
+        android:allowBackup="true"
         tools:targetApi="tiramisu">
 
         <activity
@@ -213,6 +214,24 @@
             android:name=".app.TermuxOpenReceiver"
             android:exported="false" />
 
+        <receiver
+            android:name="com.termux.app.api.TermuxApiReceiver"
+            android:exported="true"
+            android:permission="com.termux.permission.TERMUX_INTERNAL">
+            <intent-filter>
+                <action android:name="com.termux.api.TermuxApiReceiver" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name="com.termux.tasker.FireReceiver"
+            android:exported="true"
+            android:permission="com.termux.permission.TERMUX_INTERNAL">
+            <intent-filter>
+                <action android:name="com.twofortyfouram.locale.intent.action.FIRE_SETTING" />
+            </intent-filter>
+        </receiver>
+
         <service
             android:name=".app.TermuxService"
             android:foregroundServiceType="specialUse"
@@ -236,6 +255,7 @@
         <service android:name=".app.api.SpeechToTextAPI$SpeechToTextService" android:exported="false" />
         <service android:name=".app.api.MediaPlayerAPI$MediaPlayerService" android:exported="false" />
         <service android:name=".app.api.MicRecorderAPI$MicRecorderService" android:exported="false" />
+        <service android:name="com.termux.tasker.PluginResultsService" android:exported="false" />
 
         <receiver
             android:name=".app.TermuxBootReceiver"
@@ -262,6 +282,9 @@
             android:value="true" />
         <meta-data
             android:name="com.sec.android.support.multiwindow"
+            android:value="true" />
+        <meta-data
+            android:name="com.samsung.android.sdk.desktopmode.isAppCompatible"
             android:value="true" />
 
     </application>
