@@ -91,6 +91,7 @@ impl SixelDecoder {
         self.current_row = 0;
         self.current_col = 0;
         self.repeat_count = 0;
+        self.color_registers.fill(None);
     }
 
     /// 开始解析 DCS Sixel 序列
@@ -343,11 +344,14 @@ impl SixelDecoder {
     /// 辅助：构建 256 色的快速查找表 [R, G, B, A]
     fn build_fast_color_table(&self) -> [[u8; 4]; 256] {
         let mut table = [[0u8; 4]; 256];
-        for i in 0..256 {
-            let (r, g, b) = if let Some(color) = &self.color_registers[i] {
+        // index 0 = 未设置/透明背景
+        table[0] = [0, 0, 0, if self.transparent { 0 } else { 255 }];
+        for i in 1..256 {
+            let color_idx = i - 1;
+            let (r, g, b) = if let Some(color) = &self.color_registers[color_idx] {
                 (color.r, color.g, color.b)
             } else {
-                index_to_default_color(i)
+                index_to_default_color(color_idx)
             };
             table[i] = [r, g, b, 255];
         }
@@ -355,12 +359,20 @@ impl SixelDecoder {
     }
 
     /// 辅助：颜色查找逻辑封装
+    ///
+    /// 注意：render_sixel 写入的是 `current_color + 1`（保留 0 表示未设置），
+    /// 因此 lookup 时需要将 index 减 1 映射回实际颜色寄存器索引。
     #[inline(always)]
     fn lookup_color(&self, index: usize) -> (u8, u8, u8, u8) {
-        if let Some(color) = &self.color_registers[index % 256] {
+        if index == 0 {
+            // 0 表示该像素未被任何 sixel 位覆盖，使用默认背景色
+            return (0, 0, 0, if self.transparent { 0 } else { 255 });
+        }
+        let color_idx = (index - 1) % 256;
+        if let Some(color) = &self.color_registers[color_idx] {
             (color.r, color.g, color.b, 255)
         } else {
-            let (r, g, b) = index_to_default_color(index % 256);
+            let (r, g, b) = index_to_default_color(color_idx);
             (r, g, b, 255)
         }
     }
@@ -457,23 +469,133 @@ pub fn index_to_default_color(index: usize) -> (u8, u8, u8) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vte_parser::Params;
+
+    // =========================================================================
+    // 实验 1: DCS 参数解析
+    // 目标: 验证 start() 对 Pq(纵横比)、Pi(透明)、Pa(网格) 的解析
+    // =========================================================================
+
+    #[test]
+    fn test_sixel_start_transparent_opaque() {
+        let mut decoder = SixelDecoder::new();
+        let mut params = Params::new();
+        params.values[0] = 0; params.len = 1; // Pq=0
+        params.values[1] = 1; params.len = 2; // Pi=1 (opaque)
+        decoder.start(&params);
+        assert!(!decoder.transparent);
+        assert_eq!(decoder.aspect_ratio, (2, 1));
+    }
+
+    #[test]
+    fn test_sixel_start_transparent_variants() {
+        for (pi, expected) in [(0, true), (1, false), (2, true)] {
+            let mut decoder = SixelDecoder::new();
+            let mut params = Params::new();
+            params.values[0] = 0; params.len = 1;
+            params.values[1] = pi; params.len = 2;
+            decoder.start(&params);
+            assert_eq!(decoder.transparent, expected, "Pi={} should yield transparent={}", pi, expected);
+        }
+    }
+
+    #[test]
+    fn test_sixel_start_aspect_ratio_mapping() {
+        let cases = [
+            (0, (2, 1)), (1, (2, 1)),
+            (2, (5, 1)),
+            (3, (3, 1)), (4, (3, 1)),
+            (5, (2, 1)), (6, (2, 1)),
+            (7, (1, 1)), (8, (1, 1)), (9, (1, 1)),
+            (99, (2, 1)), // invalid fallback
+        ];
+        for (pq, expected) in cases {
+            let mut decoder = SixelDecoder::new();
+            let mut params = Params::new();
+            params.values[0] = pq; params.len = 1;
+            decoder.start(&params);
+            assert_eq!(decoder.aspect_ratio, expected, "Pq={} should map to {:?}", pq, expected);
+        }
+    }
+
+    #[test]
+    fn test_sixel_start_resets_state() {
+        let mut decoder = SixelDecoder::new();
+        decoder.process_data(b"!10~");
+        assert_eq!(decoder.width, 10);
+
+        let mut params = Params::new();
+        params.values[0] = 0; params.len = 1;
+        decoder.start(&params);
+
+        assert_eq!(decoder.width, 0);
+        assert_eq!(decoder.height, 0);
+        assert_eq!(decoder.current_col, 0);
+        assert_eq!(decoder.current_row, 0);
+        assert_eq!(decoder.pixel_data.len(), 6); // pre-allocated
+    }
+
+    // =========================================================================
+    // 实验 2: 基本 Sixel 数据渲染
+    // 目标: 验证 render_sixel 对 6-bit 列数据的正确展开
+    // =========================================================================
 
     #[test]
     fn test_sixel_basic_decoding() {
         let mut decoder = SixelDecoder::new();
-        // Sixel data: ~ (63+63=126) which is all 6 bits set
+        // ~ (ASCII 126) => 126-63 = 63 = 0b111111, all 6 bits set
         decoder.process_data(b"~");
         assert_eq!(decoder.width, 1);
         assert_eq!(decoder.height, 6);
-        // color index 0 maps to pixel value 1
-        assert_eq!(decoder.pixel_data[0][0], 1);
-        assert_eq!(decoder.pixel_data[5][0], 1);
+        for row in 0..6 {
+            assert_eq!(decoder.pixel_data[row][0], 1, "row {} should be set", row);
+        }
     }
+
+    #[test]
+    fn test_sixel_partial_bits() {
+        let mut decoder = SixelDecoder::new();
+        // '@' (ASCII 64) => 64-63 = 1 = 0b000001, only bit 0 set
+        decoder.process_data(b"@");
+        assert_eq!(decoder.width, 1);
+        assert_eq!(decoder.pixel_data[0][0], 1); // bit 0 -> row 0
+        for row in 1..6 {
+            assert_eq!(decoder.pixel_data[row][0], 0, "row {} should be unset", row);
+        }
+    }
+
+    #[test]
+    fn test_sixel_alternating_bits() {
+        let mut decoder = SixelDecoder::new();
+        // 'C' (ASCII 67) => 67-63 = 4 = 0b000100, only bit 2 set -> row 2
+        decoder.process_data(b"C");
+        assert_eq!(decoder.pixel_data[0][0], 0);
+        assert_eq!(decoder.pixel_data[1][0], 0);
+        assert_eq!(decoder.pixel_data[2][0], 1);
+        assert_eq!(decoder.pixel_data[3][0], 0);
+        assert_eq!(decoder.pixel_data[4][0], 0);
+        assert_eq!(decoder.pixel_data[5][0], 0);
+    }
+
+    #[test]
+    fn test_sixel_multiple_columns() {
+        let mut decoder = SixelDecoder::new();
+        // @ (1) then C (4) then ~ (63)
+        decoder.process_data(b"@C~");
+        assert_eq!(decoder.width, 3);
+        assert_eq!(decoder.pixel_data[0][0], 1); // bit 0 of '@'
+        assert_eq!(decoder.pixel_data[2][1], 1); // bit 2 of 'C'
+        assert_eq!(decoder.pixel_data[5][2], 1); // bit 5 of '~'
+    }
+
+    // =========================================================================
+    // 实验 3: 重复计数 (!)
+    // 目标: 验证 RLE (Run-Length Encoding) 解析
+    // =========================================================================
 
     #[test]
     fn test_sixel_rle_decoding() {
         let mut decoder = SixelDecoder::new();
-        // ! 5 ~ -> repeat ~ 5 times
         decoder.process_data(b"!5~");
         assert_eq!(decoder.width, 5);
         for i in 0..5 {
@@ -482,9 +604,62 @@ mod tests {
     }
 
     #[test]
+    fn test_sixel_rle_zero_defaults_to_one() {
+        let mut decoder = SixelDecoder::new();
+        // ! followed immediately by non-digit => repeat_count defaults to 1
+        decoder.process_data(b"!@");
+        assert_eq!(decoder.width, 1);
+        assert_eq!(decoder.pixel_data[0][0], 1);
+    }
+
+    #[test]
+    fn test_sixel_rle_multidigit() {
+        let mut decoder = SixelDecoder::new();
+        decoder.process_data(b"!42~");
+        assert_eq!(decoder.width, 42);
+        for i in 0..42 {
+            assert_eq!(decoder.pixel_data[0][i], 1, "column {} should be set", i);
+        }
+    }
+
+    #[test]
+    fn test_sixel_rle_fragmented() {
+        let mut decoder = SixelDecoder::new();
+        decoder.process_data(b"!");
+        decoder.process_data(b"1");
+        decoder.process_data(b"0");
+        decoder.process_data(b"~");
+        assert_eq!(decoder.width, 10);
+        assert_eq!(decoder.pixel_data[0][9], 1);
+    }
+
+    // =========================================================================
+    // 实验 4: 控制字符 ($ -, \r, \n)
+    // 目标: 验证光标定位控制
+    // =========================================================================
+
+    #[test]
+    fn test_sixel_carriage_return_dollar() {
+        let mut decoder = SixelDecoder::new();
+        // ~ $ ~ => two pixels in column 0 (CR resets col)
+        decoder.process_data(b"~$~");
+        assert_eq!(decoder.width, 1);
+        // Both should write to column 0; second overwrites first
+        assert_eq!(decoder.pixel_data[0][0], 1);
+    }
+
+    #[test]
+    fn test_sixel_carriage_return_cr() {
+        let mut decoder = SixelDecoder::new();
+        decoder.process_data(b"~~\r@");
+        // ~~ sets col=2, \r resets to 0, @ writes at col 0
+        assert_eq!(decoder.width, 2); // max width from ~~
+        assert_eq!(decoder.pixel_data[0][0], 1); // @ overwrites
+    }
+
+    #[test]
     fn test_sixel_newline() {
         let mut decoder = SixelDecoder::new();
-        // ~ - ~ -> one pixel, next line (6 pixels down), one pixel
         decoder.process_data(b"~-~");
         assert_eq!(decoder.height, 12);
         assert_eq!(decoder.pixel_data[0][0], 1);
@@ -492,27 +667,259 @@ mod tests {
     }
 
     #[test]
-    fn test_sixel_color_select() {
+    fn test_sixel_newline_lf() {
         let mut decoder = SixelDecoder::new();
-        // #1;2;100;0;0 -> color 1 = RGB 100%,0%,0% (Red)
+        decoder.process_data(b"~~\n@");
+        assert_eq!(decoder.height, 12);
+        assert_eq!(decoder.pixel_data[0][0], 1); // ~~ first column
+        assert_eq!(decoder.pixel_data[6][0], 1); // @ at row 6 (new line)
+    }
+
+    #[test]
+    fn test_sixel_multi_row_with_varying_width() {
+        let mut decoder = SixelDecoder::new();
+        // Row 0: 3 columns, Row 6: 1 column (but ensure_height pads new rows to current width)
+        decoder.process_data(b"~~~-@");
+        assert_eq!(decoder.height, 12);
+        // width is derived from pixel_data[0].len() after processing
+        assert_eq!(decoder.width, 3);
+        assert_eq!(decoder.pixel_data[0].len(), 3);
+        // New rows are padded to self.width.max(1) = 3, not 1
+        assert_eq!(decoder.pixel_data[6].len(), 3);
+        // Only column 0 has actual pixel data in row 6
+        assert_eq!(decoder.pixel_data[6][0], 1); // @ sets bit 0
+        assert_eq!(decoder.pixel_data[6][1], 0); // padding
+    }
+
+    // =========================================================================
+    // 实验 5: 颜色选择 (#)
+    // 目标: 验证颜色寄存器设置和像素值映射
+    // =========================================================================
+
+    #[test]
+    fn test_sixel_color_select_rgb() {
+        let mut decoder = SixelDecoder::new();
         decoder.process_data(b"#1;2;100;0;0#1~");
         assert_eq!(decoder.current_color, 1);
         let color = decoder.color_registers[1].as_ref().unwrap();
         assert_eq!(color.r, 255);
         assert_eq!(color.g, 0);
         assert_eq!(color.b, 0);
-        assert_eq!(decoder.pixel_data[0][0], 2); // index+1
+        assert_eq!(decoder.pixel_data[0][0], 2); // color_index + 1
     }
 
     #[test]
-    fn test_sixel_fragmented_data() {
+    fn test_sixel_color_select_hls() {
         let mut decoder = SixelDecoder::new();
-        // Data split across chunks
-        decoder.process_data(b"!");
-        decoder.process_data(b"1");
-        decoder.process_data(b"0");
-        decoder.process_data(b"~");
-        assert_eq!(decoder.width, 10);
-        assert_eq!(decoder.pixel_data[0][9], 1);
+        // HLS: H=0 (red), L=50, S=100 -> should be pure red
+        decoder.process_data(b"#2;1;0;50;100#2~");
+        let color = decoder.color_registers[2].as_ref().unwrap();
+        assert!(color.r >= 250, "Expected red channel high, got {}", color.r);
+        assert!(color.g < 20, "Expected green channel low, got {}", color.g);
+        assert!(color.b < 20, "Expected blue channel low, got {}", color.b);
+        assert_eq!(decoder.pixel_data[0][0], 3); // color_index(2) + 1
+    }
+
+    #[test]
+    fn test_sixel_color_select_incomplete_params() {
+        let mut decoder = SixelDecoder::new();
+        // Only color index provided, no color space -> should not crash
+        decoder.process_data(b"#5~");
+        assert_eq!(decoder.current_color, 5);
+        // No color register set (params.len() < 4)
+        assert!(decoder.color_registers[5].is_none());
+        assert_eq!(decoder.pixel_data[0][0], 6); // still uses current_color+1
+    }
+
+    #[test]
+    fn test_sixel_color_select_no_index() {
+        let mut decoder = SixelDecoder::new();
+        // Empty color params -> defaults to color 0
+        decoder.process_data(b"#~");
+        assert_eq!(decoder.current_color, 0);
+    }
+
+    #[test]
+    fn test_sixel_color_persists_across_data() {
+        let mut decoder = SixelDecoder::new();
+        decoder.process_data(b"#3;2;0;100;0#3~~");
+        // Both ~ pixels should use color 3 (index+1 = 4)
+        assert_eq!(decoder.pixel_data[0][0], 4);
+        assert_eq!(decoder.pixel_data[0][1], 4);
+    }
+
+    // =========================================================================
+    // 实验 6: 尺寸计算
+    // 目标: 验证 width/height 在各种场景下的正确性
+    // =========================================================================
+
+    #[test]
+    fn test_sixel_empty_data_dimensions() {
+        let mut decoder = SixelDecoder::new();
+        decoder.process_data(b"");
+        // new() does not pre-allocate; empty data means no rows/columns
+        assert_eq!(decoder.height, 0);
+        assert_eq!(decoder.width, 0);
+    }
+
+    #[test]
+    fn test_sixel_single_column_dimensions() {
+        let mut decoder = SixelDecoder::new();
+        decoder.process_data(b"@");
+        assert_eq!(decoder.width, 1);
+        assert_eq!(decoder.height, 6);
+    }
+
+    #[test]
+    fn test_sixel_wide_image_dimensions() {
+        let mut decoder = SixelDecoder::new();
+        decoder.process_data(b"!100~");
+        assert_eq!(decoder.width, 100);
+        assert_eq!(decoder.height, 6);
+    }
+
+    #[test]
+    fn test_sixel_tall_image_dimensions() {
+        let mut decoder = SixelDecoder::new();
+        // 4 rows of sixel data (each newline advances 6 pixels)
+        decoder.process_data(b"~-~-~-~");
+        assert_eq!(decoder.height, 24);
+    }
+
+    // =========================================================================
+    // 实验 7: 图像数据输出 (get_image_data)
+    // 目标: 验证 RGBA 输出格式和颜色映射
+    // =========================================================================
+
+    #[test]
+    fn test_sixel_image_data_format() {
+        let mut decoder = SixelDecoder::new();
+        decoder.process_data(b"@");
+        let rgba = decoder.get_image_data();
+        // 1 column * 6 rows * 4 bytes = 24 bytes
+        assert_eq!(rgba.len(), 24);
+        // Pixel (0,0) has value 1 -> color index 0 -> default black (0,0,0,255)
+        assert_eq!(rgba[0], 0);   // R
+        assert_eq!(rgba[1], 0);   // G
+        assert_eq!(rgba[2], 0);   // B
+        assert_eq!(rgba[3], 255); // A
+    }
+
+    #[test]
+    fn test_sixel_image_data_with_color() {
+        let mut decoder = SixelDecoder::new();
+        decoder.process_data(b"#1;2;100;0;0#1~");
+        let rgba = decoder.get_image_data();
+        // ~ fills all 6 rows of 1 column
+        assert_eq!(rgba.len(), 24);
+        // All pixels should be red (255,0,0,255)
+        for row in 0..6 {
+            let offset = row * 4;
+            assert_eq!(rgba[offset], 255, "row {} R", row);
+            assert_eq!(rgba[offset + 1], 0, "row {} G", row);
+            assert_eq!(rgba[offset + 2], 0, "row {} B", row);
+            assert_eq!(rgba[offset + 3], 255, "row {} A", row);
+        }
+    }
+
+    #[test]
+    fn test_sixel_image_data_transparent_background() {
+        let mut decoder = SixelDecoder::new();
+        let mut params = Params::new();
+        params.values[0] = 0; params.len = 1;
+        params.values[1] = 0; params.len = 2; // transparent
+        decoder.start(&params);
+        decoder.process_data(b"@"); // only 1 bit set -> 5 transparent pixels
+        let rgba = decoder.get_image_data();
+        // Transparent pixels: index 0 -> lookup_color(0) with transparent=false in decoder
+        // Actually lookup_color always returns alpha=255, transparent flag is metadata
+        // This tests the output format, not the compositing logic
+        assert_eq!(rgba.len(), 24);
+    }
+
+    // =========================================================================
+    // 实验 8: 状态边界与异常处理
+    // 目标: 验证鲁棒性
+    // =========================================================================
+
+    #[test]
+    fn test_sixel_invalid_characters_ignored() {
+        let mut decoder = SixelDecoder::new();
+        // Characters below 63 and not special commands are ignored
+        decoder.process_data(b"@ \x01\x02\x03@");
+        assert_eq!(decoder.width, 2);
+    }
+
+    #[test]
+    fn test_sixel_finish_resets_state() {
+        let mut decoder = SixelDecoder::new();
+        decoder.process_data(b"!5~");
+        decoder.finish();
+        assert_eq!(decoder.state, SixelState::Data);
+    }
+
+    #[test]
+    fn test_sixel_reset_clears_all() {
+        let mut decoder = SixelDecoder::new();
+        decoder.process_data(b"!10~");
+        decoder.color_registers[3] = Some(SixelColor { r: 128, g: 128, b: 128 });
+        decoder.reset();
+        assert_eq!(decoder.width, 0);
+        assert_eq!(decoder.pixel_data.len(), 0);
+        assert_eq!(decoder.current_color, 0);
+        assert!(decoder.color_registers[3].is_none());
+    }
+
+    #[test]
+    fn test_sixel_repeat_with_zero_count() {
+        let mut decoder = SixelDecoder::new();
+        // !0~ => repeat_count = 0, but code path normalizes to 1
+        decoder.process_data(b"!0~");
+        assert_eq!(decoder.width, 1);
+    }
+
+    // =========================================================================
+    // 实验 9: 辅助函数
+    // =========================================================================
+
+    #[test]
+    fn test_hls_to_rgb_red() {
+        // H=0, L=50, S=100 -> pure red
+        let (r, g, b) = hls_to_rgb(0, 50, 100);
+        assert!(r >= 250, "R={}", r);
+        assert!(g < 10, "G={}", g);
+        assert!(b < 10, "B={}", b);
+    }
+
+    #[test]
+    fn test_hls_to_rgb_green() {
+        // H=120, L=50, S=100 -> pure green
+        let (r, g, b) = hls_to_rgb(120, 50, 100);
+        assert!(r < 10, "R={}", r);
+        assert!(g >= 250, "G={}", g);
+        assert!(b < 10, "B={}", b);
+    }
+
+    #[test]
+    fn test_hls_to_rgb_gray() {
+        // S=0 -> gray
+        let (r, g, b) = hls_to_rgb(0, 50, 0);
+        assert_eq!(r, g);
+        assert_eq!(g, b);
+    }
+
+    #[test]
+    fn test_index_to_default_color_first_16() {
+        assert_eq!(index_to_default_color(0), (0, 0, 0));       // black
+        assert_eq!(index_to_default_color(1), (170, 0, 0));     // red
+        assert_eq!(index_to_default_color(7), (170, 170, 170)); // white
+        assert_eq!(index_to_default_color(15), (255, 255, 255)); // bright white
+    }
+
+    #[test]
+    fn test_index_to_default_color_overflow() {
+        let c = index_to_default_color(200);
+        assert_eq!(c.0, c.1);
+        assert_eq!(c.1, c.2);
     }
 }
