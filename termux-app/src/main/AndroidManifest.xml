@@ -47,6 +47,17 @@
         <package android:name="com.termux.x11"/>
         <!-- https://developer.android.com/about/versions/11/behavior-changes-11#speech-recognition -->
         <intent><action android:name="android.speech.RecognitionService"/></intent>
+        <!-- For opening URLs in browsers -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="http" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
     </queries>
 
     <application
