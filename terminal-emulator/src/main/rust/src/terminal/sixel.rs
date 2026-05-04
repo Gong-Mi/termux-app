@@ -184,12 +184,10 @@ impl SixelDecoder {
                         // 颜色参数结束
                         if self.current_param >= 0 {
                             self.params.push(self.current_param);
-                        } else if !self.params.is_empty() {
-                            // 结尾分号情况已在上面通过 push 处理，此处无需操作
                         }
                         
                         self.apply_color_select();
-                        self.params.clear(); // 关键：处理完后必须清空，否则会污染下一个颜色命令
+                        self.params.clear(); // 在应用后清理
                         self.current_param = -1;
                         self.state = SixelState::Data;
                         

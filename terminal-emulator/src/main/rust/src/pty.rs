@@ -5,6 +5,9 @@ use nix::unistd::{ForkResult, fork, setsid, chdir};
 use std::ffi::CString;
 use std::io::Read;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::HashMap;
+use std::time::Duration;
 use once_cell::sync::Lazy;
 
 use crate::utils::{android_log, LogPriority};
@@ -419,24 +422,71 @@ pub fn write_to_fd(fd: jint, data: &[u8]) -> jint {
     res as jint
 }
 
-pub fn spawn_waiter(pid: i32, callback: jni::objects::GlobalRef) {
-    std::thread::spawn(move || {
-        let exit_code = wait_for(pid);
-        android_log(LogPriority::INFO, &format!("[PTY Waiter] Process {} exited with status {}", pid, exit_code));
-        
-        if let Some(vm) = crate::JAVA_VM.get() {
-            if let Ok(mut env) = vm.attach_current_thread_as_daemon() {
-                // Call Java callback to notify about exit
-                // Assuming callback is the RustEngineCallback or TerminalSession
-                let _ = env.call_method(
-                    callback.as_obj(),
-                    "onProcessExited",
-                    "(I)V",
-                    &[jni::objects::JValue::Int(exit_code)]
-                );
+static CHILD_WATCHER: Lazy<Mutex<HashMap<i32, jni::objects::GlobalRef>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static WATCHER_THREAD_STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// 启动全局子进程监视线程
+fn ensure_watcher_thread() {
+    if WATCHER_THREAD_STARTED.swap(true, Ordering::SeqCst) { return; }
+
+    std::thread::Builder::new()
+        .name("ChildWatcher".to_string())
+        .spawn(|| {
+            android_log(LogPriority::INFO, "Global ChildWatcher thread started");
+            loop {
+                let targets: Vec<(i32, jni::objects::GlobalRef)> = {
+                    let map = CHILD_WATCHER.lock().unwrap();
+                    if map.is_empty() {
+                        // 如果没有要监视的，休息一下
+                        drop(map);
+                        std::thread::sleep(Duration::from_millis(500));
+                        continue;
+                    }
+                    map.iter().map(|(&k, v)| (k, v.clone())).collect()
+                };
+
+                for (pid, callback) in targets {
+                    let mut status: i32 = 0;
+                    // 使用 WNOHANG 非阻塞检查
+                    let res = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
+                    
+                    if res == pid {
+                        // 进程已退出
+                        let exit_code = if libc::WIFEXITED(status) { libc::WEXITSTATUS(status) }
+                                       else if libc::WIFSIGNALED(status) { -libc::WTERMSIG(status) }
+                                       else { 0 };
+
+                        android_log(LogPriority::INFO, &format!("[Watcher] Process {} exited with status {}", pid, exit_code));
+                        
+                        // 从监视列表中移除
+                        CHILD_WATCHER.lock().unwrap().remove(&pid);
+
+                        // 通知 Java
+                        if let Some(vm) = crate::JAVA_VM.get() {
+                            if let Ok(mut env) = vm.attach_current_thread_as_daemon() {
+                                let _ = env.call_method(
+                                    callback.as_obj(),
+                                    "onProcessExited",
+                                    "(I)V",
+                                    &[jni::objects::JValue::Int(exit_code)]
+                                );
+                            }
+                        }
+                    } else if res < 0 {
+                        // 发生错误（如 ECHILD），可能已被其他地方 wait 了，移除之
+                        CHILD_WATCHER.lock().unwrap().remove(&pid);
+                    }
+                }
+                
+                // 轮询间隔：100ms 兼顾响应速度和省电
+                std::thread::sleep(Duration::from_millis(100));
             }
-        }
-    });
+        }).expect("Failed to spawn watcher thread");
+}
+
+pub fn spawn_waiter(pid: i32, callback: jni::objects::GlobalRef) {
+    CHILD_WATCHER.lock().unwrap().insert(pid, callback);
+    ensure_watcher_thread();
 }
 
 pub fn set_pty_window_size(fd: jint, rows: jint, cols: jint, cell_width: jint, cell_height: jint) {
