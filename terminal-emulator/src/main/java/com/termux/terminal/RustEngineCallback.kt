@@ -29,7 +29,7 @@ class RustEngineCallback(private var mClient: TerminalSessionClient?) : Terminal
     }
 
     override fun onScreenUpdated() {
-        android.util.Log.v("TermuxTrace", "[JNI_CALLBACK] onScreenUpdated (plural) called")
+        // Trace log removed to reduce logcat noise and CPU overhead
         val session = mSession
         val client = mClient
         if (session != null) {

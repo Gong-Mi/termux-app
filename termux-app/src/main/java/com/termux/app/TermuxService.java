@@ -165,12 +165,10 @@ public final class TermuxService extends Service {
 
     @Override
     public boolean onUnbind(Intent intent) {
-        Log.i(LOG_TAG, "onUnbind called");
-        // 如果没有活动绑定了，清理所有客户端引用以防止内存泄漏
-        // 注意：在多窗口模式下，只要还有一个 Activity 存活，此方法通常不会被调用。
-        synchronized (mTerminalSessionClients) {
-            mTerminalSessionClients.clear();
-        }
+        Log.v(LOG_TAG, "onUnbind");
+        // 注意：不要 clear() 所有 clients。
+        // 每个 Activity 在 onDestroy 中已经调用 unsetTermuxTerminalSessionClient()，
+        // 这里不需要额外清理。clear() 会破坏多窗口/Activity 重建场景。
         return false;
     }
 
@@ -471,7 +469,7 @@ public final class TermuxService extends Service {
         }
     }
 
-    public synchronized void setTermuxTerminalSessionClient(TerminalSessionClient terminalSessionClient) {
+    public void setTermuxTerminalSessionClient(TerminalSessionClient terminalSessionClient) {
         synchronized (mTerminalSessionClients) {
             if (!mTerminalSessionClients.contains(terminalSessionClient)) {
                 mTerminalSessionClients.add(terminalSessionClient);
@@ -479,7 +477,7 @@ public final class TermuxService extends Service {
         }
     }
 
-    public synchronized void unsetTermuxTerminalSessionClient(TerminalSessionClient terminalSessionClient) {
+    public void unsetTermuxTerminalSessionClient(TerminalSessionClient terminalSessionClient) {
         synchronized (mTerminalSessionClients) {
             mTerminalSessionClients.remove(terminalSessionClient);
         }

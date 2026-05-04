@@ -12,6 +12,11 @@ use once_cell::sync::Lazy;
 
 use crate::utils::{android_log, LogPriority};
 
+#[cfg(not(feature = "test-helpers"))]
+type WatcherCallback = jni::objects::GlobalRef;
+#[cfg(feature = "test-helpers")]
+type WatcherCallback = std::sync::Arc<dyn Fn(i32) + Send + Sync>;
+
 static PTY_ALLOC_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 /// 进程创建信号量：限制瞬时并发 fork 数量为 4。
@@ -422,22 +427,49 @@ pub fn write_to_fd(fd: jint, data: &[u8]) -> jint {
     res as jint
 }
 
-static CHILD_WATCHER: Lazy<Mutex<HashMap<i32, jni::objects::GlobalRef>>> = Lazy::new(|| Mutex::new(HashMap::new()));
-static WATCHER_THREAD_STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static CHILD_WATCHER: Lazy<Mutex<HashMap<i32, WatcherCallback>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static WATCHER_THREAD: Lazy<Mutex<Option<std::thread::JoinHandle<()>>>> = Lazy::new(|| Mutex::new(None));
+
+#[inline]
+fn notify_process_exit(callback: &WatcherCallback, exit_code: i32) {
+    #[cfg(not(feature = "test-helpers"))]
+    {
+        if let Some(vm) = crate::JAVA_VM.get() {
+            if let Ok(mut env) = vm.attach_current_thread_as_daemon() {
+                let _ = env.call_method(
+                    callback.as_obj(),
+                    "onProcessExited",
+                    "(I)V",
+                    &[jni::objects::JValue::Int(exit_code)]
+                );
+            }
+        }
+    }
+    #[cfg(feature = "test-helpers")]
+    {
+        callback(exit_code);
+    }
+}
 
 /// 启动全局子进程监视线程
 fn ensure_watcher_thread() {
-    if WATCHER_THREAD_STARTED.swap(true, Ordering::SeqCst) { return; }
+    let mut guard = WATCHER_THREAD.lock().unwrap();
+    if let Some(ref handle) = *guard {
+        if !handle.is_finished() {
+            return;
+        }
+    }
 
-    std::thread::Builder::new()
+    let handle = std::thread::Builder::new()
         .name("ChildWatcher".to_string())
         .spawn(|| {
+            #[cfg(feature = "test-helpers")]
+            WATCHER_THREAD_COUNT.fetch_add(1, Ordering::SeqCst);
             android_log(LogPriority::INFO, "Global ChildWatcher thread started");
             loop {
-                let targets: Vec<(i32, jni::objects::GlobalRef)> = {
+                let targets: Vec<(i32, WatcherCallback)> = {
                     let map = CHILD_WATCHER.lock().unwrap();
                     if map.is_empty() {
-                        // 如果没有要监视的，休息一下
                         drop(map);
                         std::thread::sleep(Duration::from_millis(500));
                         continue;
@@ -447,46 +479,81 @@ fn ensure_watcher_thread() {
 
                 for (pid, callback) in targets {
                     let mut status: i32 = 0;
-                    // 使用 WNOHANG 非阻塞检查
                     let res = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
-                    
+
                     if res == pid {
-                        // 进程已退出
                         let exit_code = if libc::WIFEXITED(status) { libc::WEXITSTATUS(status) }
                                        else if libc::WIFSIGNALED(status) { -libc::WTERMSIG(status) }
                                        else { 0 };
-
                         android_log(LogPriority::INFO, &format!("[Watcher] Process {} exited with status {}", pid, exit_code));
-                        
-                        // 从监视列表中移除
                         CHILD_WATCHER.lock().unwrap().remove(&pid);
-
-                        // 通知 Java
-                        if let Some(vm) = crate::JAVA_VM.get() {
-                            if let Ok(mut env) = vm.attach_current_thread_as_daemon() {
-                                let _ = env.call_method(
-                                    callback.as_obj(),
-                                    "onProcessExited",
-                                    "(I)V",
-                                    &[jni::objects::JValue::Int(exit_code)]
-                                );
+                        notify_process_exit(&callback, exit_code);
+                    } else if res == 0 {
+                        // 仍在运行，不做任何操作
+                    } else {
+                        match nix::errno::Errno::last() {
+                            nix::errno::Errno::ECHILD => {
+                                android_log(LogPriority::INFO, &format!("[Watcher] Process {} already reaped (ECHILD)", pid));
+                                CHILD_WATCHER.lock().unwrap().remove(&pid);
+                                notify_process_exit(&callback, 0);
+                            }
+                            nix::errno::Errno::EINTR => {
+                                // 被信号中断，保留到下一轮检查
+                            }
+                            other => {
+                                android_log(LogPriority::WARN, &format!("[Watcher] waitpid({}) failed: {:?}", pid, other));
+                                CHILD_WATCHER.lock().unwrap().remove(&pid);
                             }
                         }
-                    } else if res < 0 {
-                        // 发生错误（如 ECHILD），可能已被其他地方 wait 了，移除之
-                        CHILD_WATCHER.lock().unwrap().remove(&pid);
                     }
                 }
-                
-                // 轮询间隔：100ms 兼顾响应速度和省电
+
                 std::thread::sleep(Duration::from_millis(100));
             }
         }).expect("Failed to spawn watcher thread");
+    *guard = Some(handle);
 }
 
+#[cfg(not(feature = "test-helpers"))]
 pub fn spawn_waiter(pid: i32, callback: jni::objects::GlobalRef) {
     CHILD_WATCHER.lock().unwrap().insert(pid, callback);
     ensure_watcher_thread();
+}
+
+#[cfg(feature = "test-helpers")]
+pub fn spawn_waiter(pid: i32, callback: std::sync::Arc<dyn Fn(i32) + Send + Sync>) {
+    CHILD_WATCHER.lock().unwrap().insert(pid, callback);
+    ensure_watcher_thread();
+}
+
+// -------------------------------------------------------------------------
+// 测试辅助 API（仅用于 child_watcher_regression 等集成测试）
+// -------------------------------------------------------------------------
+#[cfg(feature = "test-helpers")]
+pub fn watcher_map_len() -> usize {
+    CHILD_WATCHER.lock().unwrap().len()
+}
+
+#[cfg(feature = "test-helpers")]
+pub fn reset_watcher_state() {
+    *WATCHER_THREAD.lock().unwrap() = None;
+    CHILD_WATCHER.lock().unwrap().clear();
+}
+
+#[cfg(feature = "test-helpers")]
+pub fn watcher_thread_flag() -> bool {
+    WATCHER_THREAD.lock().unwrap().is_some()
+}
+
+#[cfg(feature = "test-helpers")]
+use std::sync::atomic::AtomicUsize;
+
+#[cfg(feature = "test-helpers")]
+static WATCHER_THREAD_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(feature = "test-helpers")]
+pub fn watcher_thread_count() -> usize {
+    WATCHER_THREAD_COUNT.load(Ordering::SeqCst)
 }
 
 pub fn set_pty_window_size(fd: jint, rows: jint, cols: jint, cell_width: jint, cell_height: jint) {

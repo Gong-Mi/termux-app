@@ -436,7 +436,14 @@ pub extern "system" fn Java_com_termux_terminal_JNI_sessionIsRunning(
 ) -> jboolean {
     let coordinator = SessionCoordinator::get();
     let is_running = coordinator.get_session_data_by_ptr(engine_ptr as usize)
-        .map(|d| d.state != SessionState::Finished && d.pid > 0)
+        .map(|d| {
+            if d.state == SessionState::Finished {
+                return false;
+            }
+            // kill(pid, 0) 不发送信号，只检查进程是否存在
+            let exists = unsafe { libc::kill(d.pid, 0) == 0 };
+            exists || nix::errno::Errno::last() == nix::errno::Errno::EPERM
+        })
         .unwrap_or(false);
     if is_running { 1 } else { 0 }
 }
