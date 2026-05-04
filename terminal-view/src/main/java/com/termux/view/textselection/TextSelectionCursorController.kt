@@ -150,10 +150,10 @@ class TextSelectionCursorController(
                 override fun onDestroyActionMode(mode: ActionMode) {}
 
                 override fun onGetContentRect(mode: ActionMode, view: View, outRect: Rect) {
-                    var x1 = terminalView.getPointX(mSelX1)
-                    var x2 = terminalView.getPointX(mSelX2)
-                    val y1 = terminalView.getPointY(mSelY1 - 1)
-                    val y2 = terminalView.getPointY(mSelY2 + 1)
+                    var x1 = terminalView.getScaledPointX(mSelX1)
+                    var x2 = terminalView.getScaledPointX(mSelX2)
+                    val y1 = terminalView.getScaledPointY(mSelY1 - 1)
+                    val y2 = terminalView.getScaledPointY(mSelY2 + 1)
                     if (x1 > x2) {
                         val tmp = x1; x1 = x2; x2 = tmp
                     }

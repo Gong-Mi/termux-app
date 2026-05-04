@@ -165,10 +165,12 @@ fn spawn_render_thread(engine_ptr: jlong) {
                     if let Some(ctx_mutex) = VULKAN_CONTEXT.get() {
                         if let Ok(mut ctx_guard) = ctx_mutex.try_lock() {
                             if let Some(ctx) = ctx_guard.as_mut() {
+                                let t0 = Instant::now();
                                 let ok = ctx.recreate_swapchain(new_width, new_height);
+                                let dt = t0.elapsed().as_millis();
                                 android_log(LogPriority::INFO, &format!(
-                                    "Render: Swapchain recreated {}x{} debounced={} success={}",
-                                    new_width, new_height, is_debounced, ok
+                                    "Render: Swapchain recreated {}x{} debounced={} success={} dt={}ms",
+                                    new_width, new_height, is_debounced, ok, dt
                                 ));
                                 SURFACE_SIZE_CHANGED.store(false, Ordering::SeqCst);
                                 if is_debounced {
@@ -317,7 +319,12 @@ fn spawn_render_thread(engine_ptr: jlong) {
                             renderer.clear_selection();
                         }
 
+                        let t_draw = Instant::now();
                         renderer.draw_frame(canvas, &frame, scale, scroll_offset);
+                        let draw_ms = t_draw.elapsed().as_micros() as f64 / 1000.0;
+                        if draw_ms > 8.0 {
+                            android_log(LogPriority::WARN, &format!("Perf: draw_frame slow: {:.2}ms", draw_ms));
+                        }
                     }
 
                     // 提交绘制（不强制 CPU 等待 GPU，让 CPU/GPU 并行工作）
@@ -350,6 +357,10 @@ fn spawn_render_thread(engine_ptr: jlong) {
                 }));
 
                 let frame_elapsed = std::time::Instant::now() - frame_start;
+                let frame_ms = frame_elapsed.as_micros() as f64 / 1000.0;
+                if frame_ms > 20.0 {
+                    android_log(LogPriority::WARN, &format!("Perf: SLOW FRAME total={:.2}ms", frame_ms));
+                }
                 let target_frame_time = std::time::Duration::from_millis(16); // 60 FPS cap
                 if frame_elapsed < target_frame_time {
                     std::thread::sleep(target_frame_time - frame_elapsed);

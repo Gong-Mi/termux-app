@@ -242,14 +242,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         });
 
         getWindow().getDecorView().setOnApplyWindowInsetsListener((view, insets) -> {
-            var terminalToolbarViewPager = getTerminalToolbarViewPager();
-            if (insets.isVisible(WindowInsets.Type.ime())) {
-                if (mPreferences.isShowTerminalToolbar()) {
-                    terminalToolbarViewPager.setVisibility(View.VISIBLE);
-                }
-            } else {
-                terminalToolbarViewPager.setVisibility(View.GONE);
-            }
+            // Note: Do NOT toggle terminalToolbarViewPager visibility based on IME state.
+            // Extra keys (ESC/ALT/CTRL) should remain visible regardless of IME visibility
+            // so that physical keyboard users can still access them.
+            // Upstream behavior: visibility is controlled solely by user preference.
             TermuxFullscreen.updatePadding(this, insets);
             return insets;
         });

@@ -886,9 +886,19 @@ class TerminalView @JvmOverloads constructor(
     private val text: CharSequence
         get() = mEmulator?.getSelectedText(0, mTopRow, mEmulator!!.getCols(), mTopRow + mEmulator!!.getRows()) ?: ""
 
-    fun getCursorX(x: Float): Int = (x / getFontWidth()).toInt()
-    fun getCursorY(y: Float): Int = ((y - 40f) / getFontLineSpacing()).toInt() + mTopRow
+    /** 屏幕像素 → 逻辑列（考虑缩放） */
+    fun getCursorX(x: Float): Int = (x / (getFontWidth() * mScaleFactor)).toInt()
 
+    /**
+     * 屏幕像素 → 逻辑行（考虑缩放）。
+     * Note: `y - 40f` 中的 40px 是手指触摸的视觉偏移补偿。
+     * 当用户用手指拖拽选择手柄时，手指会遮挡触摸点；向上偏移 40px
+     * 可使选中的文本出现在手指上方，避免被遮挡。
+     * 来源: upstream commit 35a4fdac (2019-10-05, "Add selection mode cursor controller")
+     */
+    fun getCursorY(y: Float): Int = ((y - 40f) / (getFontLineSpacing() * mScaleFactor)).toInt() + mTopRow
+
+    /** 未缩放相对坐标（供 Canvas onDraw / Sixel 使用） */
     fun getPointX(cx: Int): Int {
         var c = cx
         if (mEmulator != null && c > mEmulator!!.getCols()) c = mEmulator!!.getCols()
@@ -896,6 +906,15 @@ class TerminalView @JvmOverloads constructor(
     }
 
     fun getPointY(cy: Int): Int = Math.round((cy - mTopRow) * getFontLineSpacing())
+
+    /** 缩放后的屏幕像素坐标（供 PopupWindow / ActionMode 绝对定位使用） */
+    fun getScaledPointX(cx: Int): Int {
+        var c = cx
+        if (mEmulator != null && c > mEmulator!!.getCols()) c = mEmulator!!.getCols()
+        return Math.round(c * getFontWidth() * mScaleFactor)
+    }
+
+    fun getScaledPointY(cy: Int): Int = Math.round((cy - mTopRow) * getFontLineSpacing() * mScaleFactor)
 
     override fun surfaceCreated(holder: SurfaceHolder) {
         Log.i("TerminalView-Surface", ">>> surfaceCreated")

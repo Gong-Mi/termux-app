@@ -373,6 +373,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatch(
     if ptr == 0 || batch.is_null() { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let t0 = std::time::Instant::now();
         let (events, cb) = {
             let mut engine = context.lock.write().unwrap();
             let j_array = unsafe { jni::objects::JByteArray::from_raw(batch) };
@@ -385,6 +386,10 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatch(
         };
         flush_events_to_java(&mut env, &cb, events);
         render_thread::request_render();
+        let dt = t0.elapsed().as_micros() as f64 / 1000.0;
+        if dt > 5.0 {
+            android_log(LogPriority::WARN, &format!("Perf: processBatch({}B) = {:.2}ms", length, dt));
+        }
     }));
     let _ = Arc::into_raw(context);
 }
@@ -402,6 +407,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatchDirect(
     if ptr == 0 || buffer.is_null() { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let t0 = std::time::Instant::now();
         let (events, cb) = {
             let mut engine = context.lock.write().unwrap();
             
@@ -422,6 +428,10 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatchDirect(
         };
         flush_events_to_java(&mut env, &cb, events);
         render_thread::request_render();
+        let dt = t0.elapsed().as_micros() as f64 / 1000.0;
+        if dt > 5.0 {
+            android_log(LogPriority::WARN, &format!("Perf: processBatchDirect({}B) = {:.2}ms", length, dt));
+        }
     }));
     let _ = Arc::into_raw(context);
 }

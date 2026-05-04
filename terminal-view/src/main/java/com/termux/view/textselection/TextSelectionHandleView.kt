@@ -128,8 +128,8 @@ class TextSelectionHandleView(
     }
 
     fun positionAtCursor(cx: Int, cy: Int, forceOrientationCheck: Boolean) {
-        val x = terminalView.getPointX(cx)
-        val y = terminalView.getPointY(cy + 1)
+        val x = terminalView.getScaledPointX(cx)
+        val y = terminalView.getScaledPointY(cy + 1)
         moveTo(x, y, forceOrientationCheck)
     }
 

@@ -453,8 +453,12 @@ impl VulkanContext {
                     color_space: ash_vk::ColorSpaceKHR::SRGB_NONLINEAR,
                 }
             } else {
+                // 优先 BGRA（Mali TBR 原生最优），其次 RGBA
                 surface_formats.iter()
-                    .find(|f| f.color_space == ash_vk::ColorSpaceKHR::SRGB_NONLINEAR)
+                    .find(|f| f.format == ash_vk::Format::B8G8R8A8_UNORM
+                             && f.color_space == ash_vk::ColorSpaceKHR::SRGB_NONLINEAR)
+                    .or_else(|| surface_formats.iter().find(|f| f.format == ash_vk::Format::R8G8B8A8_UNORM
+                                                             && f.color_space == ash_vk::ColorSpaceKHR::SRGB_NONLINEAR))
                     .copied()
                     .unwrap_or(surface_formats[0])
             };
@@ -487,8 +491,8 @@ impl VulkanContext {
             };
             self.extent = actual_extent;
 
-            // Triple buffering with max count validation
-            let mut min_image_count = caps.min_image_count.max(3);
+            // Double buffering for lower VRAM usage; terminal rendering is lightweight
+            let mut min_image_count = caps.min_image_count.max(2);
             if caps.max_image_count > 0 && min_image_count > caps.max_image_count {
                 min_image_count = caps.max_image_count;
             }
