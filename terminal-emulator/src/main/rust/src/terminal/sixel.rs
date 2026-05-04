@@ -184,9 +184,15 @@ impl SixelDecoder {
                         // 颜色参数结束
                         if self.current_param >= 0 {
                             self.params.push(self.current_param);
+                        } else if !self.params.is_empty() {
+                            // 结尾分号情况已在上面通过 push 处理，此处无需操作
                         }
+                        
                         self.apply_color_select();
+                        self.params.clear(); // 关键：处理完后必须清空，否则会污染下一个颜色命令
+                        self.current_param = -1;
                         self.state = SixelState::Data;
+                        
                         // 重新处理导致退出的字节
                         if (63..=126).contains(&byte) {
                             self.render_sixel(byte - 63, 1);
@@ -201,8 +207,12 @@ impl SixelDecoder {
                 }
             }
         }
-        self.height = self.pixel_data.len();
-        self.width = self.pixel_data.get(0).map(|r| r.len()).unwrap_or(0);
+        
+        self.height = self.height.max(self.pixel_data.len());
+        // 确保 self.width 反映了所有行中最长的长度，或者保持预设的宽度
+        for row in &self.pixel_data {
+            self.width = self.width.max(row.len());
+        }
     }
 
     fn render_sixel(&mut self, sixel_value: u8, count: usize) {
