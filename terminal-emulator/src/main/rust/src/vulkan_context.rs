@@ -84,6 +84,26 @@ fn save_pipeline_cache_data(device: &Device, cache: ash_vk::PipelineCache) {
     }
 }
 
+/// 将 Vulkan ash format 映射到 Skia gpu::vk::Format，防止硬编码不匹配
+fn ash_format_to_skia_format(fmt: ash_vk::Format) -> skia_safe::gpu::vk::Format {
+    match fmt {
+        ash_vk::Format::R8G8B8A8_UNORM => skia_safe::gpu::vk::Format::R8G8B8A8_UNORM,
+        ash_vk::Format::B8G8R8A8_UNORM => skia_safe::gpu::vk::Format::B8G8R8A8_UNORM,
+        ash_vk::Format::R8G8B8A8_SRGB => skia_safe::gpu::vk::Format::R8G8B8A8_SRGB,
+        ash_vk::Format::B8G8R8A8_SRGB => skia_safe::gpu::vk::Format::B8G8R8A8_SRGB,
+        ash_vk::Format::A8B8G8R8_UNORM_PACK32 => skia_safe::gpu::vk::Format::A8B8G8R8_UNORM_PACK32,
+        ash_vk::Format::R5G6B5_UNORM_PACK16 => skia_safe::gpu::vk::Format::R5G6B5_UNORM_PACK16,
+        ash_vk::Format::A1R5G5B5_UNORM_PACK16 => skia_safe::gpu::vk::Format::A1R5G5B5_UNORM_PACK16,
+        ash_vk::Format::R16G16B16A16_SFLOAT => skia_safe::gpu::vk::Format::R16G16B16A16_SFLOAT,
+        _ => {
+            android_log(LogPriority::WARN, &format!(
+                "Vulkan: Unsupported format {:?}, fallback to R8G8B8A8_UNORM", fmt
+            ));
+            skia_safe::gpu::vk::Format::R8G8B8A8_UNORM
+        }
+    }
+}
+
 pub struct VulkanContext {
     pub entry: Entry,
     pub instance: Instance,
@@ -106,6 +126,8 @@ pub struct VulkanContext {
     pipeline_cache: ash_vk::PipelineCache,
     /// Keep cache data alive until after pipeline cache creation
     _pipeline_cache_data: Vec<u8>,
+    /// 当前 Swapchain 对应的 Skia Vulkan Format，避免硬编码与实际 Image 格式不匹配
+    skia_format: skia_safe::gpu::vk::Format,
 }
 
 unsafe impl Send for VulkanContext {}
@@ -393,6 +415,7 @@ impl VulkanContext {
             sk_surfaces: vec![],
             pipeline_cache,
             _pipeline_cache_data: pipeline_cache_data,
+            skia_format: skia_safe::gpu::vk::Format::R8G8B8A8_UNORM,
         };
 
         let swapchain_ok = ctx.recreate_swapchain(extent.width, extent.height);
@@ -435,6 +458,13 @@ impl VulkanContext {
                     .copied()
                     .unwrap_or(surface_formats[0])
             };
+
+            // 同步 Skia ImageInfo format 与实际 Swapchain Image format
+            self.skia_format = ash_format_to_skia_format(format.format);
+            android_log(LogPriority::INFO, &format!(
+                "Vulkan: Swapchain format {:?} mapped to Skia format {:?}",
+                format.format, self.skia_format
+            ));
 
             let caps = self.surface_loader.get_physical_device_surface_capabilities(self.pdevice, self.surface)
                 .unwrap_or(ash_vk::SurfaceCapabilitiesKHR {
@@ -602,7 +632,7 @@ impl VulkanContext {
                 skia_safe::gpu::vk::Alloc::default(),
                 skia_safe::gpu::vk::ImageTiling::OPTIMAL,
                 skia_safe::gpu::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                skia_safe::gpu::vk::Format::R8G8B8A8_UNORM,
+                self.skia_format,
                 1,
                 None,
                 None,

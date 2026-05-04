@@ -162,6 +162,8 @@ impl Params {
     /// 
     /// # Examples
     /// ```
+    /// use termux_rust::vte_parser::Params;
+    /// let params = Params::new();
     /// // getArg0(1) - 默认 1，0 也返回 1
     /// params.get_with_zero_default(0, 1, true);
     /// 

@@ -55,10 +55,10 @@ fn test_color_register_rgb() {
     
     let mut decoder = SixelDecoder::new();
     
-    // 测试 #0;1;100;50;0 - RGB 空间，红色
-    // 格式：# Pc ; Ps ; Pr ; Pg ; Pb
-    // Ps=1 表示 RGB 空间
-    decoder.process_data(b"#0;1;100;0;0");
+    // 测试 #0;2;100;0;0 - RGB 空间，红色
+    // 格式：# Pc ; Pu ; Pr ; Pg ; Pb
+    // Pu=2 表示 RGB 空间 (Sixel 规范)
+    decoder.process_data(b"#0;2;100;0;0");
     decoder.finish();
     
     // 验证颜色寄存器已设置
@@ -80,7 +80,8 @@ fn test_color_register_hls() {
     let mut decoder = SixelDecoder::new();
     
     // 测试 HLS 颜色：红色 (H=0, L=50, S=100)
-    decoder.process_data(b"#1;0;0;50;100");
+    // Pu=1 表示 HLS 空间 (Sixel 规范)
+    decoder.process_data(b"#1;1;0;50;100");
     decoder.finish();
     
     assert!(decoder.color_registers[1].is_some(), "Color register 1 should be set");
@@ -181,12 +182,12 @@ fn test_sixel_image_with_colors() {
     let params = Params::new();
     decoder.start(&params);  // 使用默认尺寸
     
-    // 设置颜色寄存器 - 使用 RGB 空间
-    decoder.process_data(b"#0;1;100;0;0");
+    // 设置颜色寄存器 - 使用 RGB 空间 (Pu=2)
+    decoder.process_data(b"#0;2;100;0;0");
     decoder.finish();  // 颜色 0: 红色 (100%, 0%, 0%)
-    decoder.process_data(b"#1;1;0;100;0");
+    decoder.process_data(b"#1;2;0;100;0");
     decoder.finish();  // 颜色 1: 绿色 (0%, 100%, 0%)
-    decoder.process_data(b"#2;1;0;0;100");
+    decoder.process_data(b"#2;2;0;0;100");
     decoder.finish();  // 颜色 2: 蓝色 (0%, 0%, 100%)
     
     // 验证颜色寄存器

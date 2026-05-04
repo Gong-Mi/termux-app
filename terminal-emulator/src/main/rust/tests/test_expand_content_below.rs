@@ -80,13 +80,13 @@ fn test_expand_shows_content_below_viewport() {
         println!("   行 {}: '{}'", row, text.trim_end());
     }
     
-    // 8. 验证扩大后应该能看到 Line 04-Line 20 (因为 cursor 在底部，扩大后向上显示历史)
+    // 8. 验证扩大后应该能看到 Line 02-Line 20 (因为 cursor 在底部，扩大后向上显示历史)
     println!("\n8. 验证内容完整性 (使用 MD5 哈希):");
-    // 扩大后，active_transcript_rows = 3，所以历史有 3 行 (Line 01-Line 03)
-    // 可见区域从 Line 04 开始，到 Line 20，共 17 行有内容 + 1 行空
+    // 扩大后，active_transcript_rows = 1，所以历史有 1 行 (Line 01)
+    // 可见区域从 Line 02 开始，到 Line 20，共 19 行有内容 + 1 行空
     let mut all_present = true;
-    for i in 1..=17 {  // 只验证 17 行有内容的
-        let expected_num = i + 3;  // Line 04 to Line 20
+    for i in 1..=19 {  // 验证 19 行有内容的
+        let expected_num = i + 1;  // Line 02 to Line 20
         let expected_prefix = format!("Line {:02}:", expected_num);
         let expected_md5 = format!("{:x}", compute(format!("Line_{}", expected_num).as_bytes()));
         
@@ -106,21 +106,21 @@ fn test_expand_shows_content_below_viewport() {
         }
     }
     
-    // 验证第 18 行是空的
-    let row_17_text = engine.state.get_current_screen().get_row(17);
-    let row_17: String = row_17_text.text.iter().take(80).filter(|&&c| c != '\0').collect();
-    if !row_17.trim().is_empty() {
-        println!("   ✗ 行 17 应该是空的，但实际是 '{}'", row_17.trim());
+    // 验证第 20 行是空的
+    let row_19_text = engine.state.get_current_screen().get_row(19);
+    let row_19: String = row_19_text.text.iter().take(80).filter(|&&c| c != '\0').collect();
+    if !row_19.trim().is_empty() {
+        println!("   ✗ 行 19 应该是空的，但实际是 '{}'", row_19.trim());
         all_present = false;
     }
     
     if all_present {
-        println!("   ✓ 所有 17 行内容 + 1 行空都正确 (MD5 验证通过)");
+        println!("   ✓ 所有 19 行内容 + 1 行空都正确 (MD5 验证通过)");
     }
     
     // 验证历史行仍然存在
     println!("\n9. 验证历史行:");
-    for row in -3..0 {
+    for row in -1..0 {
         let line_text = engine.state.get_current_screen().get_row(row as i64);
         let text: String = line_text.text.iter()
             .take(30)
@@ -130,6 +130,6 @@ fn test_expand_shows_content_below_viewport() {
         println!("   历史行 {}: '{}'", row, trimmed);
     }
     
-    // 断言：扩大后应该能看到 Line 01-Line 18
-    assert!(all_present, "扩大后应该能看到 Line 01-Line 18");
+    // 断言：扩大后应该能看到 Line 02-Line 20
+    assert!(all_present, "扩大后应该能看到 Line 02-Line 20");
 }
