@@ -11,6 +11,12 @@ use crate::utils::{android_log, LogPriority};
 
 static PTY_ALLOC_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
+/// 进程创建信号量：限制瞬时并发 fork 数量为 4。
+/// 即使上层请求 40 个进程，底层也会排队执行 fork，避免内核资源瞬间被掏空。
+static SPAWN_SEMAPHORE: Lazy<std::sync::Arc<std::sync::Condvar>> = Lazy::new(|| std::sync::Arc::new(std::sync::Condvar::new()));
+static SPAWN_COUNTER: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
+const MAX_CONCURRENT_SPAWN: usize = 4;
+
 pub unsafe fn create_subprocess(
     env: &mut JNIEnv,
     cmd: jstring,
@@ -110,6 +116,28 @@ pub fn create_subprocess_with_data(
     ch: jint,
     is_failsafe: bool,
 ) -> Result<(jint, i32), ()> {
+    // ------------------------------------------------------------------
+    // 并发限制机制 (Semaphore/Throttling)
+    // ------------------------------------------------------------------
+    {
+        let mut count = SPAWN_COUNTER.lock().unwrap();
+        while *count >= MAX_CONCURRENT_SPAWN {
+            count = SPAWN_SEMAPHORE.wait(count).unwrap();
+        }
+        *count += 1;
+    }
+    
+    // 确保函数退出时释放信号量
+    struct SpawnGuard;
+    impl Drop for SpawnGuard {
+        fn drop(&mut self) {
+            let mut count = SPAWN_COUNTER.lock().unwrap();
+            *count -= 1;
+            SPAWN_SEMAPHORE.notify_one();
+        }
+    }
+    let _guard = SpawnGuard;
+
     let normalize_path = |path: String| -> String {
         if path.starts_with("/data/user/0/com.termux") {
             path.replace("/data/user/0/com.termux", "/data/data/com.termux")
@@ -273,13 +301,15 @@ pub fn create_subprocess_with_data(
                 return Err(());
             }
 
-            let devname = libc::ptsname(ptm);
-            if devname.is_null() {
+            // 使用线程安全的 ptsname_r 代替 ptsname
+            let mut buf = [0; 64];
+            if libc::ptsname_r(ptm, buf.as_mut_ptr(), buf.len()) != 0 {
                 libc::close(ptm);
                 return Err(());
             }
-            let devname_str = std::ffi::CStr::from_ptr(devname).to_string_lossy().into_owned();
-            let c_pts = CString::new(devname_str).unwrap();
+            
+            let name_cstr = std::ffi::CStr::from_ptr(buf.as_ptr());
+            let c_pts = name_cstr.to_owned();
             (ptm, c_pts)
         }
     };

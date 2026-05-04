@@ -5,17 +5,32 @@ use std::sync::atomic::{AtomicBool, Ordering, AtomicUsize};
 use std::sync::Arc;
 #[test]
 fn test_extreme_concurrent_spawn_under_pressure() {
+    let running = Arc::new(AtomicBool::new(true));
     let success_count = Arc::new(AtomicUsize::new(0));
-    let total_attempts = 10;
+    let total_attempts = 40;
 
-    println!("[TEST] Starting 10 concurrent subprocess spawns...");
+    // 1. 启动 10 个高强度干扰线程（内存与 CPU 负载）
+    for t in 0..10 {
+        let r = running.clone();
+        thread::spawn(move || {
+            while r.load(Ordering::Relaxed) {
+                let mut trash = Vec::with_capacity(100);
+                for _ in 0..100 {
+                    trash.push(vec![t as u8; 1024]);
+                }
+                drop(trash);
+            }
+        });
+    }
+    println!("[TEST] 10 high-pressure allocator threads started.");
 
-    // 2. 并发启动 10 个子进程
+    // 2. 并发启动 40 个子进程（此时受 Rust 信号量保护）
     let mut handles = vec![];
     for i in 0..total_attempts {
         let s_count = success_count.clone();
         let handle = thread::spawn(move || {
-            thread::sleep(Duration::from_millis(i as u64 * 30));
+            // 减少起始间隔，模拟瞬时爆发
+            thread::sleep(Duration::from_millis(i as u64 * 5));
 
             let cmd = "/system/bin/sh".to_string();
             let result = pty::create_subprocess_with_data(
@@ -37,7 +52,7 @@ fn test_extreme_concurrent_spawn_under_pressure() {
                     }
                 }
                 Err(_) => {
-                    eprintln!("[TEST] Failed to fork at attempt {}", i);
+                    eprintln!("[TEST] Failed to spawn at attempt {}", i);
                 }
             }
         });
