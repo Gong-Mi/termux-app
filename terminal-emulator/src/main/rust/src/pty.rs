@@ -116,6 +116,7 @@ pub fn create_subprocess_with_data(
     ch: jint,
     is_failsafe: bool,
 ) -> Result<(jint, i32), ()> {
+    android_log(LogPriority::DEBUG, &format!("[PTY] create_subprocess_with_data: cmd={}, cwd={}", cmd_str, cwd_str));
     // ------------------------------------------------------------------
     // 并发限制机制 (Semaphore/Throttling)
     // ------------------------------------------------------------------

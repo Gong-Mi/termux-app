@@ -427,10 +427,14 @@ public final class TermuxTerminalSessionActivityClient implements TerminalSessio
     }
 
     public void addNewSession(boolean isFailSafe, String sessionName, File executable, @Nullable Intent sessionIntent) {
+        android.util.Log.d("TermuxTrace", "[addNewSession] isFailSafe=" + isFailSafe + ", sessionName=" + sessionName);
         var service = mActivity.getTermuxService();
         if (service == null) {
+            android.util.Log.e("TermuxTrace", "[addNewSession] Service is NULL!");
             return;
         }
+
+        android.util.Log.d("TermuxTrace", "[addNewSession] Current session count: " + service.getTermuxSessionsSize());
 
         if (service.getTermuxSessionsSize() >= MAX_SESSIONS) {
             new AlertDialog.Builder(mActivity)

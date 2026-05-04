@@ -667,6 +667,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getTerminalState(
     ptr: jlong,
 ) -> jni::sys::jintArray {
     if ptr == 0 { return std::ptr::null_mut(); }
+    android_log(LogPriority::DEBUG, &format!("[JNI] getTerminalState for ptr: {:p}", ptr as *const ()));
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     
     let state_array = {
@@ -1341,6 +1342,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
     callback: JObject,
     is_failsafe: jni::sys::jboolean,
 ) {
+    android_log(LogPriority::INFO, "[TRACE_SESSION] Java_com_termux_terminal_JNI_createSessionAsync entered");
     let cmd_str = if !cmd.is_null() {
         let js = unsafe { JString::from_raw(cmd) };
         env.get_string(&js).map(|s| s.into()).unwrap_or_default()

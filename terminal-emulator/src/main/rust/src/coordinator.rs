@@ -409,7 +409,9 @@ pub extern "system" fn Java_com_termux_terminal_JNI_sessionGetPid(
     engine_ptr: jni::sys::jlong,
 ) -> jint {
     let coordinator = SessionCoordinator::get();
-    coordinator.get_session_pid(engine_ptr as usize) as jint
+    coordinator.get_session_data_by_ptr(engine_ptr as usize)
+        .map(|d| d.pid)
+        .unwrap_or(-1)
 }
 
 /// 通过 engine ptr 获取 PTY fd
@@ -420,7 +422,9 @@ pub extern "system" fn Java_com_termux_terminal_JNI_sessionGetPtyFd(
     engine_ptr: jni::sys::jlong,
 ) -> jint {
     let coordinator = SessionCoordinator::get();
-    coordinator.get_session_pty_fd(engine_ptr as usize) as jint
+    coordinator.get_session_data_by_ptr(engine_ptr as usize)
+        .map(|d| d.pty_fd)
+        .unwrap_or(-1)
 }
 
 /// 通过 engine ptr 检查 session 是否仍在运行
@@ -431,7 +435,10 @@ pub extern "system" fn Java_com_termux_terminal_JNI_sessionIsRunning(
     engine_ptr: jni::sys::jlong,
 ) -> jboolean {
     let coordinator = SessionCoordinator::get();
-    if coordinator.is_session_running(engine_ptr as usize) { 1 } else { 0 }
+    let is_running = coordinator.get_session_data_by_ptr(engine_ptr as usize)
+        .map(|d| d.state != SessionState::Finished && d.pid > 0)
+        .unwrap_or(false);
+    if is_running { 1 } else { 0 }
 }
 
 #[cfg(test)]

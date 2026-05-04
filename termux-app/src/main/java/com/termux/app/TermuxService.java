@@ -75,8 +75,6 @@ public final class TermuxService extends Service {
      * that holds activity references for activity related functions.
      * Note that the service may often outlive the activity, so need to clear this reference.
      */
-    private TermuxTerminalSessionActivityClient mTerminalSessionClient;
-
     /**
      * The foreground TermuxSessions which this service manages.
      * Note that this list is observed by an activity, like TermuxActivity.mTermuxSessionListViewController,
@@ -167,12 +165,11 @@ public final class TermuxService extends Service {
 
     @Override
     public boolean onUnbind(Intent intent) {
-        Log.v(LOG_TAG, "onUnbind");
-        // Since we cannot rely on {@link TermuxActivity.onDestroy()} to always complete,
-        // we unset clients here as well if it failed, so that we do not leave service and session
-        // clients with references to the activity.
-        if (mTerminalSessionClient != null) {
-            unsetTermuxTerminalSessionClient();
+        Log.i(LOG_TAG, "onUnbind called");
+        // 如果没有活动绑定了，清理所有客户端引用以防止内存泄漏
+        // 注意：在多窗口模式下，只要还有一个 Activity 存活，此方法通常不会被调用。
+        synchronized (mTerminalSessionClients) {
+            mTerminalSessionClients.clear();
         }
         return false;
     }
@@ -298,108 +295,124 @@ public final class TermuxService extends Service {
                                                         @Nullable String workingDirectory,
                                                         boolean isFailSafe,
                                                         String sessionName) {
+        android.util.Log.d("TermuxTrace", "[TermuxService] createTermuxSession: " + sessionName);
         var sessionClient = new TerminalSessionClient() {
             @Override
             public void onTextChanged(@NonNull TerminalSession changedSession) {
-                if (mTerminalSessionClient != null) {
-                    mTerminalSessionClient.onTextChanged(changedSession);
+                synchronized (mTerminalSessionClients) {
+                    for (var client : mTerminalSessionClients) client.onTextChanged(changedSession);
                 }
             }
 
             @Override
             public void onTitleChanged(@NonNull TerminalSession changedSession) {
-                if (mTerminalSessionClient != null) {
-                    mTerminalSessionClient.onTitleChanged(changedSession);
+                synchronized (mTerminalSessionClients) {
+                    for (var client : mTerminalSessionClients) client.onTitleChanged(changedSession);
                 }
             }
 
             @Override
             public void onSessionFinished(@NonNull TerminalSession finishedSession) {
-                if (mTerminalSessionClient != null) {
-                    mTerminalSessionClient.onSessionFinished(finishedSession);
+                synchronized (mTerminalSessionClients) {
+                    for (var client : mTerminalSessionClients) client.onSessionFinished(finishedSession);
                 }
             }
 
             @Override
             public void onCopyTextToClipboard(@NonNull TerminalSession session, String text) {
-                if (mTerminalSessionClient != null) {
-                    mTerminalSessionClient.onCopyTextToClipboard(session, text);
+                synchronized (mTerminalSessionClients) {
+                    for (var client : mTerminalSessionClients) client.onCopyTextToClipboard(session, text);
                 }
             }
 
             @Override
             public void onPasteTextFromClipboard(@Nullable TerminalSession session) {
-                if (mTerminalSessionClient != null) {
-                    mTerminalSessionClient.onPasteTextFromClipboard(session);
+                synchronized (mTerminalSessionClients) {
+                    for (var client : mTerminalSessionClients) client.onPasteTextFromClipboard(session);
                 }
             }
 
             @Override
             public void onBell(@NonNull TerminalSession session) {
-                if (mTerminalSessionClient != null) {
-                    mTerminalSessionClient.onBell(session);
+                synchronized (mTerminalSessionClients) {
+                    for (var client : mTerminalSessionClients) client.onBell(session);
                 }
             }
 
             @Override
             public void onColorsChanged(@NonNull TerminalSession session) {
-                if (mTerminalSessionClient != null) {
-                    mTerminalSessionClient.onColorsChanged(session);
+                synchronized (mTerminalSessionClients) {
+                    for (var client : mTerminalSessionClients) client.onColorsChanged(session);
                 }
             }
 
             @Override
             public void onTerminalCursorStateChange(boolean state) {
-                if (mTerminalSessionClient != null) {
-                    mTerminalSessionClient.onTerminalCursorStateChange(state);
+                synchronized (mTerminalSessionClients) {
+                    for (var client : mTerminalSessionClients) client.onTerminalCursorStateChange(state);
                 }
             }
 
             @Override
             public void setTerminalShellPid(@NonNull TerminalSession session, int pid) {
-                if (mTerminalSessionClient != null) {
-                    mTerminalSessionClient.setTerminalShellPid(session, pid);
+                synchronized (mTerminalSessionClients) {
+                    for (var client : mTerminalSessionClients) client.setTerminalShellPid(session, pid);
                 }
             }
 
             @Override
             public Integer getTerminalCursorStyle() {
-                return mTerminalSessionClient != null ? mTerminalSessionClient.getTerminalCursorStyle() : null;
+                var master = getMasterClient();
+                return master != null ? master.getTerminalCursorStyle() : null;
             }
 
             @Override
             public void logError(String tag, String message) {
-                if (mTerminalSessionClient != null) mTerminalSessionClient.logError(tag, message);
+                synchronized (mTerminalSessionClients) {
+                    for (var client : mTerminalSessionClients) client.logError(tag, message);
+                }
             }
 
             @Override
             public void logWarn(String tag, String message) {
-                if (mTerminalSessionClient != null) mTerminalSessionClient.logWarn(tag, message);
+                synchronized (mTerminalSessionClients) {
+                    for (var client : mTerminalSessionClients) client.logWarn(tag, message);
+                }
             }
 
             @Override
             public void logInfo(String tag, String message) {
-                if (mTerminalSessionClient != null) mTerminalSessionClient.logInfo(tag, message);
+                synchronized (mTerminalSessionClients) {
+                    for (var client : mTerminalSessionClients) client.logInfo(tag, message);
+                }
             }
 
             @Override
             public void logDebug(String tag, String message) {
-                if (mTerminalSessionClient != null) mTerminalSessionClient.logDebug(tag, message);
+                synchronized (mTerminalSessionClients) {
+                    for (var client : mTerminalSessionClients) client.logDebug(tag, message);
+                }
             }
 
             @Override
             public void logVerbose(String tag, String message) {
-                if (mTerminalSessionClient != null) mTerminalSessionClient.logVerbose(tag, message);
+                synchronized (mTerminalSessionClients) {
+                    for (var client : mTerminalSessionClients) client.logVerbose(tag, message);
+                }
             }
 
             @Override
             public void logStackTraceWithMessage(String tag, String message, Exception e) {
-                if (mTerminalSessionClient != null) mTerminalSessionClient.logStackTraceWithMessage(tag, message, e);
+                synchronized (mTerminalSessionClients) {
+                    for (var client : mTerminalSessionClients) client.logStackTraceWithMessage(tag, message, e);
+                }
             }
 
             @Override
             public void logStackTrace(String tag, Exception e) {
-                if (mTerminalSessionClient != null) mTerminalSessionClient.logStackTrace(tag, e);
+                synchronized (mTerminalSessionClients) {
+                    for (var client : mTerminalSessionClients) client.logStackTrace(tag, e);
+                }
             }
         };
 
@@ -418,9 +431,7 @@ public final class TermuxService extends Service {
 
         mTerminalSessions.add(newTermuxSession);
 
-        if (mTerminalSessionClient != null) {
-            mTerminalSessionClient.termuxSessionListNotifyUpdated();
-        }
+        notifySessionListUpdated();
 
         updateNotification();
 
@@ -447,14 +458,39 @@ public final class TermuxService extends Service {
      */
     public void onTermuxSessionExited(@NonNull final TerminalSession termuxSession) {
         mTerminalSessions.remove(termuxSession);
-        if (mTerminalSessionClient != null) {
-            mTerminalSessionClient.termuxSessionListNotifyUpdated();
-        }
+        notifySessionListUpdated();
         updateNotification();
     }
 
-    public synchronized void setTermuxTerminalSessionClient(TermuxTerminalSessionActivityClient termuxTerminalSessionActivityClient) {
-        mTerminalSessionClient = termuxTerminalSessionActivityClient;
+    /** The listeners for session events. */
+    private final List<TerminalSessionClient> mTerminalSessionClients = new ArrayList<>();
+
+    private TerminalSessionClient getMasterClient() {
+        synchronized (mTerminalSessionClients) {
+            return mTerminalSessionClients.isEmpty() ? null : mTerminalSessionClients.get(mTerminalSessionClients.size() - 1);
+        }
+    }
+
+    public synchronized void setTermuxTerminalSessionClient(TerminalSessionClient terminalSessionClient) {
+        synchronized (mTerminalSessionClients) {
+            if (!mTerminalSessionClients.contains(terminalSessionClient)) {
+                mTerminalSessionClients.add(terminalSessionClient);
+            }
+        }
+    }
+
+    public synchronized void unsetTermuxTerminalSessionClient(TerminalSessionClient terminalSessionClient) {
+        synchronized (mTerminalSessionClients) {
+            mTerminalSessionClients.remove(terminalSessionClient);
+        }
+    }
+
+    private void notifySessionListUpdated() {
+        synchronized (mTerminalSessionClients) {
+            for (var client : mTerminalSessionClients) {
+                client.termuxSessionListNotifyUpdated();
+            }
+        }
     }
 
     private Notification buildNotification() {
@@ -586,8 +622,10 @@ public final class TermuxService extends Service {
         return mWantsToStop;
     }
 
-    public void unsetTermuxTerminalSessionClient() {
-        this.mTerminalSessionClient = null;
+    public synchronized void unsetTermuxTerminalSessionClient() {
+        synchronized (mTerminalSessionClients) {
+            mTerminalSessionClients.clear();
+        }
     }
 
 }

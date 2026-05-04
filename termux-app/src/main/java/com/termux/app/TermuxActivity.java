@@ -192,7 +192,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         setTerminalToolbarView(savedInstanceState);
 
         View newSessionButton = findViewById(R.id.new_session_button);
-        newSessionButton.setOnClickListener(v -> mTermuxTerminalSessionActivityClient.addNewSession(false, null, null, null));
+        newSessionButton.setOnClickListener(v -> {
+            Log.d(TermuxConstants.LOG_TAG, "New Session button clicked");
+            mTermuxTerminalSessionActivityClient.addNewSession(false, null, null, null);
+        });
         newSessionButton.setOnLongClickListener(v -> {
             TermuxMessageDialogUtils.textInput(TermuxActivity.this,
                 R.string.title_create_named_session,
@@ -361,7 +364,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
         if (mTermuxService != null) {
             // Do not leave service and session clients with references to activity.
-            mTermuxService.unsetTermuxTerminalSessionClient();
+            mTermuxService.unsetTermuxTerminalSessionClient(mTermuxTerminalSessionActivityClient);
             mTermuxService = null;
         }
 
@@ -429,6 +432,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
      */
     @Override
     public void onServiceConnected(ComponentName componentName, IBinder service) {
+        Log.i(TermuxConstants.LOG_TAG, "onServiceConnected: Activity connected to service");
         mTermuxService = ((TermuxService.LocalBinder) service).service;
 
         ListView termuxSessionsListView = findViewById(R.id.terminal_sessions_list);
