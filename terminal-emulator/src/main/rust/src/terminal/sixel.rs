@@ -278,6 +278,15 @@ impl SixelDecoder {
     }
 
     pub fn finish(&mut self) {
+        // 如果处于颜色参数解析状态，收尾最后一次选择
+        if self.state == SixelState::ColorParam {
+            if self.current_param >= 0 {
+                self.params.push(self.current_param);
+            }
+            self.apply_color_select();
+            self.params.clear();
+            self.current_param = -1;
+        }
         self.state = SixelState::Data;
     }
 

@@ -31,16 +31,19 @@ fn test_color_select_command() {
     
     // 测试 #0 - 选择颜色 0
     decoder.process_data(b"#0");
+    decoder.finish();
     assert_eq!(decoder.current_color, 0, "Current color should be 0");
     println!("  ✅ #0 - Selected color 0");
     
     // 测试 #5 - 选择颜色 5
     decoder.process_data(b"#5");
+    decoder.finish();
     assert_eq!(decoder.current_color, 5, "Current color should be 5");
     println!("  ✅ #5 - Selected color 5");
     
     // 测试 #255 - 选择颜色 255
     decoder.process_data(b"#255");
+    decoder.finish();
     assert_eq!(decoder.current_color, 255, "Current color should be 255");
     println!("  ✅ #255 - Selected color 255");
 }
@@ -56,6 +59,7 @@ fn test_color_register_rgb() {
     // 格式：# Pc ; Ps ; Pr ; Pg ; Pb
     // Ps=1 表示 RGB 空间
     decoder.process_data(b"#0;1;100;0;0");
+    decoder.finish();
     
     // 验证颜色寄存器已设置
     assert!(decoder.color_registers[0].is_some(), "Color register 0 should be set");
@@ -77,6 +81,7 @@ fn test_color_register_hls() {
     
     // 测试 HLS 颜色：红色 (H=0, L=50, S=100)
     decoder.process_data(b"#1;0;0;50;100");
+    decoder.finish();
     
     assert!(decoder.color_registers[1].is_some(), "Color register 1 should be set");
     let color = decoder.color_registers[1].as_ref().unwrap();
@@ -177,9 +182,12 @@ fn test_sixel_image_with_colors() {
     decoder.start(&params);  // 使用默认尺寸
     
     // 设置颜色寄存器 - 使用 RGB 空间
-    decoder.process_data(b"#0;1;100;0;0");  // 颜色 0: 红色 (100%, 0%, 0%)
-    decoder.process_data(b"#1;1;0;100;0");  // 颜色 1: 绿色 (0%, 100%, 0%)
-    decoder.process_data(b"#2;1;0;0;100");  // 颜色 2: 蓝色 (0%, 0%, 100%)
+    decoder.process_data(b"#0;1;100;0;0");
+    decoder.finish();  // 颜色 0: 红色 (100%, 0%, 0%)
+    decoder.process_data(b"#1;1;0;100;0");
+    decoder.finish();  // 颜色 1: 绿色 (0%, 100%, 0%)
+    decoder.process_data(b"#2;1;0;0;100");
+    decoder.finish();  // 颜色 2: 蓝色 (0%, 0%, 100%)
     
     // 验证颜色寄存器
     assert!(decoder.color_registers[0].is_some(), "Color 0 should be set");
@@ -220,11 +228,13 @@ fn test_color_cycling() {
     // 循环设置多个颜色
     for i in 0..16 {
         decoder.process_data(&format!("#{}", i).into_bytes());
+    decoder.finish();
         assert_eq!(decoder.current_color, i as usize, "Current color should be {}", i);
     }
     
     // 测试超过 255 的颜色索引（应该循环）
     decoder.process_data(b"#300");
+    decoder.finish();
     assert_eq!(decoder.current_color, 300 % 256, "Color index should wrap at 256");
     
     println!("  ✅ Color cycling works correctly");

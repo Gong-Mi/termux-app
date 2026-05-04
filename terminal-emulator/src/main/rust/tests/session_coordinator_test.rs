@@ -1,11 +1,12 @@
-//! Session 协调器单元测试
+use std::sync::Arc;
+/// Session 协调器单元测试
 
 use termux_rust::coordinator::{SessionCoordinator, SessionState};
 
 #[test]
 fn test_coordinator_initialization() {
     // 测试协调器可以正确初始化
-    let coordinator = SessionCoordinator::get();
+    let coordinator = SessionCoordinator::new_coordinator();
     
     // 初始状态检查
     assert!(!coordinator.is_pkg_lock_held(), "初始状态 pkg 锁应该是未锁定");
@@ -14,7 +15,7 @@ fn test_coordinator_initialization() {
 
 #[test]
 fn test_session_registration() {
-    let coordinator = SessionCoordinator::get();
+    let coordinator = SessionCoordinator::new_coordinator();
     
     // 注册 session（ID 可能不是从 0 开始，因为其他测试也注册了）
     let session1 = coordinator.register_session();
@@ -40,7 +41,7 @@ fn test_session_registration() {
 
 #[test]
 fn test_session_unregister() {
-    let coordinator = SessionCoordinator::get();
+    let coordinator = SessionCoordinator::new_coordinator();
     
     // 注册并注销
     let session = coordinator.register_session();
@@ -56,7 +57,7 @@ fn test_session_unregister() {
 
 #[test]
 fn test_pkg_lock_acquire_release() {
-    let coordinator = SessionCoordinator::get();
+    let coordinator = SessionCoordinator::new_coordinator();
     
     let session1 = coordinator.register_session();
     
@@ -90,7 +91,7 @@ fn test_pkg_lock_acquire_release() {
 
 #[test]
 fn test_pkg_lock_contention() {
-    let coordinator = SessionCoordinator::get();
+    let coordinator = SessionCoordinator::new_coordinator();
     
     let session1 = coordinator.register_session();
     let session2 = coordinator.register_session();
@@ -128,7 +129,7 @@ fn test_pkg_lock_contention() {
 
 #[test]
 fn test_pkg_lock_state_transitions() {
-    let coordinator = SessionCoordinator::get();
+    let coordinator = SessionCoordinator::new_coordinator();
     
     let session = coordinator.register_session();
     
@@ -164,7 +165,7 @@ fn test_pkg_lock_state_transitions() {
 
 #[test]
 fn test_waiting_lock_state() {
-    let coordinator = SessionCoordinator::get();
+    let coordinator = SessionCoordinator::new_coordinator();
     
     let session1 = coordinator.register_session();
     let session2 = coordinator.register_session();
@@ -200,7 +201,7 @@ fn test_waiting_lock_state() {
 
 #[test]
 fn test_multiple_sessions_cleanup() {
-    let coordinator = SessionCoordinator::get();
+    let coordinator = SessionCoordinator::new_coordinator();
     
     // 创建多个 session
     let session1 = coordinator.register_session();
@@ -232,7 +233,7 @@ fn test_multiple_sessions_cleanup() {
 
 #[test]
 fn test_get_all_session_states() {
-    let coordinator = SessionCoordinator::get();
+    let coordinator = SessionCoordinator::new_coordinator();
     
     // 创建多个 session
     let _session1 = coordinator.register_session();
@@ -267,7 +268,7 @@ fn test_session_state_as_str() {
 
 #[test]
 fn test_double_register_cleanup() {
-    let coordinator = SessionCoordinator::get();
+    let coordinator = SessionCoordinator::new_coordinator();
     
     let session = coordinator.register_session();
     

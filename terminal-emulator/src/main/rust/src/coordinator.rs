@@ -67,14 +67,20 @@ pub struct SessionCoordinator {
 impl SessionCoordinator {
     /// 获取全局协调器实例
     pub fn get() -> &'static Self {
-        SESSION_COORDINATOR.get_or_init(|| SessionCoordinator {
+        SESSION_COORDINATOR.get_or_init(|| Self::new_coordinator())
+    }
+
+    /// 创建一个新的、隔离的协调器实例
+    /// 注意：此方法通常仅用于测试，以避免全局单例污染。
+    pub fn new_coordinator() -> Self {
+        SessionCoordinator {
             pkg_lock: AtomicBool::new(false),
             pkg_lock_owner: AtomicUsize::new(0),
             session_counter: AtomicUsize::new(0),
             session_states: Mutex::new(HashMap::new()),
             session_data: Mutex::new(HashMap::new()),
             ptr_to_session: Mutex::new(HashMap::new()),
-        })
+        }
     }
     
     /// 注册新 Session（仅分配 ID，不绑定数据）
@@ -217,7 +223,7 @@ impl SessionCoordinator {
     }
     
     /// 更新 Session 状态
-    fn update_session_state(&self, session_id: usize, state: SessionState) {
+    pub fn update_session_state(&self, session_id: usize, state: SessionState) {
         if let Ok(mut states) = self.session_states.lock() {
             states.insert(session_id, state);
         }
@@ -431,17 +437,7 @@ pub extern "system" fn Java_com_termux_terminal_JNI_sessionIsRunning(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn new_coordinator() -> SessionCoordinator {
-        SessionCoordinator {
-            pkg_lock: AtomicBool::new(false),
-            pkg_lock_owner: AtomicUsize::new(0),
-            session_counter: AtomicUsize::new(0),
-            session_states: Mutex::new(HashMap::new()),
-            session_data: Mutex::new(HashMap::new()),
-            ptr_to_session: Mutex::new(HashMap::new()),
-        }
-    }
+    // new_coordinator 会通过 super::* 自动引入
 
     // -------------------------------------------------------------------------
     // SessionState
@@ -460,7 +456,7 @@ mod tests {
     // -------------------------------------------------------------------------
     #[test]
     fn register_session_returns_incrementing_ids() {
-        let coord = new_coordinator();
+        let coord = SessionCoordinator::new_coordinator();
         let id0 = coord.register_session();
         let id1 = coord.register_session();
         let id2 = coord.register_session();
@@ -471,7 +467,7 @@ mod tests {
 
     #[test]
     fn register_session_sets_idle_state() {
-        let coord = new_coordinator();
+        let coord = SessionCoordinator::new_coordinator();
         let id = coord.register_session();
         assert_eq!(coord.get_session_state(id), Some(SessionState::Idle));
     }
@@ -481,7 +477,7 @@ mod tests {
     // -------------------------------------------------------------------------
     #[test]
     fn unregister_session_sets_finished() {
-        let coord = new_coordinator();
+        let coord = SessionCoordinator::new_coordinator();
         let id = coord.register_session();
         coord.unregister_session(id);
         assert_eq!(coord.get_session_state(id), None); // removed from map
@@ -489,7 +485,7 @@ mod tests {
 
     #[test]
     fn unregister_session_removes_from_all_states() {
-        let coord = new_coordinator();
+        let coord = SessionCoordinator::new_coordinator();
         let id = coord.register_session();
         coord.unregister_session(id);
         let all = coord.get_all_session_states();
@@ -501,7 +497,7 @@ mod tests {
     // -------------------------------------------------------------------------
     #[test]
     fn try_acquire_pkg_lock_succeeds_when_free() {
-        let coord = new_coordinator();
+        let coord = SessionCoordinator::new_coordinator();
         let id = coord.register_session();
         assert!(coord.try_acquire_pkg_lock(id));
         assert!(coord.is_pkg_lock_held());
@@ -511,7 +507,7 @@ mod tests {
 
     #[test]
     fn release_pkg_lock_frees_lock() {
-        let coord = new_coordinator();
+        let coord = SessionCoordinator::new_coordinator();
         let id = coord.register_session();
         coord.try_acquire_pkg_lock(id);
         coord.release_pkg_lock(id);
@@ -521,7 +517,7 @@ mod tests {
 
     #[test]
     fn release_pkg_lock_changes_state_to_running() {
-        let coord = new_coordinator();
+        let coord = SessionCoordinator::new_coordinator();
         let id = coord.register_session();
         coord.try_acquire_pkg_lock(id);
         coord.release_pkg_lock(id);
@@ -533,7 +529,7 @@ mod tests {
     // -------------------------------------------------------------------------
     #[test]
     fn try_acquire_pkg_lock_fails_when_held() {
-        let coord = new_coordinator();
+        let coord = SessionCoordinator::new_coordinator();
         let id1 = coord.register_session();
         let id2 = coord.register_session();
         coord.try_acquire_pkg_lock(id1);
@@ -542,7 +538,7 @@ mod tests {
 
     #[test]
     fn contending_session_gets_waiting_lock_state() {
-        let coord = new_coordinator();
+        let coord = SessionCoordinator::new_coordinator();
         let id1 = coord.register_session();
         let id2 = coord.register_session();
         coord.try_acquire_pkg_lock(id1);
@@ -552,7 +548,7 @@ mod tests {
 
     #[test]
     fn release_pkg_lock_not_owner_does_nothing() {
-        let coord = new_coordinator();
+        let coord = SessionCoordinator::new_coordinator();
         let id1 = coord.register_session();
         let id2 = coord.register_session();
         coord.try_acquire_pkg_lock(id1);
@@ -566,7 +562,7 @@ mod tests {
     // -------------------------------------------------------------------------
     #[test]
     fn unregister_releases_owned_lock() {
-        let coord = new_coordinator();
+        let coord = SessionCoordinator::new_coordinator();
         let id = coord.register_session();
         coord.try_acquire_pkg_lock(id);
         coord.unregister_session(id);
@@ -576,7 +572,7 @@ mod tests {
 
     #[test]
     fn unregister_does_not_release_others_lock() {
-        let coord = new_coordinator();
+        let coord = SessionCoordinator::new_coordinator();
         let id1 = coord.register_session();
         let id2 = coord.register_session();
         coord.try_acquire_pkg_lock(id1);
@@ -590,13 +586,13 @@ mod tests {
     // -------------------------------------------------------------------------
     #[test]
     fn get_session_state_unknown_returns_none() {
-        let coord = new_coordinator();
+        let coord = SessionCoordinator::new_coordinator();
         assert_eq!(coord.get_session_state(999), None);
     }
 
     #[test]
     fn get_all_session_states_reflects_changes() {
-        let coord = new_coordinator();
+        let coord = SessionCoordinator::new_coordinator();
         let id1 = coord.register_session();
         let id2 = coord.register_session();
         coord.try_acquire_pkg_lock(id1);
@@ -609,7 +605,7 @@ mod tests {
 
     #[test]
     fn has_waiting_sessions_true() {
-        let coord = new_coordinator();
+        let coord = SessionCoordinator::new_coordinator();
         let id1 = coord.register_session();
         let id2 = coord.register_session();
         coord.try_acquire_pkg_lock(id1);
@@ -619,7 +615,7 @@ mod tests {
 
     #[test]
     fn has_waiting_sessions_false() {
-        let coord = new_coordinator();
+        let coord = SessionCoordinator::new_coordinator();
         let id1 = coord.register_session();
         let id2 = coord.register_session();
         coord.try_acquire_pkg_lock(id1);
@@ -628,7 +624,7 @@ mod tests {
 
     #[test]
     fn has_waiting_sessions_empty() {
-        let coord = new_coordinator();
+        let coord = SessionCoordinator::new_coordinator();
         assert!(!coord.has_waiting_sessions());
     }
 
@@ -637,7 +633,7 @@ mod tests {
     // -------------------------------------------------------------------------
     #[test]
     fn bind_session_data_stores_all_fields() {
-        let coord = new_coordinator();
+        let coord = SessionCoordinator::new_coordinator();
         let id = coord.register_session();
         coord.bind_session_data(id, 42, 12345, 0xDEADBEEF);
 
@@ -650,7 +646,7 @@ mod tests {
 
     #[test]
     fn get_session_id_by_ptr_reverse_lookup() {
-        let coord = new_coordinator();
+        let coord = SessionCoordinator::new_coordinator();
         let id = coord.register_session();
         coord.bind_session_data(id, 1, 100, 0xABC);
 
@@ -660,7 +656,7 @@ mod tests {
 
     #[test]
     fn get_session_data_by_ptr_works() {
-        let coord = new_coordinator();
+        let coord = SessionCoordinator::new_coordinator();
         let id = coord.register_session();
         coord.bind_session_data(id, 3, 300, 0x123);
 
@@ -671,7 +667,7 @@ mod tests {
 
     #[test]
     fn get_session_pid_and_pty_fd() {
-        let coord = new_coordinator();
+        let coord = SessionCoordinator::new_coordinator();
         let id = coord.register_session();
         coord.bind_session_data(id, 99, 7777, 0x0);
 
@@ -681,7 +677,7 @@ mod tests {
 
     #[test]
     fn is_session_running_true_after_bind() {
-        let coord = new_coordinator();
+        let coord = SessionCoordinator::new_coordinator();
         let id = coord.register_session();
         coord.bind_session_data(id, 1, 1, 0x0);
         assert!(coord.is_session_running(id));
@@ -689,7 +685,7 @@ mod tests {
 
     #[test]
     fn is_session_running_false_after_unregister() {
-        let coord = new_coordinator();
+        let coord = SessionCoordinator::new_coordinator();
         let id = coord.register_session();
         coord.bind_session_data(id, 1, 1, 0x0);
         coord.unregister_session(id);
@@ -700,7 +696,7 @@ mod tests {
 
     #[test]
     fn unregister_cleans_ptr_to_session_index() {
-        let coord = new_coordinator();
+        let coord = SessionCoordinator::new_coordinator();
         let id = coord.register_session();
         coord.bind_session_data(id, 1, 1, 0xBEEF);
         coord.unregister_session(id);
