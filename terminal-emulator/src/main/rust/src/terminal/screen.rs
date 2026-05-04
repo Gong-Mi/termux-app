@@ -695,8 +695,22 @@ impl Screen {
             first_blank = i;
         }
         
-        if first_blank < self.rows {
-            // TODO: Implementation of physical buffer resizing if needed
+        // 物理缩容逻辑：缓解大吞吐量输出后的内存膨胀
+        if self.buffer.capacity() > self.buffer.len() * 2 && self.buffer.capacity() > 1000 {
+            // 只有当空闲空间超过一倍且基数较大时，才触发昂贵的 shrink 操作
+            self.buffer.shrink_to_fit();
+            crate::utils::android_log(
+                crate::utils::LogPriority::INFO,
+                &format!("[Screen] Physical buffer reclaimed. New capacity: {}", self.buffer.capacity())
+            );
+        }
+
+        // 同时对每一行执行缩容检测（如果列数曾发生剧烈变动）
+        for row in self.buffer.iter_mut() {
+            if row.text.capacity() > row.text.len() + 16 {
+                row.text.shrink_to_fit();
+                row.styles.shrink_to_fit();
+            }
         }
     }
 }
