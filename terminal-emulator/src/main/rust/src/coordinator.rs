@@ -133,6 +133,17 @@ impl SessionCoordinator {
         // 从数据表中移除，并清理反向索引
         if let Ok(mut data_map) = self.session_data.lock() {
             if let Some(data) = data_map.remove(&session_id) {
+                // 关键修复：释放 Arc 引用计数，否则 TerminalEngine 和其持有的 GlobalRef 永不销毁
+                if data.context_ptr != 0 {
+                    unsafe {
+                        let _ = std::sync::Arc::from_raw(data.context_ptr as *const crate::engine::TerminalContext);
+                    }
+                    android_log(
+                        LogPriority::DEBUG,
+                        &format!("[SessionCoordinator] Released Arc<TerminalContext> for session {}", session_id)
+                    );
+                }
+
                 if let Ok(mut ptr_map) = self.ptr_to_session.lock() {
                     ptr_map.remove(&data.context_ptr);
                 }
@@ -712,8 +723,17 @@ mod tests {
     fn unregister_cleans_ptr_to_session_index() {
         let coord = SessionCoordinator::new_coordinator();
         let id = coord.register_session();
-        coord.bind_session_data(id, 1, 1, 0xBEEF);
+
+        // 关键修复：必须使用真实的 Arc 指针，因为 unregister_session 会调用 Arc::from_raw。
+        // 使用伪造的指针（如 0xBEEF）会导致段错误。
+        use std::sync::Arc;
+        use crate::engine::{TerminalEngine, TerminalContext};
+        let engine = TerminalEngine::new(80, 24, 100, 10, 20);
+        let context = Arc::new(TerminalContext::new(engine));
+        let ptr = Arc::into_raw(context) as usize;
+
+        coord.bind_session_data(id, 1, 1, ptr);
         coord.unregister_session(id);
-        assert_eq!(coord.get_session_id_by_ptr(0xBEEF), None);
+        assert_eq!(coord.get_session_id_by_ptr(ptr), None);
     }
 }

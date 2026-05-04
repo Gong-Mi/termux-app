@@ -459,6 +459,16 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_destroyEngine(
         android_log(LogPriority::INFO, &format!("destroyEngine: Cleaning up engine pointer {}", ptr));
         render_thread::cleanup_engine(ptr);
 
+        // 关键：在释放 Arc 之前，先从协调器中注销。
+        // 协调器内部会通过 Arc::from_raw 释放它持有的那一份引用。
+        let coordinator = SessionCoordinator::get();
+        if let Some(session_id) = coordinator.get_session_id_by_ptr(ptr as usize) {
+            android_log(LogPriority::DEBUG, &format!("destroyEngine: Found session {} for ptr, unregistering", session_id));
+            coordinator.unregister_session(session_id);
+        } else {
+            android_log(LogPriority::WARN, &format!("destroyEngine: No session found in coordinator for ptr {}", ptr));
+        }
+
         let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
         context.running.store(false, std::sync::atomic::Ordering::SeqCst);
 
@@ -517,64 +527,69 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_startIoThread(
 
             android_log(LogPriority::INFO, " IO Thread started");
 
-            let mut attached_env = crate::JAVA_VM.get().and_then(|vm| {
-                vm.attach_current_thread_as_daemon().ok()
-            });
-
             let mut file = unsafe { std::fs::File::from_raw_fd(pty_fd) };
             // 使用大累积缓冲区减少 lock/unlock 和系统调用次数
             let mut read_buf = Vec::with_capacity(65536);
             let mut temp = [0u8; 16384];
 
             while context.running.load(std::sync::atomic::Ordering::SeqCst) {
-                read_buf.clear();
+                // 使用 attach_current_thread_as_daemon 并在循环内使用 local_frame 防止局部引用泄露
+                if let Ok(mut env) = crate::JAVA_VM.get().unwrap().attach_current_thread_as_daemon() {
+                    let _ = env.with_local_frame::<_, _, jni::errors::Error>(16, |env| {
+                        read_buf.clear();
 
-                // 1) blocking read 等待数据
-                match file.read(&mut temp) {
-                    Ok(0) => {
-                        android_log(LogPriority::INFO, " IO Thread: Received EOF (0 bytes read)");
-                        break;
-                    }
-                    Ok(n) => read_buf.extend_from_slice(&temp[..n]),
-                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-                    Err(e) => {
-                        android_log(LogPriority::ERROR, &format!(" IO Thread: Read error: {:?}", e));
-                        break;
-                    }
-                }
-
-                // 2) 批量排空 PTY 缓冲区（减少后续系统调用）
-                let fd = file.as_raw_fd();
-                loop {
-                    let mut available = 0i32;
-                    let rc = unsafe { libc::ioctl(fd, libc::FIONREAD, &mut available) };
-                    if rc < 0 || available <= 0 { break; }
-
-                    if read_buf.len() + (available as usize) > read_buf.capacity() {
-                        break;
-                    }
-
-                    match file.read(&mut temp) {
-                        Ok(0) => break,
-                        Ok(n) => {
-                            read_buf.extend_from_slice(&temp[..n]);
+                        // 1) blocking read 等待数据
+                        match file.read(&mut temp) {
+                            Ok(0) => {
+                                android_log(LogPriority::INFO, " IO Thread: Received EOF (0 bytes read)");
+                                context.running.store(false, std::sync::atomic::Ordering::SeqCst);
+                                return Ok(());
+                            }
+                            Ok(n) => read_buf.extend_from_slice(&temp[..n]),
+                            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => return Ok(()),
+                            Err(e) => {
+                                android_log(LogPriority::ERROR, &format!(" IO Thread: Read error: {:?}", e));
+                                context.running.store(false, std::sync::atomic::Ordering::SeqCst);
+                                return Ok(());
+                            }
                         }
-                        Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-                        Err(_) => break,
-                    }
-                }
 
-                // 3) 一次性处理积累的所有数据
-                if !read_buf.is_empty() {
-                    let (events, cb) = {
-                        let mut engine = context.lock.write().unwrap();
-                        engine.process_bytes(&read_buf);
-                        (engine.take_events(), engine.state.java_callback_obj.clone())
-                    };
-                    render_thread::request_render();
-                    if let Some(ref mut env) = attached_env {
-                        flush_events_to_java(env, &cb, events);
-                    }
+                        // 2) 批量排空 PTY 缓冲区（减少后续系统调用）
+                        let fd = file.as_raw_fd();
+                        loop {
+                            let mut available = 0i32;
+                            let rc = unsafe { libc::ioctl(fd, libc::FIONREAD, &mut available) };
+                            if rc < 0 || available <= 0 { break; }
+
+                            if read_buf.len() + (available as usize) > read_buf.capacity() {
+                                break;
+                            }
+
+                            match file.read(&mut temp) {
+                                Ok(0) => break,
+                                Ok(n) => {
+                                    read_buf.extend_from_slice(&temp[..n]);
+                                }
+                                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                                Err(_) => break,
+                            }
+                        }
+
+                        // 3) 一次性处理积累的所有数据
+                        if !read_buf.is_empty() {
+                            let (events, cb) = {
+                                let mut engine = context.lock.write().unwrap();
+                                engine.process_bytes(&read_buf);
+                                (engine.take_events(), engine.state.java_callback_obj.clone())
+                            };
+                            render_thread::request_render();
+                            flush_events_to_java(env, &cb, events);
+                        }
+                        Ok(())
+                    });
+                } else {
+                    android_log(LogPriority::ERROR, " IO Thread: Failed to attach to JVM");
+                    break;
                 }
             }
             // 释放 fd 所有权，不自动 close，由 destroyEngine 统一关闭
@@ -614,6 +629,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_resize(
     flush_events_to_java(&mut env, &cb, events);
     let _ = Arc::into_raw(context);
 }
+
 
 /// 启动 Rust 本地 Socket 服务器
 #[unsafe(no_mangle)]
@@ -1423,7 +1439,12 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
         }
 
         let context = Arc::new(TerminalContext::new(engine));
-        let context_ptr = Arc::into_raw(context.clone());
+        
+        // 关键修复：分别为 Java 层和协调器创建独立的 Arc 引用。
+        // 否则 Java 层的 destroyEngine 和协调器的 unregister_session 会对同一个指针调用 Arc::from_raw，
+        // 导致 Double-Free 或 Use-After-Free 崩溃。
+        let context_ptr_java = Arc::into_raw(context.clone());
+        let context_ptr_coord = Arc::into_raw(context.clone());
 
         // ★ 关键：把 session 的完整数据绑定到 Rust 协调器
         // Java 层后续通过 enginePtr 反向查询 PID/fd/state
@@ -1431,10 +1452,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
             session_id,
             pty_fd,
             pid,
-            context_ptr as usize,
+            context_ptr_coord as usize,
         );
 
-        android_log(LogPriority::INFO, &format!("[TRACE_SESSION] Engine context created at ptr: {:p}", context_ptr));
+        android_log(LogPriority::INFO, &format!("[TRACE_SESSION] Engine context created at ptr: {:p}", context_ptr_java));
 
         if let Some(ref cb) = callback_ref {
             android_log(LogPriority::DEBUG, "[TRACE_SESSION] Attempting JNI callback: onEngineInitialized");
@@ -1447,7 +1468,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
                             "onEngineInitialized",
                             "(JII)V",
                             &[
-                                jni::objects::JValue::Long(context_ptr as jlong),
+                                jni::objects::JValue::Long(context_ptr_java as jlong),
                                 jni::objects::JValue::Int(pty_fd),
                                 jni::objects::JValue::Int(pid),
                             ],
