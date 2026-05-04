@@ -44,6 +44,9 @@ object RustTerminal {
     @JvmStatic
     external fun resize(enginePtr: Long, columns: Int, rows: Int, cellWidthPixels: Int, cellHeightPixels: Int)
 
+    @JvmStatic
+    external fun getTerminalState(enginePtr: Long): IntArray?
+
     // --- 光标 ---
 
     @JvmStatic

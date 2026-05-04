@@ -484,6 +484,9 @@ class TerminalView @JvmOverloads constructor(
             Log.w("TerminalView-Engine", "onScreenUpdated called but mEmulator is still null after updateSize()")
             return
         }
+        
+        // 【性能优化】合并 JNI 调用：一次性同步光标、模式、尺寸等常用状态到缓存
+        emu.syncState()
         if (!mEnginePointerSet) {
             mEnginePointerSet = true
             val enginePtr = emu.getNativePointer()
@@ -1128,6 +1131,10 @@ class TerminalView @JvmOverloads constructor(
                 val emu = emulator ?: return
                 cursorVisible = !cursorVisible
                 emu.setCursorBlinkState(cursorVisible)
+                
+                // 【性能优化】合并 JNI 调用
+                emu.syncState()
+                
                 val cursorX = emu.getCursorCol()
                 val cursorY = emu.getCursorRow()
                 if (cursorY >= mTopRow && cursorY < mTopRow + emu.getRows()) {

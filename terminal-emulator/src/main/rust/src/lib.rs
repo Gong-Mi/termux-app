@@ -24,6 +24,7 @@ pub mod engine;
 pub mod bootstrap;
 pub mod pty;
 pub mod vte_parser;
+pub mod sve_scan;
 pub mod coordinator;
 pub mod renderer;
 pub mod vulkan_context;

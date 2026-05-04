@@ -4,8 +4,12 @@ use jni::sys::{jint, jintArray, jobjectArray, jstring};
 use nix::unistd::{ForkResult, fork, setsid, chdir};
 use std::ffi::CString;
 use std::io::Read;
+use std::sync::Mutex;
+use once_cell::sync::Lazy;
 
 use crate::utils::{android_log, LogPriority};
+
+static PTY_ALLOC_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 pub unsafe fn create_subprocess(
     env: &mut JNIEnv,
@@ -258,16 +262,29 @@ pub fn create_subprocess_with_data(
     let c_exec_cmd = CString::new(exec_cmd).unwrap();
     let c_exec_args: Vec<CString> = exec_argv.iter().map(|a| CString::new(a.clone()).unwrap()).collect();
 
+    let (ptm, c_pts) = {
+        let _guard = PTY_ALLOC_LOCK.lock().unwrap();
+        unsafe {
+            let ptm = libc::open("/dev/ptmx\0".as_ptr() as *const _, libc::O_RDWR | libc::O_CLOEXEC);
+            if ptm < 0 { return Err(()); }
+
+            if libc::grantpt(ptm) != 0 || libc::unlockpt(ptm) != 0 {
+                libc::close(ptm);
+                return Err(());
+            }
+
+            let devname = libc::ptsname(ptm);
+            if devname.is_null() {
+                libc::close(ptm);
+                return Err(());
+            }
+            let devname_str = std::ffi::CStr::from_ptr(devname).to_string_lossy().into_owned();
+            let c_pts = CString::new(devname_str).unwrap();
+            (ptm, c_pts)
+        }
+    };
+
     unsafe {
-        let ptm = libc::open("/dev/ptmx\0".as_ptr() as *const _, libc::O_RDWR | libc::O_CLOEXEC);
-        if ptm < 0 { return Err(()); }
-
-        let _ = libc::grantpt(ptm);
-        let _ = libc::unlockpt(ptm);
-        let devname = libc::ptsname(ptm);
-        if devname.is_null() { return Err(()); }
-        let devname_str = std::ffi::CStr::from_ptr(devname).to_string_lossy().into_owned();
-
         // Set initial winsize.
         let sz = libc::winsize {
             ws_row: rows as u16,
@@ -289,7 +306,6 @@ pub fn create_subprocess_with_data(
         // fork 后子进程中只有一个线程，若其他 Rust 线程在 fork 前持有
         // 全局分配器锁，子进程再 malloc 会死锁（phantom thread 问题）。
         // ------------------------------------------------------------------
-        let c_pts = CString::new(devname_str).unwrap();
         let c_cwd = if cwd_str.is_empty() { None } else { CString::new(cwd_str).ok() };
         let ptr_args: Vec<_> = c_exec_args.iter().map(|s| s.as_ptr())
             .chain(std::iter::once(std::ptr::null())).collect();

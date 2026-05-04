@@ -344,9 +344,6 @@ impl Parser {
         let len = data.len();
         
         while i < len {
-            // 性能优化：ESC_NONE 状态下的可打印 ASCII 快速通道
-            // 使用 SVE (Scalable Vector Extension) 批量跳过连续可打印字符，
-            // 在纯文本场景下比标量循环快约 6~10 倍（取决于 SVE vector length）。
             if self.escape_state == ESC_NONE {
                 let start = i;
                 let skip = crate::sve_scan::fast_skip_printable_len(&data[i..]);

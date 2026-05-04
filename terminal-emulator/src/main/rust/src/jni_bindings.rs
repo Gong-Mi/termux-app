@@ -615,8 +615,52 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getCursorRow(_env: 
     result
 }
 
-/// 获取光标列
+/// 获取终端完整状态快照（合并多个 getter 以减少 JNI 开销）
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_getTerminalState(
+    env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+) -> jni::sys::jintArray {
+    if ptr == 0 { return std::ptr::null_mut(); }
+    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    
+    let state_array = {
+        let engine = context.lock.read().unwrap();
+        let s = &engine.state;
+        
+        [
+            s.cursor.x as i32,                                      // 0: Cursor Col
+            s.cursor.y as i32,                                      // 1: Cursor Row
+            s.cursor.style as i32,                                  // 2: Cursor Style
+            if s.cursor_enabled { 1 } else { 0 },                   // 3: Cursor Enabled
+            if s.cursor.should_be_visible(s.cursor_enabled) { 1 } else { 0 }, // 4: Cursor Visible
+            if s.modes.is_enabled(DECSET_BIT_REVERSE_VIDEO) { 1 } else { 0 }, // 5: Reverse Video
+            if s.use_alternate_buffer { 1 } else { 0 },             // 6: Alternate Buffer
+            if s.modes.is_enabled(DECSET_BIT_APPLICATION_CURSOR_KEYS) { 1 } else { 0 }, // 7: Cursor Keys
+            if s.modes.is_enabled(DECSET_BIT_APPLICATION_KEYPAD) { 1 } else { 0 },    // 8: Keypad
+            if s.modes.is_enabled(DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE) 
+               || s.modes.is_enabled(DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT) { 1 } else { 0 }, // 9: Mouse
+            if s.auto_scroll_disabled { 1 } else { 0 },             // 10: Auto Scroll Disabled
+            s.rows as i32,                                          // 11: Rows
+            s.cols as i32,                                          // 12: Cols
+            s.main_screen.get_active_transcript_rows() as i32,      // 13: Active Transcript Rows
+            s.scroll_counter as i32,                                // 14: Scroll Counter
+        ]
+    };
+
+    let result = match env.new_int_array(state_array.len() as i32) {
+        Ok(arr) => {
+            let _ = env.set_int_array_region(&arr, 0, &state_array);
+            arr.into_raw()
+        }
+        Err(_) => std::ptr::null_mut(),
+    };
+
+    let _ = Arc::into_raw(context);
+    result
+}
+
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_getCursorCol(_env: JNIEnv, _class: JClass, ptr: jlong) -> jint {
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };

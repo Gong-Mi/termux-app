@@ -474,7 +474,10 @@ impl ScreenState {
         self.modes.reset(DECSET_BIT_ORIGIN_MODE);
         self.modes.reset(MODE_LNM);
         self.modes.reset(MODE_INSERT);
+        self.modes.reset(DECSET_BIT_APPLICATION_CURSOR_KEYS);
+        self.modes.reset(DECSET_BIT_BRACKETED_PASTE_MODE);
         self.modes.set(DECSET_BIT_AUTOWRAP);
+        
         self.cursor_enabled = true;
         self.application_cursor_keys = false;
         self.bracketed_paste = false;

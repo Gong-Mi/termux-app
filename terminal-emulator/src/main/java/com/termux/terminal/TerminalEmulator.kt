@@ -50,6 +50,23 @@ class TerminalEmulator(
     private var mEnginePtr: Long = 0
     private var mActiveCallback: RustEngineCallback
 
+    // --- 状态缓存 ---
+    private var mCachedCursorCol = 0
+    private var mCachedCursorRow = 0
+    private var mCachedCursorStyle = 0
+    private var mCachedCursorEnabled = true
+    private var mCachedCursorVisible = true
+    private var mCachedReverseVideo = false
+    private var mCachedAlternateBuffer = false
+    private var mCachedCursorKeysMode = false
+    private var mCachedKeypadMode = false
+    private var mCachedMouseTracking = false
+    private var mCachedAutoScrollDisabled = false
+    private var mCachedRows = 0
+    private var mCachedCols = 0
+    private var mCachedActiveTranscriptRows = 0
+    private var mCachedScrollCounter = 0
+
     init {
         mActiveCallback = if (client is RustEngineCallback) {
             client
@@ -96,10 +113,36 @@ class TerminalEmulator(
 
     fun getNativePointer(): Long = mEnginePtr
 
+    /**
+     * 同步终端状态缓存。
+     * 建议在每次 UI 刷新（如 onScreenUpdated）或高频轮询前调用一次。
+     */
+    fun syncState() {
+        if (mEnginePtr == 0L) return
+        val state = RustTerminal.getTerminalState(mEnginePtr) ?: return
+        if (state.size >= 15) {
+            mCachedCursorCol = state[0]
+            mCachedCursorRow = state[1]
+            mCachedCursorStyle = state[2]
+            mCachedCursorEnabled = state[3] != 0
+            mCachedCursorVisible = state[4] != 0
+            mCachedReverseVideo = state[5] != 0
+            mCachedAlternateBuffer = state[6] != 0
+            mCachedCursorKeysMode = state[7] != 0
+            mCachedKeypadMode = state[8] != 0
+            mCachedMouseTracking = state[9] != 0
+            mCachedAutoScrollDisabled = state[10] != 0
+            mCachedRows = state[11]
+            mCachedCols = state[12]
+            mCachedActiveTranscriptRows = state[13]
+            mCachedScrollCounter = state[14]
+        }
+    }
+
     // --- 光标 ---
-    fun getCursorCol(): Int = RustTerminal.getCursorCol(mEnginePtr)
-    fun getCursorRow(): Int = RustTerminal.getCursorRow(mEnginePtr)
-    fun getCursorStyle(): Int = RustTerminal.getCursorStyle(mEnginePtr)
+    fun getCursorCol(): Int = mCachedCursorCol
+    fun getCursorRow(): Int = mCachedCursorRow
+    fun getCursorStyle(): Int = mCachedCursorStyle
     fun setCursorStyle(cursorStyle: Int) {
         RustTerminal.setCursorStyle(mEnginePtr, cursorStyle)
     }
@@ -109,16 +152,16 @@ class TerminalEmulator(
     fun setCursorBlinkingEnabled(enabled: Boolean) {
         RustTerminal.setCursorBlinkingEnabled(mEnginePtr, enabled)
     }
-    fun isCursorEnabled(): Boolean = RustTerminal.isCursorEnabled(mEnginePtr)
-    fun shouldCursorBeVisible(): Boolean = RustTerminal.shouldCursorBeVisible(mEnginePtr)
+    fun isCursorEnabled(): Boolean = mCachedCursorEnabled
+    fun shouldCursorBeVisible(): Boolean = mCachedCursorVisible
 
     // --- 模式查询 ---
-    fun isReverseVideo(): Boolean = RustTerminal.isReverseVideo(mEnginePtr)
-    fun isAlternateBufferActive(): Boolean = RustTerminal.isAlternateBufferActive(mEnginePtr)
-    fun isCursorKeysApplicationMode(): Boolean = RustTerminal.isCursorKeysApplicationMode(mEnginePtr)
-    fun isKeypadApplicationMode(): Boolean = RustTerminal.isKeypadApplicationMode(mEnginePtr)
-    fun isMouseTrackingActive(): Boolean = RustTerminal.isMouseTrackingActive(mEnginePtr)
-    fun isAutoScrollDisabled(): Boolean = RustTerminal.isAutoScrollDisabled(mEnginePtr)
+    fun isReverseVideo(): Boolean = mCachedReverseVideo
+    fun isAlternateBufferActive(): Boolean = mCachedAlternateBuffer
+    fun isCursorKeysApplicationMode(): Boolean = mCachedCursorKeysMode
+    fun isKeypadApplicationMode(): Boolean = mCachedKeypadMode
+    fun isMouseTrackingActive(): Boolean = mCachedMouseTracking
+    fun isAutoScrollDisabled(): Boolean = mCachedAutoScrollDisabled
     fun doDecSetOrReset(setting: Boolean, mode: Int) {
         RustTerminal.doDecSetOrReset(mEnginePtr, setting, mode)
     }
@@ -127,15 +170,15 @@ class TerminalEmulator(
     }
 
     // --- 尺寸 ---
-    fun getRows(): Int = RustTerminal.getRows(mEnginePtr)
-    fun getCols(): Int = RustTerminal.getCols(mEnginePtr)
-    fun getActiveTranscriptRows(): Int = RustTerminal.getActiveTranscriptRows(mEnginePtr)
-    fun getTotalRows(): Int = getActiveTranscriptRows() + getRows()
+    fun getRows(): Int = mCachedRows
+    fun getCols(): Int = mCachedCols
+    fun getActiveTranscriptRows(): Int = mCachedActiveTranscriptRows
+    fun getTotalRows(): Int = mCachedActiveTranscriptRows + mCachedRows
     @Deprecated("Use getTotalRows() instead")
     fun getActiveRows(): Int = getTotalRows()
 
     // --- 滚动 ---
-    fun getScrollCounter(): Int = RustTerminal.getScrollCounter(mEnginePtr)
+    fun getScrollCounter(): Int = mCachedScrollCounter
     fun clearScrollCounter() {
         RustTerminal.clearScrollCounter(mEnginePtr)
     }
