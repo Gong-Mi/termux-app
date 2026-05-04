@@ -67,6 +67,7 @@ internal object JNI {
     @JvmStatic external fun waitFor(processId: Int): Int
     @JvmStatic external fun close(fileDescriptor: Int)
     @JvmStatic external fun nativeWrite(fd: Int, data: ByteArray, offset: Int, count: Int): Int
+    @JvmStatic external fun nativeWriteDirect(fd: Int, buffer: java.nio.ByteBuffer, offset: Int, count: Int): Int
 
     // --- Session Coordinator ---
     @JvmStatic external fun registerSession(): Int

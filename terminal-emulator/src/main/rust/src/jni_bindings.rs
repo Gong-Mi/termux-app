@@ -389,6 +389,43 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatch(
     let _ = Arc::into_raw(context);
 }
 
+/// 处理批量数据（零拷贝版本，使用 DirectByteBuffer）
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatchDirect(
+    mut env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+    buffer: jni::objects::JByteBuffer,
+    offset: jint,
+    length: jint,
+) {
+    if ptr == 0 || buffer.is_null() { return; }
+    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let (events, cb) = {
+            let mut engine = context.lock.write().unwrap();
+            
+            // 获取 DirectBuffer 地址
+            let address = env.get_direct_buffer_address(&buffer);
+            let capacity = env.get_direct_buffer_capacity(&buffer);
+            
+            if let (Ok(addr), Ok(cap)) = (address, capacity) {
+                let start = offset as usize;
+                let len = length as usize;
+                if start < cap && (start + len) <= cap {
+                    let bytes = unsafe { std::slice::from_raw_parts(addr.add(start), len) };
+                    engine.process_bytes(bytes);
+                }
+            }
+            
+            (engine.take_events(), engine.state.java_callback_obj.clone())
+        };
+        flush_events_to_java(&mut env, &cb, events);
+        render_thread::request_render();
+    }));
+    let _ = Arc::into_raw(context);
+}
+
 /// 处理 Unicode 码点
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_processCodePoint(
@@ -465,6 +502,13 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_startIoThread(
         .name("Engine".to_string())
         .spawn(move || {
             let context = context_thread;
+            
+            // 【性能优化】提升线程优先级 (API 36 兼容)
+            // 设置为 THREAD_PRIORITY_URGENT_DISPLAY (-8)，确保在高吞吐量编译时解析不卡顿
+            unsafe {
+                libc::setpriority(libc::PRIO_PROCESS, 0, -8);
+            }
+
             let thread_name = std::ffi::CString::new("Engine").unwrap();
             unsafe {
                 libc::prctl(libc::PR_SET_NAME, thread_name.as_ptr(), 0, 0, 0);
@@ -1516,6 +1560,33 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_nativeWrite(
         let end = (offset + count) as usize;
         if start < bytes.len() && end <= bytes.len() {
             return crate::pty::write_to_fd(fd, &bytes[start..end]);
+        }
+    }
+    -1
+}
+
+/// 写入数据到 FD（零拷贝版本，使用 DirectByteBuffer）
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_com_termux_terminal_JNI_nativeWriteDirect(
+    env: JNIEnv,
+    _class: JClass,
+    fd: jint,
+    buffer: jni::objects::JByteBuffer,
+    offset: jint,
+    count: jint,
+) -> jint {
+    if buffer.is_null() { return -1; }
+    
+    // 获取 DirectBuffer 地址
+    let address = env.get_direct_buffer_address(&buffer);
+    let capacity = env.get_direct_buffer_capacity(&buffer);
+    
+    if let (Ok(addr), Ok(cap)) = (address, capacity) {
+        let start = offset as usize;
+        let len = count as usize;
+        if start < cap && (start + len) <= cap {
+            let bytes = unsafe { std::slice::from_raw_parts(addr.add(start), len) };
+            return crate::pty::write_to_fd(fd, bytes);
         }
     }
     -1

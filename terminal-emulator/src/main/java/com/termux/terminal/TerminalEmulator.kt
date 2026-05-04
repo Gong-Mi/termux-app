@@ -90,7 +90,25 @@ class TerminalEmulator(
 
     // --- 数据输入 ---
     fun append(batch: ByteArray, length: Int) {
+        if (mEnginePtr == 0L) return
         RustTerminal.processBatch(mEnginePtr, batch, length)
+    }
+
+    /**
+     * 批量追加数据（零拷贝版本）
+     * 必须传入 DirectByteBuffer 以获得最佳性能。
+     */
+    fun append(buffer: java.nio.ByteBuffer, length: Int) {
+        if (mEnginePtr == 0L) return
+        if (buffer.isDirect) {
+            RustTerminal.processBatchDirect(mEnginePtr, buffer, buffer.position(), length)
+            buffer.position(buffer.position() + length)
+        } else {
+            // 回退到普通拷贝路径
+            val bytes = ByteArray(length)
+            buffer.get(bytes)
+            append(bytes, length)
+        }
     }
 
     fun processCodePoint(codePoint: Int) {

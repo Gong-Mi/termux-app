@@ -37,6 +37,9 @@ object RustTerminal {
     external fun processBatch(enginePtr: Long, batch: ByteArray, length: Int)
 
     @JvmStatic
+    external fun processBatchDirect(enginePtr: Long, buffer: java.nio.ByteBuffer, offset: Int, length: Int)
+
+    @JvmStatic
     external fun processCodePoint(enginePtr: Long, codePoint: Int)
 
     // --- 尺寸调整 ---

@@ -21,6 +21,13 @@ abstract class TerminalOutput {
     /** Write bytes to the terminal client. */
     abstract fun write(data: ByteArray, offset: Int, count: Int)
 
+    /** Write bytes to the terminal client (Zero-Copy version). */
+    open fun write(buffer: java.nio.ByteBuffer, count: Int) {
+        val bytes = ByteArray(count)
+        buffer.get(bytes)
+        write(bytes, 0, count)
+    }
+
     /** Write bytes to the terminal client (convenience method). */
     open fun write(data: ByteArray) {
         if (data == null) return

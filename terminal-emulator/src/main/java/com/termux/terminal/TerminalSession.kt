@@ -166,6 +166,19 @@ class TerminalSession(
         }
     }
 
+    /** Write data to the shell process natively (Zero-Copy version). */
+    override fun write(buffer: java.nio.ByteBuffer, count: Int) {
+        if (mSessionState != SessionState.READY) return
+        if (mShellPid > 0 && mTerminalFileDescriptor != -1) {
+            if (buffer.isDirect) {
+                JNI.nativeWriteDirect(mTerminalFileDescriptor, buffer, buffer.position(), count)
+                buffer.position(buffer.position() + count)
+            } else {
+                super.write(buffer, count)
+            }
+        }
+    }
+
     /** Write the Unicode code point to the terminal encoded in UTF-8. */
     fun writeCodePoint(prependEscape: Boolean, codePoint: Int) {
         if (codePoint > 1114111 || codePoint in 0xD800..0xDFFF) {

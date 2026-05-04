@@ -130,6 +130,12 @@ fn spawn_render_thread(engine_ptr: jlong) {
     let handle = std::thread::Builder::new()
         .name("VulkanRender".to_string())
         .spawn(move || {
+            // 【性能优化】提升线程优先级 (API 36 兼容)
+            // 设置为 THREAD_PRIORITY_URGENT_DISPLAY (-8)，确保渲染在系统高压下依然流畅
+            unsafe {
+                libc::setpriority(libc::PRIO_PROCESS, 0, -8);
+            }
+
             android_log(LogPriority::INFO, "Render thread started");
 
             let mut frame_count: u64 = 0;
