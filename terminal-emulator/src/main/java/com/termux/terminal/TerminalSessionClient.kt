@@ -68,4 +68,7 @@ interface TerminalSessionClient {
 
     /** Report title change (convenience method). */
     fun reportTitleChange(title: String?) {}
+
+    /** Notify that the session list has been updated. */
+    fun termuxSessionListNotifyUpdated() {}
 }
