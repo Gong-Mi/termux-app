@@ -92,6 +92,8 @@ fn ash_format_to_skia_format(fmt: ash_vk::Format) -> skia_safe::gpu::vk::Format 
         ash_vk::Format::R8G8B8A8_SRGB => skia_safe::gpu::vk::Format::R8G8B8A8_SRGB,
         ash_vk::Format::B8G8R8A8_SRGB => skia_safe::gpu::vk::Format::B8G8R8A8_SRGB,
         ash_vk::Format::A8B8G8R8_UNORM_PACK32 => skia_safe::gpu::vk::Format::A8B8G8R8_UNORM_PACK32,
+        ash_vk::Format::A2B10G10R10_UNORM_PACK32 => skia_safe::gpu::vk::Format::A2B10G10R10_UNORM_PACK32,
+        ash_vk::Format::A2R10G10B10_UNORM_PACK32 => skia_safe::gpu::vk::Format::A2R10G10B10_UNORM_PACK32,
         ash_vk::Format::R5G6B5_UNORM_PACK16 => skia_safe::gpu::vk::Format::R5G6B5_UNORM_PACK16,
         ash_vk::Format::A1R5G5B5_UNORM_PACK16 => skia_safe::gpu::vk::Format::A1R5G5B5_UNORM_PACK16,
         ash_vk::Format::R16G16B16A16_SFLOAT => skia_safe::gpu::vk::Format::R16G16B16A16_SFLOAT,
@@ -667,6 +669,8 @@ impl VulkanContext {
         let color_type = match self.skia_format {
             skia_safe::gpu::vk::Format::B8G8R8A8_UNORM | skia_safe::gpu::vk::Format::B8G8R8A8_SRGB => ColorType::BGRA8888,
             skia_safe::gpu::vk::Format::A2B10G10R10_UNORM_PACK32 => ColorType::RGBA1010102,
+            skia_safe::gpu::vk::Format::A2R10G10B10_UNORM_PACK32 => ColorType::BGRA1010102,
+            skia_safe::gpu::vk::Format::R16G16B16A16_SFLOAT => ColorType::RGBAF16,
             _ => ColorType::RGBA8888,
         };
 

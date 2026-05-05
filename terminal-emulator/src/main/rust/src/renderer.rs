@@ -12,6 +12,7 @@ pub struct RenderFrame {
     pub rows: usize,
     pub cols: usize,
     pub palette: [u32; NUM_INDEXED_COLORS],
+    pub palette_4f: [skia_safe::Color4f; NUM_INDEXED_COLORS],
     pub use_alternate_buffer: bool,
     pub cursor_x: i32,
     pub cursor_y: i32,
@@ -52,6 +53,7 @@ impl RenderFrame {
             rows,
             cols,
             palette: state.colors.current_colors,
+            palette_4f: state.colors.current_colors_4f,
             use_alternate_buffer: state.use_alternate_buffer,
             cursor_x: state.cursor.x as i32,
             cursor_y: state.cursor.y as i32,
@@ -406,12 +408,8 @@ impl TerminalRenderer {
     }
 
     #[inline]
-    fn apply_dim(color: u32) -> u32 {
-        // 2/3 亮度淡化（与 Java 一致）
-        let r = (((color >> 16) & 0xFF) as u32 * 2 / 3).min(255);
-        let g = (((color >> 8) & 0xFF) as u32 * 2 / 3).min(255);
-        let b = ((color & 0xFF) as u32 * 2 / 3).min(255);
-        (color & 0xFF000000) | (r << 16) | (g << 8) | b
+    fn apply_dim_4f(color: skia_safe::Color4f) -> skia_safe::Color4f {
+        skia_safe::Color4f::new(color.r * 2.0 / 3.0, color.g * 2.0 / 3.0, color.b * 2.0 / 3.0, color.a)
     }
 
     #[inline]
@@ -428,14 +426,15 @@ impl TerminalRenderer {
     ) {
         let state = &engine.state;
         let palette = &state.colors.current_colors;
+        let palette_4f = &state.colors.current_colors_4f;
         let screen = if state.use_alternate_buffer { &state.alt_screen } else { &state.main_screen };
 
         canvas.save();
         canvas.scale((scale, scale));
 
         // 背景清屏
-        let bg_color = palette[257];
-        canvas.clear(Color::new(bg_color));
+        let bg_color_4f = palette_4f[257];
+        canvas.clear(bg_color_4f);
 
         canvas.translate((0.0, -scroll_offset));
 
@@ -532,6 +531,7 @@ impl TerminalRenderer {
                         run_has_non_ascii,
                         style,
                         palette,
+                        palette_4f,
                         global_reverse,
                         sel,
                         r as i32,
@@ -544,8 +544,8 @@ impl TerminalRenderer {
         if state.cursor_enabled {
             let cursor = &state.cursor;
             if cursor.should_be_visible(state.cursor_enabled) {
-                let cursor_color = palette[COLOR_INDEX_CURSOR];
-                self.cursor_paint.set_color(Color::new(cursor_color));
+                let cursor_color_4f = palette_4f[COLOR_INDEX_CURSOR];
+                self.cursor_paint.set_color4f(cursor_color_4f, None);
 
                 let cx = cursor.x as f32 * self.font_width;
                 let cy = (cursor.y as f32 - top_row as f32) * self.font_height;
@@ -700,6 +700,7 @@ impl TerminalRenderer {
                         run_has_non_ascii,
                         style,
                         palette,
+                        &frame.palette_4f,
                         global_reverse,
                         sel,
                         r as i32,
@@ -710,8 +711,8 @@ impl TerminalRenderer {
 
         // 绘制光标
         if frame.cursor_enabled {
-            let cursor_color = palette[COLOR_INDEX_CURSOR];
-            self.cursor_paint.set_color(Color::new(cursor_color));
+            let cursor_color_4f = frame.palette_4f[COLOR_INDEX_CURSOR];
+            self.cursor_paint.set_color4f(cursor_color_4f, None);
 
             let cx = frame.cursor_x as f32 * self.font_width;
             let cy = (frame.cursor_y as f32 - frame.top_row as f32) * self.font_height;
@@ -757,7 +758,8 @@ impl TerminalRenderer {
         _measured_width: f32,
         _has_non_ascii: bool,
         style: u64,
-        palette: &[u32; NUM_INDEXED_COLORS],
+        _palette: &[u32; NUM_INDEXED_COLORS],
+        palette_4f: &[skia_safe::Color4f; NUM_INDEXED_COLORS],
         global_reverse: bool,
         is_selected: bool,
         _row: i32,
@@ -794,35 +796,34 @@ impl TerminalRenderer {
         }
 
         // 解析前景色：真彩色直接使用，索引色查调色板
-        let mut fg_color_val: u32;
+        let mut fg_color_4f: skia_safe::Color4f;
         if fg_tc {
-            fg_color_val = fg_idx as u32;  // decode_fore_color already returns 0xffRRGGBB
+            fg_color_4f = skia_safe::Color4f::from(skia_safe::Color::new(fg_idx as u32));
         } else {
-            fg_color_val = if fg_idx < 259 { palette[fg_idx] } else { palette[256] };
+            fg_color_4f = if fg_idx < 259 { palette_4f[fg_idx] } else { palette_4f[256] };
         }
 
         // Dim 效果
         if (effect & EFFECT_DIM) != 0 {
-            fg_color_val = Self::apply_dim(fg_color_val);
+            fg_color_4f = Self::apply_dim_4f(fg_color_4f);
         }
 
         // 解析背景色：真彩色直接使用，索引色查调色板
-        let bg_color_val: u32;
+        let bg_color_4f: skia_safe::Color4f;
         let has_bg = if bg_tc {
-            bg_color_val = bg_idx as u32;
+            bg_color_4f = skia_safe::Color4f::from(skia_safe::Color::new(bg_idx as u32));
             true  // Truecolor always has a background
         } else {
-            bg_color_val = if bg_idx < 259 { palette[bg_idx] } else { palette[257] };
+            bg_color_4f = if bg_idx < 259 { palette_4f[bg_idx] } else { palette_4f[257] };
             bg_idx != 257  // 257 = default background, don't draw
         };
         if has_bg {
-            self.bg_paint.set_color(Color::new(bg_color_val));
+            self.bg_paint.set_color4f(bg_color_4f, None);
             canvas.draw_rect(Rect::from_xywh(x, y_base - self.font_height, expected_width, self.font_height), &self.bg_paint);
         }
 
         let italic = (effect & EFFECT_ITALIC) != 0;
-        let fg_color = Color::new(fg_color_val);
-        self.paint.set_color(fg_color);
+        self.paint.set_color4f(fg_color_4f, None);
 
         let mut current_x = x;
         let y_adjusted = y_base + self.font_cache.font_ascent * 0.15;
@@ -849,7 +850,7 @@ impl TerminalRenderer {
 
                 // 绘制块元素
                 let logic_w = char_wc_width(ch as u32) as f32 * self.font_width;
-                self.draw_block_char(canvas, ch, current_x, y_base, logic_w, self.font_height, fg_color_val, bg_color_val);
+                self.draw_block_char(canvas, ch, current_x, y_base, logic_w, self.font_height, fg_color_4f, bg_color_4f);
 
                 current_x += logic_w;
                 continue;
@@ -888,14 +889,14 @@ impl TerminalRenderer {
         // 下划线
         if (effect & EFFECT_UNDERLINE) != 0 {
             let underline_y = y_base - 2.0;
-            self.underline_paint.set_color(fg_color);
+            self.underline_paint.set_color4f(fg_color_4f, None);
             canvas.draw_line((x, underline_y), (x + expected_width, underline_y), &self.underline_paint);
         }
 
         // 删除线
         if (effect & EFFECT_STRIKETHROUGH) != 0 {
             let strike_y = y_base - self.font_height * 0.5;
-            self.strikethrough_paint.set_color(fg_color);
+            self.strikethrough_paint.set_color4f(fg_color_4f, None);
             canvas.draw_line((x, strike_y), (x + expected_width, strike_y), &self.strikethrough_paint);
         }
     }
@@ -927,8 +928,8 @@ impl TerminalRenderer {
         y_base: f32,
         cell_w: f32,
         cell_h: f32,
-        fg_color: u32,
-        bg_color: u32,
+        fg_color: skia_safe::Color4f,
+        bg_color: skia_safe::Color4f,
     ) {
         let y_top = y_base - cell_h;
 
@@ -958,7 +959,7 @@ impl TerminalRenderer {
                 (x + half_w,   y_top + half_h, half_w, half_h, (q_mask & 0b1000) != 0), // BR
             ];
             for (qx, qy, qw, qh, fill) in quads {
-                self.bg_paint.set_color(Color::new(if fill { fg_color } else { bg_color }));
+                self.bg_paint.set_color4f(if fill { fg_color } else { bg_color }, None);
                 canvas.draw_rect(Rect::from_xywh(qx, qy, qw, qh), &self.bg_paint);
             }
             return;
@@ -966,7 +967,7 @@ impl TerminalRenderer {
 
         // === U+2588: Full Block ===
         if ch as u32 == 0x2588 {
-            self.bg_paint.set_color(Color::new(fg_color));
+            self.bg_paint.set_color4f(fg_color, None);
             canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, cell_h), &self.bg_paint);
             return;
         }
@@ -974,17 +975,17 @@ impl TerminalRenderer {
         // === U+2580 / U+2584: 半高块 ===
         if ch as u32 == 0x2580 {
             // ▀ UPPER HALF
-            self.bg_paint.set_color(Color::new(fg_color));
+            self.bg_paint.set_color4f(fg_color, None);
             canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, cell_h / 2.0), &self.bg_paint);
-            self.bg_paint.set_color(Color::new(bg_color));
+            self.bg_paint.set_color4f(bg_color, None);
             canvas.draw_rect(Rect::from_xywh(x, y_top + cell_h / 2.0, cell_w, cell_h / 2.0), &self.bg_paint);
             return;
         }
         if ch as u32 == 0x2584 {
             // ▄ LOWER HALF
-            self.bg_paint.set_color(Color::new(bg_color));
+            self.bg_paint.set_color4f(bg_color, None);
             canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, cell_h / 2.0), &self.bg_paint);
-            self.bg_paint.set_color(Color::new(fg_color));
+            self.bg_paint.set_color4f(fg_color, None);
             canvas.draw_rect(Rect::from_xywh(x, y_top + cell_h / 2.0, cell_w, cell_h / 2.0), &self.bg_paint);
             return;
         }
@@ -992,17 +993,17 @@ impl TerminalRenderer {
         // === U+258C / U+2590: 半宽块 ===
         if ch as u32 == 0x258C {
             // ▌ LEFT HALF
-            self.bg_paint.set_color(Color::new(fg_color));
+            self.bg_paint.set_color4f(fg_color, None);
             canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w / 2.0, cell_h), &self.bg_paint);
-            self.bg_paint.set_color(Color::new(bg_color));
+            self.bg_paint.set_color4f(bg_color, None);
             canvas.draw_rect(Rect::from_xywh(x + cell_w / 2.0, y_top, cell_w / 2.0, cell_h), &self.bg_paint);
             return;
         }
         if ch as u32 == 0x2590 {
             // ▐ RIGHT HALF
-            self.bg_paint.set_color(Color::new(bg_color));
+            self.bg_paint.set_color4f(bg_color, None);
             canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w / 2.0, cell_h), &self.bg_paint);
-            self.bg_paint.set_color(Color::new(fg_color));
+            self.bg_paint.set_color4f(fg_color, None);
             canvas.draw_rect(Rect::from_xywh(x + cell_w / 2.0, y_top, cell_w / 2.0, cell_h), &self.bg_paint);
             return;
         }
@@ -1019,9 +1020,9 @@ impl TerminalRenderer {
             _ => None,
         } {
             let fill_w = cell_w * n as f32 / 8.0;
-            self.bg_paint.set_color(Color::new(fg_color));
+            self.bg_paint.set_color4f(fg_color, None);
             canvas.draw_rect(Rect::from_xywh(x, y_top, fill_w, cell_h), &self.bg_paint);
-            self.bg_paint.set_color(Color::new(bg_color));
+            self.bg_paint.set_color4f(bg_color, None);
             canvas.draw_rect(Rect::from_xywh(x + fill_w, y_top, cell_w - fill_w, cell_h), &self.bg_paint);
             return;
         }
@@ -1033,7 +1034,7 @@ impl TerminalRenderer {
                 0x2592 => 0.50, // ▒ Medium
                 _      => 0.75, // ▓ Dark
             };
-            self.bg_paint.set_color(Color::new(bg_color));
+            self.bg_paint.set_color4f(bg_color, None);
             canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, cell_h), &self.bg_paint);
             self.draw_shade_pattern(canvas, x, y_top, cell_w, cell_h, fg_color, density);
             return;
@@ -1042,20 +1043,20 @@ impl TerminalRenderer {
         // === U+2500-U+257F: Box Drawing ===
         // 轻量水平和垂直线
         if ch as u32 == 0x2500 {
-            self.bg_paint.set_color(Color::new(fg_color));
+            self.bg_paint.set_color4f(fg_color, None);
             let mid_y = y_top + cell_h / 2.0;
             canvas.draw_rect(Rect::from_xywh(x, mid_y - 0.5, cell_w, 1.0), &self.bg_paint);
             return;
         }
         if ch as u32 == 0x2502 {
-            self.bg_paint.set_color(Color::new(fg_color));
+            self.bg_paint.set_color4f(fg_color, None);
             let mid_x = x + cell_w / 2.0;
             canvas.draw_rect(Rect::from_xywh(mid_x - 0.5, y_top, 1.0, cell_h), &self.bg_paint);
             return;
         }
         // 轻量角块
         if matches!(ch as u32, 0x250C | 0x2510 | 0x2514 | 0x2518) {
-            self.bg_paint.set_color(Color::new(fg_color));
+            self.bg_paint.set_color4f(fg_color, None);
             let mid_x = x + cell_w / 2.0;
             let mid_y = y_top + cell_h / 2.0;
             match ch as u32 {
@@ -1086,8 +1087,8 @@ impl TerminalRenderer {
     }
 
     /// 绘制 shade 图案（使用小矩形模拟密度）
-    fn draw_shade_pattern(&mut self, canvas: &Canvas, x: f32, y: f32, w: f32, h: f32, color: u32, density: f32) {
-        self.bg_paint.set_color(Color::new(color));
+    fn draw_shade_pattern(&mut self, canvas: &Canvas, x: f32, y: f32, w: f32, h: f32, color: skia_safe::Color4f, density: f32) {
+        self.bg_paint.set_color4f(color, None);
         let step = 2.0;
         let mut row = 0.0f32;
         // 使用棋盘格模式模拟 shade
