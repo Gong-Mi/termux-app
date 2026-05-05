@@ -116,7 +116,7 @@ impl TerminalRow {
     }
 }
 
-fn local_get_width(ucs: u32) -> usize {
+pub fn local_get_width(ucs: u32) -> usize {
     crate::wcwidth::wcwidth(ucs)
 }
 

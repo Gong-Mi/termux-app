@@ -31,13 +31,6 @@ impl TerminalEngine {
         let mut handler = PerformHandler { state: &mut self.state, events: &mut self.events };
         self.parser.advance(&mut handler, data);
         self.state.sync_screen_to_flat_buffer();
-        if !self.state.shared_buffer_ptr.0.is_null() {
-            unsafe {
-                if let Some(flat) = &self.state.flat_buffer {
-                    flat.sync_to_shared(self.state.shared_buffer_ptr.0);
-                }
-            }
-        }
         self.events.push(TerminalEvent::ScreenUpdated);
     }
 
