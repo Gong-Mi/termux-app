@@ -685,39 +685,17 @@ impl ScreenState {
         
         for r in 0..rows {
             let row_data = screen.get_row(r as i64);
-            let mut current_col = 0;
-            let mut char_idx = 0;
+            let row_len = row_data.text.len();
             
-            while current_col < cols && char_idx < row_data.text.len() {
-                let c = row_data.text[char_idx];
-                let style = row_data.styles[char_idx];
-                let width = crate::terminal::screen::local_get_width(c as u32);
-                
-                let flat_idx = r * cols + current_col;
-                flat.text_data[flat_idx] = c as u16;
-                flat.style_data[flat_idx] = style;
-                
-                if width > 1 {
-                    for i in 1..width {
-                        if current_col + i < cols {
-                            let next_flat_idx = r * cols + current_col + i;
-                            flat.text_data[next_flat_idx] = 0; // 标记为宽字符占位
-                            flat.style_data[next_flat_idx] = style;
-                        }
-                    }
-                    current_col += width;
+            for c_idx in 0..cols {
+                let flat_idx = r * cols + c_idx;
+                if c_idx < row_len {
+                    flat.text_data[flat_idx] = row_data.text[c_idx] as u16;
+                    flat.style_data[flat_idx] = row_data.styles[c_idx];
                 } else {
-                    current_col += 1;
+                    flat.text_data[flat_idx] = ' ' as u16;
+                    flat.style_data[flat_idx] = STYLE_NORMAL;
                 }
-                char_idx += 1;
-            }
-            
-            // 填充剩余列
-            while current_col < cols {
-                let flat_idx = r * cols + current_col;
-                flat.text_data[flat_idx] = ' ' as u16;
-                flat.style_data[flat_idx] = STYLE_NORMAL;
-                current_col += 1;
             }
         }
 
