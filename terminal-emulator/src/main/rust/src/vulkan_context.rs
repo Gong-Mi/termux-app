@@ -675,7 +675,7 @@ impl VulkanContext {
             &render_target,
             skia_safe::gpu::SurfaceOrigin::TopLeft,
             color_type,
-            None,
+            Some(skia_safe::ColorSpace::new_srgb()),
             None,
         )
     }

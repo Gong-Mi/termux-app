@@ -36,6 +36,8 @@ fn test_physical_device_format_support() {
         (vk::Format::R8G8B8A8_UNORM, "R8G8B8A8_UNORM"),
         (vk::Format::B8G8R8A8_UNORM, "B8G8R8A8_UNORM"),
         (vk::Format::A8B8G8R8_UNORM_PACK32, "A8B8G8R8_UNORM_PACK32"),
+        (vk::Format::A2B10G10R10_UNORM_PACK32, "A2B10G10R10_UNORM_PACK32"),
+        (vk::Format::A2R10G10B10_UNORM_PACK32, "A2R10G10B10_UNORM_PACK32"),
         (vk::Format::R8G8B8A8_SRGB, "R8G8B8A8_SRGB"),
         (vk::Format::B8G8R8A8_SRGB, "B8G8R8A8_SRGB"),
         (vk::Format::R5G6B5_UNORM_PACK16, "R5G6B5_UNORM_PACK16"),
