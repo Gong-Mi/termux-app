@@ -5,6 +5,7 @@ import java.io.FileOutputStream
 import java.net.URI
 import java.security.DigestInputStream
 import java.security.MessageDigest
+import com.android.build.gradle.AppExtension
 
 plugins {
     id("com.android.application")
@@ -13,16 +14,17 @@ plugins {
 val packageVariant = System.getenv("TERMUX_PACKAGE_VARIANT") ?: "apt-android-7"
 
 // 获取 git commit 短哈希，用于版本追溯
-fun getGitHash(): String {
+fun fetchGitHash(): String {
     return try {
-        Runtime.getRuntime().exec(arrayOf("git", "rev-parse", "--short", "HEAD"))
-            .inputStream.bufferedReader().readText().trim()
+        providers.exec {
+            commandLine("git", "rev-parse", "--short", "HEAD")
+        }.standardOutput.asText.get().trim()
     } catch (e: Exception) {
         "unknown"
     }
 }
 
-val gitHash = getGitHash()
+val gitHash = fetchGitHash()
 val baseVersionName = "0.118.0"
 val appVersionName = System.getenv("TERMUX_APP_VERSION_NAME") ?: "$baseVersionName+$gitHash"
 val apkVersionTag = System.getenv("TERMUX_APK_VERSION_TAG") ?: "v$appVersionName-$packageVariant"
@@ -100,17 +102,18 @@ android {
     lint {
         warningsAsErrors = true
     }
+}
 
-    applicationVariants.all {
-        outputs.all {
-            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
-            val abi = output.getFilter(com.android.build.OutputFile.ABI) ?: "universal"
-            val buildType = variant.buildType.name
-            val tag = System.getenv("TERMUX_APK_VERSION_TAG") ?: "v${android.defaultConfig.versionName}-$packageVariant-$buildType"
-            output.outputFileName = "termux-app_${tag}_${abi}.apk"
+    androidComponents {
+        onVariants { variant ->
+            val buildTypeName = variant.buildType ?: "debug"
+            variant.outputs.forEach { output ->
+                val abi = output.filters.find { it.filterType == com.android.build.api.variant.FilterConfiguration.FilterType.ABI }?.identifier ?: "universal"
+                val tag = System.getenv("TERMUX_APK_VERSION_TAG") ?: "v$appVersionName-$packageVariant-$buildTypeName"
+                (output as com.android.build.api.variant.impl.VariantOutputImpl).outputFileName.set("termux-app_${tag}_${abi}.apk")
+            }
         }
     }
-}
 
 // Bootstrap zip is embedded in libtermux_rust.so via build.rs + include_bytes!().
 // The legacy C ndkBuild and libtermux-bootstrap.so have been removed.
@@ -183,8 +186,8 @@ tasks.register("downloadBootstraps") {
                     if (readBytes < 0) break
                     digest.update(buffer, 0, readBytes)
                 }
-                var checksum = BigInteger(1, digest.digest()).toString(16)
-                while (checksum.length < 64) { checksum = "0$checksum" }
+                input.close()
+                val checksum = digest.digest().joinToString("") { "%02x".format(it) }
                 if (checksum == expectedChecksum) {
                     return
                 } else {
@@ -197,62 +200,23 @@ tasks.register("downloadBootstraps") {
             println("Downloading $remoteUrl ...")
 
             file.parentFile.mkdirs()
-            val out = BufferedOutputStream(FileOutputStream(file))
+            val outputStream = BufferedOutputStream(FileOutputStream(file))
+
             val connection = URI(remoteUrl).toURL().openConnection()
-            val digestStream = DigestInputStream(connection.inputStream, digest)
-            digestStream.transferTo(out)
-            out.close()
-
-            var checksum = BigInteger(1, digest.digest()).toString(16)
-            while (checksum.length < 64) { checksum = "0$checksum" }
-            if (checksum != expectedChecksum) {
-                file.delete()
-                throw GradleException("Wrong checksum for $remoteUrl:\n Expected: $expectedChecksum\n Actual:   $checksum")
-            }
-        }
-
-        fun downloadProot(localDir: String, arch: String, expectedChecksum: String) {
-            val digest = MessageDigest.getInstance("SHA-256")
-            val file = File(projectDir, "src/main/jniLibs/$localDir/libproot-loader.so")
-
-            if (file.exists()) {
-                val buffer = ByteArray(8192)
-                val input = FileInputStream(file)
-                while (true) {
-                    val readBytes = input.read(buffer)
-                    if (readBytes < 0) break
-                    digest.update(buffer, 0, readBytes)
+            connection.setRequestProperty("User-Agent", "Mozilla/5.0")
+            val digestStream = DigestInputStream(connection.getInputStream(), digest)
+            digestStream.use { input ->
+                outputStream.use { output ->
+                    input.copyTo(output)
                 }
-                var checksum = BigInteger(1, digest.digest()).toString(16)
-                while (checksum.length < 64) { checksum = "0$checksum" }
-                if (checksum == expectedChecksum) return
-                println("Deleting old proot loader with wrong hash: src/main/jniLibs/$localDir/libproot-loader.so")
-                file.delete()
             }
 
-            val prootTag = "proot-2026.01.22-r1"
-            val prootVersion = "5.1.107-70"
-            val remoteUrl = "https://github.com/termux-play-store/termux-packages/releases/download/$prootTag/libproot-loader-$arch-$prootVersion.so"
-            println("Downloading $remoteUrl ...")
-
-            file.parentFile.mkdirs()
-            val out = BufferedOutputStream(FileOutputStream(file))
-            val connection = URI(remoteUrl).toURL().openConnection()
-            val digestStream = DigestInputStream(connection.inputStream, digest)
-            digestStream.transferTo(out)
-            out.close()
-
-            var checksum = BigInteger(1, digest.digest()).toString(16)
-            while (checksum.length < 64) { checksum = "0$checksum" }
+            val checksum = digest.digest().joinToString("") { "%02x".format(it) }
             if (checksum != expectedChecksum) {
                 file.delete()
-                throw GradleException("Wrong checksum for $remoteUrl:\n Expected: $expectedChecksum\n Actual:   $checksum")
+                throw GradleException("Wrong checksum for $remoteUrl: expected: $expectedChecksum, actual: $checksum")
             }
         }
-
-        downloadProot("armeabi-v7a", "arm", "09729047155df0c1a6b55c265ff4e272107775961d7efaff06bdd7cf37904050")
-        downloadProot("arm64-v8a", "aarch64", "f7e3211e4c210c2a39a1f22b7f38666d99aee172fd009c0d19b84108cf20bb42")
-        downloadProot("x86_64", "x86_64", "86e22d456255417e1d4ee874986571578ff26675ae2e372458e0d87f26454c63")
 
         if (variant == "apt-android-7") {
             val version = "2026.03.01-r1+apt.android-7"
