@@ -4,6 +4,8 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.pm.ActivityInfo;
+import android.os.Handler;
+import android.os.Looper;
 import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
@@ -67,6 +69,8 @@ import java.io.IOException;
  * about memory leaks.
  */
 public final class TermuxActivity extends AppCompatActivity implements ServiceConnection {
+
+    public final Handler mMainThreadHandler = new Handler(Looper.getMainLooper());
 
     public static final String ACTION_RELOAD_STYLE = "com.termux.app.reload_style";
     public static final String ACTION_REQUEST_PERMISSIONS = "com.termux.app.request_storage_permissions";
