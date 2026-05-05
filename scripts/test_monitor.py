@@ -3,7 +3,7 @@ import re
 import sys
 
 def run_tests():
-    cmd = ["cargo", "test", "--", "--test-threads=1"]
+    cmd = ["cargo", "test", "--all-features", "--release", "--", "--test-threads=1"]
     print(f"Executing: {' '.join(cmd)}")
     print("-" * 60)
 
@@ -16,7 +16,7 @@ def run_tests():
         cmd,
         cwd=rust_dir,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stderr=subprocess.STDOUT,  # 合并输出流以保持顺序
         text=True,
         bufsize=1
     )
@@ -25,34 +25,31 @@ def run_tests():
     failed_tests = []
     warnings = []
     
-    # 实时处理 stderr (通常包含编译警告)
-    def handle_output():
-        nonlocal passed_count
+    # 实时处理合并后的输出流
+    for line in process.stdout:
+        line = line.strip()
+        if not line: continue
         
-        # 合并读取 stdout 和 stderr
-        # 简单起见，这里按行处理
-        for line in process.stderr:
-            line = line.strip()
-            if "warning:" in line:
-                warnings.append(line)
-                print(f"\033[93m[WARN]\033[0m {line}")
-            elif "error:" in line:
-                print(f"\033[91m[ERR ]\033[0m {line}")
-
-        for line in process.stdout:
-            line = line.strip()
-            if line.startswith("test ") and " ... ok" in line:
-                passed_count += 1
-                if passed_count % 50 == 0:
-                    print(f"\033[92m[PASS]\033[0m 已通过 {passed_count} 个测试...")
-            elif " ... FAILED" in line:
-                test_name = line.split()[1]
+        if "warning:" in line:
+            warnings.append(line)
+            print(f"\033[93m[WARN]\033[0m {line}")
+        elif "error:" in line:
+            print(f"\033[91m[ERR ]\033[0m {line}")
+        elif line.startswith("test ") and " ... ok" in line:
+            passed_count += 1
+            if passed_count % 50 == 0:
+                print(f"\033[92m[PASS]\033[0m 已通过 {passed_count} 个测试...")
+        elif " ... FAILED" in line:
+            parts = line.split()
+            if len(parts) > 1:
+                test_name = parts[1]
                 failed_tests.append(test_name)
                 print(f"\033[91m[FAIL]\033[0m {test_name}")
-            elif "test result:" in line:
-                print(f"\n\033[1m{line}\033[0m")
+        elif "test result:" in line:
+            print(f"\n\033[1m{line}\033[0m")
+        elif "Running unittests" in line or "Running tests" in line:
+            print(f"\033[36m>>> {line}\033[0m")
 
-    handle_output()
     process.wait()
 
     print("\n" + "="*60)
