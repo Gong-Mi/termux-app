@@ -633,7 +633,7 @@ fn test_nvim_like_sequence() {
 fn test_rapid_decstr_toggle() {
     let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
-    for i in 0..100 {
+    for _i in 0..100 {
         // 启用各种模式
         engine.process_bytes(b"\x1b[?1h\x1b[?6h\x1b[20h\x1b[4h\x1b[?2004h");
 

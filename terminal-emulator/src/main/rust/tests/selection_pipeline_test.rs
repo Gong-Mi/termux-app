@@ -65,7 +65,7 @@ fn test_selection_in_render_frame() {
 /// 测试实际终端场景：不滚动时 (top_row = 0)
 #[test]
 fn test_selection_no_scroll() {
-    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 1000, 8, 16);
+    let engine = TerminalEngine::new(80 as i64, 24 as i64, 1000, 8, 16);
     
     let top_row: i32 = 0;
     let _frame = RenderFrame::from_engine(&engine, 24, 80, top_row);

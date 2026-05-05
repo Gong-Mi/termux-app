@@ -49,7 +49,7 @@ fn test_physical_device_format_support() {
     let mut first_supported = None;
 
     for (fmt, name) in &test_formats {
-        let props2 = vk::FormatProperties2::default();
+        let _props2 = vk::FormatProperties2::default();
         let mut fmt_props = vk::FormatProperties2::default();
         unsafe {
             instance.get_physical_device_format_properties2(pdev, *fmt, &mut fmt_props);

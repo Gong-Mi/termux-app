@@ -23,7 +23,7 @@ mod tests {
         assert_eq!(s.get_row(0).line_wrap, false);
         
         // Trigger reflow: simulate keyboard popup narrowing width to 40
-        let (new_cx, new_cy) = s.resize_with_reflow(40, 12, 0, cx, cy);
+        let (_new_cx, _new_cy) = s.resize_with_reflow(40, 12, 0, cx, cy);
         
         // The prompt is 3 characters. Even in a 40-col screen, it easily fits.
         // It SHOULD NOT wrap.

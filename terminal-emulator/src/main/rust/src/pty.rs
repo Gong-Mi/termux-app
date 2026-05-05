@@ -5,7 +5,8 @@ use nix::unistd::{ForkResult, fork, setsid, chdir};
 use std::ffi::CString;
 use std::io::Read;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "test-helpers")]
+use std::sync::atomic::Ordering;
 use std::collections::HashMap;
 use std::time::Duration;
 use once_cell::sync::Lazy;
@@ -201,7 +202,7 @@ pub fn create_subprocess_with_data(
 
     android_log(LogPriority::INFO, &format!("[TRACE_SESSION] Preparing to exec: {} with argv: {:?}", real_cmd, real_argv));
 
-    let cmd_log = real_cmd.clone();
+    let _cmd_log = real_cmd.clone();
 
     // Read the first 256 bytes of the target file to determine ELF / shebang / plain script.
     let (final_cmd, final_argv) = if let Ok(mut file) = std::fs::File::open(&real_cmd) {

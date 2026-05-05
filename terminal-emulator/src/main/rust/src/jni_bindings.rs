@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 /// JNI 绑定模块
 /// 
 /// 包含所有 Java JNI 接口函数：

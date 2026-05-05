@@ -361,10 +361,10 @@ impl VulkanContext {
                         let name_str = name_cstr.to_str().unwrap_or("");
                         if name_str == "vkCreatePipelineCache" {
                             ORIGINAL_CREATE_PIPELINE_CACHE.store(ptr, Ordering::SeqCst);
-                            hooked_vk_create_pipeline_cache as usize as *const c_void
+                            hooked_vk_create_pipeline_cache as *const () as usize as *const c_void
                         } else if name_str == "vkDestroyPipelineCache" {
                             ORIGINAL_DESTROY_PIPELINE_CACHE.store(ptr, Ordering::SeqCst);
-                            hooked_vk_destroy_pipeline_cache as usize as *const c_void
+                            hooked_vk_destroy_pipeline_cache as *const () as usize as *const c_void
                         } else {
                             ptr as *const c_void
                         }
@@ -731,7 +731,7 @@ impl Drop for VulkanContext {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    
     use ash::vk as ash_vk;
 
     #[test]

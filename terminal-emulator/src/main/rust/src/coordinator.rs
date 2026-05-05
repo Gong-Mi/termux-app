@@ -642,7 +642,7 @@ mod tests {
     fn has_waiting_sessions_false() {
         let coord = SessionCoordinator::new_coordinator();
         let id1 = coord.register_session();
-        let id2 = coord.register_session();
+        let _id2 = coord.register_session();
         coord.try_acquire_pkg_lock(id1);
         assert!(!coord.has_waiting_sessions());
     }

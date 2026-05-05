@@ -1,4 +1,3 @@
-use std::sync::Arc;
 /// Session 协调器单元测试
 
 use termux_rust::coordinator::{SessionCoordinator, SessionState};

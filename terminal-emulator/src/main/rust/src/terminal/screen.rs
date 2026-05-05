@@ -685,14 +685,12 @@ impl Screen {
 
     /// 压缩并修剪缓冲区，移除末尾的空行
     pub fn compact(&mut self) {
-        let mut first_blank = self.rows;
-        for i in (0..self.rows).rev() {
-            let internal_row = self.internal_row(i);
+        for _i in (0..self.rows).rev() {
+            let internal_row = self.internal_row(_i);
             let line = &self.buffer[internal_row];
             let used = line.get_space_used();
             let is_blank = used == 0;
             if !is_blank { break; }
-            first_blank = i;
         }
         
         // 物理缩容逻辑：缓解大吞吐量输出后的内存膨胀

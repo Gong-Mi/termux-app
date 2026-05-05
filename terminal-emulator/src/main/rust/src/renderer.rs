@@ -1089,11 +1089,10 @@ impl TerminalRenderer {
     fn draw_shade_pattern(&mut self, canvas: &Canvas, x: f32, y: f32, w: f32, h: f32, color: u32, density: f32) {
         self.bg_paint.set_color(Color::new(color));
         let step = 2.0;
-        let mut col = 0.0f32;
         let mut row = 0.0f32;
         // 使用棋盘格模式模拟 shade
         while row < h {
-            col = 0.0;
+            let mut col = 0.0f32;
             while col < w {
                 let is_on = ((col / step).floor() as i32 + (row / step).floor() as i32) % 2 == 0;
                 if is_on && (density > 0.4 || (col / step).floor() as i32 % 3 != 0) {

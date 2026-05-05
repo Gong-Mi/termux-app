@@ -97,7 +97,7 @@ fn test_direct_context_create_destroy_stress() {
     let iterations = 20;
 
     let mut durations = Vec::with_capacity(iterations);
-    let mut total_glyph_cache = 0u64;
+    let _total_glyph_cache = 0u64;
 
     for i in 0..iterations {
         let start = Instant::now();

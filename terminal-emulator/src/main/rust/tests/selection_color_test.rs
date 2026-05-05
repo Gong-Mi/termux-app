@@ -7,7 +7,7 @@
 // selected text to become the same color as its background = invisible.
 
 use termux_rust::TerminalEngine;
-use termux_rust::renderer::{TerminalRenderer, RenderFrame, SelectionBounds};
+use termux_rust::renderer::TerminalRenderer;
 use termux_rust::terminal::style::*;
 use termux_rust::terminal::colors::*;
 
@@ -127,9 +127,9 @@ fn test_selection_invisibility_bug_scenario() {
     let bg_tc = (style & STYLE_TRUECOLOR_BG) != 0;
 
     // Simulate the BUG (old behavior): only swap indices, NOT flags
-    let (bug_fg, bug_bg) = TerminalRenderer::reverse_colors(fg as usize, bg as usize);
-    let bug_fg_tc = fg_tc;  // BUG: didn't swap
-    let bug_bg_tc = bg_tc;  // BUG: didn't swap
+    let (_bug_fg, _bug_bg) = TerminalRenderer::reverse_colors(fg as usize, bg as usize);
+    let _bug_fg_tc = fg_tc;  // BUG: didn't swap
+    let _bug_bg_tc = bg_tc;  // BUG: didn't swap
 
     // With the bug: FG would use palette lookup (since bug_fg_tc=false)
     // but bug_fg = bg as usize = 0xFF326496 (huge), so palette lookup fails → default
@@ -138,7 +138,7 @@ fn test_selection_invisibility_bug_scenario() {
     // the palette fallback case.
 
     // Simulate the FIX (new behavior): swap both indices AND flags
-    let (fix_fg, fix_bg) = TerminalRenderer::reverse_colors(fg as usize, bg as usize);
+    let (fix_fg, _fix_bg) = TerminalRenderer::reverse_colors(fg as usize, bg as usize);
     let fix_fg_tc = bg_tc;  // FIXED: swapped
     let fix_bg_tc = fg_tc;  // FIXED: swapped
 
@@ -242,8 +242,8 @@ fn test_default_colors_selection_reversal() {
 
     // Simulate selection reversal
     let (rev_fg, rev_bg) = TerminalRenderer::reverse_colors(fg as usize, bg as usize);
-    let rev_fg_tc = bg_tc;
-    let rev_bg_tc = fg_tc;
+    let _rev_fg_tc = bg_tc;
+    let _rev_bg_tc = fg_tc;
 
     assert_eq!(rev_fg, COLOR_INDEX_BACKGROUND, "Reversed FG should be default BG");
     assert_eq!(rev_bg, COLOR_INDEX_FOREGROUND, "Reversed BG should be default FG");
@@ -256,7 +256,7 @@ fn test_default_colors_selection_reversal() {
 /// distinct foreground and background color values.
 #[test]
 fn test_selection_never_invisible_after_fix() {
-    let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 1000, 10, 20);
+    let _engine = TerminalEngine::new(80 as i64, 24 as i64, 1000, 10, 20);
 
     // Test matrix: all color combinations
     let test_cases = [

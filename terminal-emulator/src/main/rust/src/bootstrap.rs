@@ -357,7 +357,7 @@ mod additional_tests {
 
         let mut buf = Vec::new();
         {
-            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+            let zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
             zip.finish().unwrap();
         }
 

@@ -48,7 +48,7 @@ fn test_quadrant_block_mapping() {
 
     for (codepoint, expected_mask, name) in tests {
         let ch = char::from_u32(codepoint).unwrap();
-        let has_bit = |mask: u8, bit: u8| (expected_mask & bit) != 0;
+        let _has_bit = |_mask: u8, bit: u8| (expected_mask & bit) != 0;
 
         // Verify character properties
         assert!(termux_rust::renderer::is_block_element(ch),
