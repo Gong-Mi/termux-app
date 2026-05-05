@@ -197,12 +197,13 @@ public class TermuxShellUtils {
             workingDirectory = TermuxConstants.HOME_PATH;
         }
 
+        int transcriptRows = new TermuxProperties().getTerminalTranscriptRows();
         return new TerminalSession(
             command.executablePath,
             workingDirectory,
             command.arguments,
             environmentArray,
-            4000,
+            transcriptRows,
             false,
             terminalSessionClient
         );

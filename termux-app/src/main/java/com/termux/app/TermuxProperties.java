@@ -15,7 +15,15 @@ public final class TermuxProperties {
     public static final String EXTRA_KEYS_DEFAULT = "[['ESC',{key: 'DRAWER', popup: 'PASTE'},'SCROLL','HOME','UP','END','PGUP'], ['TAB','CTRL','ALT','LEFT','DOWN','RIGHT','PGDN']]";
     public static final String EXTRA_KEYS_STYLE_DEFAULT = "default";
 
+    public TermuxProperties() {
+        reloadProperties();
+    }
+
     void reloadProperties(TermuxActivity activity) {
+        reloadProperties();
+    }
+
+    private void reloadProperties() {
         properties.clear();
         try {
             for (String subPath : new String[]{".termux/termux.properties", ".config/termux/termux.properties"}) {
@@ -26,7 +34,6 @@ public final class TermuxProperties {
                             properties.load(in);
                         } catch (Exception e) {
                             Log.e(TermuxConstants.LOG_TAG, "Error reading termux properties", e);
-                            activity.showTransientMessage("Cannot read termux.properties - check syntax", true);
                         }
                     }
                 }
@@ -71,6 +78,19 @@ public final class TermuxProperties {
                 yield BellBehaviour.VIBRATE;
             }
         };
+    }
+
+    public int getTerminalTranscriptRows() {
+        String value = properties.getProperty("terminal-transcript-rows");
+        if (value != null) {
+            try {
+                int rows = Integer.parseInt(value.trim());
+                return Math.max(100, Math.min(rows, 200000));
+            } catch (NumberFormatException e) {
+                Log.w(TermuxConstants.LOG_TAG, "Invalid 'terminal-transcript-rows' value: '" + value + "', using default");
+            }
+        }
+        return 2000;
     }
 
 }
