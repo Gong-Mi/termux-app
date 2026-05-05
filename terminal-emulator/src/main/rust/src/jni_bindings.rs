@@ -12,6 +12,7 @@ use jni::sys::{jint, jlong, jbyteArray, jboolean, jintArray, jstring, jfloat};
 use std::sync::{Arc, Mutex};
 use std::os::fd::{FromRawFd, IntoRawFd, AsRawFd};
 use std::io::Read;
+use std::time::Duration;
 
 use crate::utils::{android_log, LogPriority};
 use crate::engine::{TerminalEngine, TerminalContext, TerminalEvent};
@@ -155,9 +156,26 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
             render_thread::request_render(); // 唤醒可能阻塞在等待信号的线程
             
             if let Some(handle) = render_thread::get_render_thread_handle().lock().unwrap().take() {
-                android_log(LogPriority::DEBUG, "nativeSetSurface: Waiting for render thread to join...");
-                let _ = handle.join();
-                android_log(LogPriority::INFO, "nativeSetSurface: Render thread stopped");
+                android_log(LogPriority::DEBUG, "nativeSetSurface: Waiting for render thread to join (max 1500ms)...");
+                
+                // 【关键修复】join 加超时，防止 render thread 卡在 GPU 驱动时阻塞主线程
+                let (tx, rx) = std::sync::mpsc::channel();
+                std::thread::spawn(move || {
+                    let _ = handle.join();
+                    let _ = tx.send(());
+                });
+                
+                match rx.recv_timeout(Duration::from_millis(1500)) {
+                    Ok(()) => {
+                        android_log(LogPriority::INFO, "nativeSetSurface: Render thread stopped");
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                        android_log(LogPriority::WARN, "nativeSetSurface: Render thread join timed out after 1500ms. Thread may be stuck in GPU driver. Proceeding without blocking UI.");
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                        android_log(LogPriority::WARN, "nativeSetSurface: Render thread join channel disconnected.");
+                    }
+                }
             }
 
             // 3. 【关键修复】不销毁 Vulkan 上下文，保持存活等待 surfaceCreated 再次调用。

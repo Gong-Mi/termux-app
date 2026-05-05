@@ -315,6 +315,8 @@ pub struct TerminalRenderer {
     pub font_width: f32,
     pub font_height: f32,
     pub selection: SelectionBounds,
+    /// HDR 图片覆盖层管理（预留接口，当前不绑定具体协议）
+    pub hdr_manager: HdrOverlayManager,
 }
 
 unsafe impl Send for TerminalRenderer {}
@@ -365,6 +367,7 @@ impl TerminalRenderer {
             font_height,
             run_buf: String::with_capacity(256),
             selection: SelectionBounds::default(),
+            hdr_manager: HdrOverlayManager::new(),
         })
     }
 
@@ -746,6 +749,9 @@ impl TerminalRenderer {
         }
 
         canvas.restore();
+
+        // 绘制 HDR 图片覆盖层（预留接口，当前为空实现）
+        self.hdr_manager.draw_overlays(canvas);
     }
 
     fn draw_run_opt(
@@ -1113,6 +1119,157 @@ impl TerminalRenderer {
         let (font, _) = self.font_cache.get_font_for_char(ch, bold, italic);
         let (w, _) = font.measure_str(&ch.to_string(), None);
         w
+    }
+}
+
+// =====================================================================
+// HDR 图片覆盖层接口（预留框架）
+// =====================================================================
+// 为后续 HDR 图片显示预留扩展点。当前不绑定具体终端协议或编码格式，
+// 仅定义渲染侧需要的数据结构、管理器和绘制入口。
+//
+// 背景：终端标准协议（Sixel / Kitty Graphics Protocol 等）目前均无 HDR 扩展。
+// 实际 HDR 内容最可能的来源是：
+//   1. 本地文件解码（AVIF HDR / HEIF / JPEG XL / PNG cICP）
+//   2. 未来可能出现的非标准 Kitty Graphics Protocol 扩展
+//   3. 应用层直接通过 JNI/Rust API 投递 HDR 纹理
+// =====================================================================
+
+/// HDR 电光转换函数（EOTF）与色域组合
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum HdrColorSpace {
+    /// 普通 SDR：sRGB 原色 + sRGB EOTF
+    SdrSrgb,
+    /// Rec.2020 原色 + HLG (Hybrid Log-Gamma，广播 HDR)
+    Rec2020Hlg,
+    /// Rec.2020 原色 + PQ (ST.2084，电影/流媒体 HDR)
+    Rec2020Pq,
+    /// Display-P3 原色 + PQ（Apple / 部分移动设备常用）
+    DisplayP3Pq,
+    /// scRGB：Linear + sRGB 原色，1.0 = 80 nits（Windows/Xbox 风格）
+    ScRgbLinear,
+    // TODO: 未来可扩展 Dolby Vision、Technicolor Advanced HDR 等
+}
+
+impl HdrColorSpace {
+    /// 返回该 HDR 空间建议的 Skia ColorSpace 构造方式（预留）
+    /// TODO: 接入 skia_safe::ColorSpace::new_rgb(...) 或 new_srgb_linear() 等
+    pub fn to_skia_colorspace(&self) -> Option<skia_safe::ColorSpace> {
+        match self {
+            HdrColorSpace::SdrSrgb => Some(skia_safe::ColorSpace::new_srgb()),
+            // 其余 HDR 空间需要 skia_safe::ColorSpace::new_rgb() 构造，
+            // 待明确 Skia 绑定版本是否暴露该 API 后再实现
+            _ => None,
+        }
+    }
+
+    /// 是否属于 HDR（亮度可超过 SDR 100 nits）
+    pub fn is_hdr(&self) -> bool {
+        !matches!(self, HdrColorSpace::SdrSrgb)
+    }
+}
+
+/// 单张 HDR 图片覆盖层描述
+///
+/// 实际 GPU 纹理 / Skia Image 句柄由外部上传模块管理，此处仅保留渲染元数据，
+/// 避免在协议未定型前过早引入具体类型依赖。
+#[derive(Clone, Debug)]
+pub struct HdrImageOverlay {
+    pub id: u64,
+    /// 屏幕像素坐标（已考虑 scale / DPI）
+    pub rect: skia_safe::Rect,
+    pub color_space: HdrColorSpace,
+    /// 最大内容亮度 (nits)，用于 tone-mapping / 亮度钳制
+    pub max_cll: Option<f32>,
+    /// 平均帧亮度 (nits)
+    pub max_fall: Option<f32>,
+    /// 是否可见
+    pub visible: bool,
+    /// 混合模式：通常 SrcOver（半透明）或 Src（不透明）
+    pub blend_mode: skia_safe::BlendMode,
+    // TODO: 后续接入 Skia Image 引用或 Vulkan Texture 句柄
+}
+
+impl Default for HdrImageOverlay {
+    fn default() -> Self {
+        Self {
+            id: 0,
+            rect: skia_safe::Rect::default(),
+            color_space: HdrColorSpace::SdrSrgb,
+            max_cll: None,
+            max_fall: None,
+            visible: true,
+            blend_mode: skia_safe::BlendMode::SrcOver,
+        }
+    }
+}
+
+/// HDR 覆盖层管理器
+///
+/// 负责维护一组待渲染的 HDR 覆盖层，并在每帧绘制结束后将其合成到终端画面上。
+/// 当前为框架实现，draw_overlays 留空，避免影响现有渲染性能。
+pub struct HdrOverlayManager {
+    overlays: std::collections::HashMap<u64, HdrImageOverlay>,
+}
+
+impl HdrOverlayManager {
+    pub fn new() -> Self {
+        Self {
+            overlays: std::collections::HashMap::new(),
+        }
+    }
+
+    /// 注册或更新一张 HDR 覆盖层
+    pub fn set_overlay(&mut self, overlay: HdrImageOverlay) {
+        self.overlays.insert(overlay.id, overlay);
+    }
+
+    /// 注销指定 ID 的覆盖层
+    pub fn remove_overlay(&mut self, id: u64) {
+        self.overlays.remove(&id);
+    }
+
+    /// 清空所有覆盖层
+    pub fn clear(&mut self) {
+        self.overlays.clear();
+    }
+
+    /// 获取指定覆盖层（调试用）
+    pub fn get_overlay(&self, id: u64) -> Option<&HdrImageOverlay> {
+        self.overlays.get(&id)
+    }
+
+    /// 返回当前可见的覆盖层数量
+    pub fn visible_count(&self) -> usize {
+        self.overlays.values().filter(|o| o.visible).count()
+    }
+
+    /// 绘制所有可见的 HDR 覆盖层
+    ///
+    /// TODO: 未来实现：
+    ///   1. 根据 overlay.color_space 获取/创建对应的 Skia ColorSpace
+    ///   2. 将外部上传的 HDR 纹理包装为 skia_safe::Image
+    ///   3. 通过 canvas.draw_image_rect / draw_image 绘制到指定 rect
+    ///   4. 若交换链为 10-bit + PQ/HLG，需确保 Skia 颜色空间链路与 Swapchain 一致
+    pub fn draw_overlays(&self, _canvas: &Canvas) {
+        for (_id, overlay) in self.overlays.iter() {
+            if !overlay.visible {
+                continue;
+            }
+            // 占位：未来在此接入实际 HDR 纹理绘制
+            // 示例伪代码：
+            //   if let Some(image) = self.image_cache.get(id) {
+            //       let paint = Paint::default();
+            //       paint.set_blend_mode(overlay.blend_mode);
+            //       canvas.draw_image_rect(image, None, overlay.rect, &paint);
+            //   }
+        }
+    }
+}
+
+impl Default for HdrOverlayManager {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -430,6 +430,11 @@ impl VulkanContext {
     }
 
     pub fn recreate_swapchain(&mut self, width: u32, height: u32) -> bool {
+        // 防御性检查：确保 surface 有效
+        if self.surface == ash_vk::SurfaceKHR::null() {
+            android_log(LogPriority::ERROR, "Vulkan: recreate_swapchain called with null surface");
+            return false;
+        }
         // 性能优化：如果尺寸与当前相同，跳过重建
         if self.extent.width == width && self.extent.height == height && self.swapchain != ash_vk::SwapchainKHR::null() {
             android_log(LogPriority::DEBUG, &format!("Vulkan: Swapchain size {}x{} unchanged, skipping recreation", width, height));
@@ -461,13 +466,15 @@ impl VulkanContext {
                 }
 
                 // 性能优化与画质优先：
-                // 1. 优先 A2B10G10R10 (10-bit 广色域)，利用高灰阶消除色彩断层。
-                //    注：已通过 Java 声明 Window WCG 支持，规避 HWC 0x800 权限错误。
+                // 1. 优先 A2B10G10R10 / A2R10G10B10 (10-bit 广色域)，利用高灰阶消除色彩断层。
+                //    注：Android SurfaceFlinger 原生提供的一般是 A2R10G10B10 (HAL_PIXEL_FORMAT_RGBA_1010102)，
+                //    而 Mali GPU 驱动也可能同时暴露 A2B10G10R10。两者都需匹配，否则回退 8-bit。
                 // 2. 其次 BGRA (Mali GPU 8-bit 原生最优)
                 // 3. 再次 RGBA (通用 8-bit)
                 // 4. 回退到其他 8-bit 格式
                 surface_formats.iter()
                     .find(|f| f.format == ash_vk::Format::A2B10G10R10_UNORM_PACK32)
+                    .or_else(|| surface_formats.iter().find(|f| f.format == ash_vk::Format::A2R10G10B10_UNORM_PACK32))
                     .or_else(|| surface_formats.iter().find(|f| f.format == ash_vk::Format::B8G8R8A8_UNORM))
                     .or_else(|| surface_formats.iter().find(|f| f.format == ash_vk::Format::R8G8B8A8_UNORM))
                     .or_else(|| surface_formats.iter().find(|f| f.format == ash_vk::Format::B8G8R8A8_SRGB))
@@ -561,6 +568,11 @@ impl VulkanContext {
     }
 
     pub fn acquire_next_image(&mut self) -> Result<u32, ash::vk::Result> {
+        // 防御性检查：确保 swapchain 有效
+        if self.swapchain == ash_vk::SwapchainKHR::null() {
+            android_log(LogPriority::ERROR, "Vulkan: acquire_next_image called with null swapchain");
+            return Err(ash::vk::Result::ERROR_DEVICE_LOST);
+        }
         unsafe {
             self.swapchain_loader.acquire_next_image(
                 self.swapchain,
@@ -572,13 +584,16 @@ impl VulkanContext {
     }
 
     /// 更新 Surface（用于 SurfaceView surfaceDestroyed 后 surfaceCreated 复用 Vulkan 上下文）
+    /// 
+    /// 【关键修复】采用"先创建新资源，成功后销毁旧资源"的原子策略。
+    /// 如果任何中间步骤失败，回滚到旧 surface，避免悬空句柄。
     pub unsafe fn update_surface(&mut self, window: *mut std::ffi::c_void) -> bool {
         android_log(LogPriority::INFO, "VulkanContext::update_surface: Starting");
 
         // 1. 等待 GPU 完成所有工作
         let _ = unsafe { self.device.device_wait_idle() };
 
-        // 2. 销毁旧的 swapchain 和 sk_surfaces
+        // 2. 销毁旧的 swapchain 和 sk_surfaces（这些可以安全重建）
         self.sk_surfaces.clear();
         if let Some(ctx) = self.context.as_mut() {
             ctx.flush_and_submit();
@@ -589,8 +604,12 @@ impl VulkanContext {
             self.swapchain = ash_vk::SwapchainKHR::null();
         }
 
-        // 3. 销毁旧的 Surface
-        unsafe { self.surface_loader.destroy_surface(self.surface, None); }
+        // 3. 【关键修复】保存旧 Surface 句柄，先创建新的，成功后再销毁旧的
+        let old_surface = self.surface;
+        if old_surface == ash_vk::SurfaceKHR::null() {
+            android_log(LogPriority::ERROR, "VulkanContext::update_surface: old surface is null, cannot update");
+            return false;
+        }
 
         // 4. 创建新的 Android Surface
         let android_surface_loader = ash::khr::android_surface::Instance::new(&self.entry, &self.instance);
@@ -604,6 +623,8 @@ impl VulkanContext {
             }
             Err(e) => {
                 android_log(LogPriority::ERROR, &format!("VulkanContext::update_surface: create_android_surface failed: {:?}", e));
+                // 【关键修复】回滚：恢复旧 surface，不销毁它
+                self.surface = old_surface;
                 return false;
             }
         }
@@ -613,6 +634,9 @@ impl VulkanContext {
             Ok(c) => c,
             Err(e) => {
                 android_log(LogPriority::ERROR, &format!("VulkanContext::update_surface: get_capabilities failed: {:?}", e));
+                // 【关键修复】回滚：销毁新 surface，恢复旧 surface
+                unsafe { self.surface_loader.destroy_surface(self.surface, None); }
+                self.surface = old_surface;
                 return false;
             }
         };
@@ -622,8 +646,15 @@ impl VulkanContext {
         let swapchain_ok = self.recreate_swapchain(self.extent.width, self.extent.height);
         if !swapchain_ok {
             android_log(LogPriority::ERROR, "VulkanContext::update_surface: recreate_swapchain failed");
+            // 【关键修复】回滚：销毁新 surface，恢复旧 surface
+            unsafe { self.surface_loader.destroy_surface(self.surface, None); }
+            self.surface = old_surface;
             return false;
         }
+
+        // 7. 【关键修复】所有步骤成功后才销毁旧 Surface
+        unsafe { self.surface_loader.destroy_surface(old_surface, None); }
+        android_log(LogPriority::INFO, "VulkanContext::update_surface: Old surface destroyed after successful transition");
 
         android_log(LogPriority::INFO, "VulkanContext::update_surface: SUCCESS");
         true

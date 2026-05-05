@@ -39,6 +39,7 @@ pub use crate::terminal::style::*;
 pub use crate::terminal::modes::*;
 pub use crate::terminal::colors::*;
 pub use crate::terminal::sixel::{SixelDecoder, SixelState, SixelColor};
+pub use crate::renderer::{HdrOverlayManager, HdrImageOverlay, HdrColorSpace};
 
 pub static JAVA_VM: OnceCell<jni::JavaVM> = OnceCell::new();
 
