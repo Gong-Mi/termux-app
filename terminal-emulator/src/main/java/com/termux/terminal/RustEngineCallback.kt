@@ -50,7 +50,7 @@ class RustEngineCallback(private var mClient: TerminalSessionClient?) : Terminal
     /**
      * Called when the Rust engine initialization fails.
      */
-    fun onEngineInitializationFailed(error: String) {
+    override fun onEngineInitializationFailed(error: String) {
         android.util.Log.e("TermuxTrace", "[JNI_CALLBACK] onEngineInitializationFailed: $error")
         mSession?.onEngineInitializationFailed(error)
     }
