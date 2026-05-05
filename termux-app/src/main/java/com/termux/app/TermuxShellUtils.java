@@ -191,6 +191,8 @@ public class TermuxShellUtils {
         }
         TermuxShellUtils.ExecuteCommand command = TermuxShellUtils.setupShellCommandArguments(executable, arguments, isLoginShell);
 
+        Log.d("TermuxTrace", "[executeTerminalSession] shell=" + command.executablePath + ", exists=" + new File(command.executablePath).exists());
+
         var environmentArray = TermuxShellUtils.setupEnvironment(failSafe);
 
         if (workingDirectory == null) {
@@ -204,7 +206,7 @@ public class TermuxShellUtils {
             command.arguments,
             environmentArray,
             transcriptRows,
-            false,
+            failSafe,
             terminalSessionClient
         );
     }

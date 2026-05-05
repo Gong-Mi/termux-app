@@ -50,6 +50,9 @@ interface TerminalSessionClient {
     /** Called to set the terminal shell PID. */
     fun setTerminalShellPid(@NonNull session: TerminalSession, pid: Int)
 
+    /** Called when terminal engine initialization fails. */
+    fun onEngineInitializationFailed(error: String) {}
+
     /** Returns the terminal cursor style (nullable). */
     @Nullable
     fun getTerminalCursorStyle(): Int?

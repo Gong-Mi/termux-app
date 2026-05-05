@@ -453,20 +453,34 @@ impl VulkanContext {
                     color_space: ash_vk::ColorSpaceKHR::SRGB_NONLINEAR,
                 }
             } else {
-                // 优先 BGRA（Mali TBR 原生最优），其次 RGBA
+                // 记录所有可用格式，便于调试
+                for (i, f) in surface_formats.iter().enumerate() {
+                    android_log(LogPriority::DEBUG, &format!("Vulkan: Available surface format #{}: {:?} (colorspace: {:?})", i, f.format, f.color_space));
+                }
+
+                // 性能优化与画质优先：
+                // 1. 优先 A2B10G10R10 (10-bit 广色域)，利用高灰阶消除色彩断层。
+                //    注：已通过 Java 声明 Window WCG 支持，规避 HWC 0x800 权限错误。
+                // 2. 其次 BGRA (Mali GPU 8-bit 原生最优)
+                // 3. 再次 RGBA (通用 8-bit)
+                // 4. 回退到其他 8-bit 格式
                 surface_formats.iter()
-                    .find(|f| f.format == ash_vk::Format::B8G8R8A8_UNORM
-                             && f.color_space == ash_vk::ColorSpaceKHR::SRGB_NONLINEAR)
-                    .or_else(|| surface_formats.iter().find(|f| f.format == ash_vk::Format::R8G8B8A8_UNORM
-                                                             && f.color_space == ash_vk::ColorSpaceKHR::SRGB_NONLINEAR))
+                    .find(|f| f.format == ash_vk::Format::A2B10G10R10_UNORM_PACK32)
+                    .or_else(|| surface_formats.iter().find(|f| f.format == ash_vk::Format::B8G8R8A8_UNORM))
+                    .or_else(|| surface_formats.iter().find(|f| f.format == ash_vk::Format::R8G8B8A8_UNORM))
+                    .or_else(|| surface_formats.iter().find(|f| f.format == ash_vk::Format::B8G8R8A8_SRGB))
+                    .or_else(|| surface_formats.iter().find(|f| f.format == ash_vk::Format::R8G8B8A8_SRGB))
                     .copied()
-                    .unwrap_or(surface_formats[0])
+                    .unwrap_or_else(|| {
+                        android_log(LogPriority::WARN, "Vulkan: No high-bit or standard 8-bit format found, falling back to first available");
+                        surface_formats[0]
+                    })
             };
 
             // 同步 Skia ImageInfo format 与实际 Swapchain Image format
             self.skia_format = ash_format_to_skia_format(format.format);
             android_log(LogPriority::INFO, &format!(
-                "Vulkan: Swapchain format {:?} mapped to Skia format {:?}",
+                "Vulkan: Selected swapchain format {:?} (mapped to Skia format {:?})",
                 format.format, self.skia_format
             ));
 
@@ -650,11 +664,17 @@ impl VulkanContext {
             &vk_image_info,
         );
 
+        let color_type = match self.skia_format {
+            skia_safe::gpu::vk::Format::B8G8R8A8_UNORM | skia_safe::gpu::vk::Format::B8G8R8A8_SRGB => ColorType::BGRA8888,
+            skia_safe::gpu::vk::Format::A2B10G10R10_UNORM_PACK32 => ColorType::RGBA1010102,
+            _ => ColorType::RGBA8888,
+        };
+
         skia_safe::gpu::surfaces::wrap_backend_render_target(
             self.context.as_mut().unwrap(),
             &render_target,
             skia_safe::gpu::SurfaceOrigin::TopLeft,
-            ColorType::RGBA8888,
+            color_type,
             None,
             None,
         )

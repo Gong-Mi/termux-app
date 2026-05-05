@@ -296,6 +296,13 @@ public final class TermuxService extends Service {
         android.util.Log.d("TermuxTrace", "[TermuxService] createTermuxSession: " + sessionName);
         var sessionClient = new TerminalSessionClient() {
             @Override
+            public void onSessionStateChanged(@NonNull TerminalSession session) {
+                synchronized (mTerminalSessionClients) {
+                    for (var client : mTerminalSessionClients) client.onSessionStateChanged(session);
+                }
+            }
+
+            @Override
             public void onTextChanged(@NonNull TerminalSession changedSession) {
                 synchronized (mTerminalSessionClients) {
                     for (var client : mTerminalSessionClients) client.onTextChanged(changedSession);
@@ -362,6 +369,13 @@ public final class TermuxService extends Service {
             public Integer getTerminalCursorStyle() {
                 var master = getMasterClient();
                 return master != null ? master.getTerminalCursorStyle() : null;
+            }
+
+            @Override
+            public void onEngineInitializationFailed(String error) {
+                synchronized (mTerminalSessionClients) {
+                    for (var client : mTerminalSessionClients) client.onEngineInitializationFailed(error);
+                }
             }
 
             @Override

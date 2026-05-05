@@ -354,6 +354,11 @@ public final class TermuxTerminalSessionActivityClient implements TerminalSessio
      * Try switching to session.
      */
     public void setCurrentSession(TerminalSession session) {
+        if (session == null) {
+            android.util.Log.e("TermuxTrace", "[setCurrentSession] Session is NULL!");
+            return;
+        }
+        android.util.Log.d("TermuxTrace", "[setCurrentSession] Switching to: " + session.mHandle);
         if (mActivity.getTerminalView().attachSession(session)) {
             // notify about switched session if not already displaying the session
             notifyOfSessionChange();
@@ -456,9 +461,16 @@ public final class TermuxTerminalSessionActivityClient implements TerminalSessio
                 workingDirectory = currentSession == null ? TermuxConstants.HOME_PATH : currentSession.getCwd();
             }
             var newTermuxSession = service.createTermuxSession(executable, arguments, null, workingDirectory, isFailSafe, sessionName);
+            android.util.Log.d("TermuxTrace", "[addNewSession] Created session: " + newTermuxSession.mHandle);
             setCurrentSession(newTermuxSession);
             mActivity.getDrawer().closeDrawers();
         }
+    }
+
+    @Override
+    public void onSessionStateChanged(@NonNull TerminalSession session) {
+        android.util.Log.d("TermuxTrace", "[onSessionStateChanged] session=" + session.mHandle + ", running=" + session.isRunning());
+        mActivity.mMainThreadHandler.post(this::termuxSessionListNotifyUpdated);
     }
 
     /**
@@ -502,7 +514,15 @@ public final class TermuxTerminalSessionActivityClient implements TerminalSessio
     }
 
     public void termuxSessionListNotifyUpdated() {
-        mActivity.mTermuxSessionListViewController.notifyDataSetChanged();
+        if (mActivity.mTermuxSessionListViewController != null) {
+            mActivity.mTermuxSessionListViewController.notifyDataSetChanged();
+        }
+    }
+
+    public void onEngineInitializationFailed(String error) {
+        mActivity.mMainThreadHandler.post(() -> {
+            mActivity.showTransientMessage("Failed to start session: " + error, true);
+        });
     }
 
     public void checkAndScrollToSession(TerminalSession session) {

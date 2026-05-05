@@ -147,6 +147,7 @@ class TerminalSession(
         android.util.Log.e("TermuxTrace", "[TRACE_SESSION] Engine initialization FAILED: $error")
         mMainThreadHandler.post {
             mSessionState = SessionState.IDLE
+            mClient.onEngineInitializationFailed(error)
             mClient.logError(LOG_TAG, "Terminal engine initialization failed: $error")
         }
     }
