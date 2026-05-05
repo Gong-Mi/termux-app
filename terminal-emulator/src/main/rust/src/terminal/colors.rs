@@ -258,7 +258,7 @@ mod tests {
         assert_eq!(TerminalColors::parse_color("#000"), Some(0xff000000));
         assert_eq!(TerminalColors::parse_color("#ffffff"), Some(0xffffffff));
         
-        let (_, c4f) = TerminalColors::parse_color_full("#RRRRGGGGBBBB".replace('R','f').replace('G','0').replace('B','f').as_str()).unwrap();
+        let (_, c4f) = TerminalColors::parse_color_full("#RRRRGGGGBBBB".replace('R',"f").replace('G',"0").replace('B',"f").as_str()).unwrap();
         assert_eq!(c4f.r, 1.0);
         assert_eq!(c4f.g, 0.0);
         assert_eq!(c4f.b, 1.0);

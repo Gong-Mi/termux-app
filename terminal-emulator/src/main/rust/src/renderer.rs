@@ -1286,11 +1286,12 @@ mod tests {
 
     #[test]
     fn test_dim_color() {
-        let white = 0xffffffff;
-        let dimmed = TerminalRenderer::apply_dim(white);
-        assert_eq!((dimmed >> 16) & 0xFF, 170); // 255 * 2/3 = 170
-        assert_eq!((dimmed >> 8) & 0xFF, 170);
-        assert_eq!(dimmed & 0xFF, 170);
+        let white = skia_safe::Color4f::new(1.0, 1.0, 1.0, 1.0);
+        let dimmed = TerminalRenderer::apply_dim_4f(white);
+        let expected = 2.0 / 3.0;
+        assert!((dimmed.r - expected).abs() < 0.001);
+        assert!((dimmed.g - expected).abs() < 0.001);
+        assert!((dimmed.b - expected).abs() < 0.001);
     }
 
     #[test]
