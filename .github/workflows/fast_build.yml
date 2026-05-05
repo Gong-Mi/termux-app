@@ -140,8 +140,8 @@ jobs:
 
           # 设置版本信息
           GITHUB_SHA=$(git rev-parse HEAD)
-          CURRENT_VERSION_NAME_REGEX='\s+versionName = "([^"]+)"$'
-          CURRENT_VERSION_NAME="$(grep -m 1 -E "$CURRENT_VERSION_NAME_REGEX" ./termux-app/build.gradle.kts | sed -r "s/$CURRENT_VERSION_NAME_REGEX/\1/")"
+          CURRENT_VERSION_NAME_REGEX='val baseVersionName = "([^"]+)"'
+          CURRENT_VERSION_NAME="$(grep -m 1 -E "$CURRENT_VERSION_NAME_REGEX" ./termux-app/build.gradle.kts | sed -r "s/.*$CURRENT_VERSION_NAME_REGEX.*/\1/")"
           RELEASE_VERSION_NAME="v$CURRENT_VERSION_NAME+${GITHUB_SHA:0:7}"
 
           APK_DIR_PATH="./termux-app/build/outputs/apk/debug"
