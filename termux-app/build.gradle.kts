@@ -12,6 +12,21 @@ plugins {
 
 val packageVariant = System.getenv("TERMUX_PACKAGE_VARIANT") ?: "apt-android-7"
 
+// 获取 git commit 短哈希，用于版本追溯
+fun getGitHash(): String {
+    return try {
+        Runtime.getRuntime().exec(arrayOf("git", "rev-parse", "--short", "HEAD"))
+            .inputStream.bufferedReader().readText().trim()
+    } catch (e: Exception) {
+        "unknown"
+    }
+}
+
+val gitHash = getGitHash()
+val baseVersionName = "0.118.0"
+val appVersionName = System.getenv("TERMUX_APP_VERSION_NAME") ?: "$baseVersionName+$gitHash"
+val apkVersionTag = System.getenv("TERMUX_APK_VERSION_TAG") ?: "v$appVersionName-$packageVariant"
+
 android {
     namespace = "com.termux"
 
@@ -20,7 +35,7 @@ android {
 
     defaultConfig {
         versionCode = 118
-        versionName = "0.118.0"
+        versionName = appVersionName
 
         val minSdkVersion: String by project
         val targetSdkVersion: String by project
@@ -84,6 +99,16 @@ android {
 
     lint {
         warningsAsErrors = true
+    }
+
+    applicationVariants.all {
+        outputs.all {
+            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            val abi = output.getFilter(com.android.build.OutputFile.ABI) ?: "universal"
+            val buildType = variant.buildType.name
+            val tag = System.getenv("TERMUX_APK_VERSION_TAG") ?: "v${android.defaultConfig.versionName}-$packageVariant-$buildType"
+            output.outputFileName = "termux-app_${tag}_${abi}.apk"
+        }
     }
 }
 
