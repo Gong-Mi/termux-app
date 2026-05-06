@@ -21,15 +21,44 @@ static ENGINE_POINTER: Mutex<jlong> = Mutex::new(0);
 static SURFACE_READY: AtomicBool = AtomicBool::new(false);
 static ENGINE_READY: AtomicBool = AtomicBool::new(false);
 
-/// 渲染参数
-static RENDER_SCALE: Mutex<f32> = Mutex::new(1.0);
-static RENDER_SCROLL_OFFSET: Mutex<f32> = Mutex::new(0.0);
-static RENDER_TOP_ROW: Mutex<jint> = Mutex::new(0);
-static RENDER_SEL_X1: Mutex<jint> = Mutex::new(0);
-static RENDER_SEL_Y1: Mutex<jint> = Mutex::new(0);
-static RENDER_SEL_X2: Mutex<jint> = Mutex::new(0);
-static RENDER_SEL_Y2: Mutex<jint> = Mutex::new(0);
-static RENDER_SEL_ACTIVE: Mutex<bool> = Mutex::new(false);
+/// 渲染参数（合并为一个 struct，避免 8 个独立 Mutex 的锁竞争）
+#[derive(Clone, Copy, Debug)]
+pub struct RenderParams {
+    pub scale: f32,
+    pub scroll_offset: f32,
+    pub top_row: jint,
+    pub sel_x1: jint,
+    pub sel_y1: jint,
+    pub sel_x2: jint,
+    pub sel_y2: jint,
+    pub sel_active: bool,
+}
+
+impl Default for RenderParams {
+    fn default() -> Self {
+        Self {
+            scale: 1.0,
+            scroll_offset: 0.0,
+            top_row: 0,
+            sel_x1: 0,
+            sel_y1: 0,
+            sel_x2: 0,
+            sel_y2: 0,
+            sel_active: false,
+        }
+    }
+}
+
+static RENDER_PARAMS: Mutex<RenderParams> = Mutex::new(RenderParams {
+    scale: 1.0,
+    scroll_offset: 0.0,
+    top_row: 0,
+    sel_x1: 0,
+    sel_y1: 0,
+    sel_x2: 0,
+    sel_y2: 0,
+    sel_active: false,
+});
 
 /// 字体尺寸
 static RENDER_FONT_SIZE: Mutex<f32> = Mutex::new(12.0);
@@ -241,7 +270,8 @@ fn spawn_render_thread(engine_ptr: jlong) {
                     }
                 };
 
-                let top_row = *RENDER_TOP_ROW.lock().unwrap();
+                let params = *RENDER_PARAMS.lock().unwrap();
+                let top_row = params.top_row;
 
                 let frame = {
                     let engine = match term_ctx.lock.try_read() {
@@ -305,13 +335,13 @@ fn spawn_render_thread(engine_ptr: jlong) {
                     }
 
                     if let Some(renderer) = renderer_guard.as_mut() {
-                        let scale = *RENDER_SCALE.lock().unwrap();
-                        let scroll_offset = *RENDER_SCROLL_OFFSET.lock().unwrap();
-                        let sel_active = *RENDER_SEL_ACTIVE.lock().unwrap();
-                        let sel_x1 = *RENDER_SEL_X1.lock().unwrap();
-                        let sel_y1 = *RENDER_SEL_Y1.lock().unwrap();
-                        let sel_x2 = *RENDER_SEL_X2.lock().unwrap();
-                        let sel_y2 = *RENDER_SEL_Y2.lock().unwrap();
+                        let scale = params.scale;
+                        let scroll_offset = params.scroll_offset;
+                        let sel_active = params.sel_active;
+                        let sel_x1 = params.sel_x1;
+                        let sel_y1 = params.sel_y1;
+                        let sel_x2 = params.sel_x2;
+                        let sel_y2 = params.sel_y2;
 
                         if sel_active {
                             renderer.set_selection(sel_x1, sel_y1, sel_x2, sel_y2);
@@ -420,36 +450,8 @@ pub fn get_engine_pointer() -> &'static Mutex<jlong> {
     &ENGINE_POINTER
 }
 
-pub fn get_render_scale() -> &'static Mutex<f32> {
-    &RENDER_SCALE
-}
-
-pub fn get_render_scroll_offset() -> &'static Mutex<f32> {
-    &RENDER_SCROLL_OFFSET
-}
-
-pub fn get_render_top_row() -> &'static Mutex<jint> {
-    &RENDER_TOP_ROW
-}
-
-pub fn get_render_sel_x1() -> &'static Mutex<jint> {
-    &RENDER_SEL_X1
-}
-
-pub fn get_render_sel_y1() -> &'static Mutex<jint> {
-    &RENDER_SEL_Y1
-}
-
-pub fn get_render_sel_x2() -> &'static Mutex<jint> {
-    &RENDER_SEL_X2
-}
-
-pub fn get_render_sel_y2() -> &'static Mutex<jint> {
-    &RENDER_SEL_Y2
-}
-
-pub fn get_render_sel_active() -> &'static Mutex<bool> {
-    &RENDER_SEL_ACTIVE
+pub fn get_render_params() -> &'static Mutex<RenderParams> {
+    &RENDER_PARAMS
 }
 
 pub fn get_render_font_size() -> &'static Mutex<f32> {

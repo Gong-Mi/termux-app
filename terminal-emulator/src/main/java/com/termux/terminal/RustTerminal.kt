@@ -65,10 +65,10 @@ object RustTerminal {
     external fun setCursorStyle(enginePtr: Long, cursorStyle: Int)
 
     @JvmStatic
-    external fun setCursorBlinkState(enginePtr: Long, state: Boolean)
+    external fun setCursorBlinkingEnabled(enginePtr: Long, enabled: Boolean)
 
     @JvmStatic
-    external fun setCursorBlinkingEnabled(enginePtr: Long, enabled: Boolean)
+    external fun setCursorBlinkRate(enginePtr: Long, rateMs: Int)
 
     @JvmStatic
     external fun isCursorEnabled(enginePtr: Long): Boolean

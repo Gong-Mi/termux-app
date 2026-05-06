@@ -35,14 +35,15 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeUpdateRenderParam
     sel_y2: jint,
     sel_active: jboolean,
 ) {
-    *render_thread::get_render_scale().lock().unwrap() = scale;
-    *render_thread::get_render_scroll_offset().lock().unwrap() = scroll_offset;
-    *render_thread::get_render_top_row().lock().unwrap() = top_row;
-    *render_thread::get_render_sel_x1().lock().unwrap() = sel_x1;
-    *render_thread::get_render_sel_y1().lock().unwrap() = sel_y1;
-    *render_thread::get_render_sel_x2().lock().unwrap() = sel_x2;
-    *render_thread::get_render_sel_y2().lock().unwrap() = sel_y2;
-    *render_thread::get_render_sel_active().lock().unwrap() = sel_active != 0;
+    let mut params = render_thread::get_render_params().lock().unwrap();
+    params.scale = scale;
+    params.scroll_offset = scroll_offset;
+    params.top_row = top_row;
+    params.sel_x1 = sel_x1;
+    params.sel_y1 = sel_y1;
+    params.sel_x2 = sel_x2;
+    params.sel_y2 = sel_y2;
+    params.sel_active = sel_active != 0;
     render_thread::request_render();
 }
 
@@ -316,7 +317,8 @@ fn flush_events_to_java(env: &mut JNIEnv, callback_obj: &Option<jni::objects::Gl
     for event in events {
         match event {
             TerminalEvent::ScreenUpdated => {
-                let _ = env.call_method(obj, "onScreenUpdated", "()V", &[]);
+                // 【优化】ScreenUpdated 已由 Rust 渲染线程自主处理，
+                // 不再通过 JNI 回调 Java。保留分支以兼容旧代码。
             }
             TerminalEvent::Bell => {
                 let _ = env.call_method(obj, "onBell", "()V", &[]);
@@ -404,7 +406,11 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatch(
             }
             (engine.take_events(), engine.state.java_callback_obj.clone())
         };
-        flush_events_to_java(&mut env, &cb, events);
+        // 【优化】过滤 ScreenUpdated，已由 request_render() 处理
+        let java_events: Vec<TerminalEvent> = events.into_iter()
+            .filter(|e| !matches!(e, TerminalEvent::ScreenUpdated))
+            .collect();
+        flush_events_to_java(&mut env, &cb, java_events);
         render_thread::request_render();
         let dt = t0.elapsed().as_micros() as f64 / 1000.0;
         if dt > 5.0 {
@@ -446,7 +452,11 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatchDirect(
             
             (engine.take_events(), engine.state.java_callback_obj.clone())
         };
-        flush_events_to_java(&mut env, &cb, events);
+        // 【优化】过滤 ScreenUpdated，已由 request_render() 处理
+        let java_events: Vec<TerminalEvent> = events.into_iter()
+            .filter(|e| !matches!(e, TerminalEvent::ScreenUpdated))
+            .collect();
+        flush_events_to_java(&mut env, &cb, java_events);
         render_thread::request_render();
         let dt = t0.elapsed().as_micros() as f64 / 1000.0;
         if dt > 5.0 {
@@ -472,7 +482,11 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processCodePoint(
             engine.process_code_point(code_point as u32);
             (engine.take_events(), engine.state.java_callback_obj.clone())
         };
-        flush_events_to_java(&mut env, &cb, events);
+        // 【优化】过滤 ScreenUpdated，已由 request_render() 处理
+        let java_events: Vec<TerminalEvent> = events.into_iter()
+            .filter(|e| !matches!(e, TerminalEvent::ScreenUpdated))
+            .collect();
+        flush_events_to_java(&mut env, &cb, java_events);
         render_thread::request_render();
     }));
     let _ = Arc::into_raw(context);
@@ -613,7 +627,22 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_startIoThread(
                                 (engine.take_events(), engine.state.java_callback_obj.clone())
                             };
                             render_thread::request_render();
-                            flush_events_to_java(env, &cb, events);
+                            // 【优化】I/O 线程内直接处理 TerminalResponse，避免 JNI 环路
+                            // ScreenUpdated 已由 request_render() 处理，无需 JNI 回调
+                            let mut java_events = Vec::with_capacity(events.len());
+                            for event in events {
+                                match event {
+                                    TerminalEvent::ScreenUpdated => {
+                                        // 已由 render_thread::request_render() 处理
+                                    }
+                                    TerminalEvent::TerminalResponse(resp) => {
+                                        // 直接写回 PTY，避免 Rust → Java → Rust 环路
+                                        let _ = crate::pty::write_to_fd(pty_fd, resp.as_bytes());
+                                    }
+                                    other => java_events.push(other),
+                                }
+                            }
+                            flush_events_to_java(env, &cb, java_events);
                         }
                         Ok(())
                     });
@@ -724,7 +753,13 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getTerminalState(
             s.cursor.y as i32,                                      // 1: Cursor Row
             s.cursor.style as i32,                                  // 2: Cursor Style
             if s.cursor_enabled { 1 } else { 0 },                   // 3: Cursor Enabled
-            if s.cursor.should_be_visible(s.cursor_enabled) { 1 } else { 0 }, // 4: Cursor Visible
+            {
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                if s.cursor.should_be_visible(s.cursor_enabled, now_ms) { 1 } else { 0 }
+            }, // 4: Cursor Visible
             if s.modes.is_enabled(DECSET_BIT_REVERSE_VIDEO) { 1 } else { 0 }, // 5: Reverse Video
             if s.use_alternate_buffer { 1 } else { 0 },             // 6: Alternate Buffer
             if s.modes.is_enabled(DECSET_BIT_APPLICATION_CURSOR_KEYS) { 1 } else { 0 }, // 7: Cursor Keys
@@ -822,7 +857,11 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_shouldCursorBeVisib
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
         let engine = context.lock.read().unwrap();
-        if engine.state.cursor.should_be_visible(engine.state.cursor_enabled) { 1 } else { 0 }
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        if engine.state.cursor.should_be_visible(engine.state.cursor_enabled, now_ms) { 1 } else { 0 }
     };
     let _ = Arc::into_raw(context);
     result
@@ -1300,12 +1339,12 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_updateTerminalSessi
 
 /// 设置光标闪烁状态
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorBlinkState(mut env: JNIEnv, _class: JClass, ptr: jlong, state: jboolean) {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorBlinkingEnabled(mut env: JNIEnv, _class: JClass, ptr: jlong, enabled: jboolean) {
     if ptr == 0 { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let (events, cb) = {
         let mut engine = context.lock.write().unwrap();
-        engine.state.cursor.blink_state = state != 0;
+        engine.state.cursor.blinking_enabled = enabled != 0;
         (engine.take_events(), engine.state.java_callback_obj.clone())
     };
     render_thread::request_render();
@@ -1314,12 +1353,12 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorBlinkState
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorBlinkingEnabled(mut env: JNIEnv, _class: JClass, ptr: jlong, enabled: jboolean) {
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorBlinkRate(mut env: JNIEnv, _class: JClass, ptr: jlong, rate_ms: jint) {
     if ptr == 0 { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let (events, cb) = {
         let mut engine = context.lock.write().unwrap();
-        engine.state.cursor.blinking_enabled = enabled != 0;
+        engine.state.cursor.blink_rate_ms = rate_ms.max(100) as u64; // 最小 100ms
         (engine.take_events(), engine.state.java_callback_obj.clone())
     };
     render_thread::request_render();

@@ -18,6 +18,8 @@ pub struct RenderFrame {
     pub cursor_y: i32,
     pub cursor_style: i32,
     pub cursor_enabled: bool,
+    pub cursor_blinking_enabled: bool,
+    pub cursor_blink_rate_ms: u64,
     pub reverse_video: bool,
     pub top_row: i32,
     /// 预计算的行数据: (text: String, styles: Vec<u64>)
@@ -59,6 +61,8 @@ impl RenderFrame {
             cursor_y: state.cursor.y as i32,
             cursor_style: state.cursor.style,
             cursor_enabled: state.cursor_enabled,
+            cursor_blinking_enabled: state.cursor.blinking_enabled,
+            cursor_blink_rate_ms: state.cursor.blink_rate_ms,
             reverse_video: state.modes.is_enabled(crate::terminal::modes::DECSET_BIT_REVERSE_VIDEO),
             top_row,
             row_data,
@@ -444,7 +448,7 @@ impl TerminalRenderer {
         let rows = state.rows as usize;
         let cols = state.cols as usize;
         let global_reverse = state.modes.is_enabled(crate::terminal::modes::DECSET_BIT_REVERSE_VIDEO);
-        let top_row = *render_thread::get_render_top_row().lock().unwrap();
+        let top_row = render_thread::get_render_params().lock().unwrap().top_row;
 
         // 先绘制文本行 - 使用 get_row() 处理环形缓冲区映射
         for r in 0..rows as i32 {
@@ -543,10 +547,14 @@ impl TerminalRenderer {
             }
         }
 
-        // 绘制光标
+        // 绘制光标（同步版本 - 根据当前时间计算闪烁状态）
         if state.cursor_enabled {
             let cursor = &state.cursor;
-            if cursor.should_be_visible(state.cursor_enabled) {
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            if cursor.should_be_visible(state.cursor_enabled, now_ms) {
                 let cursor_color_4f = palette_4f[COLOR_INDEX_CURSOR];
                 self.cursor_paint.set_color4f(cursor_color_4f, None);
 
@@ -712,38 +720,49 @@ impl TerminalRenderer {
             }
         }
 
-        // 绘制光标
+        // 绘制光标（异步版本 - 根据当前时间计算闪烁状态）
         if frame.cursor_enabled {
-            let cursor_color_4f = frame.palette_4f[COLOR_INDEX_CURSOR];
-            self.cursor_paint.set_color4f(cursor_color_4f, None);
+            let cursor_visible = if frame.cursor_blinking_enabled {
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                (now_ms / frame.cursor_blink_rate_ms) % 2 == 0
+            } else {
+                true
+            };
+            if cursor_visible {
+                let cursor_color_4f = frame.palette_4f[COLOR_INDEX_CURSOR];
+                self.cursor_paint.set_color4f(cursor_color_4f, None);
 
-            let cx = frame.cursor_x as f32 * self.font_width;
-            let cy = (frame.cursor_y as f32 - frame.top_row as f32) * self.font_height;
+                let cx = frame.cursor_x as f32 * self.font_width;
+                let cy = (frame.cursor_y as f32 - frame.top_row as f32) * self.font_height;
 
-            match frame.cursor_style {
-                0 => {
-                    canvas.draw_rect(
-                        Rect::from_xywh(cx, cy, self.font_width, self.font_height),
-                        &self.cursor_paint
-                    );
-                }
-                1 => {
-                    canvas.draw_rect(
-                        Rect::from_xywh(cx, cy + self.font_height - 2.0, self.font_width, 2.0),
-                        &self.cursor_paint
-                    );
-                }
-                2 => {
-                    canvas.draw_rect(
-                        Rect::from_xywh(cx, cy, 2.0, self.font_height),
-                        &self.cursor_paint
-                    );
-                }
-                _ => {
-                    canvas.draw_rect(
-                        Rect::from_xywh(cx, cy, self.font_width, self.font_height),
-                        &self.cursor_paint
-                    );
+                match frame.cursor_style {
+                    0 => {
+                        canvas.draw_rect(
+                            Rect::from_xywh(cx, cy, self.font_width, self.font_height),
+                            &self.cursor_paint
+                        );
+                    }
+                    1 => {
+                        canvas.draw_rect(
+                            Rect::from_xywh(cx, cy + self.font_height - 2.0, self.font_width, 2.0),
+                            &self.cursor_paint
+                        );
+                    }
+                    2 => {
+                        canvas.draw_rect(
+                            Rect::from_xywh(cx, cy, 2.0, self.font_height),
+                            &self.cursor_paint
+                        );
+                    }
+                    _ => {
+                        canvas.draw_rect(
+                            Rect::from_xywh(cx, cy, self.font_width, self.font_height),
+                            &self.cursor_paint
+                        );
+                    }
                 }
             }
         }

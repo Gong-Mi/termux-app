@@ -164,11 +164,11 @@ class TerminalEmulator(
     fun setCursorStyle(cursorStyle: Int) {
         RustTerminal.setCursorStyle(mEnginePtr, cursorStyle)
     }
-    fun setCursorBlinkState(state: Boolean) {
-        RustTerminal.setCursorBlinkState(mEnginePtr, state)
-    }
     fun setCursorBlinkingEnabled(enabled: Boolean) {
         RustTerminal.setCursorBlinkingEnabled(mEnginePtr, enabled)
+    }
+    fun setCursorBlinkRate(rateMs: Int) {
+        RustTerminal.setCursorBlinkRate(mEnginePtr, rateMs)
     }
     fun isCursorEnabled(): Boolean = mCachedCursorEnabled
     fun shouldCursorBeVisible(): Boolean = mCachedCursorVisible

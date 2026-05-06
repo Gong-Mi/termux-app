@@ -97,10 +97,25 @@ class TerminalView @JvmOverloads constructor(
     }
 
     private var mTextSelectionCursorController: TextSelectionCursorController? = null
-    private var mTerminalCursorBlinkerHandler: Handler? = null
-    private var mTerminalCursorBlinkerRunnable: TerminalCursorBlinkerRunnable? = null
     private var mTerminalCursorBlinkerRate = 0
     private var mCursorInvisibleIgnoreOnce = false
+
+    // 渲染参数批量同步（16ms 降频，避免滚动时 60fps × JNI 往返）
+    private var mRenderParamsPending = false
+    private val mRenderParamsHandler = Handler(Looper.getMainLooper())
+    private val mRenderParamsRunnable = Runnable {
+        mRenderParamsPending = false
+        val emu = mEmulator ?: return@Runnable
+        var selActive = false
+        var selX1 = 0; var selY1 = 0; var selX2 = 0; var selY2 = 0
+        if (isSelectingText()) {
+            mTextSelectionCursorController?.getSelectors(mSelCoords)
+            selY1 = mSelCoords[0]; selY2 = mSelCoords[1]; selX1 = mSelCoords[2]; selX2 = mSelCoords[3]
+            selActive = true
+        }
+        nativeUpdateRenderParams(mScaleFactor, mTopRow * getFontLineSpacing(), mTopRow,
+            selX1, selY1, selX2, selY2, selActive)
+    }
 
     private var mScaleFactor = 1f
     private lateinit var mGestureRecognizer: GestureAndScaleRecognizer
@@ -852,7 +867,7 @@ class TerminalView @JvmOverloads constructor(
             session.updateSize(newColumns, newRows, (getFontWidth() * mScaleFactor).toInt(), (getFontLineSpacing() * mScaleFactor).toInt())
             mEmulator = session.mEmulator
             mClient?.onEmulatorSet()
-            mTerminalCursorBlinkerRunnable?.setEmulator(mEmulator)
+            // 光标闪烁状态已由 Rust 渲染线程自主管理，无需 Java 定时器
             mTopRow = 0
             scrollTo(0, 0)
             updateRenderParamsToRust()
@@ -866,16 +881,9 @@ class TerminalView @JvmOverloads constructor(
     }
 
     fun updateRenderParamsToRust() {
-        val emu = mEmulator ?: return
-        var selActive = false
-        var selX1 = 0; var selY1 = 0; var selX2 = 0; var selY2 = 0
-        if (isSelectingText()) {
-            mTextSelectionCursorController?.getSelectors(mSelCoords)
-            selY1 = mSelCoords[0]; selY2 = mSelCoords[1]; selX1 = mSelCoords[2]; selX2 = mSelCoords[3]
-            selActive = true
-        }
-        nativeUpdateRenderParams(mScaleFactor, mTopRow * getFontLineSpacing(), mTopRow,
-            selX1, selY1, selX2, selY2, selActive)
+        if (mRenderParamsPending) return
+        mRenderParamsPending = true
+        mRenderParamsHandler.postDelayed(mRenderParamsRunnable, 16)
     }
 
     // onDraw 在 TextureView 中是 final 的，无法重写。
@@ -1094,7 +1102,7 @@ class TerminalView @JvmOverloads constructor(
         }.onFailure { mClient?.logStackTraceWithMessage(LOG_TAG, "Failed to cancel Autofill", it as? Exception) }
     }
 
-    // --- Cursor Blinker ---
+    // --- Cursor Blinker（已下沉到 Rust 渲染线程，Java 不再管理定时器）---
     fun setTerminalCursorBlinkerRate(blinkRate: Int): Boolean {
         val result = if (blinkRate != 0 && (blinkRate < TERMINAL_CURSOR_BLINK_RATE_MIN || blinkRate > TERMINAL_CURSOR_BLINK_RATE_MAX)) {
             mClient?.logError(LOG_TAG, "Cursor blink rate must be $TERMINAL_CURSOR_BLINK_RATE_MIN-$TERMINAL_CURSOR_BLINK_RATE_MAX: $blinkRate")
@@ -1105,17 +1113,12 @@ class TerminalView @JvmOverloads constructor(
             mTerminalCursorBlinkerRate = blinkRate
             true
         }
-        if (mTerminalCursorBlinkerRate == 0) {
-            mClient?.logVerbose(LOG_TAG, "Cursor blinker disabled")
-            stopTerminalCursorBlinker()
-        }
+        mEmulator?.setCursorBlinkRate(blinkRate.coerceIn(0, TERMINAL_CURSOR_BLINK_RATE_MAX))
         return result
     }
 
     fun setTerminalCursorBlinkerState(start: Boolean, startOnlyIfCursorEnabled: Boolean) {
-        stopTerminalCursorBlinker()
         val emu = mEmulator ?: return
-        emu.setCursorBlinkingEnabled(false)
         if (start) {
             if (mTerminalCursorBlinkerRate < TERMINAL_CURSOR_BLINK_RATE_MIN || mTerminalCursorBlinkerRate > TERMINAL_CURSOR_BLINK_RATE_MAX) return
             if (startOnlyIfCursorEnabled && !emu.isCursorEnabled()) {
@@ -1123,51 +1126,10 @@ class TerminalView @JvmOverloads constructor(
                 return
             }
             if (TERMINAL_VIEW_KEY_LOGGING_ENABLED) mClient?.logVerbose(LOG_TAG, "Starting cursor blinker with rate $mTerminalCursorBlinkerRate")
-            if (mTerminalCursorBlinkerHandler == null) mTerminalCursorBlinkerHandler = Handler(Looper.getMainLooper())
-            mTerminalCursorBlinkerRunnable = TerminalCursorBlinkerRunnable(emu, mTerminalCursorBlinkerRate)
             emu.setCursorBlinkingEnabled(true)
-            mTerminalCursorBlinkerRunnable!!.run()
-        }
-    }
-
-    private fun stopTerminalCursorBlinker() {
-        val handler = mTerminalCursorBlinkerHandler
-        val runnable = mTerminalCursorBlinkerRunnable
-        if (handler != null && runnable != null) {
+        } else {
             if (TERMINAL_VIEW_KEY_LOGGING_ENABLED) mClient?.logVerbose(LOG_TAG, "Stopping cursor blinker")
-            handler.removeCallbacks(runnable)
-        }
-    }
-
-    private inner class TerminalCursorBlinkerRunnable(
-        private var emulator: TerminalEmulator?,
-        private val blinkRate: Int
-    ) : Runnable {
-        private var cursorVisible = false
-        fun setEmulator(emu: TerminalEmulator?) { emulator = emu }
-        override fun run() {
-            try {
-                val emu = emulator ?: return
-                cursorVisible = !cursorVisible
-                emu.setCursorBlinkState(cursorVisible)
-                
-                // 【性能优化】合并 JNI 调用
-                emu.syncState()
-                
-                val cursorX = emu.getCursorCol()
-                val cursorY = emu.getCursorRow()
-                if (cursorY >= mTopRow && cursorY < mTopRow + emu.getRows()) {
-                    val left = cursorX * getFontWidth()
-                    val top = (cursorY - mTopRow) * getFontLineSpacing()
-                    val right = left + getFontWidth() * 2
-                    val bottom = top + getFontLineSpacing()
-                    invalidate(left.toInt(), top.toInt(), right.toInt(), bottom.toInt())
-                } else {
-                    invalidate()
-                }
-            } finally {
-                mTerminalCursorBlinkerHandler?.postDelayed(this, blinkRate.toLong())
-            }
+            emu.setCursorBlinkingEnabled(false)
         }
     }
 

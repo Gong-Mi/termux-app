@@ -22,7 +22,7 @@ pub struct Cursor {
     pub about_to_wrap: bool,
     pub style: i32, // 0=block, 1=underline, 2=bar
     pub blinking_enabled: bool,
-    pub blink_state: bool,
+    pub blink_rate_ms: u64,
     
     // 保存的状态栈（对应 DECSC/DECRC）
     pub saved_state: CursorState,
@@ -48,7 +48,7 @@ impl Cursor {
             about_to_wrap: false,
             style: 0,
             blinking_enabled: false,
-            blink_state: true,
+            blink_rate_ms: 500,
             saved_state: default_state,
         }
     }
@@ -93,9 +93,11 @@ impl Cursor {
         s
     }
 
-    pub fn should_be_visible(&self, cursor_enabled: bool) -> bool {
+    /// 根据当前时间戳判断光标是否应该可见
+    pub fn should_be_visible(&self, cursor_enabled: bool, now_ms: u64) -> bool {
         if !cursor_enabled { return false; }
-        if self.blinking_enabled { self.blink_state } else { true }
+        if !self.blinking_enabled { return true; }
+        (now_ms / self.blink_rate_ms) % 2 == 0
     }
 }
 
@@ -111,7 +113,7 @@ mod tests {
         assert_eq!(c.style, 0); // block
         assert!(!c.about_to_wrap);
         assert!(!c.blinking_enabled);
-        assert!(c.blink_state); // starts visible
+        assert_eq!(c.blink_rate_ms, 500);
         assert_eq!(c.saved_state.fore_color, COLOR_INDEX_FOREGROUND as u64);
         assert_eq!(c.saved_state.back_color, COLOR_INDEX_BACKGROUND as u64);
     }
@@ -200,17 +202,22 @@ mod tests {
         let c = Cursor::new();
 
         // 无闪烁：始终可见
-        assert!(c.should_be_visible(true));
-        assert!(!c.should_be_visible(false));
+        assert!(c.should_be_visible(true, 0));
+        assert!(!c.should_be_visible(false, 0));
 
-        // 闪烁启用
+        // 闪烁启用（默认速率 500ms）
         let mut c2 = c;
         c2.blinking_enabled = true;
-        c2.blink_state = true;
-        assert!(c2.should_be_visible(true));
-
-        c2.blink_state = false;
-        assert!(!c2.should_be_visible(true));
+        // t=0 时可见
+        assert!(c2.should_be_visible(true, 0));
+        // t=499ms 时可见
+        assert!(c2.should_be_visible(true, 499));
+        // t=500ms 时不可见
+        assert!(!c2.should_be_visible(true, 500));
+        // t=999ms 时不可见
+        assert!(!c2.should_be_visible(true, 999));
+        // t=1000ms 时可见
+        assert!(c2.should_be_visible(true, 1000));
     }
 
     #[test]
