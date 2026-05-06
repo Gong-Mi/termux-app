@@ -36,7 +36,7 @@ android {
     this.ndkVersion = ndkVersion
 
     defaultConfig {
-        versionCode = 119
+        versionCode = 1022
         versionName = appVersionName
 
         val minSdkVersion: String by project
