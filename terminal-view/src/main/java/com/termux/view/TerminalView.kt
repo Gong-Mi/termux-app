@@ -1154,7 +1154,7 @@ class TerminalView @JvmOverloads constructor(
 
     private fun showTextSelectionCursors(event: MotionEvent) { getTextSelectionCursorController().show(event) }
     private fun hideTextSelectionCursors(): Boolean = getTextSelectionCursorController().hide()
-    private fun renderTextSelection() {
+    fun renderTextSelection() {
         if (mEmulator != null) mTextSelectionCursorController?.render()
     }
 

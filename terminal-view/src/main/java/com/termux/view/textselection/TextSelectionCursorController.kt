@@ -228,6 +228,7 @@ class TextSelectionCursorController(
             mSelX2 = getValidCurX(emulator, mSelY2, mSelX2)
         }
         terminalView.invalidate()
+        terminalView.renderTextSelection()
     }
 
     private fun getValidCurX(emulator: com.termux.terminal.TerminalEmulator, cy: Int, cx: Int): Int {
