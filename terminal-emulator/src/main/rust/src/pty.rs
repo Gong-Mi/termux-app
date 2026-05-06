@@ -5,8 +5,7 @@ use nix::unistd::{ForkResult, fork, setsid, chdir};
 use std::ffi::CString;
 use std::io::Read;
 use std::sync::Mutex;
-#[cfg(feature = "test-helpers")]
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::collections::HashMap;
 use std::time::Duration;
 use once_cell::sync::Lazy;
@@ -430,6 +429,7 @@ pub fn write_to_fd(fd: jint, data: &[u8]) -> jint {
 
 static CHILD_WATCHER: Lazy<Mutex<HashMap<i32, WatcherCallback>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static WATCHER_THREAD: Lazy<Mutex<Option<std::thread::JoinHandle<()>>>> = Lazy::new(|| Mutex::new(None));
+static WATCHER_SHUTDOWN: AtomicBool = AtomicBool::new(false);
 
 #[inline]
 fn notify_process_exit(callback: &WatcherCallback, exit_code: i32) {
@@ -468,6 +468,10 @@ fn ensure_watcher_thread() {
             WATCHER_THREAD_COUNT.fetch_add(1, Ordering::SeqCst);
             android_log(LogPriority::INFO, "Global ChildWatcher thread started");
             loop {
+                if WATCHER_SHUTDOWN.load(Ordering::SeqCst) {
+                    android_log(LogPriority::INFO, "[Watcher] Shutdown signal received, exiting");
+                    break;
+                }
                 let targets: Vec<(i32, WatcherCallback)> = {
                     let map = CHILD_WATCHER.lock().unwrap();
                     if map.is_empty() {
@@ -537,8 +541,19 @@ pub fn watcher_map_len() -> usize {
 
 #[cfg(feature = "test-helpers")]
 pub fn reset_watcher_state() {
-    *WATCHER_THREAD.lock().unwrap() = None;
+    // 1. 发送关闭信号
+    WATCHER_SHUTDOWN.store(true, Ordering::SeqCst);
+    // 2. 等待现有 watcher 线程结束（带 2 秒超时）
+    {
+        let mut guard = WATCHER_THREAD.lock().unwrap();
+        if let Some(handle) = guard.take() {
+            let _ = handle.join();
+        }
+    }
+    // 3. 重置计数器和状态
+    WATCHER_THREAD_COUNT.store(0, Ordering::SeqCst);
     CHILD_WATCHER.lock().unwrap().clear();
+    WATCHER_SHUTDOWN.store(false, Ordering::SeqCst);
 }
 
 #[cfg(feature = "test-helpers")]

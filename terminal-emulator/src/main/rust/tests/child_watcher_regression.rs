@@ -5,15 +5,19 @@
 
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+
+// 全局锁：child_watcher 测试共享全局状态，必须串行执行
+static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 // -------------------------------------------------------------------------
 // 测试 1: JoinHandle 存活检测——线程死亡后应能重新创建
 // -------------------------------------------------------------------------
 #[test]
 fn test_watcher_thread_restarted_after_handle_cleared() {
+    let _guard = TEST_LOCK.lock().unwrap();
     termux_rust::pty::reset_watcher_state();
     let count_before = termux_rust::pty::watcher_thread_count();
 
@@ -62,6 +66,7 @@ fn test_watcher_thread_restarted_after_handle_cleared() {
 // -------------------------------------------------------------------------
 #[test]
 fn test_waitpid_echild_semantics() {
+    let _guard = TEST_LOCK.lock().unwrap();
     let mut child = Command::new("true")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -89,6 +94,7 @@ fn test_waitpid_echild_semantics() {
 // -------------------------------------------------------------------------
 #[test]
 fn test_watcher_echild_notifies_callback() {
+    let _guard = TEST_LOCK.lock().unwrap();
     termux_rust::pty::reset_watcher_state();
 
     let notified = Arc::new(AtomicUsize::new(0));
@@ -123,6 +129,7 @@ fn test_watcher_echild_notifies_callback() {
 // -------------------------------------------------------------------------
 #[test]
 fn test_single_watcher_thread_for_multiple_sessions() {
+    let _guard = TEST_LOCK.lock().unwrap();
     termux_rust::pty::reset_watcher_state();
     let count_before = termux_rust::pty::watcher_thread_count();
 
