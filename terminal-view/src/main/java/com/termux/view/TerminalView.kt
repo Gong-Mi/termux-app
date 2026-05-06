@@ -755,7 +755,6 @@ class TerminalView @JvmOverloads constructor(
             mClient?.logInfo(LOG_TAG, "inputCodePoint(eventSource=$eventSource, codePoint=$codePoint, controlDown=$controlDownFromEvent, leftAltDown=$leftAltDownFromEvent)")
         }
         val session = mTermSession ?: return
-        mEmulator?.setCursorBlinkState(true)
         val controlDown = controlDownFromEvent || (mClient?.readControlKey() == true)
         val altDown = leftAltDownFromEvent || (mClient?.readAltKey() == true)
         if (mClient?.onCodePoint(codePoint, controlDown, session) == true) return
@@ -789,7 +788,6 @@ class TerminalView @JvmOverloads constructor(
     }
 
     fun handleKeyCode(keyCode: Int, keyMod: Int): Boolean {
-        mEmulator?.setCursorBlinkState(true)
         if (handleKeyCodeAction(keyCode, keyMod)) return true
         val seq = mEmulator?.sendKeyEvent(keyCode, keyMod)
         if (seq != null) {
