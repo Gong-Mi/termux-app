@@ -2,6 +2,8 @@
 #[derive(Clone)]
 pub enum TerminalEvent {
     ScreenUpdated,
+    /// 增量状态推送：mask 指示哪些字段变化，values 包含 15 个状态值
+    StateChanged { mask: u32, values: [i32; 15] },
     Bell,
     ColorsChanged,
     CopytoClipboard(String),

@@ -706,6 +706,32 @@ impl ScreenState {
             }
         }
     }
+
+    /// 获取 15 个状态字段的快照（与 Java syncState() JNI 顺序一致）
+    pub fn snapshot(&self) -> [i32; 15] {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        [
+            self.cursor.x as i32,                                      // 0: Cursor Col
+            self.cursor.y as i32,                                      // 1: Cursor Row
+            self.cursor.style as i32,                                  // 2: Cursor Style
+            if self.cursor_enabled { 1 } else { 0 },                   // 3: Cursor Enabled
+            if self.cursor.should_be_visible(self.cursor_enabled, now_ms) { 1 } else { 0 }, // 4: Cursor Visible
+            if self.modes.is_enabled(crate::terminal::modes::DECSET_BIT_REVERSE_VIDEO) { 1 } else { 0 }, // 5: Reverse Video
+            if self.use_alternate_buffer { 1 } else { 0 },             // 6: Alternate Buffer
+            if self.modes.is_enabled(crate::terminal::modes::DECSET_BIT_APPLICATION_CURSOR_KEYS) { 1 } else { 0 }, // 7: Cursor Keys
+            if self.modes.is_enabled(crate::terminal::modes::DECSET_BIT_APPLICATION_KEYPAD) { 1 } else { 0 },    // 8: Keypad
+            if self.modes.is_enabled(crate::terminal::modes::DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE)
+               || self.modes.is_enabled(crate::terminal::modes::DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT) { 1 } else { 0 }, // 9: Mouse
+            if self.auto_scroll_disabled { 1 } else { 0 },             // 10: Auto Scroll Disabled
+            self.rows as i32,                                          // 11: Rows
+            self.cols as i32,                                          // 12: Cols
+            self.main_screen.get_active_transcript_rows() as i32,      // 13: Active Transcript Rows
+            self.scroll_counter as i32,                                // 14: Scroll Counter
+        ]
+    }
 }
 
 #[cfg(test)]

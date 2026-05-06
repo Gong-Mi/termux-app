@@ -227,6 +227,11 @@ class TerminalSession(
         }
     }
 
+    /** Rust 引擎增量状态推送 */
+    fun onStateChanged(mask: Int, values: IntArray) {
+        mEmulator?.onStateChanged(mask, values)
+    }
+
     /** Reset state for terminal emulator state. */
     fun reset() {
         mEmulator?.takeIf { it.isAlive() }?.apply {

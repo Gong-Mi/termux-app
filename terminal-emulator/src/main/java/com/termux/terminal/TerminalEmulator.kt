@@ -132,9 +132,28 @@ class TerminalEmulator(
     fun getNativePointer(): Long = mEnginePtr
 
     /**
-     * 同步终端状态缓存。
-     * 建议在每次 UI 刷新（如 onScreenUpdated）或高频轮询前调用一次。
+     * 增量状态推送：Rust 引擎在状态变化时主动调用，替代轮询 syncState()
      */
+    fun onStateChanged(mask: Int, values: IntArray) {
+        if (values.size < 15) return
+        if (mask and 0x01 != 0) mCachedCursorCol = values[0]
+        if (mask and 0x02 != 0) mCachedCursorRow = values[1]
+        if (mask and 0x04 != 0) mCachedCursorStyle = values[2]
+        if (mask and 0x08 != 0) mCachedCursorEnabled = values[3] != 0
+        if (mask and 0x10 != 0) mCachedCursorVisible = values[4] != 0
+        if (mask and 0x20 != 0) mCachedReverseVideo = values[5] != 0
+        if (mask and 0x40 != 0) mCachedAlternateBuffer = values[6] != 0
+        if (mask and 0x80 != 0) mCachedCursorKeysMode = values[7] != 0
+        if (mask and 0x100 != 0) mCachedKeypadMode = values[8] != 0
+        if (mask and 0x200 != 0) mCachedMouseTracking = values[9] != 0
+        if (mask and 0x400 != 0) mCachedAutoScrollDisabled = values[10] != 0
+        if (mask and 0x800 != 0) mCachedRows = values[11]
+        if (mask and 0x1000 != 0) mCachedCols = values[12]
+        if (mask and 0x2000 != 0) mCachedActiveTranscriptRows = values[13]
+        if (mask and 0x4000 != 0) mCachedScrollCounter = values[14]
+    }
+
+    /** @deprecated 已由 Rust 增量推送替代，保留以便兼容旧代码 */
     fun syncState() {
         if (mEnginePtr == 0L) return
         val state = RustTerminal.getTerminalState(mEnginePtr) ?: return

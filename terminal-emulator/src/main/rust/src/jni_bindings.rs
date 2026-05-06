@@ -320,6 +320,17 @@ fn flush_events_to_java(env: &mut JNIEnv, callback_obj: &Option<jni::objects::Gl
                 // 【优化】ScreenUpdated 已由 Rust 渲染线程自主处理，
                 // 不再通过 JNI 回调 Java。保留分支以兼容旧代码。
             }
+            TerminalEvent::StateChanged { mask, values } => {
+                if let Ok(arr) = env.new_int_array(15) {
+                    let _ = env.set_int_array_region(&arr, 0, &values[..]);
+                    let _ = env.call_method(
+                        obj,
+                        "onStateChanged",
+                        "(I[I)V",
+                        &[JValue::Int(mask as i32), JValue::Object(&JObject::from(arr))]
+                    );
+                }
+            }
             TerminalEvent::Bell => {
                 let _ = env.call_method(obj, "onBell", "()V", &[]);
             }

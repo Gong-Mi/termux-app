@@ -28,9 +28,20 @@ impl TerminalEngine {
     }
 
     pub fn process_bytes(&mut self, data: &[u8]) {
+        let prev = self.state.snapshot();
         let mut handler = PerformHandler { state: &mut self.state, events: &mut self.events };
         self.parser.advance(&mut handler, data);
         self.state.sync_screen_to_flat_buffer();
+        let curr = self.state.snapshot();
+        let mut mask = 0u32;
+        for i in 0..15 {
+            if prev[i] != curr[i] {
+                mask |= 1 << i;
+            }
+        }
+        if mask != 0 {
+            self.events.push(TerminalEvent::StateChanged { mask, values: curr });
+        }
         self.events.push(TerminalEvent::ScreenUpdated);
     }
 

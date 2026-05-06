@@ -500,8 +500,9 @@ class TerminalView @JvmOverloads constructor(
             return
         }
         
-        // 【性能优化】合并 JNI 调用：一次性同步光标、模式、尺寸等常用状态到缓存
-        emu.syncState()
+        // syncState() 已由 Rust 增量推送替代（TerminalEvent::StateChanged），
+        // Rust 在状态变化时主动回调 onStateChanged(mask, values) 更新缓存。
+        // 此处不再轮询，避免高频 JNI 往返。
         if (!mEnginePointerSet) {
             mEnginePointerSet = true
             val enginePtr = emu.getNativePointer()

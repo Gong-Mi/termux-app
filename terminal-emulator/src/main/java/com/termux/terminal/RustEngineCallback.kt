@@ -40,6 +40,19 @@ class RustEngineCallback(private var mClient: TerminalSessionClient?) : Terminal
     }
 
     /**
+     * 增量状态推送回调：Rust 引擎在状态变化时主动推送，替代 Java 层轮询 syncState()
+     */
+    @Keep
+    fun onStateChanged(mask: Int, values: IntArray) {
+        val session = mSession
+        if (session != null) {
+            session.onStateChanged(mask, values)
+        } else {
+            mClient?.logVerbose("RustEngineCallback", "State changed but no session available")
+        }
+    }
+
+    /**
      * Called when the Rust engine and PTY are initialized asynchronously.
      */
     fun onEngineInitialized(enginePtr: Long, ptyFd: Int, pid: Int) {
