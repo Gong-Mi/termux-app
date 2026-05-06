@@ -427,8 +427,16 @@ pub fn write_to_fd(fd: jint, data: &[u8]) -> jint {
     res as jint
 }
 
-static CHILD_WATCHER: Lazy<Mutex<HashMap<i32, WatcherCallback>>> = Lazy::new(|| Mutex::new(HashMap::new()));
-static WATCHER_THREAD: Lazy<Mutex<Option<std::thread::JoinHandle<()>>>> = Lazy::new(|| Mutex::new(None));
+/// 合并 watcher 状态到单个 Mutex，消除多锁竞争
+struct WatcherState {
+    map: HashMap<i32, WatcherCallback>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+static WATCHER_STATE: Lazy<Mutex<WatcherState>> = Lazy::new(|| Mutex::new(WatcherState {
+    map: HashMap::new(),
+    thread: None,
+}));
 static WATCHER_SHUTDOWN: AtomicBool = AtomicBool::new(false);
 
 #[inline]
@@ -452,10 +460,9 @@ fn notify_process_exit(callback: &WatcherCallback, exit_code: i32) {
     }
 }
 
-/// 启动全局子进程监视线程
-fn ensure_watcher_thread() {
-    let mut guard = WATCHER_THREAD.lock().unwrap();
-    if let Some(ref handle) = *guard {
+/// 启动全局子进程监视线程（需在已持有 WATCHER_STATE 锁时调用）
+fn ensure_watcher_thread_locked(state: &mut WatcherState) {
+    if let Some(ref handle) = state.thread {
         if !handle.is_finished() {
             return;
         }
@@ -473,13 +480,13 @@ fn ensure_watcher_thread() {
                     break;
                 }
                 let targets: Vec<(i32, WatcherCallback)> = {
-                    let map = CHILD_WATCHER.lock().unwrap();
-                    if map.is_empty() {
-                        drop(map);
+                    let state = WATCHER_STATE.lock().unwrap();
+                    if state.map.is_empty() {
+                        drop(state);
                         std::thread::sleep(Duration::from_millis(500));
                         continue;
                     }
-                    map.iter().map(|(&k, v)| (k, v.clone())).collect()
+                    state.map.iter().map(|(&k, v)| (k, v.clone())).collect()
                 };
 
                 for (pid, callback) in targets {
@@ -491,7 +498,10 @@ fn ensure_watcher_thread() {
                                        else if libc::WIFSIGNALED(status) { -libc::WTERMSIG(status) }
                                        else { 0 };
                         android_log(LogPriority::INFO, &format!("[Watcher] Process {} exited with status {}", pid, exit_code));
-                        CHILD_WATCHER.lock().unwrap().remove(&pid);
+                        {
+                            let mut state = WATCHER_STATE.lock().unwrap();
+                            state.map.remove(&pid);
+                        }
                         notify_process_exit(&callback, exit_code);
                     } else if res == 0 {
                         // 仍在运行，不做任何操作
@@ -499,7 +509,10 @@ fn ensure_watcher_thread() {
                         match nix::errno::Errno::last() {
                             nix::errno::Errno::ECHILD => {
                                 android_log(LogPriority::INFO, &format!("[Watcher] Process {} already reaped (ECHILD)", pid));
-                                CHILD_WATCHER.lock().unwrap().remove(&pid);
+                                {
+                                    let mut state = WATCHER_STATE.lock().unwrap();
+                                    state.map.remove(&pid);
+                                }
                                 notify_process_exit(&callback, 0);
                             }
                             nix::errno::Errno::EINTR => {
@@ -507,7 +520,10 @@ fn ensure_watcher_thread() {
                             }
                             other => {
                                 android_log(LogPriority::WARN, &format!("[Watcher] waitpid({}) failed: {:?}", pid, other));
-                                CHILD_WATCHER.lock().unwrap().remove(&pid);
+                                {
+                                    let mut state = WATCHER_STATE.lock().unwrap();
+                                    state.map.remove(&pid);
+                                }
                             }
                         }
                     }
@@ -516,19 +532,21 @@ fn ensure_watcher_thread() {
                 std::thread::sleep(Duration::from_millis(100));
             }
         }).expect("Failed to spawn watcher thread");
-    *guard = Some(handle);
+    state.thread = Some(handle);
 }
 
 #[cfg(not(feature = "test-helpers"))]
 pub fn spawn_waiter(pid: i32, callback: jni::objects::GlobalRef) {
-    CHILD_WATCHER.lock().unwrap().insert(pid, callback);
-    ensure_watcher_thread();
+    let mut state = WATCHER_STATE.lock().unwrap();
+    state.map.insert(pid, callback);
+    ensure_watcher_thread_locked(&mut state);
 }
 
 #[cfg(feature = "test-helpers")]
 pub fn spawn_waiter(pid: i32, callback: std::sync::Arc<dyn Fn(i32) + Send + Sync>) {
-    CHILD_WATCHER.lock().unwrap().insert(pid, callback);
-    ensure_watcher_thread();
+    let mut state = WATCHER_STATE.lock().unwrap();
+    state.map.insert(pid, callback);
+    ensure_watcher_thread_locked(&mut state);
 }
 
 // -------------------------------------------------------------------------
@@ -536,29 +554,30 @@ pub fn spawn_waiter(pid: i32, callback: std::sync::Arc<dyn Fn(i32) + Send + Sync
 // -------------------------------------------------------------------------
 #[cfg(feature = "test-helpers")]
 pub fn watcher_map_len() -> usize {
-    CHILD_WATCHER.lock().unwrap().len()
+    WATCHER_STATE.lock().unwrap().map.len()
 }
 
 #[cfg(feature = "test-helpers")]
 pub fn reset_watcher_state() {
-    // 1. 发送关闭信号
-    WATCHER_SHUTDOWN.store(true, Ordering::SeqCst);
-    // 2. 等待现有 watcher 线程结束（带 2 秒超时）
-    {
-        let mut guard = WATCHER_THREAD.lock().unwrap();
-        if let Some(handle) = guard.take() {
-            let _ = handle.join();
-        }
+    // 1. 原子地获取 handle 并清空 map（单锁操作）
+    let handle = {
+        WATCHER_SHUTDOWN.store(true, Ordering::SeqCst);
+        let mut state = WATCHER_STATE.lock().unwrap();
+        state.map.clear();
+        state.thread.take()
+    };
+    // 2. 在锁外 join，避免死锁
+    if let Some(h) = handle {
+        let _ = h.join();
     }
-    // 3. 重置计数器和状态
+    // 3. 重置计数器
     WATCHER_THREAD_COUNT.store(0, Ordering::SeqCst);
-    CHILD_WATCHER.lock().unwrap().clear();
     WATCHER_SHUTDOWN.store(false, Ordering::SeqCst);
 }
 
 #[cfg(feature = "test-helpers")]
 pub fn watcher_thread_flag() -> bool {
-    WATCHER_THREAD.lock().unwrap().is_some()
+    WATCHER_STATE.lock().unwrap().thread.is_some()
 }
 
 #[cfg(feature = "test-helpers")]

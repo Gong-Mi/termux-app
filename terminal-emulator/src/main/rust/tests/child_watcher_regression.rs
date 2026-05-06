@@ -9,7 +9,10 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-// 全局锁：child_watcher 测试共享全局状态，必须串行执行
+// 全局串行锁：child_watcher 测试共享全局 mutable 状态（WATCHER_STATE），
+// reset_watcher_state() 会清空所有 PID 并关闭线程，必须串行执行。
+// 代码层面已将 CHILD_WATCHER + WATCHER_THREAD 合并为单 Mutex，
+// 但 reset_watcher_state 的全局语义决定了并发测试仍需互斥。
 static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 // -------------------------------------------------------------------------
