@@ -1,6 +1,6 @@
-use std::cmp::{max, min};
 use crate::engine::ScreenState;
 use crate::vte_parser::Params;
+use std::cmp::{max, min};
 
 /// 处理 CSI (Control Sequence Introducer) 序列
 /// 参数默认值行为与 Java TerminalEmulator.getArg0()/getArg1() 保持一致
@@ -58,7 +58,10 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
             let row = params.get_arg0(1) as i64;
             let col = params.get_arg1(1) as i64;
             if state.origin_mode() {
-                state.cursor.y = max(state.top_margin, min(state.bottom_margin - 1, state.top_margin + row - 1));
+                state.cursor.y = max(
+                    state.top_margin,
+                    min(state.bottom_margin - 1, state.top_margin + row - 1),
+                );
             } else {
                 state.cursor.y = max(0, min(state.rows - 1, row - 1));
             }
@@ -68,7 +71,9 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
         'I' => {
             // CHT - Cursor Horizontal Tab (默认 1)
             let n = params.get_arg0(1) as i64;
-            for _ in 0..n { state.cursor_forward_tab(); }
+            for _ in 0..n {
+                state.cursor_forward_tab();
+            }
         }
         'J' => {
             // ED - Erase in Display (默认 0)
@@ -151,30 +156,47 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
         }
         'h' => {
             // SM - Set Mode
-            if is_private { state.handle_decset(params, true); }
-            else { state.handle_set_mode(params, true); }
+            if is_private {
+                state.handle_decset(params, true);
+            } else {
+                state.handle_set_mode(params, true);
+            }
         }
         'l' => {
             // RM - Reset Mode
-            if is_private { state.handle_decset(params, false); }
-            else { state.handle_set_mode(params, false); }
+            if is_private {
+                state.handle_decset(params, false);
+            } else {
+                state.handle_set_mode(params, false);
+            }
         }
-        'm' => { state.handle_sgr(params); }
+        'm' => {
+            state.handle_sgr(params);
+        }
         'n' => {
             // DSR - Device Status Report
             // Java: getArg0(-1) - 默认 -1 表示无参数
-            let mode = if params.len == 0 { -1 } else { params.get(0, 0) };
+            let mode = if params.len == 0 {
+                -1
+            } else {
+                params.get(0, 0)
+            };
             match mode {
-                5 => state.report_terminal_response("\x1b[0n"),  // DSR Status Report
-                6 => {  // CPR - Cursor Position Report
+                5 => state.report_terminal_response("\x1b[0n"), // DSR Status Report
+                6 => {
+                    // CPR - Cursor Position Report
                     let r = state.cursor.y + 1;
                     let c = state.cursor.x + 1;
                     state.report_terminal_response(&format!("\x1b[{};{}R", r, c));
                 }
-                _ => {}  // 其他值或无参数时忽略
+                _ => {} // 其他值或无参数时忽略
             }
         }
-        'p' => { if is_bang { state.decstr_soft_reset(); } }
+        'p' => {
+            if is_bang {
+                state.decstr_soft_reset();
+            }
+        }
         'r' => {
             // DECSTBM - Set Top and Bottom Margins (默认 top=1, bottom=rows)
             let top = params.get_arg0(1) as i64;
@@ -191,7 +213,9 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
                 state.save_cursor();
             }
         }
-        'u' => { state.restore_cursor(); }
+        'u' => {
+            state.restore_cursor();
+        }
         _ => {}
     }
 }

@@ -2,8 +2,8 @@
 // 验证 VulkanContext / Skia DirectContext 反复创建/销毁的稳定性与资源释放
 // 运行: cargo test --test vulkan_memory_stress_test -- --nocapture
 
-use ash::{vk, Entry, Instance, Device};
 use ash::vk::Handle;
+use ash::{Device, Entry, Instance, vk};
 use skia_safe::gpu;
 use std::ffi::CStr;
 use std::time::Instant;
@@ -26,17 +26,29 @@ impl HeadlessVulkan {
         let pdevs = unsafe { instance.enumerate_physical_devices() }.ok()?;
         let pdev = *pdevs.first()?;
         let queue_props = unsafe { instance.get_physical_device_queue_family_properties(pdev) };
-        let queue_family = queue_props.iter().enumerate()
+        let queue_family = queue_props
+            .iter()
+            .enumerate()
             .find(|(_, q)| q.queue_flags.contains(vk::QueueFlags::GRAPHICS))
             .map(|(i, _)| i as u32)?;
         let queue_info = vk::DeviceQueueCreateInfo::default()
             .queue_family_index(queue_family)
             .queue_priorities(&[1.0f32]);
-        let device_create_info = vk::DeviceCreateInfo::default()
-            .queue_create_infos(std::slice::from_ref(&queue_info));
-        let device = unsafe { instance.create_device(pdev, &device_create_info, None).ok()? };
+        let device_create_info =
+            vk::DeviceCreateInfo::default().queue_create_infos(std::slice::from_ref(&queue_info));
+        let device = unsafe {
+            instance
+                .create_device(pdev, &device_create_info, None)
+                .ok()?
+        };
         let queue = unsafe { device.get_device_queue(queue_family, 0) };
-        Some(Self { entry, instance, device, queue, queue_family })
+        Some(Self {
+            entry,
+            instance,
+            device,
+            queue,
+            queue_family,
+        })
     }
 }
 
@@ -50,7 +62,10 @@ impl Drop for HeadlessVulkan {
 }
 
 fn create_skia_context(vk: &HeadlessVulkan) -> Option<gpu::DirectContext> {
-    let pdevice = unsafe { vk.instance.enumerate_physical_devices() }.ok()?.first()?.clone();
+    let pdevice = unsafe { vk.instance.enumerate_physical_devices() }
+        .ok()?
+        .first()?
+        .clone();
     let instance_raw = vk.instance.handle().as_raw();
     let device_raw = vk.device.handle().as_raw();
 
@@ -59,13 +74,20 @@ fn create_skia_context(vk: &HeadlessVulkan) -> Option<gpu::DirectContext> {
             match of {
                 gpu::vk::GetProcOf::Instance(inst, name) => {
                     let name_cstr = CStr::from_ptr(name);
-                    vk.entry.get_instance_proc_addr(vk::Instance::from_raw(inst as _), name_cstr.as_ptr())
-                        .map(|f| f as _).unwrap_or(std::ptr::null())
+                    vk.entry
+                        .get_instance_proc_addr(
+                            vk::Instance::from_raw(inst as _),
+                            name_cstr.as_ptr(),
+                        )
+                        .map(|f| f as _)
+                        .unwrap_or(std::ptr::null())
                 }
                 gpu::vk::GetProcOf::Device(dev, name) => {
                     let name_cstr = CStr::from_ptr(name);
-                    vk.instance.get_device_proc_addr(vk::Device::from_raw(dev as _), name_cstr.as_ptr())
-                        .map(|f| f as *mut std::ffi::c_void).unwrap_or(std::ptr::null_mut()) as _
+                    vk.instance
+                        .get_device_proc_addr(vk::Device::from_raw(dev as _), name_cstr.as_ptr())
+                        .map(|f| f as *mut std::ffi::c_void)
+                        .unwrap_or(std::ptr::null_mut()) as _
                 }
             }
         }
@@ -120,16 +142,27 @@ fn test_direct_context_create_destroy_stress() {
         durations.push(elapsed);
 
         if (i + 1) % 5 == 0 {
-            println!("  迭代 {}/{} 完成, 平均耗时 {:.2}ms",
-                i + 1, iterations,
-                durations.iter().map(|d| d.as_secs_f64()).sum::<f64>() / durations.len() as f64 * 1000.0
+            println!(
+                "  迭代 {}/{} 完成, 平均耗时 {:.2}ms",
+                i + 1,
+                iterations,
+                durations.iter().map(|d| d.as_secs_f64()).sum::<f64>() / durations.len() as f64
+                    * 1000.0
             );
         }
     }
 
     let avg = durations.iter().map(|d| d.as_secs_f64()).sum::<f64>() / durations.len() as f64;
-    let max = durations.iter().map(|d| d.as_secs_f64()).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
-    let min = durations.iter().map(|d| d.as_secs_f64()).min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+    let max = durations
+        .iter()
+        .map(|d| d.as_secs_f64())
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let min = durations
+        .iter()
+        .map(|d| d.as_secs_f64())
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
 
     println!();
     println!("统计:");
@@ -166,7 +199,10 @@ fn test_mem_forget_resource_leak_simulation() {
         std::mem::forget(context); // ← 与生产代码相同的 workaround
 
         if (i + 1) % 3 == 0 {
-            println!("  迭代 {}: mem::forget 执行，C++ DirectContext 壳层泄漏", i + 1);
+            println!(
+                "  迭代 {}: mem::forget 执行，C++ DirectContext 壳层泄漏",
+                i + 1
+            );
         }
     }
 

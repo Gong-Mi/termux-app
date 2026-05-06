@@ -31,7 +31,8 @@ fn test_watcher_thread_restarted_after_handle_cleared() {
 
     let count_after = termux_rust::pty::watcher_thread_count();
     assert_eq!(
-        count_after, count_before + 1,
+        count_after,
+        count_before + 1,
         "首次 spawn_waiter 应启动一个 watcher 线程"
     );
 
@@ -50,7 +51,8 @@ fn test_watcher_thread_restarted_after_handle_cleared() {
 
     // 关键断言：JoinHandle 为 None 时，ensure_watcher_thread 会重新创建线程
     assert_eq!(
-        count_after2, count_before2 + 1,
+        count_after2,
+        count_before2 + 1,
         "JoinHandle 为空时应重新创建 watcher 线程。\
          旧 AtomicBool 实现下，flag 一旦为 true 就永远不会恢复。"
     );
@@ -80,16 +82,10 @@ fn test_waitpid_echild_semantics() {
 
     let mut status = 0i32;
     let res = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
-    assert_eq!(
-        res, -1,
-        "对已收割子进程再次 waitpid 应返回 -1"
-    );
+    assert_eq!(res, -1, "对已收割子进程再次 waitpid 应返回 -1");
 
     let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
-    assert_eq!(
-        errno, libc::ECHILD,
-        "errno 应为 ECHILD"
-    );
+    assert_eq!(errno, libc::ECHILD, "errno 应为 ECHILD");
 }
 
 // -------------------------------------------------------------------------
@@ -159,7 +155,8 @@ fn test_single_watcher_thread_for_multiple_sessions() {
     // 只应启动了一个 watcher 线程
     let count_after = termux_rust::pty::watcher_thread_count();
     assert_eq!(
-        count_after, count_before + 1,
+        count_after,
+        count_before + 1,
         "5 次 spawn_waiter 只应启动 1 个 watcher 线程"
     );
 
@@ -174,8 +171,5 @@ fn test_single_watcher_thread_for_multiple_sessions() {
 
     // 修复后：每个 ECHILD 都会通知 callback
     let count = counter.load(Ordering::SeqCst);
-    assert_eq!(
-        count, 5,
-        "5 个 session 退出各应触发一次 callback"
-    );
+    assert_eq!(count, 5, "5 个 session 退出各应触发一次 callback");
 }

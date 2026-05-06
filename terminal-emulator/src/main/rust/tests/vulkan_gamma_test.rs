@@ -2,9 +2,9 @@
 // 使用 headless Vulkan 后端创建 Skia Surface，对比有/无 sRGB ColorSpace 的渲染结果
 // 运行: cargo test --test vulkan_gamma_test -- --nocapture
 
-use ash::{vk, Entry, Instance, Device};
 use ash::vk::Handle;
-use skia_safe::{gpu, Color, Paint, PaintStyle, Rect, Surface as SkSurface, ColorType, TileMode};
+use ash::{Device, Entry, Instance, vk};
+use skia_safe::{Color, ColorType, Paint, PaintStyle, Rect, Surface as SkSurface, TileMode, gpu};
 use std::ffi::CStr;
 
 // ============================================================
@@ -32,16 +32,22 @@ impl HeadlessVulkan {
         let pdev = *pdevs.first()?;
 
         let queue_props = unsafe { instance.get_physical_device_queue_family_properties(pdev) };
-        let queue_family = queue_props.iter().enumerate()
+        let queue_family = queue_props
+            .iter()
+            .enumerate()
             .find(|(_, q)| q.queue_flags.contains(vk::QueueFlags::GRAPHICS))
             .map(|(i, _)| i as u32)?;
 
         let queue_info = vk::DeviceQueueCreateInfo::default()
             .queue_family_index(queue_family)
             .queue_priorities(&[1.0f32]);
-        let device_create_info = vk::DeviceCreateInfo::default()
-            .queue_create_infos(std::slice::from_ref(&queue_info));
-        let device = unsafe { instance.create_device(pdev, &device_create_info, None).ok()? };
+        let device_create_info =
+            vk::DeviceCreateInfo::default().queue_create_infos(std::slice::from_ref(&queue_info));
+        let device = unsafe {
+            instance
+                .create_device(pdev, &device_create_info, None)
+                .ok()?
+        };
         let queue = unsafe { device.get_device_queue(queue_family, 0) };
 
         let pool_info = vk::CommandPoolCreateInfo::default()
@@ -49,14 +55,29 @@ impl HeadlessVulkan {
             .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
         let command_pool = unsafe { device.create_command_pool(&pool_info, None).ok()? };
 
-        Some(Self { entry, instance, device, queue, queue_family, command_pool })
+        Some(Self {
+            entry,
+            instance,
+            device,
+            queue,
+            queue_family,
+            command_pool,
+        })
     }
 
-    fn create_image(&self, width: u32, height: u32) -> Option<(vk::Image, vk::DeviceMemory, vk::DeviceSize)> {
+    fn create_image(
+        &self,
+        width: u32,
+        height: u32,
+    ) -> Option<(vk::Image, vk::DeviceMemory, vk::DeviceSize)> {
         let image_info = vk::ImageCreateInfo::default()
             .image_type(vk::ImageType::TYPE_2D)
             .format(vk::Format::R8G8B8A8_UNORM)
-            .extent(vk::Extent3D { width, height, depth: 1 })
+            .extent(vk::Extent3D {
+                width,
+                height,
+                depth: 1,
+            })
             .mip_levels(1)
             .array_layers(1)
             .samples(vk::SampleCountFlags::TYPE_1)
@@ -68,16 +89,22 @@ impl HeadlessVulkan {
         let image = unsafe { self.device.create_image(&image_info, None).ok()? };
 
         let mem_reqs = unsafe { self.device.get_image_memory_requirements(image) };
-        let mem_props = unsafe { self.instance.get_physical_device_memory_properties(
-            self.instance.enumerate_physical_devices().ok()?.first()?.clone()
-        ) };
+        let mem_props = unsafe {
+            self.instance.get_physical_device_memory_properties(
+                self.instance
+                    .enumerate_physical_devices()
+                    .ok()?
+                    .first()?
+                    .clone(),
+            )
+        };
 
-        let mem_type_idx = (0..mem_props.memory_type_count)
-            .find(|&i| {
-                let t = mem_props.memory_types[i as usize];
-                (mem_reqs.memory_type_bits & (1 << i)) != 0
-                    && t.property_flags.contains(vk::MemoryPropertyFlags::DEVICE_LOCAL)
-            })?;
+        let mem_type_idx = (0..mem_props.memory_type_count).find(|&i| {
+            let t = mem_props.memory_types[i as usize];
+            (mem_reqs.memory_type_bits & (1 << i)) != 0
+                && t.property_flags
+                    .contains(vk::MemoryPropertyFlags::DEVICE_LOCAL)
+        })?;
 
         let alloc_info = vk::MemoryAllocateInfo::default()
             .allocation_size(mem_reqs.size)
@@ -88,7 +115,10 @@ impl HeadlessVulkan {
         Some((image, memory, mem_reqs.size))
     }
 
-    fn create_readback_buffer(&self, size: vk::DeviceSize) -> Option<(vk::Buffer, vk::DeviceMemory)> {
+    fn create_readback_buffer(
+        &self,
+        size: vk::DeviceSize,
+    ) -> Option<(vk::Buffer, vk::DeviceMemory)> {
         let buffer_info = vk::BufferCreateInfo::default()
             .size(size)
             .usage(vk::BufferUsageFlags::TRANSFER_DST)
@@ -96,17 +126,24 @@ impl HeadlessVulkan {
         let buffer = unsafe { self.device.create_buffer(&buffer_info, None).ok()? };
 
         let mem_reqs = unsafe { self.device.get_buffer_memory_requirements(buffer) };
-        let mem_props = unsafe { self.instance.get_physical_device_memory_properties(
-            self.instance.enumerate_physical_devices().ok()?.first()?.clone()
-        ) };
+        let mem_props = unsafe {
+            self.instance.get_physical_device_memory_properties(
+                self.instance
+                    .enumerate_physical_devices()
+                    .ok()?
+                    .first()?
+                    .clone(),
+            )
+        };
 
-        let mem_type_idx = (0..mem_props.memory_type_count)
-            .find(|&i| {
-                let t = mem_props.memory_types[i as usize];
-                (mem_reqs.memory_type_bits & (1 << i)) != 0
-                    && t.property_flags.contains(vk::MemoryPropertyFlags::HOST_VISIBLE)
-                    && t.property_flags.contains(vk::MemoryPropertyFlags::HOST_COHERENT)
-            })?;
+        let mem_type_idx = (0..mem_props.memory_type_count).find(|&i| {
+            let t = mem_props.memory_types[i as usize];
+            (mem_reqs.memory_type_bits & (1 << i)) != 0
+                && t.property_flags
+                    .contains(vk::MemoryPropertyFlags::HOST_VISIBLE)
+                && t.property_flags
+                    .contains(vk::MemoryPropertyFlags::HOST_COHERENT)
+        })?;
 
         let alloc_info = vk::MemoryAllocateInfo::default()
             .allocation_size(mem_reqs.size)
@@ -126,7 +163,11 @@ impl HeadlessVulkan {
 
         let begin_info = vk::CommandBufferBeginInfo::default()
             .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-        unsafe { self.device.begin_command_buffer(cmd_buf, &begin_info).unwrap() };
+        unsafe {
+            self.device
+                .begin_command_buffer(cmd_buf, &begin_info)
+                .unwrap()
+        };
 
         // Barrier: COLOR_ATTACHMENT_OPTIMAL -> TRANSFER_SRC_OPTIMAL
         let barrier = vk::ImageMemoryBarrier::default()
@@ -135,12 +176,14 @@ impl HeadlessVulkan {
             .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
             .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
             .image(image)
-            .subresource_range(vk::ImageSubresourceRange::default()
-                .aspect_mask(vk::ImageAspectFlags::COLOR)
-                .base_mip_level(0)
-                .level_count(1)
-                .base_array_layer(0)
-                .layer_count(1))
+            .subresource_range(
+                vk::ImageSubresourceRange::default()
+                    .aspect_mask(vk::ImageAspectFlags::COLOR)
+                    .base_mip_level(0)
+                    .level_count(1)
+                    .base_array_layer(0)
+                    .layer_count(1),
+            )
             .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
             .dst_access_mask(vk::AccessFlags::TRANSFER_READ);
 
@@ -160,13 +203,19 @@ impl HeadlessVulkan {
             .buffer_offset(0)
             .buffer_row_length(0)
             .buffer_image_height(0)
-            .image_subresource(vk::ImageSubresourceLayers::default()
-                .aspect_mask(vk::ImageAspectFlags::COLOR)
-                .mip_level(0)
-                .base_array_layer(0)
-                .layer_count(1))
+            .image_subresource(
+                vk::ImageSubresourceLayers::default()
+                    .aspect_mask(vk::ImageAspectFlags::COLOR)
+                    .mip_level(0)
+                    .base_array_layer(0)
+                    .layer_count(1),
+            )
             .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
-            .image_extent(vk::Extent3D { width, height, depth: 1 });
+            .image_extent(vk::Extent3D {
+                width,
+                height,
+                depth: 1,
+            });
 
         unsafe {
             self.device.cmd_copy_image_to_buffer(
@@ -180,14 +229,22 @@ impl HeadlessVulkan {
 
         unsafe { self.device.end_command_buffer(cmd_buf).unwrap() };
 
-        let submit_info = vk::SubmitInfo::default()
-            .command_buffers(std::slice::from_ref(&cmd_buf));
-        let fence = unsafe { self.device.create_fence(&vk::FenceCreateInfo::default(), None).unwrap() };
+        let submit_info = vk::SubmitInfo::default().command_buffers(std::slice::from_ref(&cmd_buf));
+        let fence = unsafe {
+            self.device
+                .create_fence(&vk::FenceCreateInfo::default(), None)
+                .unwrap()
+        };
         unsafe {
-            self.device.queue_submit(self.queue, std::slice::from_ref(&submit_info), fence).unwrap();
-            self.device.wait_for_fences(std::slice::from_ref(&fence), true, u64::MAX).unwrap();
+            self.device
+                .queue_submit(self.queue, std::slice::from_ref(&submit_info), fence)
+                .unwrap();
+            self.device
+                .wait_for_fences(std::slice::from_ref(&fence), true, u64::MAX)
+                .unwrap();
             self.device.destroy_fence(fence, None);
-            self.device.free_command_buffers(self.command_pool, std::slice::from_ref(&cmd_buf));
+            self.device
+                .free_command_buffers(self.command_pool, std::slice::from_ref(&cmd_buf));
         }
     }
 }
@@ -212,7 +269,10 @@ fn create_skia_vulkan_surface(
     height: u32,
     color_space: Option<skia_safe::ColorSpace>,
 ) -> Option<(SkSurface, gpu::DirectContext)> {
-    let pdevice = unsafe { vk.instance.enumerate_physical_devices() }.ok()?.first()?.clone();
+    let pdevice = unsafe { vk.instance.enumerate_physical_devices() }
+        .ok()?
+        .first()?
+        .clone();
     let instance_raw = vk.instance.handle().as_raw();
     let device_raw = vk.device.handle().as_raw();
 
@@ -221,13 +281,20 @@ fn create_skia_vulkan_surface(
             match of {
                 gpu::vk::GetProcOf::Instance(inst, name) => {
                     let name_cstr = CStr::from_ptr(name);
-                    vk.entry.get_instance_proc_addr(vk::Instance::from_raw(inst as _), name_cstr.as_ptr())
-                        .map(|f| f as _).unwrap_or(std::ptr::null())
+                    vk.entry
+                        .get_instance_proc_addr(
+                            vk::Instance::from_raw(inst as _),
+                            name_cstr.as_ptr(),
+                        )
+                        .map(|f| f as _)
+                        .unwrap_or(std::ptr::null())
                 }
                 gpu::vk::GetProcOf::Device(dev, name) => {
                     let name_cstr = CStr::from_ptr(name);
-                    vk.instance.get_device_proc_addr(vk::Device::from_raw(dev as _), name_cstr.as_ptr())
-                        .map(|f| f as *mut std::ffi::c_void).unwrap_or(std::ptr::null_mut()) as _
+                    vk.instance
+                        .get_device_proc_addr(vk::Device::from_raw(dev as _), name_cstr.as_ptr())
+                        .map(|f| f as *mut std::ffi::c_void)
+                        .unwrap_or(std::ptr::null_mut()) as _
                 }
             }
         }
@@ -262,10 +329,8 @@ fn create_skia_vulkan_surface(
         )
     };
 
-    let render_target = gpu::backend_render_targets::make_vk(
-        (width as i32, height as i32),
-        &image_info,
-    );
+    let render_target =
+        gpu::backend_render_targets::make_vk((width as i32, height as i32), &image_info);
 
     let surface = gpu::surfaces::wrap_backend_render_target(
         &mut context,
@@ -305,7 +370,9 @@ fn test_colorspace_gradient_interpolation() {
     let mid_y = height / 2;
 
     // ---- 场景 A: 无 ColorSpace ----
-    let (img_a, mem_a, _) = vk.create_image(width, height).expect("Failed to create image A");
+    let (img_a, mem_a, _) = vk
+        .create_image(width, height)
+        .expect("Failed to create image A");
     let (mut surf_a, mut ctx_a) = create_skia_vulkan_surface(&vk, img_a, width, height, None)
         .expect("Failed to create Skia surface A");
 
@@ -318,21 +385,33 @@ fn test_colorspace_gradient_interpolation() {
     let colors: Vec<Color> = vec![Color::new(0xFF000000), Color::new(0xFFFFFFFF)];
     let pt1 = skia_safe::Point::new(0.0, (height as f32) / 2.0);
     let pt2 = skia_safe::Point::new(width as f32, (height as f32) / 2.0);
-    let shader_a = skia_safe::gradient_shader::linear(
-        (pt1, pt2), &*colors, None, TileMode::Clamp, None, None
-    );
+    let shader_a =
+        skia_safe::gradient_shader::linear((pt1, pt2), &*colors, None, TileMode::Clamp, None, None);
     paint_a.set_shader(shader_a);
-    canvas_a.draw_rect(&Rect::from_xywh(0.0, 0.0, width as f32, height as f32), &paint_a);
+    canvas_a.draw_rect(
+        &Rect::from_xywh(0.0, 0.0, width as f32, height as f32),
+        &paint_a,
+    );
     ctx_a.flush_and_submit();
 
-    let (buf_a, buf_mem_a) = vk.create_readback_buffer(buffer_size).expect("Failed to create readback buffer A");
+    let (buf_a, buf_mem_a) = vk
+        .create_readback_buffer(buffer_size)
+        .expect("Failed to create readback buffer A");
     vk.copy_image_to_buffer(img_a, buf_a, width, height);
-    let ptr_a = unsafe { vk.device.map_memory(buf_mem_a, 0, buffer_size, vk::MemoryMapFlags::empty()).unwrap() as *const u8 };
+    let ptr_a = unsafe {
+        vk.device
+            .map_memory(buf_mem_a, 0, buffer_size, vk::MemoryMapFlags::empty())
+            .unwrap() as *const u8
+    };
     let pixel_a = read_pixel(ptr_a, width, mid_x, mid_y);
-    unsafe { vk.device.unmap_memory(buf_mem_a); }
+    unsafe {
+        vk.device.unmap_memory(buf_mem_a);
+    }
 
     // ---- 场景 B: 有 sRGB ColorSpace ----
-    let (img_b, mem_b, _) = vk.create_image(width, height).expect("Failed to create image B");
+    let (img_b, mem_b, _) = vk
+        .create_image(width, height)
+        .expect("Failed to create image B");
     let srgb = skia_safe::ColorSpace::new_srgb();
     let (mut surf_b, mut ctx_b) = create_skia_vulkan_surface(&vk, img_b, width, height, Some(srgb))
         .expect("Failed to create Skia surface B");
@@ -342,25 +421,41 @@ fn test_colorspace_gradient_interpolation() {
     paint_b.set_style(PaintStyle::Fill);
     paint_b.set_anti_alias(false);
 
-    let shader_b = skia_safe::gradient_shader::linear(
-        (pt1, pt2), &*colors, None, TileMode::Clamp, None, None
-    );
+    let shader_b =
+        skia_safe::gradient_shader::linear((pt1, pt2), &*colors, None, TileMode::Clamp, None, None);
     paint_b.set_shader(shader_b);
-    canvas_b.draw_rect(&Rect::from_xywh(0.0, 0.0, width as f32, height as f32), &paint_b);
+    canvas_b.draw_rect(
+        &Rect::from_xywh(0.0, 0.0, width as f32, height as f32),
+        &paint_b,
+    );
     ctx_b.flush_and_submit();
 
-    let (buf_b, buf_mem_b) = vk.create_readback_buffer(buffer_size).expect("Failed to create readback buffer B");
+    let (buf_b, buf_mem_b) = vk
+        .create_readback_buffer(buffer_size)
+        .expect("Failed to create readback buffer B");
     vk.copy_image_to_buffer(img_b, buf_b, width, height);
-    let ptr_b = unsafe { vk.device.map_memory(buf_mem_b, 0, buffer_size, vk::MemoryMapFlags::empty()).unwrap() as *const u8 };
+    let ptr_b = unsafe {
+        vk.device
+            .map_memory(buf_mem_b, 0, buffer_size, vk::MemoryMapFlags::empty())
+            .unwrap() as *const u8
+    };
     let pixel_b = read_pixel(ptr_b, width, mid_x, mid_y);
-    unsafe { vk.device.unmap_memory(buf_mem_b); }
+    unsafe {
+        vk.device.unmap_memory(buf_mem_b);
+    }
 
     // ---- 结果对比 ----
     let ga = (pixel_a >> 8) & 0xFF;
     let gb = (pixel_b >> 8) & 0xFF;
 
-    println!("场景 A (无 ColorSpace):  渐变中点 = {:#010X}, G={}", pixel_a, ga);
-    println!("场景 B (sRGB ColorSpace): 渐变中点 = {:#010X}, G={}", pixel_b, gb);
+    println!(
+        "场景 A (无 ColorSpace):  渐变中点 = {:#010X}, G={}",
+        pixel_a, ga
+    );
+    println!(
+        "场景 B (sRGB ColorSpace): 渐变中点 = {:#010X}, G={}",
+        pixel_b, gb
+    );
     println!();
 
     // 理论分析:
@@ -374,8 +469,14 @@ fn test_colorspace_gradient_interpolation() {
     let expected_with_cs = 188u32;
 
     println!("理论预期:");
-    println!("  无 ColorSpace (数值插值):     G ≈ {} => 0xFF808080", expected_no_cs);
-    println!("  有 sRGB ColorSpace (感知插值): G ≈ {} => 0xFFBCBCBC", expected_with_cs);
+    println!(
+        "  无 ColorSpace (数值插值):     G ≈ {} => 0xFF808080",
+        expected_no_cs
+    );
+    println!(
+        "  有 sRGB ColorSpace (感知插值): G ≈ {} => 0xFFBCBCBC",
+        expected_with_cs
+    );
     println!();
 
     let diff = ((ga as i32) - (gb as i32)).abs();
@@ -400,10 +501,14 @@ fn test_colorspace_gradient_interpolation() {
 
     // 安全清理
     unsafe {
-        vk.device.destroy_buffer(buf_a, None); vk.device.free_memory(buf_mem_a, None);
-        vk.device.destroy_image(img_a, None); vk.device.free_memory(mem_a, None);
-        vk.device.destroy_buffer(buf_b, None); vk.device.free_memory(buf_mem_b, None);
-        vk.device.destroy_image(img_b, None); vk.device.free_memory(mem_b, None);
+        vk.device.destroy_buffer(buf_a, None);
+        vk.device.free_memory(buf_mem_a, None);
+        vk.device.destroy_image(img_a, None);
+        vk.device.free_memory(mem_a, None);
+        vk.device.destroy_buffer(buf_b, None);
+        vk.device.free_memory(buf_mem_b, None);
+        vk.device.destroy_image(img_b, None);
+        vk.device.free_memory(mem_b, None);
     }
 
     println!("\n测试完成。");
@@ -421,7 +526,9 @@ fn test_colorspace_clear_solid_color() {
     let height = 64u32;
     let buffer_size = ((width * height) as usize * 4) as u64;
 
-    let (img, mem, _) = vk.create_image(width, height).expect("Failed to create image");
+    let (img, mem, _) = vk
+        .create_image(width, height)
+        .expect("Failed to create image");
     let srgb = skia_safe::ColorSpace::new_srgb();
     let (mut surf, mut ctx) = create_skia_vulkan_surface(&vk, img, width, height, Some(srgb))
         .expect("Failed to create Skia surface");
@@ -430,18 +537,29 @@ fn test_colorspace_clear_solid_color() {
     canvas.clear(Color::new(0xFF1E1E1E));
     ctx.flush_and_submit();
 
-    let (buf, buf_mem) = vk.create_readback_buffer(buffer_size).expect("Failed to create readback buffer");
+    let (buf, buf_mem) = vk
+        .create_readback_buffer(buffer_size)
+        .expect("Failed to create readback buffer");
     vk.copy_image_to_buffer(img, buf, width, height);
 
-    let ptr = unsafe { vk.device.map_memory(buf_mem, 0, buffer_size, vk::MemoryMapFlags::empty()).unwrap() as *const u8 };
-    let pixel = read_pixel(ptr, width, width/2, height/2);
-    unsafe { vk.device.unmap_memory(buf_mem); }
+    let ptr = unsafe {
+        vk.device
+            .map_memory(buf_mem, 0, buffer_size, vk::MemoryMapFlags::empty())
+            .unwrap() as *const u8
+    };
+    let pixel = read_pixel(ptr, width, width / 2, height / 2);
+    unsafe {
+        vk.device.unmap_memory(buf_mem);
+    }
 
     println!("Clear color input: 0xFF1E1E1E (sRGB 编码的暗灰)");
     println!("Readback pixel:    {:#010X}", pixel);
 
-    assert_eq!(pixel, 0xFF1E1E1E,
-        "纯色 clear 应该精确写回输入值。实际 {:#010X}", pixel);
+    assert_eq!(
+        pixel, 0xFF1E1E1E,
+        "纯色 clear 应该精确写回输入值。实际 {:#010X}",
+        pixel
+    );
 
     println!("✅ 纯色 clear 值精确匹配输入");
 
@@ -468,7 +586,9 @@ fn test_colorspace_alpha_blending() {
     let mid_y = height / 2;
 
     // 场景 A: 无 ColorSpace
-    let (img_a, mem_a, _) = vk.create_image(width, height).expect("Failed to create image A");
+    let (img_a, mem_a, _) = vk
+        .create_image(width, height)
+        .expect("Failed to create image A");
     let (mut surf_a, mut ctx_a) = create_skia_vulkan_surface(&vk, img_a, width, height, None)
         .expect("Failed to create Skia surface A");
     let canvas_a = surf_a.canvas();
@@ -480,14 +600,24 @@ fn test_colorspace_alpha_blending() {
     canvas_a.draw_rect(&Rect::from_xywh(32.0, 32.0, 192.0, 192.0), &paint_a);
     ctx_a.flush_and_submit();
 
-    let (buf_a, buf_mem_a) = vk.create_readback_buffer(buffer_size).expect("Failed to create buffer A");
+    let (buf_a, buf_mem_a) = vk
+        .create_readback_buffer(buffer_size)
+        .expect("Failed to create buffer A");
     vk.copy_image_to_buffer(img_a, buf_a, width, height);
-    let ptr_a = unsafe { vk.device.map_memory(buf_mem_a, 0, buffer_size, vk::MemoryMapFlags::empty()).unwrap() as *const u8 };
+    let ptr_a = unsafe {
+        vk.device
+            .map_memory(buf_mem_a, 0, buffer_size, vk::MemoryMapFlags::empty())
+            .unwrap() as *const u8
+    };
     let pixel_a = read_pixel(ptr_a, width, mid_x, mid_y);
-    unsafe { vk.device.unmap_memory(buf_mem_a); }
+    unsafe {
+        vk.device.unmap_memory(buf_mem_a);
+    }
 
     // 场景 B: sRGB ColorSpace
-    let (img_b, mem_b, _) = vk.create_image(width, height).expect("Failed to create image B");
+    let (img_b, mem_b, _) = vk
+        .create_image(width, height)
+        .expect("Failed to create image B");
     let srgb = skia_safe::ColorSpace::new_srgb();
     let (mut surf_b, mut ctx_b) = create_skia_vulkan_surface(&vk, img_b, width, height, Some(srgb))
         .expect("Failed to create Skia surface B");
@@ -500,11 +630,19 @@ fn test_colorspace_alpha_blending() {
     canvas_b.draw_rect(&Rect::from_xywh(32.0, 32.0, 192.0, 192.0), &paint_b);
     ctx_b.flush_and_submit();
 
-    let (buf_b, buf_mem_b) = vk.create_readback_buffer(buffer_size).expect("Failed to create buffer B");
+    let (buf_b, buf_mem_b) = vk
+        .create_readback_buffer(buffer_size)
+        .expect("Failed to create buffer B");
     vk.copy_image_to_buffer(img_b, buf_b, width, height);
-    let ptr_b = unsafe { vk.device.map_memory(buf_mem_b, 0, buffer_size, vk::MemoryMapFlags::empty()).unwrap() as *const u8 };
+    let ptr_b = unsafe {
+        vk.device
+            .map_memory(buf_mem_b, 0, buffer_size, vk::MemoryMapFlags::empty())
+            .unwrap() as *const u8
+    };
     let pixel_b = read_pixel(ptr_b, width, mid_x, mid_y);
-    unsafe { vk.device.unmap_memory(buf_mem_b); }
+    unsafe {
+        vk.device.unmap_memory(buf_mem_b);
+    }
 
     let ga = (pixel_a >> 8) & 0xFF;
     let gb = (pixel_b >> 8) & 0xFF;
@@ -514,16 +652,22 @@ fn test_colorspace_alpha_blending() {
     println!("差异: {}", ((ga as i32) - (gb as i32)).abs());
 
     if pixel_a == pixel_b {
-        println!("ℹ️  Alpha 混合结果完全相同，说明 Skia 的 SrcOver 混合在此配置下不受 ColorSpace 影响。");
+        println!(
+            "ℹ️  Alpha 混合结果完全相同，说明 Skia 的 SrcOver 混合在此配置下不受 ColorSpace 影响。"
+        );
         println!("   这与大多数 GPU 图形库的行为一致：alpha 混合默认在数值空间进行。");
     } else {
         println!("✅ Alpha 混合结果不同，ColorSpace 确实影响了混合计算。");
     }
 
     unsafe {
-        vk.device.destroy_buffer(buf_a, None); vk.device.free_memory(buf_mem_a, None);
-        vk.device.destroy_image(img_a, None); vk.device.free_memory(mem_a, None);
-        vk.device.destroy_buffer(buf_b, None); vk.device.free_memory(buf_mem_b, None);
-        vk.device.destroy_image(img_b, None); vk.device.free_memory(mem_b, None);
+        vk.device.destroy_buffer(buf_a, None);
+        vk.device.free_memory(buf_mem_a, None);
+        vk.device.destroy_image(img_a, None);
+        vk.device.free_memory(mem_a, None);
+        vk.device.destroy_buffer(buf_b, None);
+        vk.device.free_memory(buf_mem_b, None);
+        vk.device.destroy_image(img_b, None);
+        vk.device.free_memory(mem_b, None);
     }
 }

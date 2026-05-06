@@ -2,13 +2,13 @@
 //! 用于替代 Java 层的 TermuxAmSocketServer
 //! 提供高性能的子进程控制和状态查询接口
 
-use std::os::unix::net::{UnixListener, UnixStream};
-use std::io::{Read, Write};
-use std::thread;
-use std::fs;
-use std::path::Path;
-use crate::utils::{android_log, LogPriority};
 use crate::coordinator::SessionCoordinator;
+use crate::utils::{LogPriority, android_log};
+use std::fs;
+use std::io::{Read, Write};
+use std::os::unix::net::{UnixListener, UnixStream};
+use std::path::Path;
+use std::thread;
 
 /// 启动 Rust 本地 Socket 服务器
 pub fn start_server(socket_path: String) {
@@ -19,7 +19,14 @@ pub fn start_server(socket_path: String) {
         if let Some(parent) = path.parent() {
             if !parent.exists() {
                 if let Err(e) = fs::create_dir_all(parent) {
-                    android_log(LogPriority::ERROR, &format!("Failed to create socket directory {}: {}", parent.display(), e));
+                    android_log(
+                        LogPriority::ERROR,
+                        &format!(
+                            "Failed to create socket directory {}: {}",
+                            parent.display(),
+                            e
+                        ),
+                    );
                     return;
                 }
                 #[cfg(target_os = "android")]
@@ -33,17 +40,22 @@ pub fn start_server(socket_path: String) {
         // 2. 清理旧的 socket 文件
         if path.exists() {
             if let Err(e) = fs::remove_file(path) {
-                android_log(LogPriority::ERROR, &format!("Failed to remove old socket {}: {}", socket_path, e));
+                android_log(
+                    LogPriority::ERROR,
+                    &format!("Failed to remove old socket {}: {}", socket_path, e),
+                );
                 return;
             }
         }
 
         // 3. 绑定并监听
         let listener = match UnixListener::bind(path) {
-
             Ok(l) => l,
             Err(e) => {
-                android_log(LogPriority::ERROR, &format!("Failed to bind socket {}: {}", socket_path, e));
+                android_log(
+                    LogPriority::ERROR,
+                    &format!("Failed to bind socket {}: {}", socket_path, e),
+                );
                 return;
             }
         };
@@ -56,7 +68,10 @@ pub fn start_server(socket_path: String) {
             let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
         }
 
-        android_log(LogPriority::INFO, &format!("Rust LocalSocket server started on {}", socket_path));
+        android_log(
+            LogPriority::INFO,
+            &format!("Rust LocalSocket server started on {}", socket_path),
+        );
 
         // 4. 接受连接循环
         for stream in listener.incoming() {
@@ -81,9 +96,11 @@ fn handle_client(mut stream: UnixStream) {
 
     let request = String::from_utf8_lossy(&buffer[..n]);
     let parts: Vec<&str> = request.trim().split_whitespace().collect();
-    
-    if parts.is_empty() { return; }
-    
+
+    if parts.is_empty() {
+        return;
+    }
+
     let command = parts[0];
     let args = &parts[1..];
 
@@ -101,12 +118,8 @@ fn handle_client(mut stream: UnixStream) {
             }
             (0, report, String::new())
         }
-        "ping" => {
-            (0, "pong".to_string(), String::new())
-        }
-        _ => {
-            (1, String::new(), format!("Unknown command: {}", command))
-        }
+        "ping" => (0, "pong".to_string(), String::new()),
+        _ => (1, String::new(), format!("Unknown command: {}", command)),
     };
 
     // 按照 Termux 协议封装返回数据
@@ -122,19 +135,37 @@ fn handle_am_command(args: &[&str]) -> (i32, String, String) {
     };
     let mut env = match vm.attach_current_thread_as_daemon() {
         Ok(e) => e,
-        Err(e) => return (1, String::new(), format!("Failed to attach JVM thread: {:?}", e)),
+        Err(e) => {
+            return (
+                1,
+                String::new(),
+                format!("Failed to attach JVM thread: {:?}", e),
+            );
+        }
     };
 
     let class_name = "com/termux/shared/termux/shell/am/RustLocalSocketBridge";
     let cls = match env.find_class(class_name) {
         Ok(c) => c,
-        Err(e) => return (1, String::new(), format!("Class {} not found: {:?}", class_name, e)),
+        Err(e) => {
+            return (
+                1,
+                String::new(),
+                format!("Class {} not found: {:?}", class_name, e),
+            );
+        }
     };
 
     // 将 Rust args 转换为 Java StringArray
     let empty_jstring = match env.new_string("") {
         Ok(s) => s,
-        Err(e) => return (1, String::new(), format!("Failed to create empty string: {:?}", e)),
+        Err(e) => {
+            return (
+                1,
+                String::new(),
+                format!("Failed to create empty string: {:?}", e),
+            );
+        }
     };
     let j_args = match env.new_object_array(args.len() as i32, "java/lang/String", &empty_jstring) {
         Ok(a) => a,
@@ -164,7 +195,8 @@ fn handle_am_command(args: &[&str]) -> (i32, String, String) {
     };
 
     // 解析 JniResult
-    let exit_code = env.get_field(&obj, "retval", "I")
+    let exit_code = env
+        .get_field(&obj, "retval", "I")
         .and_then(|v| v.i())
         .unwrap_or(-1);
 
@@ -172,7 +204,9 @@ fn handle_am_command(args: &[&str]) -> (i32, String, String) {
         Ok(v) => match v.l() {
             Ok(o) => {
                 let jstr = jni::objects::JString::from(o);
-                env.get_string(&jstr).map(|s| String::from(s)).unwrap_or_default()
+                env.get_string(&jstr)
+                    .map(|s| String::from(s))
+                    .unwrap_or_default()
             }
             Err(_) => String::new(),
         },
@@ -183,7 +217,9 @@ fn handle_am_command(args: &[&str]) -> (i32, String, String) {
         Ok(v) => match v.l() {
             Ok(o) => {
                 let jstr = jni::objects::JString::from(o);
-                env.get_string(&jstr).map(|s| String::from(s)).unwrap_or_default()
+                env.get_string(&jstr)
+                    .map(|s| String::from(s))
+                    .unwrap_or_default()
             }
             Err(_) => String::new(),
         },

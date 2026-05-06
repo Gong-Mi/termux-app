@@ -372,22 +372,33 @@ fn test_resize_preserves_history() {
 
     // 验证有历史内容
     let initial_active_transcript = engine.state.main_screen.active_transcript_rows;
-    eprintln!("Initial active_transcript_rows: {}", initial_active_transcript);
+    eprintln!(
+        "Initial active_transcript_rows: {}",
+        initial_active_transcript
+    );
     assert!(initial_active_transcript > 0, "Should have some history");
 
     // 缩小终端（从 5 行到 3 行）
     engine.state.resize(10 as i64, 3 as i64);
     let shrunk_active_transcript = engine.state.main_screen.active_transcript_rows;
-    eprintln!("After shrink (5->3): active_transcript_rows: {}", shrunk_active_transcript);
-    
+    eprintln!(
+        "After shrink (5->3): active_transcript_rows: {}",
+        shrunk_active_transcript
+    );
+
     // 缩小后历史内容应该增加
-    assert!(shrunk_active_transcript >= initial_active_transcript, 
-        "Shrinking should preserve or increase history");
+    assert!(
+        shrunk_active_transcript >= initial_active_transcript,
+        "Shrinking should preserve or increase history"
+    );
 
     // 放大终端（从 3 行回到 5 行）
     engine.state.resize(10, 5);
     let expanded_active_transcript = engine.state.main_screen.active_transcript_rows;
-    eprintln!("After expand (3->5): active_transcript_rows: {}", expanded_active_transcript);
+    eprintln!(
+        "After expand (3->5): active_transcript_rows: {}",
+        expanded_active_transcript
+    );
 
     // 放大后历史内容应该减少，但不应该丢失
     // 关键验证：第一行历史内容应该还能访问
@@ -395,9 +406,12 @@ fn test_resize_preserves_history() {
     let first_history_row = engine.state.main_screen.get_row(min_row as i64);
     let text: String = first_history_row.text.iter().take(10).collect();
     eprintln!("First history row: '{}'", text.trim());
-    
+
     // 第一行历史应该是 "Line 00" 或类似的早期内容
-    assert!(text.contains("Line"), "History content should be preserved after resize");
+    assert!(
+        text.contains("Line"),
+        "History content should be preserved after resize"
+    );
 }
 
 /// 验证插入字符 (ICH) - ✅ PASS
@@ -828,9 +842,18 @@ fn test_auto_wrap() {
     // "0" 打印在 (9, 0), about_to_wrap = true, cursor_y 还是 0
     // 第二个 "1" 触发换行，跳到 (0, 1) 打印 "1", 光标到 (1, 1)
     // 重复直到最后一个 "0" 打印在 (9, 1), about_to_wrap = true
-    assert_eq!(engine.state.cursor.y, 1, "Cursor Y should be 1 (pending wrap)");
-    assert_eq!(engine.state.cursor.x, 9, "Cursor X should be 9 (last column)");
-    assert_eq!(engine.state.cursor.about_to_wrap, true, "Should be about to wrap");
+    assert_eq!(
+        engine.state.cursor.y, 1,
+        "Cursor Y should be 1 (pending wrap)"
+    );
+    assert_eq!(
+        engine.state.cursor.x, 9,
+        "Cursor X should be 9 (last column)"
+    );
+    assert_eq!(
+        engine.state.cursor.about_to_wrap, true,
+        "Should be about to wrap"
+    );
     // 光标位置取决于具体实现，我们只验证 Y
 }
 
@@ -883,12 +906,17 @@ fn test_decset_auto_wrap() {
 
     engine.process_bytes(b"\x1b[?7l");
     assert_eq!(
-        engine.state.auto_wrap(), false,
+        engine.state.auto_wrap(),
+        false,
         "Auto wrap should be disabled"
     );
 
     engine.process_bytes(b"\x1b[?7h");
-    assert_eq!(engine.state.auto_wrap(), true, "Auto wrap should be enabled");
+    assert_eq!(
+        engine.state.auto_wrap(),
+        true,
+        "Auto wrap should be enabled"
+    );
 }
 
 /// 验证 DECSET 原点模式 - ✅ PASS
@@ -898,13 +926,15 @@ fn test_decset_origin_mode() {
 
     engine.process_bytes(b"\x1b[?6h");
     assert_eq!(
-        engine.state.origin_mode(), true,
+        engine.state.origin_mode(),
+        true,
         "Origin mode should be enabled"
     );
 
     engine.process_bytes(b"\x1b[?6l");
     assert_eq!(
-        engine.state.origin_mode(), false,
+        engine.state.origin_mode(),
+        false,
         "Origin mode should be disabled"
     );
 }
@@ -941,7 +971,8 @@ fn test_decset_leftright_margin_mode() {
     // 启用 DECLRMM
     engine.process_bytes(b"\x1b[?69h");
     assert_eq!(
-        engine.state.leftright_margin_mode(), true,
+        engine.state.leftright_margin_mode(),
+        true,
         "Left-right margin mode should be enabled"
     );
     assert_ne!(
@@ -961,7 +992,8 @@ fn test_decset_leftright_margin_mode() {
     // 禁用 DECLRMM
     engine.process_bytes(b"\x1b[?69l");
     assert_eq!(
-        engine.state.leftright_margin_mode(), false,
+        engine.state.leftright_margin_mode(),
+        false,
         "Left-right margin mode should be disabled"
     );
 }
@@ -1050,9 +1082,14 @@ fn test_decset_flags_save_restore() {
     // 恢复光标应该恢复 DECSET 标志
     engine.process_bytes(b"\x1b8");
 
-    assert_eq!(engine.state.auto_wrap(), true, "Auto wrap should be restored");
     assert_eq!(
-        engine.state.origin_mode(), true,
+        engine.state.auto_wrap(),
+        true,
+        "Auto wrap should be restored"
+    );
+    assert_eq!(
+        engine.state.origin_mode(),
+        true,
         "Origin mode should be restored"
     );
 }
@@ -1350,11 +1387,15 @@ fn test_key_event_ctrl_combinations() {
     let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // Ctrl+A
-    engine.state.send_key_event(0, Some("a".to_string()), 0x40000000);
+    engine
+        .state
+        .send_key_event(0, Some("a".to_string()), 0x40000000);
     // 应该发送 \x01
 
     // Ctrl+Space
-    engine.state.send_key_event(62, Some(" ".to_string()), 0x40000000);
+    engine
+        .state
+        .send_key_event(62, Some(" ".to_string()), 0x40000000);
     // 应该发送 \x00
 }
 
@@ -1364,7 +1405,9 @@ fn test_key_event_alt_prefix() {
     let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     // Alt+D
-    engine.state.send_key_event(0, Some("d".to_string()), 0x80000000u32 as i32);
+    engine
+        .state
+        .send_key_event(0, Some("d".to_string()), 0x80000000u32 as i32);
     // 应该发送 \x1bd
 }
 
@@ -1567,7 +1610,8 @@ fn test_ris_reset() {
         "Bottom margin should be 24 after RIS"
     );
     assert_eq!(
-        engine.state.auto_wrap(), true,
+        engine.state.auto_wrap(),
+        true,
         "Auto wrap should be enabled after RIS"
     );
 }
@@ -2511,8 +2555,14 @@ fn test_wide_char_at_line_end_with_background() {
     // "你" (width 2) -> 此时 8+2=10, 刚好填满行 (right_margin=10)
     // 根据逻辑：它会填满 8, 9 列，然后 cursor_x 变成 10
     // 因为 10 >= right_margin，它会触发 pending wrap 逻辑
-    assert_eq!(engine.state.cursor.y, 0, "Cursor should still be on row 0 (fits exactly)");
-    assert_eq!(engine.state.cursor.about_to_wrap, true, "Should be about to wrap");
+    assert_eq!(
+        engine.state.cursor.y, 0,
+        "Cursor should still be on row 0 (fits exactly)"
+    );
+    assert_eq!(
+        engine.state.cursor.about_to_wrap, true,
+        "Should be about to wrap"
+    );
 }
 
 // =============================================================================
@@ -2884,7 +2934,10 @@ fn test_sixel_basic_decode() {
     let mut decoder = SixelDecoder::new();
 
     // 验证初始状态
-    assert_eq!(decoder.state, termux_rust::terminal::sixel::SixelState::Data);
+    assert_eq!(
+        decoder.state,
+        termux_rust::terminal::sixel::SixelState::Data
+    );
     assert_eq!(decoder.width, 0, "Initial width should be 0");
     assert_eq!(decoder.height, 0, "Initial height should be 0");
     assert_eq!(decoder.current_color, 0, "Initial color should be 0");
@@ -3014,7 +3067,7 @@ fn test_sixel_image_rendering() {
 // =============================================================================
 
 /// 验证缩小屏幕时的内容重排 (80 -> 40) - ✅ 修复验证
-/// 
+///
 /// 问题描述：在旧版本中，缩小屏幕会导致行尾数据被物理裁剪丢失。
 /// 修复方案：实现逻辑行重排 (Reflow)，溢出内容折叠到下一行。
 #[test]
@@ -3025,7 +3078,7 @@ fn test_resize_shrink_reflow() {
     let mut data = "A".repeat(80).into_bytes();
     data.push(b'B'); // 第 81 个字符
     engine.process_bytes(&data);
-    
+
     // 验证初始状态：Row 0 是满的，Wrap 为 true
     assert_eq!(engine.state.main_screen.buffer[0].line_wrap, true);
     assert_eq!(engine.state.main_screen.buffer[0].text[0], 'A');
@@ -3042,12 +3095,15 @@ fn test_resize_shrink_reflow() {
     }
 
     // 验证 80 个 A 和 1 个 B 是否都存在
-    assert!(all_text.contains(&"A".repeat(40)), "Combined text should contain A sequence");
+    assert!(
+        all_text.contains(&"A".repeat(40)),
+        "Combined text should contain A sequence"
+    );
     assert!(all_text.contains("B"), "Combined text should contain B");
 }
 
 /// 验证放大屏幕时的内容重排 (40 -> 80) - ✅ 修复验证
-/// 
+///
 /// 问题描述：在旧版本中，放大屏幕无法恢复之前缩小丢失的数据。
 /// 修复方案：实现逻辑行重排 (Reflow)，折叠的内容缩回上一行。
 #[test]
@@ -3068,7 +3124,7 @@ fn test_resize_expand_reflow() {
     assert_eq!(engine.state.cols, 80);
     let row0 = get_row_text(&engine, 0);
     assert!(row0.contains(&"B".repeat(80)));
-    
+
     // Row 1 应该被清空
     assert!(get_row_text(&engine, 1).trim().is_empty());
 }
@@ -3089,5 +3145,9 @@ fn test_resize_style_reflow() {
     // 3. 验证 Row 1 (溢出的行) 是否保留了红色背景样式
     // 红色背景索引为 1，存储在 style 的位 16-24
     let style_row_1 = engine.state.main_screen.buffer[1].styles[0];
-    assert_eq!((style_row_1 >> 16) & 0x1FF, 1, "Style should be preserved during reflow");
+    assert_eq!(
+        (style_row_1 >> 16) & 0x1FF,
+        1,
+        "Style should be preserved during reflow"
+    );
 }

@@ -73,7 +73,7 @@ impl TerminalColors {
         for i in 0..259 {
             colors_4f[i] = Color4f::from(skia_safe::Color::new(DEFAULT_COLORSCHEME[i]));
         }
-        Self { 
+        Self {
             current_colors: DEFAULT_COLORSCHEME,
             current_colors_4f: colors_4f,
         }
@@ -81,8 +81,10 @@ impl TerminalColors {
 
     /// 解析颜色字符串并返回 (u32, Color4f)
     pub fn parse_color_full(color_str: &str) -> Option<(u32, Color4f)> {
-        let color_str = color_str.trim_end_matches(|c| c == '\x07' || c == '\x1b' || c == '\\').trim();
-        
+        let color_str = color_str
+            .trim_end_matches(|c| c == '\x07' || c == '\x1b' || c == '\\')
+            .trim();
+
         if color_str.starts_with('#') {
             // #RGB, #RRGGBB, #RRRGGGBBB, #RRRRGGGGBBBB
             let hex = &color_str[1..];
@@ -108,7 +110,10 @@ impl TerminalColors {
                     let rf = r as f32 / 4095.0;
                     let gf = g as f32 / 4095.0;
                     let bf = b as f32 / 4095.0;
-                    let c32 = 0xff000000 | (((rf * 255.0) as u32) << 16) | (((gf * 255.0) as u32) << 8) | ((bf * 255.0) as u32);
+                    let c32 = 0xff000000
+                        | (((rf * 255.0) as u32) << 16)
+                        | (((gf * 255.0) as u32) << 8)
+                        | ((bf * 255.0) as u32);
                     Some((c32, Color4f::new(rf, gf, bf, 1.0)))
                 }
                 12 => {
@@ -118,7 +123,10 @@ impl TerminalColors {
                     let rf = r as f32 / 65535.0;
                     let gf = g as f32 / 65535.0;
                     let bf = b as f32 / 65535.0;
-                    let c32 = 0xff000000 | (((rf * 255.0) as u32) << 16) | (((gf * 255.0) as u32) << 8) | ((bf * 255.0) as u32);
+                    let c32 = 0xff000000
+                        | (((rf * 255.0) as u32) << 16)
+                        | (((gf * 255.0) as u32) << 8)
+                        | ((bf * 255.0) as u32);
                     Some((c32, Color4f::new(rf, gf, bf, 1.0)))
                 }
                 _ => None,
@@ -126,12 +134,17 @@ impl TerminalColors {
         } else if color_str.starts_with("rgb:") {
             let rgb_part = &color_str[4..];
             let parts: Vec<&str> = rgb_part.split('/').collect();
-            if parts.len() != 3 { return None; }
-            
+            if parts.len() != 3 {
+                return None;
+            }
+
             let rf = parse_rgb_component_f32(parts[0])?;
             let gf = parse_rgb_component_f32(parts[1])?;
             let bf = parse_rgb_component_f32(parts[2])?;
-            let c32 = 0xff000000 | (((rf * 255.0) as u32) << 16) | (((gf * 255.0) as u32) << 8) | ((bf * 255.0) as u32);
+            let c32 = 0xff000000
+                | (((rf * 255.0) as u32) << 16)
+                | (((gf * 255.0) as u32) << 8)
+                | ((bf * 255.0) as u32);
             Some((c32, Color4f::new(rf, gf, bf, 1.0)))
         } else {
             None
@@ -147,9 +160,9 @@ impl TerminalColors {
         let r = ((color >> 16) & 0xff) as f64;
         let g = ((color >> 8) & 0xff) as f64;
         let b = (color & 0xff) as f64;
-        let brightness = (r * r * BRIGHTNESS_R_COEF 
-                        + g * g * BRIGHTNESS_G_COEF 
-                        + b * b * BRIGHTNESS_B_COEF).sqrt();
+        let brightness =
+            (r * r * BRIGHTNESS_R_COEF + g * g * BRIGHTNESS_G_COEF + b * b * BRIGHTNESS_B_COEF)
+                .sqrt();
         brightness as u8
     }
 
@@ -165,7 +178,10 @@ impl TerminalColors {
         }
     }
 
-    pub fn update_with_properties(&mut self, props: &std::collections::HashMap<String, String>) -> Result<(), String> {
+    pub fn update_with_properties(
+        &mut self,
+        props: &std::collections::HashMap<String, String>,
+    ) -> Result<(), String> {
         self.reset();
         let mut cursor_prop_exists = false;
         for (key, value) in props {
@@ -178,10 +194,16 @@ impl TerminalColors {
                 COLOR_INDEX_CURSOR
             } else if key.starts_with("color") {
                 let index_str = key.strip_prefix("color").unwrap();
-                let idx = index_str.parse::<usize>().map_err(|_| format!("Invalid color index: {}", key))?;
-                if idx >= COLOR_INDEX_FOREGROUND { return Err(format!("Index out of range: {}", idx)); }
+                let idx = index_str
+                    .parse::<usize>()
+                    .map_err(|_| format!("Invalid color index: {}", key))?;
+                if idx >= COLOR_INDEX_FOREGROUND {
+                    return Err(format!("Index out of range: {}", idx));
+                }
                 idx
-            } else { continue; };
+            } else {
+                continue;
+            };
             if let Some((c32, c4f)) = Self::parse_color_full(value) {
                 self.current_colors[color_index] = c32;
                 self.current_colors_4f[color_index] = c4f;
@@ -198,14 +220,16 @@ impl TerminalColors {
     pub fn reset(&mut self) {
         self.current_colors = DEFAULT_COLORSCHEME;
         for i in 0..259 {
-            self.current_colors_4f[i] = Color4f::from(skia_safe::Color::new(DEFAULT_COLORSCHEME[i]));
+            self.current_colors_4f[i] =
+                Color4f::from(skia_safe::Color::new(DEFAULT_COLORSCHEME[i]));
         }
     }
 
     pub fn reset_index(&mut self, index: usize) {
         if index < 259 {
             self.current_colors[index] = DEFAULT_COLORSCHEME[index];
-            self.current_colors_4f[index] = Color4f::from(skia_safe::Color::new(DEFAULT_COLORSCHEME[index]));
+            self.current_colors_4f[index] =
+                Color4f::from(skia_safe::Color::new(DEFAULT_COLORSCHEME[index]));
         }
     }
 
@@ -221,7 +245,9 @@ impl TerminalColors {
     }
 
     pub fn generate_color_report(&self, index: usize) -> String {
-        if index >= 259 { return String::new(); }
+        if index >= 259 {
+            return String::new();
+        }
         let color = self.current_colors[index];
         let r = (((color >> 16) & 0xff) as u16 * 65535) / 255;
         let g = (((color >> 8) & 0xff) as u16 * 65535) / 255;
@@ -232,7 +258,9 @@ impl TerminalColors {
 
 fn parse_rgb_component_f32(s: &str) -> Option<f32> {
     let len = s.len();
-    if len == 0 || len > 4 { return None; }
+    if len == 0 || len > 4 {
+        return None;
+    }
     let value = u16::from_str_radix(s, 16).ok()?;
     match len {
         1 => Some((value * 17) as f32 / 255.0),
@@ -257,8 +285,15 @@ mod tests {
     fn test_parse_hex_colors() {
         assert_eq!(TerminalColors::parse_color("#000"), Some(0xff000000));
         assert_eq!(TerminalColors::parse_color("#ffffff"), Some(0xffffffff));
-        
-        let (_, c4f) = TerminalColors::parse_color_full("#RRRRGGGGBBBB".replace('R',"f").replace('G',"0").replace('B',"f").as_str()).unwrap();
+
+        let (_, c4f) = TerminalColors::parse_color_full(
+            "#RRRRGGGGBBBB"
+                .replace('R', "f")
+                .replace('G', "0")
+                .replace('B', "f")
+                .as_str(),
+        )
+        .unwrap();
         assert_eq!(c4f.r, 1.0);
         assert_eq!(c4f.g, 0.0);
         assert_eq!(c4f.b, 1.0);

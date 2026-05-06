@@ -5,7 +5,12 @@ use crate::terminal::modes::*;
 impl ScreenState {
     /// 处理按键事件 - 实现 KeyHandler.getCode() 的逻辑
     /// 返回生成的转义序列，由 Java 写入 PTY
-    pub fn send_key_event(&mut self, key_code: i32, _char_str: Option<String>, meta_state: i32) -> Option<String> {
+    pub fn send_key_event(
+        &mut self,
+        key_code: i32,
+        _char_str: Option<String>,
+        meta_state: i32,
+    ) -> Option<String> {
         const KEYCODE_DPAD_UP: i32 = 19;
         const KEYCODE_DPAD_DOWN: i32 = 20;
         const KEYCODE_DPAD_LEFT: i32 = 21;
@@ -44,87 +49,141 @@ impl ScreenState {
         let ctrl_down = (meta_state & KEYMOD_CTRL) != 0;
 
         let mut key_mode = 0;
-        if shift_down { key_mode |= 1; }
-        if alt_down { key_mode |= 2; }
-        if ctrl_down { key_mode |= 4; }
+        if shift_down {
+            key_mode |= 1;
+        }
+        if alt_down {
+            key_mode |= 2;
+        }
+        if ctrl_down {
+            key_mode |= 4;
+        }
 
         let cursor_app = self.application_cursor_keys;
         let keypad_application = self.modes.is_enabled(DECSET_BIT_APPLICATION_KEYPAD);
 
         match key_code {
             KEYCODE_DPAD_CENTER | KEYCODE_ENTER => {
-                if alt_down { Some("\x1b\r".to_string()) } else { Some("\r".to_string()) }
-            },
+                if alt_down {
+                    Some("\x1b\r".to_string())
+                } else {
+                    Some("\r".to_string())
+                }
+            }
             KEYCODE_DPAD_UP => {
                 if key_mode == 0 {
-                    Some(if cursor_app { "\x1bOA".to_string() } else { "\x1b[A".to_string() })
+                    Some(if cursor_app {
+                        "\x1bOA".to_string()
+                    } else {
+                        "\x1b[A".to_string()
+                    })
                 } else {
                     Some(self.transform_for_modifiers("\x1b[1", key_mode, 'A'))
                 }
-            },
+            }
             KEYCODE_DPAD_DOWN => {
                 if key_mode == 0 {
-                    Some(if cursor_app { "\x1bOB".to_string() } else { "\x1b[B".to_string() })
+                    Some(if cursor_app {
+                        "\x1bOB".to_string()
+                    } else {
+                        "\x1b[B".to_string()
+                    })
                 } else {
                     Some(self.transform_for_modifiers("\x1b[1", key_mode, 'B'))
                 }
-            },
+            }
             KEYCODE_DPAD_LEFT => {
                 if key_mode == 0 {
-                    Some(if cursor_app { "\x1bOD".to_string() } else { "\x1b[D".to_string() })
+                    Some(if cursor_app {
+                        "\x1bOD".to_string()
+                    } else {
+                        "\x1b[D".to_string()
+                    })
                 } else {
                     Some(self.transform_for_modifiers("\x1b[1", key_mode, 'D'))
                 }
-            },
+            }
             KEYCODE_DPAD_RIGHT => {
                 if key_mode == 0 {
-                    Some(if cursor_app { "\x1bOC".to_string() } else { "\x1b[C".to_string() })
+                    Some(if cursor_app {
+                        "\x1bOC".to_string()
+                    } else {
+                        "\x1b[C".to_string()
+                    })
                 } else {
                     Some(self.transform_for_modifiers("\x1b[1", key_mode, 'C'))
                 }
-            },
+            }
             KEYCODE_MOVE_HOME => {
                 if key_mode == 0 {
-                    Some(if cursor_app { "\x1bOH".to_string() } else { "\x1b[H".to_string() })
+                    Some(if cursor_app {
+                        "\x1bOH".to_string()
+                    } else {
+                        "\x1b[H".to_string()
+                    })
                 } else {
                     Some(self.transform_for_modifiers("\x1b[1", key_mode, 'H'))
                 }
-            },
+            }
             KEYCODE_MOVE_END => {
                 if key_mode == 0 {
-                    Some(if cursor_app { "\x1bOF".to_string() } else { "\x1b[F".to_string() })
+                    Some(if cursor_app {
+                        "\x1bOF".to_string()
+                    } else {
+                        "\x1b[F".to_string()
+                    })
                 } else {
                     Some(self.transform_for_modifiers("\x1b[1", key_mode, 'F'))
                 }
-            },
+            }
             KEYCODE_PAGE_UP => Some(self.transform_for_modifiers("\x1b[5", key_mode, '~')),
             KEYCODE_PAGE_DOWN => Some(self.transform_for_modifiers("\x1b[6", key_mode, '~')),
             KEYCODE_TAB => {
-                if shift_down { Some("\x1b[Z".to_string()) } else { Some("\t".to_string()) }
-            },
+                if shift_down {
+                    Some("\x1b[Z".to_string())
+                } else {
+                    Some("\t".to_string())
+                }
+            }
             KEYCODE_ESCAPE => Some("\x1b".to_string()),
             KEYCODE_DEL => {
                 let prefix = if alt_down { "\x1b" } else { "" };
-                Some(format!("{}{}", prefix, if ctrl_down { "\x08" } else { "\x7f" }))
-            },
+                Some(format!(
+                    "{}{}",
+                    prefix,
+                    if ctrl_down { "\x08" } else { "\x7f" }
+                ))
+            }
             KEYCODE_FORWARD_DEL => Some(self.transform_for_modifiers("\x1b[3", key_mode, '~')),
             KEYCODE_INSERT => Some(self.transform_for_modifiers("\x1b[2", key_mode, '~')),
             KEYCODE_F1 => {
-                if key_mode == 0 { Some("\x1bOP".to_string()) }
-                else { Some(self.transform_for_modifiers("\x1b[1", key_mode, 'P')) }
-            },
+                if key_mode == 0 {
+                    Some("\x1bOP".to_string())
+                } else {
+                    Some(self.transform_for_modifiers("\x1b[1", key_mode, 'P'))
+                }
+            }
             KEYCODE_F2 => {
-                if key_mode == 0 { Some("\x1bOQ".to_string()) }
-                else { Some(self.transform_for_modifiers("\x1b[1", key_mode, 'Q')) }
-            },
+                if key_mode == 0 {
+                    Some("\x1bOQ".to_string())
+                } else {
+                    Some(self.transform_for_modifiers("\x1b[1", key_mode, 'Q'))
+                }
+            }
             KEYCODE_F3 => {
-                if key_mode == 0 { Some("\x1bOR".to_string()) }
-                else { Some(self.transform_for_modifiers("\x1b[1", key_mode, 'R')) }
-            },
+                if key_mode == 0 {
+                    Some("\x1bOR".to_string())
+                } else {
+                    Some(self.transform_for_modifiers("\x1b[1", key_mode, 'R'))
+                }
+            }
             KEYCODE_F4 => {
-                if key_mode == 0 { Some("\x1bOS".to_string()) }
-                else { Some(self.transform_for_modifiers("\x1b[1", key_mode, 'S')) }
-            },
+                if key_mode == 0 {
+                    Some("\x1bOS".to_string())
+                } else {
+                    Some(self.transform_for_modifiers("\x1b[1", key_mode, 'S'))
+                }
+            }
             KEYCODE_F5 => Some(self.transform_for_modifiers("\x1b[15", key_mode, '~')),
             KEYCODE_F6 => Some(self.transform_for_modifiers("\x1b[17", key_mode, '~')),
             KEYCODE_F7 => Some(self.transform_for_modifiers("\x1b[18", key_mode, '~')),
@@ -133,14 +192,14 @@ impl ScreenState {
             KEYCODE_F10 => Some(self.transform_for_modifiers("\x1b[21", key_mode, '~')),
             KEYCODE_F11 => Some(self.transform_for_modifiers("\x1b[23", key_mode, '~')),
             KEYCODE_F12 => Some(self.transform_for_modifiers("\x1b[24", key_mode, '~')),
-            
+
             KEYCODE_NUMPAD_ENTER => {
                 if keypad_application {
                     Some(self.transform_for_modifiers("\x1bO", key_mode, 'M'))
                 } else {
                     Some("\n".to_string())
                 }
-            },
+            }
             _ => None,
         }
     }

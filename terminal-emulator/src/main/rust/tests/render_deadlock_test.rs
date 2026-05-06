@@ -17,7 +17,9 @@ struct RwLockTestCtx {
 
 impl RwLockTestCtx {
     fn new() -> Self {
-        Self { lock: RwLock::new(0) }
+        Self {
+            lock: RwLock::new(0),
+        }
     }
 }
 
@@ -65,8 +67,10 @@ fn test_rwlock_write_starvation() {
     // 验证：如果失败率 > 30%，说明写饥饿严重
     // 这是一个风险指标，不是硬性断言（因为 RwLock 行为因平台而异）
     if failures > 60 {
-        eprintln!("WARNING: High RwLock write starvation detected ({}% failure rate)",
-                  (failures as f64 / 100.0 * 100.0) as u32);
+        eprintln!(
+            "WARNING: High RwLock write starvation detected ({}% failure rate)",
+            (failures as f64 / 100.0 * 100.0) as u32
+        );
     }
 }
 
@@ -115,11 +119,17 @@ fn test_dirty_flag_race_condition() {
     // 关键验证：在 200ms 内写入 20 次，理想情况下应该渲染 ~12 帧
     // 如果帧数 < 5，说明脏标记消费太快，大量写入被浪费
     if frames < 5 {
-        eprintln!("WARNING: Only {} frames rendered, many dirty writes may have been lost", frames);
+        eprintln!(
+            "WARNING: Only {} frames rendered, many dirty writes may have been lost",
+            frames
+        );
     }
 
     // 验证：最终状态应该干净（所有脏标记被消费）
-    assert!(!dirty.load(Ordering::SeqCst), "Dirty flag should be consumed at end");
+    assert!(
+        !dirty.load(Ordering::SeqCst),
+        "Dirty flag should be consumed at end"
+    );
 }
 
 // =============================================================================
@@ -151,13 +161,22 @@ fn test_mutex_contention_vs_atomic() {
     }
     let atomic_time = start.elapsed();
 
-    eprintln!("Mutex time: {:?}, Atomic time: {:?}", mutex_time, atomic_time);
-    eprintln!("Speedup: {:.1}x", mutex_time.as_nanos() as f64 / atomic_time.as_nanos() as f64);
+    eprintln!(
+        "Mutex time: {:?}, Atomic time: {:?}",
+        mutex_time, atomic_time
+    );
+    eprintln!(
+        "Speedup: {:.1}x",
+        mutex_time.as_nanos() as f64 / atomic_time.as_nanos() as f64
+    );
 
     // 验证：原子操作应该比 Mutex 快至少 5 倍
-    assert!(atomic_time < mutex_time,
-            "Atomic should be faster than Mutex: atomic={:?}, mutex={:?}",
-            atomic_time, mutex_time);
+    assert!(
+        atomic_time < mutex_time,
+        "Atomic should be faster than Mutex: atomic={:?}, mutex={:?}",
+        atomic_time,
+        mutex_time
+    );
 }
 
 // =============================================================================
@@ -222,7 +241,7 @@ impl<T> JoinHandleExt for thread::JoinHandle<T> {
             if start.elapsed() > timeout {
                 return Err(Box::new(std::io::Error::new(
                     std::io::ErrorKind::TimedOut,
-                    "join timed out"
+                    "join timed out",
                 )));
             }
             thread::sleep(Duration::from_millis(10));
@@ -265,13 +284,21 @@ fn test_frame_backpressure_simulation() {
         }
     }
 
-    eprintln!("Frames submitted: {}, frames blocked: {}", frames_submitted, frames_blocked);
+    eprintln!(
+        "Frames submitted: {}, frames blocked: {}",
+        frames_submitted, frames_blocked
+    );
 
     // 验证：在 100ms 内，3 帧缓冲 + 8ms GPU 延迟 → 应该阻塞多次
-    assert!(frames_blocked > 0, "Expected some frame blocking with GPU backpressure");
+    assert!(
+        frames_blocked > 0,
+        "Expected some frame blocking with GPU backpressure"
+    );
 
     // 验证：总帧数不应超过理论上限（100ms / 8ms ≈ 12 帧 + 3 缓冲 ≈ 15）
     // 在负载较高的设备上，允许一定的调度延迟
-    assert!(frames_submitted + frames_blocked < 40,
-            "Too many frames submitted, backpressure not working correctly");
+    assert!(
+        frames_submitted + frames_blocked < 40,
+        "Too many frames submitted, backpressure not working correctly"
+    );
 }

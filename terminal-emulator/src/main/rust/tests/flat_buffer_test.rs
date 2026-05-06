@@ -3,7 +3,7 @@
 //
 // 运行：cargo test --test flat_buffer_test -- --nocapture
 
-use termux_rust::engine::{TerminalEngine, SharedBufferPtr};
+use termux_rust::engine::{SharedBufferPtr, TerminalEngine};
 
 /// 测试 flat_buffer 的大小是否等于 total_rows
 #[test]
@@ -15,7 +15,10 @@ fn test_flat_buffer_size_equals_total_rows() {
     let engine = TerminalEngine::new(cols, screen_rows, total_rows, 10, 20);
 
     // 验证 flat_buffer 已创建
-    assert!(engine.state.flat_buffer.is_some(), "flat_buffer should be created");
+    assert!(
+        engine.state.flat_buffer.is_some(),
+        "flat_buffer should be created"
+    );
 
     // 验证 flat_buffer 的行数等于 total_rows
     let flat_buffer = engine.state.flat_buffer.as_ref().unwrap();
@@ -63,17 +66,21 @@ fn test_shared_buffer_size() {
     let mut engine = TerminalEngine::new(cols, screen_rows, total_rows, 10, 20);
 
     // 创建共享缓冲区
-    let shared_ptr = engine.state.flat_buffer.as_mut().unwrap().create_shared_buffer();
+    let shared_ptr = engine
+        .state
+        .flat_buffer
+        .as_mut()
+        .unwrap()
+        .create_shared_buffer();
 
-    assert!(!shared_ptr.is_null(), "shared_buffer_ptr should not be null");
+    assert!(
+        !shared_ptr.is_null(),
+        "shared_buffer_ptr should not be null"
+    );
 
     unsafe {
         let shared = &*shared_ptr;
-        assert_eq!(
-            shared.cols, cols as u32,
-            "shared.cols should be {}",
-            cols
-        );
+        assert_eq!(shared.cols, cols as u32, "shared.cols should be {}", cols);
         assert_eq!(
             shared.rows, total_rows as u32,
             "shared.rows should be {} (total_rows), but got {}",
@@ -81,10 +88,7 @@ fn test_shared_buffer_size() {
         );
     }
 
-    println!(
-        "✅ shared_buffer size test passed: {}x{}",
-        cols, total_rows
-    );
+    println!("✅ shared_buffer size test passed: {}x{}", cols, total_rows);
 }
 
 /// 测试 syncToSharedBuffer 同步所有行
@@ -103,7 +107,12 @@ fn test_sync_all_rows_to_shared_buffer() {
     }
 
     // 创建共享缓冲区
-    let shared_ptr = engine.state.flat_buffer.as_ref().unwrap().create_shared_buffer();
+    let shared_ptr = engine
+        .state
+        .flat_buffer
+        .as_ref()
+        .unwrap()
+        .create_shared_buffer();
     engine.state.shared_buffer_ptr = SharedBufferPtr(shared_ptr);
 
     // 手动同步数据（模拟 syncToSharedBufferRust 的行为）
@@ -138,9 +147,13 @@ fn test_sync_all_rows_to_shared_buffer() {
             }
         })
         .collect();
-    
+
     println!("First row content (first 10 chars): {}", first_row_text);
-    assert!(first_row_text.contains("Row"), "First row should contain 'Row', got: {}", first_row_text);
+    assert!(
+        first_row_text.contains("Row"),
+        "First row should contain 'Row', got: {}",
+        first_row_text
+    );
 
     println!("✅ sync all rows test passed");
 }
@@ -156,7 +169,11 @@ fn test_scrollback_rows_access() {
 
     // 生成超过屏幕行数的内容，触发滚动
     for i in 0..50 {
-        let line = format!("\r\x1b[{};1HLine {} - Scroll Test", (i % screen_rows) + 1, i);
+        let line = format!(
+            "\r\x1b[{};1HLine {} - Scroll Test",
+            (i % screen_rows) + 1,
+            i
+        );
         engine.process_bytes(line.as_bytes());
         if i < screen_rows - 1 {
             engine.process_bytes(b"\n");
@@ -174,8 +191,7 @@ fn test_scrollback_rows_access() {
     // 验证 flat_buffer 也包含所有行
     let flat_buffer = engine.state.flat_buffer.as_ref().unwrap();
     assert_eq!(
-        flat_buffer.rows,
-        total_rows as usize,
+        flat_buffer.rows, total_rows as usize,
         "flat_buffer should have {} rows for scrollback",
         total_rows
     );
@@ -205,8 +221,7 @@ fn test_alternate_buffer_does_not_affect_flat_buffer_size() {
     // 验证 flat_buffer 大小不变
     let alt_flat_buffer_rows = engine.state.flat_buffer.as_ref().unwrap().rows;
     assert_eq!(
-        main_flat_buffer_rows,
-        alt_flat_buffer_rows,
+        main_flat_buffer_rows, alt_flat_buffer_rows,
         "flat_buffer size should not change when switching to alternate buffer"
     );
 

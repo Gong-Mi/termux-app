@@ -1,8 +1,8 @@
-use termux_rust::pty;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
-use std::sync::atomic::{AtomicBool, Ordering, AtomicUsize};
-use std::sync::Arc;
+use termux_rust::pty;
 
 #[test]
 fn test_extreme_concurrent_spawn_under_pressure() {
@@ -24,7 +24,10 @@ fn test_extreme_concurrent_spawn_under_pressure() {
             }
         });
     }
-    println!("[TEST] 10 noise threads active. Attempting {} spawns with system limit=24.", total_attempts);
+    println!(
+        "[TEST] 10 noise threads active. Attempting {} spawns with system limit=24.",
+        total_attempts
+    );
 
     // 2. 并发启动子进程
     let mut handles = vec![];
@@ -34,15 +37,18 @@ fn test_extreme_concurrent_spawn_under_pressure() {
         let lat_acc = total_latency_ms.clone();
         let handle = thread::spawn(move || {
             thread::sleep(Duration::from_millis(i as u64 * 2)); // 极短间隔模拟突发
-            
+
             let start = Instant::now();
             let cmd = "/system/bin/sh".to_string();
             let result = pty::create_subprocess_with_data(
                 cmd,
                 "/data/data/com.termux/files/home".to_string(),
                 vec!["sh".to_string(), "-c".to_string(), "exit 0".to_string()],
-                24, 80, 10, 20,
-                true
+                24,
+                80,
+                10,
+                20,
+                true,
             );
 
             let duration = start.elapsed().as_millis() as usize;
@@ -51,7 +57,9 @@ fn test_extreme_concurrent_spawn_under_pressure() {
             match result {
                 Ok((fd, pid)) => {
                     let status = pty::wait_for(pid);
-                    unsafe { libc::close(fd); }
+                    unsafe {
+                        libc::close(fd);
+                    }
                     if status == 0 {
                         s_count.fetch_add(1, Ordering::SeqCst);
                     } else {
@@ -67,7 +75,9 @@ fn test_extreme_concurrent_spawn_under_pressure() {
     }
 
     // 3. 等待完成
-    for h in handles { let _ = h.join(); }
+    for h in handles {
+        let _ = h.join();
+    }
     running.store(false, Ordering::Relaxed);
     let total_duration = test_start.elapsed();
 
@@ -81,6 +91,9 @@ fn test_extreme_concurrent_spawn_under_pressure() {
     println!("Total Wall-Clock Time: {:?}", total_duration);
     println!("Average Latency per Process: {:.2} ms", avg_latency);
     println!("--------------------------------------------------");
-    
-    assert!(final_success > 50, "Success rate should be high despite system limits");
+
+    assert!(
+        final_success > 50,
+        "Success rate should be high despite system limits"
+    );
 }

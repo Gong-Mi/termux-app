@@ -19,7 +19,10 @@ fn test_truecolor_fg_parsed() {
     engine.process_bytes(b"\x1b[38;2;255;128;64mHello");
 
     let style = engine.state.main_screen.get_row(0 as i64).styles[0];
-    assert!((style & 0x200) != 0, "STYLE_TRUECOLOR_FG flag should be set");
+    assert!(
+        (style & 0x200) != 0,
+        "STYLE_TRUECOLOR_FG flag should be set"
+    );
 
     let decoded = termux_rust::terminal::style::decode_fore_color(style);
     // Should be 0xffFF8040
@@ -42,7 +45,10 @@ fn test_truecolor_bg_parsed() {
     engine.process_bytes(b"\x1b[48;2;0;128;255mWorld");
 
     let style = engine.state.main_screen.get_row(0 as i64).styles[0];
-    assert!((style & 0x400) != 0, "STYLE_TRUECOLOR_BG flag should be set");
+    assert!(
+        (style & 0x400) != 0,
+        "STYLE_TRUECOLOR_BG flag should be set"
+    );
 
     let decoded = termux_rust::terminal::style::decode_back_color(style);
     let r = ((decoded >> 16) & 0xFF) as u8;
@@ -65,7 +71,10 @@ fn test_256_color_palette() {
 
     let style = engine.state.main_screen.get_row(0 as i64).styles[0];
     // Should NOT have truecolor flag
-    assert!((style & 0x200) == 0, "Should NOT have truecolor flag for palette colors");
+    assert!(
+        (style & 0x200) == 0,
+        "Should NOT have truecolor flag for palette colors"
+    );
 
     let decoded = termux_rust::terminal::style::decode_fore_color(style);
     assert_eq!(decoded as usize, 196, "Should decode to palette index 196");
@@ -92,7 +101,10 @@ fn test_truecolor_with_bold() {
     assert_eq!(g, 0, "Green should be 0");
     assert_eq!(b, 0, "Blue should be 0");
 
-    println!("✅ Truecolor + bold: RGB({}, {}, {}) correctly preserved", r, g, b);
+    println!(
+        "✅ Truecolor + bold: RGB({}, {}, {}) correctly preserved",
+        r, g, b
+    );
 }
 
 /// Verify text content is stored correctly with truecolor
@@ -103,9 +115,16 @@ fn test_truecolor_text_content() {
     engine.process_bytes(b"\x1b[38;2;100;200;150mColored Text\x1b[0m");
 
     let text = get_row_text(&engine, 0);
-    assert!(text.contains("Colored Text"), "Text should be stored: '{}'", text);
+    assert!(
+        text.contains("Colored Text"),
+        "Text should be stored: '{}'",
+        text
+    );
 
-    println!("✅ Text content stored with truecolor: '{}'", text.trim_end());
+    println!(
+        "✅ Text content stored with truecolor: '{}'",
+        text.trim_end()
+    );
 }
 
 /// Verify resetting colors works
@@ -118,11 +137,17 @@ fn test_truecolor_reset() {
 
     // First 3 chars should have truecolor
     let style_red = engine.state.main_screen.get_row(0 as i64).styles[0];
-    assert!((style_red & 0x200) != 0, "Red text should have truecolor flag");
+    assert!(
+        (style_red & 0x200) != 0,
+        "Red text should have truecolor flag"
+    );
 
     // After reset, chars should NOT have truecolor
     let style_normal = engine.state.main_screen.get_row(0 as i64).styles[3];
-    assert!((style_normal & 0x200) == 0, "Normal text should NOT have truecolor flag");
+    assert!(
+        (style_normal & 0x200) == 0,
+        "Normal text should NOT have truecolor flag"
+    );
 
     println!("✅ Truecolor reset works correctly");
 }
@@ -150,5 +175,8 @@ fn test_truecolor_fg_and_bg() {
     assert_eq!((bg >> 8) & 0xFF, 0, "BG green should be 0");
     assert_eq!(bg & 0xFF, 0, "BG blue should be 0");
 
-    println!("✅ Truecolor FG+BG combined in one sequence: FG=0x{:08X}, BG=0x{:08X}", fg, bg);
+    println!(
+        "✅ Truecolor FG+BG combined in one sequence: FG=0x{:08X}, BG=0x{:08X}",
+        fg, bg
+    );
 }

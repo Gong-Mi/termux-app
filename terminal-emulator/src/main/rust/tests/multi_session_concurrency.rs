@@ -1,8 +1,8 @@
-use termux_rust::engine::{TerminalEngine, TerminalContext};
-use termux_rust::pty;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
+use termux_rust::engine::{TerminalContext, TerminalEngine};
+use termux_rust::pty;
 
 #[test]
 fn test_dual_session_concurrency() {
@@ -14,7 +14,7 @@ fn test_dual_session_concurrency() {
     let handle1 = thread::spawn(move || {
         let engine = TerminalEngine::new(cols as i64, rows as i64, transcript, 10, 20);
         let context = Arc::new(TerminalContext::new(engine));
-        
+
         // 模拟 PTY 创建逻辑 (在测试环境下可能无法 fork，我们手动模拟数据输入)
         context.clone()
     });
@@ -39,7 +39,7 @@ fn test_dual_session_concurrency() {
                 engine.take_events()
             }; // 锁在此处释放
             // 模拟在锁外部处理事件
-            let _ = events; 
+            let _ = events;
             thread::sleep(Duration::from_millis(1));
         }
     });
@@ -65,12 +65,12 @@ fn test_dual_session_concurrency() {
     {
         let engine1 = context1.lock.read().unwrap();
         let engine2 = context2.lock.read().unwrap();
-        
+
         // 检查屏幕内容是否包含各自的特征字符串
         // 这里只是示意，实际需要 copy_row_text 检查数据
         assert_eq!(engine1.state.cols, 80);
         assert_eq!(engine2.state.cols, 80);
-        
+
         println!("Both sessions finished successfully without deadlocks.");
     }
 }
@@ -83,16 +83,22 @@ fn test_pty_resource_independence() {
         "/bin/sh".to_string(),
         "/tmp".to_string(),
         vec!["-c".to_string(), "echo hello".to_string()],
-        24, 80, 10, 20,
-        false
+        24,
+        80,
+        10,
+        20,
+        false,
     );
 
     let res2 = pty::create_subprocess_with_data(
         "/bin/sh".to_string(),
         "/tmp".to_string(),
         vec!["-c".to_string(), "echo world".to_string()],
-        24, 80, 10, 20,
-        false
+        24,
+        80,
+        10,
+        20,
+        false,
     );
 
     if let (Ok(p1), Ok(p2)) = (res1, res2) {

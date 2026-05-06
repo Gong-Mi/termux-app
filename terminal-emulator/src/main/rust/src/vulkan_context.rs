@@ -1,11 +1,13 @@
-use skia_safe::{gpu::vk, gpu::DirectContext, gpu::ContextOptions, Surface as SkSurface, ColorType};
-use ash::{vk as ash_vk, Entry, Instance, Device};
+use crate::utils::{LogPriority, android_log};
 use ash::khr::swapchain;
 use ash::vk::Handle;
+use ash::{Device, Entry, Instance, vk as ash_vk};
+use skia_safe::{
+    ColorType, Surface as SkSurface, gpu::ContextOptions, gpu::DirectContext, gpu::vk,
+};
 use std::ffi::CStr;
-use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, Ordering};
 use std::os::raw::c_void;
-use crate::utils::{android_log, LogPriority};
+use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, Ordering};
 
 // === Pipeline Cache Persistence Hooks ===
 static ORIGINAL_CREATE_PIPELINE_CACHE: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
@@ -28,7 +30,9 @@ unsafe extern "C" fn hooked_vk_create_pipeline_cache(
 ) -> i32 {
     let cache = HOOKED_PIPELINE_CACHE.load(Ordering::SeqCst);
     if cache != 0 {
-        unsafe { *p_pipeline_cache = cache; }
+        unsafe {
+            *p_pipeline_cache = cache;
+        }
         0 // VK_SUCCESS
     } else {
         let original = ORIGINAL_CREATE_PIPELINE_CACHE.load(Ordering::SeqCst);
@@ -69,16 +73,25 @@ fn save_pipeline_cache_data(device: &Device, cache: ash_vk::PipelineCache) {
         match device.get_pipeline_cache_data(cache) {
             Ok(data) if !data.is_empty() => {
                 if let Err(e) = std::fs::write(path, &data) {
-                    android_log(LogPriority::WARN, &format!("Failed to save pipeline cache: {:?}", e));
+                    android_log(
+                        LogPriority::WARN,
+                        &format!("Failed to save pipeline cache: {:?}", e),
+                    );
                 } else {
-                    android_log(LogPriority::INFO, &format!("Pipeline cache saved: {} bytes to {}", data.len(), path));
+                    android_log(
+                        LogPriority::INFO,
+                        &format!("Pipeline cache saved: {} bytes to {}", data.len(), path),
+                    );
                 }
             }
             Ok(_) => {
                 android_log(LogPriority::DEBUG, "Pipeline cache empty, nothing to save");
             }
             Err(e) => {
-                android_log(LogPriority::WARN, &format!("Failed to get pipeline cache data: {:?}", e));
+                android_log(
+                    LogPriority::WARN,
+                    &format!("Failed to get pipeline cache data: {:?}", e),
+                );
             }
         }
     }
@@ -92,15 +105,23 @@ fn ash_format_to_skia_format(fmt: ash_vk::Format) -> skia_safe::gpu::vk::Format 
         ash_vk::Format::R8G8B8A8_SRGB => skia_safe::gpu::vk::Format::R8G8B8A8_SRGB,
         ash_vk::Format::B8G8R8A8_SRGB => skia_safe::gpu::vk::Format::B8G8R8A8_SRGB,
         ash_vk::Format::A8B8G8R8_UNORM_PACK32 => skia_safe::gpu::vk::Format::A8B8G8R8_UNORM_PACK32,
-        ash_vk::Format::A2B10G10R10_UNORM_PACK32 => skia_safe::gpu::vk::Format::A2B10G10R10_UNORM_PACK32,
-        ash_vk::Format::A2R10G10B10_UNORM_PACK32 => skia_safe::gpu::vk::Format::A2R10G10B10_UNORM_PACK32,
+        ash_vk::Format::A2B10G10R10_UNORM_PACK32 => {
+            skia_safe::gpu::vk::Format::A2B10G10R10_UNORM_PACK32
+        }
+        ash_vk::Format::A2R10G10B10_UNORM_PACK32 => {
+            skia_safe::gpu::vk::Format::A2R10G10B10_UNORM_PACK32
+        }
         ash_vk::Format::R5G6B5_UNORM_PACK16 => skia_safe::gpu::vk::Format::R5G6B5_UNORM_PACK16,
         ash_vk::Format::A1R5G5B5_UNORM_PACK16 => skia_safe::gpu::vk::Format::A1R5G5B5_UNORM_PACK16,
         ash_vk::Format::R16G16B16A16_SFLOAT => skia_safe::gpu::vk::Format::R16G16B16A16_SFLOAT,
         _ => {
-            android_log(LogPriority::WARN, &format!(
-                "Vulkan: Unsupported format {:?}, fallback to R8G8B8A8_UNORM", fmt
-            ));
+            android_log(
+                LogPriority::WARN,
+                &format!(
+                    "Vulkan: Unsupported format {:?}, fallback to R8G8B8A8_UNORM",
+                    fmt
+                ),
+            );
             skia_safe::gpu::vk::Format::R8G8B8A8_UNORM
         }
     }
@@ -137,11 +158,17 @@ unsafe impl Sync for VulkanContext {}
 
 impl VulkanContext {
     pub unsafe fn new(window: *mut std::ffi::c_void) -> Option<Self> {
-        android_log(LogPriority::INFO, "VulkanContext::new: Starting initialization");
+        android_log(
+            LogPriority::INFO,
+            "VulkanContext::new: Starting initialization",
+        );
 
         let entry = unsafe { Entry::load().ok() };
         if entry.is_none() {
-            android_log(LogPriority::ERROR, "VulkanContext::new: Entry::load() failed");
+            android_log(
+                LogPriority::ERROR,
+                "VulkanContext::new: Entry::load() failed",
+            );
             return None;
         }
         let entry = entry.unwrap();
@@ -156,11 +183,15 @@ impl VulkanContext {
         // 尝试启用调试扩展（如果可用）
         let ext_ext_name = CStr::from_bytes_with_nul(b"VK_EXT_debug_utils\0").ok();
         let has_debug_utils = ext_ext_name.and_then(|ext_name| {
-            let instance_ext_props = unsafe { entry.enumerate_instance_extension_properties(None).ok()? };
-            instance_ext_props.iter().any(|p| {
-                let name = unsafe { CStr::from_ptr(p.extension_name.as_ptr()) };
-                name == ext_name
-            }).then_some(ext_name)
+            let instance_ext_props =
+                unsafe { entry.enumerate_instance_extension_properties(None).ok()? };
+            instance_ext_props
+                .iter()
+                .any(|p| {
+                    let name = unsafe { CStr::from_ptr(p.extension_name.as_ptr()) };
+                    name == ext_name
+                })
+                .then_some(ext_name)
         });
         if let Some(debug_ext) = has_debug_utils {
             instance_exts.push(debug_ext.as_ptr());
@@ -170,30 +201,43 @@ impl VulkanContext {
         // 尝试使用 1.1，如果失败则回退到 1.0 (增强 Adreno 兼容性)
         let mut instance = None;
         for api_version in [ash_vk::API_VERSION_1_1, ash_vk::API_VERSION_1_0] {
-            let app_info = ash_vk::ApplicationInfo { 
+            let app_info = ash_vk::ApplicationInfo {
                 p_application_name: std::ptr::null(),
                 application_version: 0,
                 p_engine_name: std::ptr::null(),
                 engine_version: 0,
                 api_version,
-                ..Default::default() 
+                ..Default::default()
             };
-            let create_info = ash_vk::InstanceCreateInfo { 
-                p_application_info: &app_info, 
-                enabled_extension_count: instance_exts.len() as u32, 
-                pp_enabled_extension_names: instance_exts.as_ptr(), 
-                ..Default::default() 
+            let create_info = ash_vk::InstanceCreateInfo {
+                p_application_info: &app_info,
+                enabled_extension_count: instance_exts.len() as u32,
+                pp_enabled_extension_names: instance_exts.as_ptr(),
+                ..Default::default()
             };
 
             match unsafe { entry.create_instance(&create_info, None) } {
                 Ok(inst) => {
                     instance = Some(inst);
-                    let ver_str = if api_version == ash_vk::API_VERSION_1_1 { "1.1" } else { "1.0" };
-                    android_log(LogPriority::INFO, &format!("VulkanContext::new: Instance created with API {}", ver_str));
+                    let ver_str = if api_version == ash_vk::API_VERSION_1_1 {
+                        "1.1"
+                    } else {
+                        "1.0"
+                    };
+                    android_log(
+                        LogPriority::INFO,
+                        &format!("VulkanContext::new: Instance created with API {}", ver_str),
+                    );
                     break;
                 }
                 Err(e) => {
-                    android_log(LogPriority::WARN, &format!("VulkanContext::new: Failed to create instance with API: {:?}", e));
+                    android_log(
+                        LogPriority::WARN,
+                        &format!(
+                            "VulkanContext::new: Failed to create instance with API: {:?}",
+                            e
+                        ),
+                    );
                 }
             }
         }
@@ -201,15 +245,32 @@ impl VulkanContext {
         let instance = if let Some(inst) = instance {
             inst
         } else {
-            android_log(LogPriority::ERROR, "VulkanContext::new: All API versions failed");
+            android_log(
+                LogPriority::ERROR,
+                "VulkanContext::new: All API versions failed",
+            );
             return None;
         };
 
         let surface_loader = ash::khr::surface::Instance::new(&entry, &instance);
         let android_surface_loader = ash::khr::android_surface::Instance::new(&entry, &instance);
-        let surface = unsafe { android_surface_loader.create_android_surface(&ash_vk::AndroidSurfaceCreateInfoKHR { window, ..Default::default() }, None) };
+        let surface = unsafe {
+            android_surface_loader.create_android_surface(
+                &ash_vk::AndroidSurfaceCreateInfoKHR {
+                    window,
+                    ..Default::default()
+                },
+                None,
+            )
+        };
         if surface.is_err() {
-            android_log(LogPriority::ERROR, &format!("VulkanContext::new: create_android_surface failed: {:?}", surface.err()));
+            android_log(
+                LogPriority::ERROR,
+                &format!(
+                    "VulkanContext::new: create_android_surface failed: {:?}",
+                    surface.err()
+                ),
+            );
             return None;
         }
         let surface = surface.unwrap();
@@ -217,11 +278,20 @@ impl VulkanContext {
 
         let pdevices = unsafe { instance.enumerate_physical_devices() };
         if pdevices.is_err() || pdevices.as_ref().unwrap().is_empty() {
-            android_log(LogPriority::ERROR, "VulkanContext::new: enumerate_physical_devices failed or returned empty list");
+            android_log(
+                LogPriority::ERROR,
+                "VulkanContext::new: enumerate_physical_devices failed or returned empty list",
+            );
             return None;
         }
         let pdevices = pdevices.unwrap();
-        android_log(LogPriority::INFO, &format!("VulkanContext::new: Found {} physical device(s)", pdevices.len()));
+        android_log(
+            LogPriority::INFO,
+            &format!(
+                "VulkanContext::new: Found {} physical device(s)",
+                pdevices.len()
+            ),
+        );
 
         // 选择支持图形/Present 队列的设备
         let mut selected_pdevice = None;
@@ -230,33 +300,60 @@ impl VulkanContext {
         for (dev_idx, pdev) in pdevices.iter().enumerate() {
             let props = unsafe { instance.get_physical_device_properties(*pdev) };
             let device_name = unsafe { std::ffi::CStr::from_ptr(props.device_name.as_ptr()) };
-            android_log(LogPriority::DEBUG, &format!("VulkanContext::new: Device #{} - name='{}', type={:?}",
-                dev_idx, device_name.to_string_lossy(), props.device_type));
+            android_log(
+                LogPriority::DEBUG,
+                &format!(
+                    "VulkanContext::new: Device #{} - name='{}', type={:?}",
+                    dev_idx,
+                    device_name.to_string_lossy(),
+                    props.device_type
+                ),
+            );
 
             // 查找支持 present 的队列族
-            let queue_props = unsafe { instance.get_physical_device_queue_family_properties(*pdev) };
+            let queue_props =
+                unsafe { instance.get_physical_device_queue_family_properties(*pdev) };
             for (q_idx, q_prop) in queue_props.iter().enumerate() {
                 let supports_present = unsafe {
                     surface_loader.get_physical_device_surface_support(*pdev, q_idx as u32, surface)
                 };
-                if supports_present.unwrap_or(false) && q_prop.queue_flags.contains(ash_vk::QueueFlags::GRAPHICS) {
+                if supports_present.unwrap_or(false)
+                    && q_prop.queue_flags.contains(ash_vk::QueueFlags::GRAPHICS)
+                {
                     selected_pdevice = Some(*pdev);
                     selected_queue_family = q_idx as u32;
-                    android_log(LogPriority::INFO, &format!("VulkanContext::new: Selected device #{} (queue_family={})", dev_idx, selected_queue_family));
+                    android_log(
+                        LogPriority::INFO,
+                        &format!(
+                            "VulkanContext::new: Selected device #{} (queue_family={})",
+                            dev_idx, selected_queue_family
+                        ),
+                    );
                     break;
                 }
             }
-            if selected_pdevice.is_some() { break; }
+            if selected_pdevice.is_some() {
+                break;
+            }
         }
 
         let pdevice = match selected_pdevice {
             Some(p) => p,
             None => {
-                android_log(LogPriority::ERROR, "VulkanContext::new: No physical device found with GRAPHICS+PRESENT queue family");
+                android_log(
+                    LogPriority::ERROR,
+                    "VulkanContext::new: No physical device found with GRAPHICS+PRESENT queue family",
+                );
                 let pdev = pdevices[0];
                 let props = unsafe { instance.get_physical_device_properties(pdev) };
                 let device_name = unsafe { std::ffi::CStr::from_ptr(props.device_name.as_ptr()) };
-                android_log(LogPriority::WARN, &format!("VulkanContext::new: Fallback to device #0: '{}'", device_name.to_string_lossy()));
+                android_log(
+                    LogPriority::WARN,
+                    &format!(
+                        "VulkanContext::new: Fallback to device #0: '{}'",
+                        device_name.to_string_lossy()
+                    ),
+                );
                 pdev
             }
         };
@@ -269,7 +366,9 @@ impl VulkanContext {
         // 尝试启用内存优先级扩展
         let memory_priority_ext = CStr::from_bytes_with_nul(b"VK_KHR_maintenance1\0").ok();
         if let Some(ext_name) = memory_priority_ext {
-            let device_ext_props = unsafe { instance.enumerate_device_extension_properties(pdevice).ok() }.unwrap_or_default();
+            let device_ext_props =
+                unsafe { instance.enumerate_device_extension_properties(pdevice).ok() }
+                    .unwrap_or_default();
             if device_ext_props.iter().any(|p| {
                 let name = unsafe { CStr::from_ptr(p.extension_name.as_ptr()) };
                 name == ext_name
@@ -279,11 +378,28 @@ impl VulkanContext {
             }
         }
 
-        let queue_info = ash_vk::DeviceQueueCreateInfo { queue_family_index, queue_count: 1, p_queue_priorities: [1.0].as_ptr(), ..Default::default() };
-        let device_create_info = ash_vk::DeviceCreateInfo { queue_create_info_count: 1, p_queue_create_infos: &queue_info, enabled_extension_count: device_exts.len() as u32, pp_enabled_extension_names: device_exts.as_ptr(), ..Default::default() };
+        let queue_info = ash_vk::DeviceQueueCreateInfo {
+            queue_family_index,
+            queue_count: 1,
+            p_queue_priorities: [1.0].as_ptr(),
+            ..Default::default()
+        };
+        let device_create_info = ash_vk::DeviceCreateInfo {
+            queue_create_info_count: 1,
+            p_queue_create_infos: &queue_info,
+            enabled_extension_count: device_exts.len() as u32,
+            pp_enabled_extension_names: device_exts.as_ptr(),
+            ..Default::default()
+        };
         let device = unsafe { instance.create_device(pdevice, &device_create_info, None) };
         if device.is_err() {
-            android_log(LogPriority::ERROR, &format!("VulkanContext::new: create_device failed: {:?}", device.err()));
+            android_log(
+                LogPriority::ERROR,
+                &format!(
+                    "VulkanContext::new: create_device failed: {:?}",
+                    device.err()
+                ),
+            );
             return None;
         }
         let device = device.unwrap();
@@ -292,20 +408,36 @@ impl VulkanContext {
         let queue = unsafe { device.get_device_queue(queue_family_index, 0) };
         let swapchain_loader = swapchain::Device::new(&instance, &device);
 
-        let caps = unsafe { surface_loader.get_physical_device_surface_capabilities(pdevice, surface) };
+        let caps =
+            unsafe { surface_loader.get_physical_device_surface_capabilities(pdevice, surface) };
         if caps.is_err() {
-            android_log(LogPriority::ERROR, &format!("VulkanContext::new: get_capabilities failed: {:?}", caps.err()));
+            android_log(
+                LogPriority::ERROR,
+                &format!(
+                    "VulkanContext::new: get_capabilities failed: {:?}",
+                    caps.err()
+                ),
+            );
             return None;
         }
         let caps = caps.unwrap();
         let extent = caps.current_extent;
-        android_log(LogPriority::INFO, &format!("VulkanContext::new: Surface caps {}/{}", extent.width, extent.height));
+        android_log(
+            LogPriority::INFO,
+            &format!(
+                "VulkanContext::new: Surface caps {}/{}",
+                extent.width, extent.height
+            ),
+        );
 
         let semaphore_info = ash_vk::SemaphoreCreateInfo::default();
         let image_available_semaphore = unsafe { device.create_semaphore(&semaphore_info, None) };
         let render_finished_semaphore = unsafe { device.create_semaphore(&semaphore_info, None) };
         if image_available_semaphore.is_err() || render_finished_semaphore.is_err() {
-            android_log(LogPriority::ERROR, "VulkanContext::new: create_semaphore failed");
+            android_log(
+                LogPriority::ERROR,
+                "VulkanContext::new: create_semaphore failed",
+            );
             return None;
         }
         let image_available_semaphore = image_available_semaphore.unwrap();
@@ -328,16 +460,26 @@ impl VulkanContext {
             },
             ..Default::default()
         };
-        let pipeline_cache = match unsafe { device.create_pipeline_cache(&cache_create_info, None) } {
+        let pipeline_cache = match unsafe { device.create_pipeline_cache(&cache_create_info, None) }
+        {
             Ok(cache) => {
-                android_log(LogPriority::INFO, &format!(
-                    "VulkanContext::new: Pipeline cache created ({} bytes initial data)",
-                    pipeline_cache_data.len()
-                ));
+                android_log(
+                    LogPriority::INFO,
+                    &format!(
+                        "VulkanContext::new: Pipeline cache created ({} bytes initial data)",
+                        pipeline_cache_data.len()
+                    ),
+                );
                 cache
             }
             Err(e) => {
-                android_log(LogPriority::WARN, &format!("VulkanContext::new: Failed to create pipeline cache: {:?}, continuing without cache", e));
+                android_log(
+                    LogPriority::WARN,
+                    &format!(
+                        "VulkanContext::new: Failed to create pipeline cache: {:?}, continuing without cache",
+                        e
+                    ),
+                );
                 ash_vk::PipelineCache::null()
             }
         };
@@ -346,30 +488,39 @@ impl VulkanContext {
         HOOKED_PIPELINE_CACHE.store(pipeline_cache.as_raw(), Ordering::SeqCst);
         PIPELINE_CACHE_INITIALIZED.store(true, Ordering::SeqCst);
 
-        let get_proc = move |of: vk::GetProcOf| {
-            unsafe {
-                match of {
-                    vk::GetProcOf::Instance(inst, name) => {
-                        let name_cstr = CStr::from_ptr(name);
-                        entry_ptr.get_instance_proc_addr(ash_vk::Instance::from_raw(inst as _), name_cstr.as_ptr()).map(|f| f as _).unwrap_or(std::ptr::null())
+        let get_proc = move |of: vk::GetProcOf| unsafe {
+            match of {
+                vk::GetProcOf::Instance(inst, name) => {
+                    let name_cstr = CStr::from_ptr(name);
+                    entry_ptr
+                        .get_instance_proc_addr(
+                            ash_vk::Instance::from_raw(inst as _),
+                            name_cstr.as_ptr(),
+                        )
+                        .map(|f| f as _)
+                        .unwrap_or(std::ptr::null())
+                }
+                vk::GetProcOf::Device(dev, name) => {
+                    let name_cstr = CStr::from_ptr(name);
+                    let ptr = instance_ptr
+                        .get_device_proc_addr(
+                            ash_vk::Device::from_raw(dev as _),
+                            name_cstr.as_ptr(),
+                        )
+                        .map(|f| f as *mut c_void)
+                        .unwrap_or(std::ptr::null_mut());
+                    if ptr.is_null() {
+                        return std::ptr::null();
                     }
-                    vk::GetProcOf::Device(dev, name) => {
-                        let name_cstr = CStr::from_ptr(name);
-                        let ptr = instance_ptr.get_device_proc_addr(ash_vk::Device::from_raw(dev as _), name_cstr.as_ptr())
-                            .map(|f| f as *mut c_void).unwrap_or(std::ptr::null_mut());
-                        if ptr.is_null() {
-                            return std::ptr::null();
-                        }
-                        let name_str = name_cstr.to_str().unwrap_or("");
-                        if name_str == "vkCreatePipelineCache" {
-                            ORIGINAL_CREATE_PIPELINE_CACHE.store(ptr, Ordering::SeqCst);
-                            hooked_vk_create_pipeline_cache as *const () as usize as *const c_void
-                        } else if name_str == "vkDestroyPipelineCache" {
-                            ORIGINAL_DESTROY_PIPELINE_CACHE.store(ptr, Ordering::SeqCst);
-                            hooked_vk_destroy_pipeline_cache as *const () as usize as *const c_void
-                        } else {
-                            ptr as *const c_void
-                        }
+                    let name_str = name_cstr.to_str().unwrap_or("");
+                    if name_str == "vkCreatePipelineCache" {
+                        ORIGINAL_CREATE_PIPELINE_CACHE.store(ptr, Ordering::SeqCst);
+                        hooked_vk_create_pipeline_cache as *const () as usize as *const c_void
+                    } else if name_str == "vkDestroyPipelineCache" {
+                        ORIGINAL_DESTROY_PIPELINE_CACHE.store(ptr, Ordering::SeqCst);
+                        hooked_vk_destroy_pipeline_cache as *const () as usize as *const c_void
+                    } else {
+                        ptr as *const c_void
                     }
                 }
             }
@@ -381,34 +532,53 @@ impl VulkanContext {
                 pdevice.as_raw() as _,
                 device_raw as _,
                 (queue.as_raw() as _, queue_family_index as usize),
-                &get_proc
+                &get_proc,
             )
         };
 
-        android_log(LogPriority::INFO, "VulkanContext::new: Creating Skia context");
+        android_log(
+            LogPriority::INFO,
+            "VulkanContext::new: Creating Skia context",
+        );
         let mut context_options = ContextOptions::new();
         // 限制字形 atlas 纹理大小，防止大字体场景下内存暴涨
         context_options.glyph_cache_texture_maximum_bytes = 8 * 1024 * 1024;
         // 增大运行时着色器程序缓存，减少重复编译
         context_options.runtime_program_cache_size = 256;
         // 允许字形 atlas 使用多张纹理，提升大字符集渲染效率
-        context_options.allow_multiple_glyph_cache_textures = skia_safe::gpu::ganesh::context_options::Enable::Yes;
+        context_options.allow_multiple_glyph_cache_textures =
+            skia_safe::gpu::ganesh::context_options::Enable::Yes;
         // 缓存 Vulkan 二级命令缓冲，减少命令构建开销
         context_options.max_cached_vulkan_secondary_command_buffers = 64;
 
-        let context = skia_safe::gpu::direct_contexts::make_vulkan(&backend_context, Some(&context_options));
+        let context =
+            skia_safe::gpu::direct_contexts::make_vulkan(&backend_context, Some(&context_options));
         if context.is_none() {
-            android_log(LogPriority::ERROR, "VulkanContext::new: Skia make_vulkan failed");
+            android_log(
+                LogPriority::ERROR,
+                "VulkanContext::new: Skia make_vulkan failed",
+            );
             return None;
         }
         let mut context = context.unwrap();
         // 设置 GPU 资源缓存上限为 64MB（纹理、缓冲区等）
         context.set_resource_cache_limit(64 * 1024 * 1024);
-        android_log(LogPriority::INFO, "VulkanContext::new: Skia context created with cache limits");
+        android_log(
+            LogPriority::INFO,
+            "VulkanContext::new: Skia context created with cache limits",
+        );
 
         let mut ctx = Self {
-            entry, instance, device, context: Some(context), queue, graphics_queue_index: queue_family_index,
-            pdevice, surface, surface_loader, swapchain_loader,
+            entry,
+            instance,
+            device,
+            context: Some(context),
+            queue,
+            graphics_queue_index: queue_family_index,
+            pdevice,
+            surface,
+            surface_loader,
+            swapchain_loader,
             swapchain: ash_vk::SwapchainKHR::null(),
             swapchain_images: vec![],
             extent,
@@ -422,7 +592,10 @@ impl VulkanContext {
 
         let swapchain_ok = ctx.recreate_swapchain(extent.width, extent.height);
         if !swapchain_ok {
-            android_log(LogPriority::ERROR, "VulkanContext::new: recreate_swapchain failed");
+            android_log(
+                LogPriority::ERROR,
+                "VulkanContext::new: recreate_swapchain failed",
+            );
             return None;
         }
         android_log(LogPriority::INFO, "VulkanContext::new: SUCCESS");
@@ -432,20 +605,36 @@ impl VulkanContext {
     pub fn recreate_swapchain(&mut self, width: u32, height: u32) -> bool {
         // 防御性检查：确保 surface 有效
         if self.surface == ash_vk::SurfaceKHR::null() {
-            android_log(LogPriority::ERROR, "Vulkan: recreate_swapchain called with null surface");
+            android_log(
+                LogPriority::ERROR,
+                "Vulkan: recreate_swapchain called with null surface",
+            );
             return false;
         }
         // 性能优化：如果尺寸与当前相同，跳过重建
-        if self.extent.width == width && self.extent.height == height && self.swapchain != ash_vk::SwapchainKHR::null() {
-            android_log(LogPriority::DEBUG, &format!("Vulkan: Swapchain size {}x{} unchanged, skipping recreation", width, height));
+        if self.extent.width == width
+            && self.extent.height == height
+            && self.swapchain != ash_vk::SwapchainKHR::null()
+        {
+            android_log(
+                LogPriority::DEBUG,
+                &format!(
+                    "Vulkan: Swapchain size {}x{} unchanged, skipping recreation",
+                    width, height
+                ),
+            );
             return true;
         }
         unsafe {
             self.extent = ash_vk::Extent2D { width, height };
 
-            let surface_formats = self.surface_loader.get_physical_device_surface_formats(self.pdevice, self.surface)
+            let surface_formats = self
+                .surface_loader
+                .get_physical_device_surface_formats(self.pdevice, self.surface)
                 .unwrap_or_default();
-            let present_modes = self.surface_loader.get_physical_device_surface_present_modes(self.pdevice, self.surface)
+            let present_modes = self
+                .surface_loader
+                .get_physical_device_surface_present_modes(self.pdevice, self.surface)
                 .unwrap_or_default();
 
             let present_mode = if present_modes.contains(&ash_vk::PresentModeKHR::MAILBOX) {
@@ -462,7 +651,13 @@ impl VulkanContext {
             } else {
                 // 记录所有可用格式，便于调试
                 for (i, f) in surface_formats.iter().enumerate() {
-                    android_log(LogPriority::DEBUG, &format!("Vulkan: Available surface format #{}: {:?} (colorspace: {:?})", i, f.format, f.color_space));
+                    android_log(
+                        LogPriority::DEBUG,
+                        &format!(
+                            "Vulkan: Available surface format #{}: {:?} (colorspace: {:?})",
+                            i, f.format, f.color_space
+                        ),
+                    );
                 }
 
                 // 性能优化与画质优先：
@@ -488,12 +683,17 @@ impl VulkanContext {
 
             // 同步 Skia ImageInfo format 与实际 Swapchain Image format
             self.skia_format = ash_format_to_skia_format(format.format);
-            android_log(LogPriority::INFO, &format!(
-                "Vulkan: Selected swapchain format {:?} (mapped to Skia format {:?})",
-                format.format, self.skia_format
-            ));
+            android_log(
+                LogPriority::INFO,
+                &format!(
+                    "Vulkan: Selected swapchain format {:?} (mapped to Skia format {:?})",
+                    format.format, self.skia_format
+                ),
+            );
 
-            let caps = self.surface_loader.get_physical_device_surface_capabilities(self.pdevice, self.surface)
+            let caps = self
+                .surface_loader
+                .get_physical_device_surface_capabilities(self.pdevice, self.surface)
                 .unwrap_or(ash_vk::SurfaceCapabilitiesKHR {
                     min_image_count: 2,
                     max_image_count: u32::MAX,
@@ -503,7 +703,10 @@ impl VulkanContext {
 
             // 关键修复：如果当前能力显示大小为 0 (例如最小化)，跳过重建
             if caps.current_extent.width == 0 || caps.current_extent.height == 0 {
-                android_log(LogPriority::WARN, "Vulkan: Surface size is 0, skipping swapchain recreation");
+                android_log(
+                    LogPriority::WARN,
+                    "Vulkan: Surface size is 0, skipping swapchain recreation",
+                );
                 return false;
             }
 
@@ -545,20 +748,35 @@ impl VulkanContext {
                 ctx.flush_and_submit();
             }
 
-            if let Ok(new_swapchain) = self.swapchain_loader.create_swapchain(&swapchain_create_info, None) {
+            if let Ok(new_swapchain) = self
+                .swapchain_loader
+                .create_swapchain(&swapchain_create_info, None)
+            {
                 if self.swapchain != ash_vk::SwapchainKHR::null() {
-                    self.swapchain_loader.destroy_swapchain(self.swapchain, None);
+                    self.swapchain_loader
+                        .destroy_swapchain(self.swapchain, None);
                 }
                 self.swapchain = new_swapchain;
-                self.swapchain_images = self.swapchain_loader.get_swapchain_images(self.swapchain).unwrap_or_default();
+                self.swapchain_images = self
+                    .swapchain_loader
+                    .get_swapchain_images(self.swapchain)
+                    .unwrap_or_default();
                 // 预创建并缓存 Skia Surface，避免每帧重复创建 BackendRenderTarget 包装器
                 self.sk_surfaces.reserve(self.swapchain_images.len());
                 for i in 0..self.swapchain_images.len() {
                     let surface = self.create_sk_surface(i as u32);
                     self.sk_surfaces.push(surface);
                 }
-                android_log(LogPriority::INFO, &format!("Vulkan: Swapchain recreated {}x{} with {} images ({} surfaces cached)", 
-                    self.extent.width, self.extent.height, self.swapchain_images.len(), self.sk_surfaces.len()));
+                android_log(
+                    LogPriority::INFO,
+                    &format!(
+                        "Vulkan: Swapchain recreated {}x{} with {} images ({} surfaces cached)",
+                        self.extent.width,
+                        self.extent.height,
+                        self.swapchain_images.len(),
+                        self.sk_surfaces.len()
+                    ),
+                );
                 true
             } else {
                 android_log(LogPriority::ERROR, "Vulkan: Failed to create swapchain");
@@ -570,21 +788,26 @@ impl VulkanContext {
     pub fn acquire_next_image(&mut self) -> Result<u32, ash::vk::Result> {
         // 防御性检查：确保 swapchain 有效
         if self.swapchain == ash_vk::SwapchainKHR::null() {
-            android_log(LogPriority::ERROR, "Vulkan: acquire_next_image called with null swapchain");
+            android_log(
+                LogPriority::ERROR,
+                "Vulkan: acquire_next_image called with null swapchain",
+            );
             return Err(ash::vk::Result::ERROR_DEVICE_LOST);
         }
         unsafe {
-            self.swapchain_loader.acquire_next_image(
-                self.swapchain,
-                1_000_000_000, // 1 秒超时，防止 swapchain 损坏时永远阻塞
-                self.image_available_semaphore,
-                ash_vk::Fence::null()
-            ).map(|(idx, _)| idx)
+            self.swapchain_loader
+                .acquire_next_image(
+                    self.swapchain,
+                    1_000_000_000, // 1 秒超时，防止 swapchain 损坏时永远阻塞
+                    self.image_available_semaphore,
+                    ash_vk::Fence::null(),
+                )
+                .map(|(idx, _)| idx)
         }
     }
 
     /// 更新 Surface（用于 SurfaceView surfaceDestroyed 后 surfaceCreated 复用 Vulkan 上下文）
-    /// 
+    ///
     /// 【关键修复】采用"先创建新资源，成功后销毁旧资源"的原子策略。
     /// 如果任何中间步骤失败，回滚到旧 surface，避免悬空句柄。
     pub unsafe fn update_surface(&mut self, window: *mut std::ffi::c_void) -> bool {
@@ -598,31 +821,52 @@ impl VulkanContext {
         if let Some(ctx) = self.context.as_mut() {
             ctx.flush_and_submit();
         }
-        
+
         if self.swapchain != ash_vk::SwapchainKHR::null() {
-            unsafe { self.swapchain_loader.destroy_swapchain(self.swapchain, None); }
+            unsafe {
+                self.swapchain_loader
+                    .destroy_swapchain(self.swapchain, None);
+            }
             self.swapchain = ash_vk::SwapchainKHR::null();
         }
 
         // 3. 【关键修复】保存旧 Surface 句柄，先创建新的，成功后再销毁旧的
         let old_surface = self.surface;
         if old_surface == ash_vk::SurfaceKHR::null() {
-            android_log(LogPriority::ERROR, "VulkanContext::update_surface: old surface is null, cannot update");
+            android_log(
+                LogPriority::ERROR,
+                "VulkanContext::update_surface: old surface is null, cannot update",
+            );
             return false;
         }
 
         // 4. 创建新的 Android Surface
-        let android_surface_loader = ash::khr::android_surface::Instance::new(&self.entry, &self.instance);
-        match unsafe { android_surface_loader.create_android_surface(
-            &ash_vk::AndroidSurfaceCreateInfoKHR { window, ..Default::default() },
-            None
-        ) } {
+        let android_surface_loader =
+            ash::khr::android_surface::Instance::new(&self.entry, &self.instance);
+        match unsafe {
+            android_surface_loader.create_android_surface(
+                &ash_vk::AndroidSurfaceCreateInfoKHR {
+                    window,
+                    ..Default::default()
+                },
+                None,
+            )
+        } {
             Ok(new_surface) => {
                 self.surface = new_surface;
-                android_log(LogPriority::INFO, "VulkanContext::update_surface: New surface created");
+                android_log(
+                    LogPriority::INFO,
+                    "VulkanContext::update_surface: New surface created",
+                );
             }
             Err(e) => {
-                android_log(LogPriority::ERROR, &format!("VulkanContext::update_surface: create_android_surface failed: {:?}", e));
+                android_log(
+                    LogPriority::ERROR,
+                    &format!(
+                        "VulkanContext::update_surface: create_android_surface failed: {:?}",
+                        e
+                    ),
+                );
                 // 【关键修复】回滚：恢复旧 surface，不销毁它
                 self.surface = old_surface;
                 return false;
@@ -630,12 +874,23 @@ impl VulkanContext {
         }
 
         // 5. 获取新的 surface capabilities
-        let caps = match unsafe { self.surface_loader.get_physical_device_surface_capabilities(self.pdevice, self.surface) } {
+        let caps = match unsafe {
+            self.surface_loader
+                .get_physical_device_surface_capabilities(self.pdevice, self.surface)
+        } {
             Ok(c) => c,
             Err(e) => {
-                android_log(LogPriority::ERROR, &format!("VulkanContext::update_surface: get_capabilities failed: {:?}", e));
+                android_log(
+                    LogPriority::ERROR,
+                    &format!(
+                        "VulkanContext::update_surface: get_capabilities failed: {:?}",
+                        e
+                    ),
+                );
                 // 【关键修复】回滚：销毁新 surface，恢复旧 surface
-                unsafe { self.surface_loader.destroy_surface(self.surface, None); }
+                unsafe {
+                    self.surface_loader.destroy_surface(self.surface, None);
+                }
                 self.surface = old_surface;
                 return false;
             }
@@ -645,16 +900,26 @@ impl VulkanContext {
         // 6. 重新创建 swapchain
         let swapchain_ok = self.recreate_swapchain(self.extent.width, self.extent.height);
         if !swapchain_ok {
-            android_log(LogPriority::ERROR, "VulkanContext::update_surface: recreate_swapchain failed");
+            android_log(
+                LogPriority::ERROR,
+                "VulkanContext::update_surface: recreate_swapchain failed",
+            );
             // 【关键修复】回滚：销毁新 surface，恢复旧 surface
-            unsafe { self.surface_loader.destroy_surface(self.surface, None); }
+            unsafe {
+                self.surface_loader.destroy_surface(self.surface, None);
+            }
             self.surface = old_surface;
             return false;
         }
 
         // 7. 【关键修复】所有步骤成功后才销毁旧 Surface
-        unsafe { self.surface_loader.destroy_surface(old_surface, None); }
-        android_log(LogPriority::INFO, "VulkanContext::update_surface: Old surface destroyed after successful transition");
+        unsafe {
+            self.surface_loader.destroy_surface(old_surface, None);
+        }
+        android_log(
+            LogPriority::INFO,
+            "VulkanContext::update_surface: Old surface destroyed after successful transition",
+        );
 
         android_log(LogPriority::INFO, "VulkanContext::update_surface: SUCCESS");
         true
@@ -698,7 +963,8 @@ impl VulkanContext {
         );
 
         let color_type = match self.skia_format {
-            skia_safe::gpu::vk::Format::B8G8R8A8_UNORM | skia_safe::gpu::vk::Format::B8G8R8A8_SRGB => ColorType::BGRA8888,
+            skia_safe::gpu::vk::Format::B8G8R8A8_UNORM
+            | skia_safe::gpu::vk::Format::B8G8R8A8_SRGB => ColorType::BGRA8888,
             skia_safe::gpu::vk::Format::A2B10G10R10_UNORM_PACK32 => ColorType::RGBA1010102,
             skia_safe::gpu::vk::Format::A2R10G10B10_UNORM_PACK32 => ColorType::BGRA1010102,
             skia_safe::gpu::vk::Format::R16G16B16A16_SFLOAT => ColorType::RGBAF16,
@@ -718,8 +984,11 @@ impl VulkanContext {
 
 impl Drop for VulkanContext {
     fn drop(&mut self) {
-        android_log(LogPriority::INFO, "VulkanContext::drop: Cleaning up Vulkan resources");
-        
+        android_log(
+            LogPriority::INFO,
+            "VulkanContext::drop: Cleaning up Vulkan resources",
+        );
+
         // Save pipeline cache data before destruction
         if self.pipeline_cache != ash_vk::PipelineCache::null() {
             save_pipeline_cache_data(&self.device, self.pipeline_cache);
@@ -743,21 +1012,25 @@ impl Drop for VulkanContext {
             }
 
             if self.swapchain != ash_vk::SwapchainKHR::null() {
-                self.swapchain_loader.destroy_swapchain(self.swapchain, None);
+                self.swapchain_loader
+                    .destroy_swapchain(self.swapchain, None);
             }
             self.surface_loader.destroy_surface(self.surface, None);
-            self.device.destroy_semaphore(self.image_available_semaphore, None);
-            self.device.destroy_semaphore(self.render_finished_semaphore, None);
-            
+            self.device
+                .destroy_semaphore(self.image_available_semaphore, None);
+            self.device
+                .destroy_semaphore(self.render_finished_semaphore, None);
+
             // Destroy our pipeline cache (Skia's hook ignores vkDestroyPipelineCache)
             if self.pipeline_cache != ash_vk::PipelineCache::null() {
-                self.device.destroy_pipeline_cache(self.pipeline_cache, None);
+                self.device
+                    .destroy_pipeline_cache(self.pipeline_cache, None);
             }
-            
+
             self.device.destroy_device(None);
             self.instance.destroy_instance(None);
         }
-        
+
         HOOKED_PIPELINE_CACHE.store(0, Ordering::SeqCst);
         PIPELINE_CACHE_INITIALIZED.store(false, Ordering::SeqCst);
         android_log(LogPriority::INFO, "VulkanContext::drop: Cleanup complete");
@@ -766,23 +1039,26 @@ impl Drop for VulkanContext {
 
 #[cfg(test)]
 mod tests {
-    
+
     use ash::vk as ash_vk;
 
     #[test]
     fn test_extent_clamping_logic() {
         // 模拟 Android 系统的典型行为：在 resize 过程中，caps 可能返回固定的 current_extent，
         // 或者返回 0xFFFFFFFF 表示由应用决定。
-        
+
         let width = 1080;
         let height = 2400;
 
         // 情况 1：系统给定了确定的 extent (如 1080x2400)
         let caps_fixed = ash_vk::SurfaceCapabilitiesKHR {
-            current_extent: ash_vk::Extent2D { width: 1080, height: 2400 },
+            current_extent: ash_vk::Extent2D {
+                width: 1080,
+                height: 2400,
+            },
             ..Default::default()
         };
-        
+
         let actual_extent = if caps_fixed.current_extent.width != u32::MAX {
             caps_fixed.current_extent
         } else {
@@ -793,10 +1069,13 @@ mod tests {
 
         // 情况 2：系统允许应用决定 (0xFFFFFFFF)
         let caps_dynamic = ash_vk::SurfaceCapabilitiesKHR {
-            current_extent: ash_vk::Extent2D { width: u32::MAX, height: u32::MAX },
+            current_extent: ash_vk::Extent2D {
+                width: u32::MAX,
+                height: u32::MAX,
+            },
             ..Default::default()
         };
-        
+
         let actual_extent = if caps_dynamic.current_extent.width != u32::MAX {
             caps_dynamic.current_extent
         } else {
@@ -810,12 +1089,19 @@ mod tests {
     fn test_zero_extent_handling_logic() {
         // 验证我们添加的 0 尺寸过滤逻辑
         let caps_zero = ash_vk::SurfaceCapabilitiesKHR {
-            current_extent: ash_vk::Extent2D { width: 0, height: 0 },
+            current_extent: ash_vk::Extent2D {
+                width: 0,
+                height: 0,
+            },
             ..Default::default()
         };
 
         // 模拟 recreate_swapchain 中的逻辑
-        let should_skip = caps_zero.current_extent.width == 0 || caps_zero.current_extent.height == 0;
-        assert!(should_skip, "Logic should detect zero extent and skip recreation");
+        let should_skip =
+            caps_zero.current_extent.width == 0 || caps_zero.current_extent.height == 0;
+        assert!(
+            should_skip,
+            "Logic should detect zero extent and skip recreation"
+        );
     }
 }

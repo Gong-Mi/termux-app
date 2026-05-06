@@ -1,4 +1,3 @@
-
 #[test]
 fn test_jni_string_with_nul() {
     // We can't easily mock JNIEnv in a simple unit test without a JVM.

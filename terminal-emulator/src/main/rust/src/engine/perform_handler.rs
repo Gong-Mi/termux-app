@@ -1,7 +1,7 @@
+use crate::engine::events::TerminalEvent;
+use crate::engine::state::ScreenState;
 /// VTE Parser 的 Perform trait 实现
 use crate::vte_parser::{Params, Perform};
-use crate::engine::state::ScreenState;
-use crate::engine::events::TerminalEvent;
 
 pub struct PerformHandler<'a> {
     pub state: &'a mut ScreenState,
@@ -96,7 +96,10 @@ mod tests {
     #[test]
     fn test_print_moves_cursor() {
         let (mut state, mut events) = setup();
-        let mut handler = PerformHandler { state: &mut state, events: &mut events };
+        let mut handler = PerformHandler {
+            state: &mut state,
+            events: &mut events,
+        };
         handler.print('A');
         assert_eq!(handler.state.cursor.x, 1);
         assert_eq!(handler.state.cursor.y, 0);
@@ -106,7 +109,10 @@ mod tests {
     #[test]
     fn test_print_str_moves_cursor() {
         let (mut state, mut events) = setup();
-        let mut handler = PerformHandler { state: &mut state, events: &mut events };
+        let mut handler = PerformHandler {
+            state: &mut state,
+            events: &mut events,
+        };
         handler.print_str("Hello");
         assert_eq!(handler.state.cursor.x, 5);
         assert_eq!(handler.state.last_printed_char, Some('o'));
@@ -115,7 +121,10 @@ mod tests {
     #[test]
     fn test_print_appears_on_screen() {
         let (mut state, mut events) = setup();
-        let mut handler = PerformHandler { state: &mut state, events: &mut events };
+        let mut handler = PerformHandler {
+            state: &mut state,
+            events: &mut events,
+        };
         handler.print('X');
         let row = handler.state.get_current_screen().get_row(0);
         assert_eq!(row.text[0], 'X');
@@ -130,13 +139,19 @@ mod tests {
         // not the events vector. Direct bell() pushes to events.
         let (mut state, mut events) = setup();
         {
-            let mut handler = PerformHandler { state: &mut state, events: &mut events };
+            let mut handler = PerformHandler {
+                state: &mut state,
+                events: &mut events,
+            };
             handler.execute(0x07);
         }
         // report_bell does not push TerminalEvent::Bell into local events
         assert!(events.is_empty());
         {
-            let mut handler = PerformHandler { state: &mut state, events: &mut events };
+            let mut handler = PerformHandler {
+                state: &mut state,
+                events: &mut events,
+            };
             handler.bell();
         }
         assert!(events.iter().any(|e| matches!(e, TerminalEvent::Bell)));
@@ -146,7 +161,10 @@ mod tests {
     fn test_execute_backspace() {
         let (mut state, mut events) = setup();
         state.cursor.x = 5;
-        let mut handler = PerformHandler { state: &mut state, events: &mut events };
+        let mut handler = PerformHandler {
+            state: &mut state,
+            events: &mut events,
+        };
         handler.execute(0x08);
         assert_eq!(handler.state.cursor.x, 4);
     }
@@ -154,7 +172,10 @@ mod tests {
     #[test]
     fn test_execute_linefeed() {
         let (mut state, mut events) = setup();
-        let mut handler = PerformHandler { state: &mut state, events: &mut events };
+        let mut handler = PerformHandler {
+            state: &mut state,
+            events: &mut events,
+        };
         handler.execute(0x0a);
         assert_eq!(handler.state.cursor.y, 1);
     }
@@ -164,7 +185,10 @@ mod tests {
         let (mut state, mut events) = setup();
         state.cursor.x = 10;
         state.modes.set(crate::terminal::modes::MODE_LNM);
-        let mut handler = PerformHandler { state: &mut state, events: &mut events };
+        let mut handler = PerformHandler {
+            state: &mut state,
+            events: &mut events,
+        };
         handler.execute(0x0a);
         assert_eq!(handler.state.cursor.y, 1);
         assert_eq!(handler.state.cursor.x, 0);
@@ -174,7 +198,10 @@ mod tests {
     fn test_execute_carriage_return() {
         let (mut state, mut events) = setup();
         state.cursor.x = 15;
-        let mut handler = PerformHandler { state: &mut state, events: &mut events };
+        let mut handler = PerformHandler {
+            state: &mut state,
+            events: &mut events,
+        };
         handler.execute(0x0d);
         assert_eq!(handler.state.cursor.x, 0);
     }
@@ -185,7 +212,10 @@ mod tests {
     #[test]
     fn test_bell_produces_event() {
         let (mut state, mut events) = setup();
-        let mut handler = PerformHandler { state: &mut state, events: &mut events };
+        let mut handler = PerformHandler {
+            state: &mut state,
+            events: &mut events,
+        };
         handler.bell();
         assert_eq!(events.len(), 1);
         assert!(matches!(events[0], TerminalEvent::Bell));
@@ -195,7 +225,10 @@ mod tests {
     fn test_backspace_moves_left() {
         let (mut state, mut events) = setup();
         state.cursor.x = 3;
-        let mut handler = PerformHandler { state: &mut state, events: &mut events };
+        let mut handler = PerformHandler {
+            state: &mut state,
+            events: &mut events,
+        };
         handler.backspace();
         assert_eq!(handler.state.cursor.x, 2);
     }
@@ -203,7 +236,10 @@ mod tests {
     #[test]
     fn test_tab_moves_forward() {
         let (mut state, mut events) = setup();
-        let mut handler = PerformHandler { state: &mut state, events: &mut events };
+        let mut handler = PerformHandler {
+            state: &mut state,
+            events: &mut events,
+        };
         handler.tab();
         assert_eq!(handler.state.cursor.x, 8); // first tab stop at col 8
     }
@@ -212,7 +248,10 @@ mod tests {
     fn test_carriage_return_resets_x() {
         let (mut state, mut events) = setup();
         state.cursor.x = 20;
-        let mut handler = PerformHandler { state: &mut state, events: &mut events };
+        let mut handler = PerformHandler {
+            state: &mut state,
+            events: &mut events,
+        };
         handler.carriage_return();
         assert_eq!(handler.state.cursor.x, 0);
     }
@@ -227,7 +266,10 @@ mod tests {
         let mut params = Params::new();
         params.values[0] = 3;
         params.len = 1;
-        let mut handler = PerformHandler { state: &mut state, events: &mut events };
+        let mut handler = PerformHandler {
+            state: &mut state,
+            events: &mut events,
+        };
         handler.csi_dispatch(&params, &[], false, 'A');
         assert_eq!(handler.state.cursor.y, 2);
     }
@@ -238,7 +280,10 @@ mod tests {
         let mut params = Params::new();
         params.values[0] = 2;
         params.len = 1;
-        let mut handler = PerformHandler { state: &mut state, events: &mut events };
+        let mut handler = PerformHandler {
+            state: &mut state,
+            events: &mut events,
+        };
         handler.csi_dispatch(&params, &[], false, 'B');
         assert_eq!(handler.state.cursor.y, 2);
     }
@@ -249,7 +294,10 @@ mod tests {
         let mut params = Params::new();
         params.values[0] = 5;
         params.len = 1;
-        let mut handler = PerformHandler { state: &mut state, events: &mut events };
+        let mut handler = PerformHandler {
+            state: &mut state,
+            events: &mut events,
+        };
         handler.csi_dispatch(&params, &[], false, 'C');
         assert_eq!(handler.state.cursor.x, 5);
     }
@@ -261,7 +309,10 @@ mod tests {
         let mut params = Params::new();
         params.values[0] = 3;
         params.len = 1;
-        let mut handler = PerformHandler { state: &mut state, events: &mut events };
+        let mut handler = PerformHandler {
+            state: &mut state,
+            events: &mut events,
+        };
         handler.csi_dispatch(&params, &[], false, 'D');
         assert_eq!(handler.state.cursor.x, 7);
     }
@@ -274,7 +325,10 @@ mod tests {
         let mut params = Params::new();
         params.values[0] = 2;
         params.len = 1;
-        let mut handler = PerformHandler { state: &mut state, events: &mut events };
+        let mut handler = PerformHandler {
+            state: &mut state,
+            events: &mut events,
+        };
         handler.csi_dispatch(&params, &[], false, 'J');
         let row = handler.state.get_current_screen().get_row(0);
         assert_eq!(row.text[0], ' ');
@@ -286,9 +340,17 @@ mod tests {
         let mut params = Params::new();
         params.values[0] = 4; // Insert mode
         params.len = 1;
-        let mut handler = PerformHandler { state: &mut state, events: &mut events };
+        let mut handler = PerformHandler {
+            state: &mut state,
+            events: &mut events,
+        };
         handler.csi_dispatch(&params, &[], false, 'h');
-        assert!(handler.state.modes.is_enabled(crate::terminal::modes::MODE_INSERT));
+        assert!(
+            handler
+                .state
+                .modes
+                .is_enabled(crate::terminal::modes::MODE_INSERT)
+        );
     }
 
     #[test]
@@ -298,9 +360,17 @@ mod tests {
         let mut params = Params::new();
         params.values[0] = 4;
         params.len = 1;
-        let mut handler = PerformHandler { state: &mut state, events: &mut events };
+        let mut handler = PerformHandler {
+            state: &mut state,
+            events: &mut events,
+        };
         handler.csi_dispatch(&params, &[], false, 'l');
-        assert!(!handler.state.modes.is_enabled(crate::terminal::modes::MODE_INSERT));
+        assert!(
+            !handler
+                .state
+                .modes
+                .is_enabled(crate::terminal::modes::MODE_INSERT)
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -312,7 +382,10 @@ mod tests {
         // not esc_dispatch().
         let (mut state, mut events) = setup();
         state.use_line_drawing_uses_g0 = true;
-        let mut handler = PerformHandler { state: &mut state, events: &mut events };
+        let mut handler = PerformHandler {
+            state: &mut state,
+            events: &mut events,
+        };
         handler.execute(0x0e); // SO
         assert!(!handler.state.use_line_drawing_uses_g0);
     }
@@ -321,7 +394,10 @@ mod tests {
     fn test_execute_shift_in() {
         let (mut state, mut events) = setup();
         state.use_line_drawing_uses_g0 = false;
-        let mut handler = PerformHandler { state: &mut state, events: &mut events };
+        let mut handler = PerformHandler {
+            state: &mut state,
+            events: &mut events,
+        };
         handler.execute(0x0f); // SI
         assert!(handler.state.use_line_drawing_uses_g0);
     }
@@ -336,12 +412,19 @@ mod tests {
         params.values[0] = 0;
         params.len = 1;
 
-        let mut handler = PerformHandler { state: &mut state, events: &mut events };
+        let mut handler = PerformHandler {
+            state: &mut state,
+            events: &mut events,
+        };
         handler.hook(&params, &[], false, 'q');
         handler.put(b' '); // some sixel data
         handler.unhook();
 
-        assert!(events.iter().any(|e| matches!(e, TerminalEvent::SixelImage { .. })));
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, TerminalEvent::SixelImage { .. }))
+        );
     }
 
     #[test]
@@ -349,7 +432,10 @@ mod tests {
         let (mut state, mut events) = setup();
         let params = Params::new();
         {
-            let mut handler = PerformHandler { state: &mut state, events: &mut events };
+            let mut handler = PerformHandler {
+                state: &mut state,
+                events: &mut events,
+            };
             handler.hook(&params, &[], false, 'x'); // not 'q'
             handler.unhook();
         }

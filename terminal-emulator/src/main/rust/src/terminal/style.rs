@@ -1,11 +1,15 @@
 // 从 colors.rs 导入颜色索引常量
-use crate::terminal::colors::{COLOR_INDEX_FOREGROUND, COLOR_INDEX_BACKGROUND};
+use crate::terminal::colors::{COLOR_INDEX_BACKGROUND, COLOR_INDEX_FOREGROUND};
 
 /// STYLE_NORMAL: 前景 256, 背景 257, 无效果
-pub const STYLE_NORMAL: u64 = encode_style(COLOR_INDEX_FOREGROUND as u64, COLOR_INDEX_BACKGROUND as u64, 0);
-pub const STYLE_MASK_EFFECT: u64 = 0x7FF;           // 位 0-10 (11 位效果标志)
-pub const STYLE_MASK_BG: u64 = 0xFFFFFF << 16;      // 位 16-39 (24 位背景色)
-pub const STYLE_MASK_FG: u64 = 0xFFFFFF << 40;      // 位 40-63 (24 位前景色)
+pub const STYLE_NORMAL: u64 = encode_style(
+    COLOR_INDEX_FOREGROUND as u64,
+    COLOR_INDEX_BACKGROUND as u64,
+    0,
+);
+pub const STYLE_MASK_EFFECT: u64 = 0x7FF; // 位 0-10 (11 位效果标志)
+pub const STYLE_MASK_BG: u64 = 0xFFFFFF << 16; // 位 16-39 (24 位背景色)
+pub const STYLE_MASK_FG: u64 = 0xFFFFFF << 40; // 位 40-63 (24 位前景色)
 
 // 真彩色标志位
 pub const STYLE_TRUECOLOR_FG: u64 = 1 << 9; // 位 9 - 前景色使用 24 位真彩色
@@ -67,8 +71,14 @@ mod tests {
     fn test_style_normal() {
         // 默认样式：前景 256, 背景 257, 无效果
         assert_eq!(decode_effect(STYLE_NORMAL), 0);
-        assert_eq!(decode_fore_color(STYLE_NORMAL), COLOR_INDEX_FOREGROUND as u64);
-        assert_eq!(decode_back_color(STYLE_NORMAL), COLOR_INDEX_BACKGROUND as u64);
+        assert_eq!(
+            decode_fore_color(STYLE_NORMAL),
+            COLOR_INDEX_FOREGROUND as u64
+        );
+        assert_eq!(
+            decode_back_color(STYLE_NORMAL),
+            COLOR_INDEX_BACKGROUND as u64
+        );
     }
 
     #[test]
@@ -113,7 +123,8 @@ mod tests {
     #[test]
     fn test_effect_flags_without_truecolor() {
         // Test effect flags without triggering truecolor
-        let combined = EFFECT_BOLD | EFFECT_ITALIC | EFFECT_UNDERLINE | EFFECT_BLINK | EFFECT_REVERSE;
+        let combined =
+            EFFECT_BOLD | EFFECT_ITALIC | EFFECT_UNDERLINE | EFFECT_BLINK | EFFECT_REVERSE;
         let s = encode_style(5, 7, combined);
         assert_eq!(decode_effect(s), combined);
         // 验证各标志位
@@ -130,8 +141,15 @@ mod tests {
 
     #[test]
     fn test_all_effect_flags() {
-        let all_effects = EFFECT_BOLD | EFFECT_ITALIC | EFFECT_UNDERLINE | EFFECT_BLINK
-            | EFFECT_REVERSE | EFFECT_INVISIBLE | EFFECT_STRIKETHROUGH | EFFECT_PROTECTED | EFFECT_DIM;
+        let all_effects = EFFECT_BOLD
+            | EFFECT_ITALIC
+            | EFFECT_UNDERLINE
+            | EFFECT_BLINK
+            | EFFECT_REVERSE
+            | EFFECT_INVISIBLE
+            | EFFECT_STRIKETHROUGH
+            | EFFECT_PROTECTED
+            | EFFECT_DIM;
         let s = encode_style(7, 7, all_effects);
         assert_eq!(decode_effect(s), all_effects);
     }

@@ -1,8 +1,8 @@
+use crate::engine::state::ScreenState;
+use crate::terminal::colors::*;
+use crate::terminal::style::*;
 /// SGR (Select Graphic Rendition) 颜色处理
 use crate::vte_parser::Params;
-use crate::terminal::style::*;
-use crate::terminal::colors::*;
-use crate::engine::state::ScreenState;
 
 impl ScreenState {
     pub fn handle_sgr(&mut self, params: &Params) {
@@ -32,7 +32,10 @@ impl ScreenState {
                 8 => self.effect |= EFFECT_INVISIBLE,
                 9 => self.effect |= EFFECT_STRIKETHROUGH,
                 21 => self.effect |= EFFECT_UNDERLINE,
-                22 => { self.effect &= !EFFECT_BOLD; self.effect &= !EFFECT_DIM; }
+                22 => {
+                    self.effect &= !EFFECT_BOLD;
+                    self.effect &= !EFFECT_DIM;
+                }
                 23 => self.effect &= !EFFECT_ITALIC,
                 24 => self.effect &= !EFFECT_UNDERLINE,
                 25 => self.effect &= !EFFECT_BLINK,

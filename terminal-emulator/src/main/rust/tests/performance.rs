@@ -77,11 +77,19 @@ fn test_rust_raw_text_performance() {
     let mbps = DATA_SIZE_MB as f64 / duration.as_secs_f64();
 
     // 输出与 Java 一致的格式
-    println!("Rust Raw Text Performance: {:.2} MB/s (Duration: {:.2} s)", mbps, duration.as_secs_f64());
+    println!(
+        "Rust Raw Text Performance: {:.2} MB/s (Duration: {:.2} s)",
+        mbps,
+        duration.as_secs_f64()
+    );
     println!("RUST_RAW_TEXT_MBPS={:.2}", mbps);
 
     // 阈值：1.0 MB/s (由于开启了 TRACE 日志，IO 限制了速度)
-    assert!(mbps > 1.0, "Rust raw text performance too low: {:.2} MB/s", mbps);
+    assert!(
+        mbps > 1.0,
+        "Rust raw text performance too low: {:.2} MB/s",
+        mbps
+    );
 }
 
 // =============================================================================
@@ -104,11 +112,19 @@ fn test_rust_ansi_escape_performance() {
     let mbps = total_mb / duration.as_secs_f64();
 
     // 输出与 Java 一致的格式
-    println!("Rust ANSI Escape Performance: {:.2} MB/s (Duration: {:.2} s)", mbps, duration.as_secs_f64());
+    println!(
+        "Rust ANSI Escape Performance: {:.2} MB/s (Duration: {:.2} s)",
+        mbps,
+        duration.as_secs_f64()
+    );
     println!("RUST_ANSI_MBPS={:.2}", mbps);
 
     // 阈值：0.5 MB/s
-    assert!(mbps > 0.5, "Rust ANSI performance too low: {:.2} MB/s", mbps);
+    assert!(
+        mbps > 0.5,
+        "Rust ANSI performance too low: {:.2} MB/s",
+        mbps
+    );
 }
 
 // =============================================================================
@@ -133,11 +149,19 @@ fn test_cursor_movement_performance() {
     let kops = ops_per_sec / 1000.0;
 
     // 输出与 Java 一致的格式
-    println!("Cursor Movement Performance: {:.0} ops/s (Duration: {:.2} s)", ops_per_sec, duration.as_secs_f64());
+    println!(
+        "Cursor Movement Performance: {:.0} ops/s (Duration: {:.2} s)",
+        ops_per_sec,
+        duration.as_secs_f64()
+    );
     println!("RUST_CURSOR_OPS={:.0}", kops);
 
     // 阈值：1,000 ops/s（降低 100 倍）
-    assert!(ops_per_sec > 1000.0, "Cursor movement performance too low: {:.0} ops/s", ops_per_sec);
+    assert!(
+        ops_per_sec > 1000.0,
+        "Cursor movement performance too low: {:.0} ops/s",
+        ops_per_sec
+    );
 }
 
 // =============================================================================
@@ -164,11 +188,19 @@ fn test_scrolling_performance() {
     let klines = lines_per_sec / 1000.0;
 
     // 输出与 Java 一致的格式
-    println!("Scrolling Performance: {:.0} lines/s (Duration: {:.2} s)", lines_per_sec, duration.as_secs_f64());
+    println!(
+        "Scrolling Performance: {:.0} lines/s (Duration: {:.2} s)",
+        lines_per_sec,
+        duration.as_secs_f64()
+    );
     println!("RUST_SCROLL_LINES={:.0}", klines);
 
     // 阈值：50,000 lines/s
-    assert!(lines_per_sec > 50000.0, "Scrolling performance too low: {:.0} lines/s", lines_per_sec);
+    assert!(
+        lines_per_sec > 50000.0,
+        "Scrolling performance too low: {:.0} lines/s",
+        lines_per_sec
+    );
 }
 
 // =============================================================================
@@ -192,11 +224,19 @@ fn test_wide_char_performance() {
     let kchars = chars_per_sec / 1000.0;
 
     // 输出与 Java 一致的格式
-    println!("Wide Char Performance: {:.0} chars/s (Duration: {:.2} s)", chars_per_sec, duration.as_secs_f64());
+    println!(
+        "Wide Char Performance: {:.0} chars/s (Duration: {:.2} s)",
+        chars_per_sec,
+        duration.as_secs_f64()
+    );
     println!("RUST_WIDECHAR_OPS={:.0}", kchars);
 
     // 阈值：100,000 chars/s
-    assert!(chars_per_sec > 100000.0, "Wide char performance too low: {:.0} chars/s", chars_per_sec);
+    assert!(
+        chars_per_sec > 100000.0,
+        "Wide char performance too low: {:.0} chars/s",
+        chars_per_sec
+    );
 }
 
 // =============================================================================
@@ -219,11 +259,19 @@ fn test_small_batch_performance() {
     let kcalls = calls_per_sec / 1000.0;
 
     // 输出与 Java 一致的格式
-    println!("Small Batch Performance: {:.0} calls/s (Duration: {:.2} s)", calls_per_sec, duration.as_secs_f64());
+    println!(
+        "Small Batch Performance: {:.0} calls/s (Duration: {:.2} s)",
+        calls_per_sec,
+        duration.as_secs_f64()
+    );
     println!("RUST_SMALLBATCH_OPS={:.0}", kcalls);
 
     // 阈值：1,000 calls/s（降低 100 倍）
-    assert!(calls_per_sec > 1000.0, "Small batch performance too low: {:.0} calls/s", calls_per_sec);
+    assert!(
+        calls_per_sec > 1000.0,
+        "Small batch performance too low: {:.0} calls/s",
+        calls_per_sec
+    );
 }
 
 // =============================================================================
@@ -249,8 +297,12 @@ fn test_batch_row_read_performance() {
     let start = Instant::now();
     for _ in 0..iterations {
         for row in 0..ROWS as usize {
-            engine.state.copy_row_text(row.try_into().unwrap(), &mut text_buffer);
-            engine.state.copy_row_styles_i64(row.try_into().unwrap(), &mut style_buffer);
+            engine
+                .state
+                .copy_row_text(row.try_into().unwrap(), &mut text_buffer);
+            engine
+                .state
+                .copy_row_styles_i64(row.try_into().unwrap(), &mut style_buffer);
         }
     }
     let duration = start.elapsed();
@@ -264,7 +316,11 @@ fn test_batch_row_read_performance() {
     );
 
     // 阈值：100,000 rows/s（考虑到现在需要同步所有行，包括滚动历史）
-    assert!(rows_per_sec > 100000.0, "Batch row read performance too low: {:.0} rows/s", rows_per_sec);
+    assert!(
+        rows_per_sec > 100000.0,
+        "Batch row read performance too low: {:.0} rows/s",
+        rows_per_sec
+    );
 }
 
 /// 测试全屏批量读取性能
@@ -285,8 +341,12 @@ fn test_full_screen_batch_read_performance() {
     let start = Instant::now();
     for _ in 0..iterations {
         for row in 0..ROWS as usize {
-            engine.state.copy_row_text(row.try_into().unwrap(), &mut text_buffers[row]);
-            engine.state.copy_row_styles_i64(row.try_into().unwrap(), &mut style_buffers[row]);
+            engine
+                .state
+                .copy_row_text(row.try_into().unwrap(), &mut text_buffers[row]);
+            engine
+                .state
+                .copy_row_styles_i64(row.try_into().unwrap(), &mut style_buffers[row]);
         }
     }
     let duration = start.elapsed();
@@ -321,8 +381,12 @@ fn test_single_vs_batch_read_comparison() {
     let start_single = Instant::now();
     for _ in 0..iterations {
         for row in 0..ROWS as usize {
-            engine.state.copy_row_text(row.try_into().unwrap(), &mut text_buffer);
-            engine.state.copy_row_styles_i64(row.try_into().unwrap(), &mut style_buffer);
+            engine
+                .state
+                .copy_row_text(row.try_into().unwrap(), &mut text_buffer);
+            engine
+                .state
+                .copy_row_styles_i64(row.try_into().unwrap(), &mut style_buffer);
         }
     }
     let duration_single = start_single.elapsed();
@@ -334,8 +398,12 @@ fn test_single_vs_batch_read_comparison() {
     let start_batch = Instant::now();
     for _ in 0..iterations {
         for row in 0..ROWS as usize {
-            engine.state.copy_row_text(row.try_into().unwrap(), &mut text_buffers[row]);
-            engine.state.copy_row_styles_i64(row.try_into().unwrap(), &mut style_buffers[row]);
+            engine
+                .state
+                .copy_row_text(row.try_into().unwrap(), &mut text_buffers[row]);
+            engine
+                .state
+                .copy_row_styles_i64(row.try_into().unwrap(), &mut style_buffers[row]);
         }
     }
     let duration_batch = start_batch.elapsed();
@@ -350,5 +418,8 @@ fn test_single_vs_batch_read_comparison() {
     );
 
     // 批量方式不应该比单行方式慢太多（在某些设备上，多维向量访问可能较慢）
-    assert!(speedup < 20.0, "Batch read should not be significantly slower than single read");
+    assert!(
+        speedup < 20.0,
+        "Batch read should not be significantly slower than single read"
+    );
 }

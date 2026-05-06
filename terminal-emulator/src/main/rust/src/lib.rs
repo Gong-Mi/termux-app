@@ -17,31 +17,32 @@ pub static TERMUX_VERSION: OnceCell<Mutex<String>> = OnceCell::new();
 pub static TERMUX_PREFIX: OnceCell<Mutex<String>> = OnceCell::new();
 
 // 声明子模块
-pub mod wcwidth;
+pub mod bootstrap;
+pub mod coordinator;
+pub mod engine;
+pub mod env_builder;
+pub mod jni_bindings;
+pub mod pty;
+pub mod render_thread;
+pub mod renderer;
+pub mod sve_scan;
 pub mod terminal;
 pub mod utils;
-pub mod engine;
-pub mod bootstrap;
-pub mod pty;
 pub mod vte_parser;
-pub mod sve_scan;
-pub mod coordinator;
-pub mod renderer;
 pub mod vulkan_context;
-pub mod render_thread;
-pub mod jni_bindings;
-pub mod env_builder;
+pub mod wcwidth;
 
 // 重新导出主要类型，保持向后兼容
-pub use crate::engine::{TerminalEngine, TerminalContext, TerminalEvent};
 pub use crate::coordinator::{SessionCoordinator, SessionState};
-pub use crate::terminal::style::*;
-pub use crate::terminal::modes::*;
+pub use crate::engine::{TerminalContext, TerminalEngine, TerminalEvent};
+pub use crate::renderer::{HdrColorSpace, HdrImageOverlay, HdrOverlayManager};
 pub use crate::terminal::colors::*;
-pub use crate::terminal::sixel::{SixelDecoder, SixelState, SixelColor};
-pub use crate::renderer::{HdrOverlayManager, HdrImageOverlay, HdrColorSpace};
+pub use crate::terminal::modes::*;
+pub use crate::terminal::sixel::{SixelColor, SixelDecoder, SixelState};
+pub use crate::terminal::style::*;
 
 pub static JAVA_VM: OnceCell<jni::JavaVM> = OnceCell::new();
 
 /// 全局存储 Java 层传递的扩展环境变量（TERMUX_APP__* 等）
-pub static EXTENDED_ENV: OnceCell<Mutex<std::collections::HashMap<String, String>>> = OnceCell::new();
+pub static EXTENDED_ENV: OnceCell<Mutex<std::collections::HashMap<String, String>>> =
+    OnceCell::new();

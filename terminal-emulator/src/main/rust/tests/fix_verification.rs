@@ -34,17 +34,20 @@ fn test_get_space_used_ignores_null_placeholder() {
     // 获取第一行
     let screen = &engine.state.main_screen;
     let row = screen.get_row(0 as i64);
-    
+
     // 验证第一个字符是 "你"
     assert_eq!(row.text[0], '你', "First char should be '你'");
-    
+
     // 验证第二个字符是 \0 (宽字符占位符)
     assert_eq!(row.text[1], '\0', "Second char should be null placeholder");
-    
+
     // 验证 get_space_used 返回 2 ("你"占2列，\0占位符计入空间使用)
     let used = row.get_space_used();
-    assert_eq!(used, 2, "get_space_used should return 2 (CJK + null placeholder counts)");
-    
+    assert_eq!(
+        used, 2,
+        "get_space_used should return 2 (CJK + null placeholder counts)"
+    );
+
     println!("✅ get_space_used correctly ignores null placeholder");
 }
 
@@ -59,19 +62,25 @@ fn test_get_space_used_multiple_cjk() {
 
     let screen = &engine.state.main_screen;
     let row = screen.get_row(0 as i64);
-    
+
     // 验证字符布局
     assert_eq!(row.text[0], '你');
     assert_eq!(row.text[1], '\0'); // "你" 的占位符
     assert_eq!(row.text[2], '好');
     assert_eq!(row.text[3], '\0'); // "好" 的占位符
-    
+
     // get_space_used 返回最后一个非空字符的索引 +1
     // \0 占位符计入空间使用，应该返回 4 (索引 3 的 \0 + 1)
     let used = row.get_space_used();
-    assert_eq!(used, 4, "Should return index after last non-space (including null placeholders)");
-    
-    println!("✅ Multiple CJK characters handled correctly (used={})", used);
+    assert_eq!(
+        used, 4,
+        "Should return index after last non-space (including null placeholders)"
+    );
+
+    println!(
+        "✅ Multiple CJK characters handled correctly (used={})",
+        used
+    );
 }
 
 /// 验证混合 ASCII 和 CJK 的空间计算
@@ -85,19 +94,22 @@ fn test_get_space_used_mixed_ascii_cjk() {
 
     let screen = &engine.state.main_screen;
     let row = screen.get_row(0 as i64);
-    
+
     // 布局应该是：'H', 'i', ' ', '你', '\0'
     assert_eq!(row.text[0], 'H');
     assert_eq!(row.text[1], 'i');
     assert_eq!(row.text[2], ' ');
     assert_eq!(row.text[3], '你');
     assert_eq!(row.text[4], '\0');
-    
+
     // get_space_used 返回最后一个非空字符的索引 +1
     // \0 占位符计入空间使用，应该返回 5 (索引 4 的 \0 + 1)
     let used = row.get_space_used();
-    assert_eq!(used, 5, "Should return index after last non-space (including null placeholders)");
-    
+    assert_eq!(
+        used, 5,
+        "Should return index after last non-space (including null placeholders)"
+    );
+
     println!("✅ Mixed ASCII and CJK handled correctly (used={})", used);
 }
 
@@ -112,18 +124,26 @@ fn test_clear_all() {
 
     // 先写入一些内容
     engine.process_bytes(b"Hello World");
-    
+
     // 获取当前行并清空
     let screen = &mut engine.state.main_screen;
     screen.get_row_mut(0 as i64).clear_all(0);
-    
+
     // 验证整行被清空
     let row = screen.get_row(0 as i64);
     for i in 0..80 {
-        assert_eq!(row.text[i], ' ', "Position {} should be space after clear_all", i);
-        assert_eq!(row.styles[i], 0, "Style at {} should be 0 after clear_all", i);
+        assert_eq!(
+            row.text[i], ' ',
+            "Position {} should be space after clear_all",
+            i
+        );
+        assert_eq!(
+            row.styles[i], 0,
+            "Style at {} should be 0 after clear_all",
+            i
+        );
     }
-    
+
     println!("✅ clear_all() correctly clears entire row");
 }
 
@@ -135,18 +155,21 @@ fn test_clear_all_preserves_line_wrap() {
     // 写入超过 80 列的内容强制换行
     let long_text = "A".repeat(100);
     engine.process_bytes(long_text.as_bytes());
-    
+
     // 第一行应该有 line_wrap = true
     let row_before = engine.state.main_screen.get_row(0 as i64);
     let had_line_wrap = row_before.line_wrap;
-    
+
     // 清空第一行
     engine.state.main_screen.get_row_mut(0 as i64).clear_all(0);
-    
+
     // line_wrap 应该保持不变 (Java 行为)
     let row_after = engine.state.main_screen.get_row(0 as i64);
-    assert_eq!(row_after.line_wrap, had_line_wrap, "line_wrap should be preserved after clear_all");
-    
+    assert_eq!(
+        row_after.line_wrap, had_line_wrap,
+        "line_wrap should be preserved after clear_all"
+    );
+
     println!("✅ clear_all() preserves line_wrap flag");
 }
 
@@ -164,19 +187,27 @@ fn test_resize_shrink_reflow() {
     engine.process_bytes(line.as_bytes());
     engine.process_bytes(b"\r\n");
     engine.process_bytes(b"Second line");
-    
+
     // 缩小到 40 列
     engine.state.resize(40 as i64, 24 as i64);
-    
+
     // 验证内容被正确重排
     // 第一行应该是 40 个 'A'
     let row0 = get_row_text(&engine, 0);
-    assert_eq!(row0.trim_end_matches(' '), "A".repeat(40), "First row should have 40 A's");
-    
+    assert_eq!(
+        row0.trim_end_matches(' '),
+        "A".repeat(40),
+        "First row should have 40 A's"
+    );
+
     // 第二行应该是剩余 40 个 'A'
     let row1 = get_row_text(&engine, 1);
-    assert_eq!(row1.trim_end_matches(' '), "A".repeat(40), "Second row should have remaining 40 A's");
-    
+    assert_eq!(
+        row1.trim_end_matches(' '),
+        "A".repeat(40),
+        "Second row should have remaining 40 A's"
+    );
+
     println!("✅ Resize shrink reflow works correctly");
 }
 
@@ -198,9 +229,12 @@ fn test_resize_expand_reflow() {
     // 验证内容被合并到一行
     let row0 = get_row_text(&engine, 0);
     let row0_trimmed = row0.trim_end_matches(' ');
-    
+
     // 放大后第一行应该有 40 个 A
-    assert!(row0_trimmed.starts_with("AAAAAAAAAA"), "First row should start with A's");
+    assert!(
+        row0_trimmed.starts_with("AAAAAAAAAA"),
+        "First row should start with A's"
+    );
     // 第二行应该有 B
     let row1 = get_row_text(&engine, 1);
     assert!(row1.contains('B'), "Second row should contain B's");
@@ -241,15 +275,15 @@ fn test_resize_skipped_blank_lines() {
     engine.process_bytes(b"Line 1\r\n");
     engine.process_bytes(b"\r\n"); // 空行
     engine.process_bytes(b"Line 3\r\n");
-    
+
     // 缩小屏幕
     engine.state.resize(40 as i64, 24 as i64);
-    
+
     // 验证内容存在
     let text = engine.state.main_screen.get_transcript_text();
     assert!(text.contains("Line 1"), "Should contain Line 1");
     assert!(text.contains("Line 3"), "Should contain Line 3");
-    
+
     println!("✅ Skipped blank lines logic works correctly");
 }
 
@@ -265,16 +299,16 @@ fn test_cjk_wrap_at_line_end() {
     // 屏幕只有 5 列，写入 "AB 你" (2 + 2 = 4 列，应该能放下)
     // UTF-8: 你 = 0xE4 0xBD 0xA0
     engine.process_bytes(b"AB \xe4\xbd\xa0");
-    
+
     let row = engine.state.main_screen.get_row(0 as i64);
-    
+
     // 验证字符位置
     assert_eq!(row.text[0], 'A');
     assert_eq!(row.text[1], 'B');
     assert_eq!(row.text[2], ' ');
     assert_eq!(row.text[3], '你');
     assert_eq!(row.text[4], '\0');
-    
+
     println!("✅ CJK character at line end handled correctly");
 }
 
@@ -286,18 +320,18 @@ fn test_cjk_wrap_across_lines() {
     // 屏幕只有 5 列，写入 "AB 你好" (2 + 2 + 2 = 6 列，"好" 应该换行)
     // UTF-8: 你 = 0xE4 0xBD 0xA0, 好 = 0xE5 0xA5 0xBD
     engine.process_bytes(b"AB \xe4\xbd\xa0\xe5\xa5\xbd");
-    
+
     // 第一行应该是 "AB 你\0"
     let row0 = engine.state.main_screen.get_row(0 as i64);
     assert_eq!(row0.text[0], 'A');
     assert_eq!(row0.text[1], 'B');
     assert_eq!(row0.text[2], ' ');
     assert_eq!(row0.text[3], '你');
-    
+
     // 第二行应该以 "好" 开始
     let row1 = engine.state.main_screen.get_row(1 as i64);
     assert_eq!(row1.text[0], '好');
-    
+
     println!("✅ CJK character wrapping across lines works correctly");
 }
 
@@ -314,13 +348,13 @@ fn test_combining_char_space_calculation() {
 
     // 写入普通字符
     engine.process_bytes(b"e\xcc\x81"); // e + combining acute accent = é
-    
+
     let row = engine.state.main_screen.get_row(0 as i64);
-    
+
     // 验证内容被写入
     let used = row.get_space_used();
     assert!(used > 0, "Should have some content");
-    
+
     println!("✅ Combining char test completed (used={} positions)", used);
 }
 
@@ -355,15 +389,16 @@ fn test_complex_cjk_resize_cursor() {
     // 所以我们检查 "H e l l o" 这样的模式
     assert!(text.contains("H"), "Should contain H");
     assert!(text.contains("R"), "Should contain R");
-    
+
     // 检查第一行包含 Hello
     let row0 = get_row_text(&engine, 0);
     assert!(row0.contains('H'), "First row should contain H");
 
     println!("✅ Complex CJK + resize + cursor test passed");
-    println!("   Cursor: ({}={}) -> ({}={})",
-             _cursor_before_x, _cursor_before_y,
-             engine.state.cursor.x, engine.state.cursor.y);
+    println!(
+        "   Cursor: ({}={}) -> ({}={})",
+        _cursor_before_x, _cursor_before_y, engine.state.cursor.x, engine.state.cursor.y
+    );
 }
 
 /// 边界情况：极窄屏幕 resize
@@ -372,20 +407,32 @@ fn test_extreme_narrow_resize() {
     let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     engine.process_bytes(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ");
-    
+
     // 缩小到极窄 (10 列)
     engine.state.resize(10 as i64, 24 as i64);
-    
+
     // 验证内容被正确分割
     let row0 = get_row_text(&engine, 0);
-    assert_eq!(row0.trim_end_matches(' ').len(), 10, "First row should be 10 chars");
-    
+    assert_eq!(
+        row0.trim_end_matches(' ').len(),
+        10,
+        "First row should be 10 chars"
+    );
+
     let row1 = get_row_text(&engine, 1);
-    assert_eq!(row1.trim_end_matches(' ').len(), 10, "Second row should be 10 chars");
-    
+    assert_eq!(
+        row1.trim_end_matches(' ').len(),
+        10,
+        "Second row should be 10 chars"
+    );
+
     let row2 = get_row_text(&engine, 2);
-    assert_eq!(row2.trim_end_matches(' ').len(), 6, "Third row should be 6 chars");
-    
+    assert_eq!(
+        row2.trim_end_matches(' ').len(),
+        6,
+        "Third row should be 6 chars"
+    );
+
     println!("✅ Extreme narrow resize test passed");
 }
 
@@ -413,7 +460,7 @@ mod tests {
         test_combining_char_space_calculation();
         test_complex_cjk_resize_cursor();
         test_extreme_narrow_resize();
-        
+
         println!("\n✅ All fix verification tests passed!");
     }
 }

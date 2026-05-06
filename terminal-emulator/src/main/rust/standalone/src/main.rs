@@ -1,18 +1,18 @@
 //! Termux 独立终端模拟器
 //! 基于 Rust 终端引擎的完整 TUI 应用
 
-use std::io::{self, Write};
-use std::time::{Duration, Instant};
 use crossterm::{
-    cursor::{Hide, Show, MoveTo},
+    cursor::{Hide, MoveTo, Show},
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind},
     execute,
-    style::{Color, SetForegroundColor, SetBackgroundColor, ResetColor, SetAttribute, Attribute},
+    style::{Attribute, Color, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor},
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use std::io::{self, Write};
+use std::time::{Duration, Instant};
 
-mod vte_parser;
 mod terminal_engine;
+mod vte_parser;
 
 use terminal_engine::TerminalEngine;
 
@@ -34,7 +34,8 @@ fn main() -> io::Result<()> {
 
     // 启动 PTY 子进程（优先使用 Termux 环境下的 shell）
     let shell = std::env::var("SHELL").unwrap_or_else(|_| {
-        let prefix = std::env::var("PREFIX").unwrap_or_else(|_| "/data/user/0/com.termux/files/usr".to_string());
+        let prefix = std::env::var("PREFIX")
+            .unwrap_or_else(|_| "/data/user/0/com.termux/files/usr".to_string());
         format!("{}/bin/sh", prefix)
     });
     let pty_fd = match spawn_pty(&shell, cols as i32, rows as i32) {
@@ -45,7 +46,7 @@ fn main() -> io::Result<()> {
                 libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
             }
             fd
-        },
+        }
         Err(e) => {
             execute!(stdout, Show, LeaveAlternateScreen)?;
             terminal::disable_raw_mode()?;
@@ -75,9 +76,7 @@ fn run_main_loop<W: Write>(
 
     loop {
         // 1. 从 PTY 读取数据
-        let n = unsafe {
-            libc::read(pty_fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len())
-        };
+        let n = unsafe { libc::read(pty_fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) };
 
         if n > 0 {
             let data = &buf[..n as usize];
@@ -131,7 +130,7 @@ fn render_screen<W: Write>(stdout: &mut W, engine: &TerminalEngine) -> io::Resul
 
         for col in 0..engine.cols {
             let cell = engine.get_cell(col as usize, row as usize);
-            
+
             // 应用样式
             if cell.bold {
                 execute!(stdout, SetAttribute(Attribute::Bold))?;
@@ -139,13 +138,27 @@ fn render_screen<W: Write>(stdout: &mut W, engine: &TerminalEngine) -> io::Resul
             if cell.underline {
                 execute!(stdout, SetAttribute(Attribute::Underlined))?;
             }
-            
+
             // 应用颜色
             if let Some(fg) = cell.fg_color {
-                execute!(stdout, SetForegroundColor(Color::Rgb { r: fg.0, g: fg.1, b: fg.2 }))?;
+                execute!(
+                    stdout,
+                    SetForegroundColor(Color::Rgb {
+                        r: fg.0,
+                        g: fg.1,
+                        b: fg.2
+                    })
+                )?;
             }
             if let Some(bg) = cell.bg_color {
-                execute!(stdout, SetBackgroundColor(Color::Rgb { r: bg.0, g: bg.1, b: bg.2 }))?;
+                execute!(
+                    stdout,
+                    SetBackgroundColor(Color::Rgb {
+                        r: bg.0,
+                        g: bg.1,
+                        b: bg.2
+                    })
+                )?;
             }
 
             // 打印字符
@@ -157,8 +170,11 @@ fn render_screen<W: Write>(stdout: &mut W, engine: &TerminalEngine) -> io::Resul
     execute!(stdout, ResetColor)?;
 
     // 同步物理光标位置（至关重要！）
-    execute!(stdout, MoveTo(engine.cursor_x as u16, engine.cursor_y as u16))?;
-    
+    execute!(
+        stdout,
+        MoveTo(engine.cursor_x as u16, engine.cursor_y as u16)
+    )?;
+
     stdout.flush()?;
 
     Ok(())
@@ -168,11 +184,7 @@ fn render_screen<W: Write>(stdout: &mut W, engine: &TerminalEngine) -> io::Resul
 // 输入处理
 // ============================================================================
 
-fn handle_key_event(
-    pty_fd: i32,
-    key: KeyEvent,
-    app_cursor: bool,
-) -> io::Result<bool> {
+fn handle_key_event(pty_fd: i32, key: KeyEvent, app_cursor: bool) -> io::Result<bool> {
     // Ctrl+C 退出
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
         return Ok(true);
@@ -189,20 +201,32 @@ fn handle_key_event(
     Ok(false)
 }
 
-fn handle_mouse_event(
-    pty_fd: i32,
-    mouse: MouseEvent,
-) -> io::Result<()> {
+fn handle_mouse_event(pty_fd: i32, mouse: MouseEvent) -> io::Result<()> {
     // 发送鼠标事件到 PTY
     let seq = match mouse.kind {
         MouseEventKind::Down(button) => {
-            format!("\x1b[<{};{};{}M", button as u8 + 32, mouse.column + 1, mouse.row + 1)
+            format!(
+                "\x1b[<{};{};{}M",
+                button as u8 + 32,
+                mouse.column + 1,
+                mouse.row + 1
+            )
         }
         MouseEventKind::Up(button) => {
-            format!("\x1b[<{};{};{}m", button as u8 + 32, mouse.column + 1, mouse.row + 1)
+            format!(
+                "\x1b[<{};{};{}m",
+                button as u8 + 32,
+                mouse.column + 1,
+                mouse.row + 1
+            )
         }
         MouseEventKind::Drag(button) => {
-            format!("\x1b[<{};{};{}M", button as u8 + 36, mouse.column + 1, mouse.row + 1)
+            format!(
+                "\x1b[<{};{};{}M",
+                button as u8 + 36,
+                mouse.column + 1,
+                mouse.row + 1
+            )
         }
         _ => return Ok(()),
     };
@@ -240,10 +264,34 @@ fn key_to_escape_sequence(key: KeyEvent, app_cursor: bool) -> String {
         KeyCode::Backspace => "\x7f".to_string(),
         KeyCode::Tab => "\t".to_string(),
         KeyCode::Esc => "\x1b".to_string(),
-        KeyCode::Up => if app_cursor { "\x1bOA".to_string() } else { "\x1b[A".to_string() },
-        KeyCode::Down => if app_cursor { "\x1bOB".to_string() } else { "\x1b[B".to_string() },
-        KeyCode::Right => if app_cursor { "\x1bOC".to_string() } else { "\x1b[C".to_string() },
-        KeyCode::Left => if app_cursor { "\x1bOD".to_string() } else { "\x1b[D".to_string() },
+        KeyCode::Up => {
+            if app_cursor {
+                "\x1bOA".to_string()
+            } else {
+                "\x1b[A".to_string()
+            }
+        }
+        KeyCode::Down => {
+            if app_cursor {
+                "\x1bOB".to_string()
+            } else {
+                "\x1b[B".to_string()
+            }
+        }
+        KeyCode::Right => {
+            if app_cursor {
+                "\x1bOC".to_string()
+            } else {
+                "\x1b[C".to_string()
+            }
+        }
+        KeyCode::Left => {
+            if app_cursor {
+                "\x1bOD".to_string()
+            } else {
+                "\x1b[D".to_string()
+            }
+        }
         KeyCode::Home => "\x1b[H".to_string(),
         KeyCode::End => "\x1b[F".to_string(),
         KeyCode::PageUp => "\x1b[5~".to_string(),
@@ -305,8 +353,9 @@ fn spawn_pty(shell: &str, cols: i32, rows: i32) -> io::Result<i32> {
     let pts_name = CString::new(
         unsafe { std::ffi::CStr::from_ptr(buf.as_ptr() as *const libc::c_char) }
             .to_str()
-            .unwrap_or("/dev/pts/0")
-    ).unwrap();
+            .unwrap_or("/dev/pts/0"),
+    )
+    .unwrap();
 
     // Fork 子进程
     match unsafe { libc::fork() } {
@@ -365,14 +414,15 @@ fn spawn_pty(shell: &str, cols: i32, rows: i32) -> io::Result<i32> {
                     env_strings.push(CString::new(format!("{}={}", k, v)).unwrap());
                 }
 
-                let mut envs_ptr: Vec<*const libc::c_char> = env_strings.iter().map(|s| s.as_ptr()).collect();
+                let mut envs_ptr: Vec<*const libc::c_char> =
+                    env_strings.iter().map(|s| s.as_ptr()).collect();
                 envs_ptr.push(std::ptr::null());
 
                 // 执行 shell (模拟登录 shell)
                 let shell_c = CString::new(shell).unwrap();
                 let shell_filename = shell.split('/').last().unwrap_or("sh");
                 let arg0 = CString::new(format!("-{}", shell_filename)).unwrap();
-                
+
                 let args = [arg0.as_ptr(), std::ptr::null()];
                 libc::execve(shell_c.as_ptr(), args.as_ptr(), envs_ptr.as_ptr());
 

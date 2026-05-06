@@ -17,7 +17,9 @@ fn test_no_state_change_on_empty_input() {
     engine.process_bytes(b"");
     let events = engine.take_events();
     assert!(
-        !events.iter().any(|e| matches!(e, TerminalEvent::StateChanged { .. })),
+        !events
+            .iter()
+            .any(|e| matches!(e, TerminalEvent::StateChanged { .. })),
         "空输入不应产生 StateChanged"
     );
     println!("✅ 空输入不产生 StateChanged");
@@ -29,7 +31,8 @@ fn test_state_change_on_text_input() {
     let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
     engine.process_bytes(b"hello");
     let events = engine.take_events();
-    let state_changes: Vec<_> = events.iter()
+    let state_changes: Vec<_> = events
+        .iter()
         .filter_map(|e| match e {
             TerminalEvent::StateChanged { mask, values } => Some((*mask, *values)),
             _ => None,
@@ -48,7 +51,10 @@ fn test_state_change_on_text_input() {
     // 光标行 (bit 1) 不应变化
     assert!(mask & 0x02 == 0, "光标行不应变化");
 
-    println!("✅ 文本输入产生 StateChanged：mask=0x{:04X}, cursor_col={}", mask, values[0]);
+    println!(
+        "✅ 文本输入产生 StateChanged：mask=0x{:04X}, cursor_col={}",
+        mask, values[0]
+    );
 }
 
 /// 验证：批量输入后只产生一次 StateChanged（合并到单个事件）
@@ -58,7 +64,8 @@ fn test_single_state_changed_per_process_bytes() {
     // 一次处理多行数据
     engine.process_bytes(b"line1\nline2\nline3\n");
     let events = engine.take_events();
-    let state_change_count = events.iter()
+    let state_change_count = events
+        .iter()
         .filter(|e| matches!(e, TerminalEvent::StateChanged { .. }))
         .count();
 
@@ -93,7 +100,8 @@ fn test_mask_only_changed_fields() {
     // 第一次输入：光标从 (0,0) → (3,0)
     engine.process_bytes(b"abc");
     let events1 = engine.take_events();
-    let (mask1, _) = events1.iter()
+    let (mask1, _) = events1
+        .iter()
         .find_map(|e| match e {
             TerminalEvent::StateChanged { mask, values } => Some((*mask, *values)),
             _ => None,
@@ -106,7 +114,8 @@ fn test_mask_only_changed_fields() {
     // 第二次输入：光标从 (3,0) → (6,0)
     engine.process_bytes(b"def");
     let events2 = engine.take_events();
-    let (mask2, _) = events2.iter()
+    let (mask2, _) = events2
+        .iter()
         .find_map(|e| match e {
             TerminalEvent::StateChanged { mask, values } => Some((*mask, *values)),
             _ => None,
@@ -127,14 +136,18 @@ fn test_no_state_change_when_state_unchanged() {
     // 处理一个换行符（光标从 (0,0) 移动到 (0,1)）
     engine.process_bytes(b"\n");
     let events1 = engine.take_events();
-    let has_change1 = events1.iter().any(|e| matches!(e, TerminalEvent::StateChanged { .. }));
+    let has_change1 = events1
+        .iter()
+        .any(|e| matches!(e, TerminalEvent::StateChanged { .. }));
     assert!(has_change1, "换行应改变光标行");
 
     // 再处理一个无效果的字节（如 NUL）
     // 注意：大多数字节都会改变状态，这里用空输入测试
     engine.process_bytes(b"");
     let events2 = engine.take_events();
-    let has_change2 = events2.iter().any(|e| matches!(e, TerminalEvent::StateChanged { .. }));
+    let has_change2 = events2
+        .iter()
+        .any(|e| matches!(e, TerminalEvent::StateChanged { .. }));
     assert!(!has_change2, "空输入不应改变状态");
 
     println!("✅ 空输入不产生 StateChanged");

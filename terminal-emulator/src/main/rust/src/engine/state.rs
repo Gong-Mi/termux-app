@@ -1,15 +1,15 @@
+use jni::objects::JValue;
 /// 屏幕状态管理
 use std::cmp::{max, min};
-use jni::objects::JValue;
 
-use crate::terminal::style::*;
-use crate::terminal::modes::*;
-use crate::terminal::colors::*;
-use crate::terminal::sixel::SixelDecoder;
-use crate::terminal::screen::Screen;
-use crate::terminal::cursor::Cursor;
-use crate::engine::shared_buffer::{SharedBufferPtr, FlatScreenBuffer, SharedScreenBuffer};
 use crate::engine::events::TerminalEvent;
+use crate::engine::shared_buffer::{FlatScreenBuffer, SharedBufferPtr, SharedScreenBuffer};
+use crate::terminal::colors::*;
+use crate::terminal::cursor::Cursor;
+use crate::terminal::modes::*;
+use crate::terminal::screen::Screen;
+use crate::terminal::sixel::SixelDecoder;
+use crate::terminal::style::*;
 
 /// 文本选择区域
 #[derive(Clone, Copy, Debug)]
@@ -82,19 +82,26 @@ pub struct ScreenState {
 impl Drop for ScreenState {
     fn drop(&mut self) {
         if self.java_callback_obj.take().is_some() {
-            crate::utils::android_log(crate::utils::LogPriority::DEBUG, "ScreenState: Released java_callback_obj GlobalRef");
+            crate::utils::android_log(
+                crate::utils::LogPriority::DEBUG,
+                "ScreenState: Released java_callback_obj GlobalRef",
+            );
         }
 
         let ptr = self.shared_buffer_ptr.0;
         if !ptr.is_null() {
             unsafe {
                 let total_allocated_rows = self.main_screen.buffer.len();
-                let size = SharedScreenBuffer::required_size(self.cols as usize, total_allocated_rows);
+                let size =
+                    SharedScreenBuffer::required_size(self.cols as usize, total_allocated_rows);
                 let layout = std::alloc::Layout::from_size_align(size, 8).unwrap();
                 std::alloc::dealloc(ptr as *mut u8, layout);
             }
             self.shared_buffer_ptr = SharedBufferPtr(std::ptr::null_mut());
-            crate::utils::android_log(crate::utils::LogPriority::DEBUG, "ScreenState: Deallocated shared_buffer_ptr");
+            crate::utils::android_log(
+                crate::utils::LogPriority::DEBUG,
+                "ScreenState: Deallocated shared_buffer_ptr",
+            );
         }
     }
 }
@@ -102,13 +109,16 @@ impl Drop for ScreenState {
 impl ScreenState {
     pub fn new(cols: i64, rows: i64, total_rows: i64, _cw: i32, _ch: i32) -> Self {
         let mut tab_stops = vec![false; cols as usize];
-        for i in (8..cols as usize).step_by(8) { tab_stops[i] = true; }
+        for i in (8..cols as usize).step_by(8) {
+            tab_stops[i] = true;
+        }
 
         let mut modes = TerminalModes::new();
         modes.set(DECSET_BIT_AUTOWRAP);
 
         Self {
-            rows, cols,
+            rows,
+            cols,
             main_screen: Screen::new(cols, rows, total_rows),
             alt_screen: Screen::new(cols, rows, rows),
             use_alternate_buffer: false,
@@ -116,7 +126,10 @@ impl ScreenState {
             modes,
             colors: TerminalColors::new(),
             sixel_decoder: SixelDecoder::new(),
-            flat_buffer: Some(FlatScreenBuffer::new(cols as usize, max(rows, total_rows) as usize)),
+            flat_buffer: Some(FlatScreenBuffer::new(
+                cols as usize,
+                max(rows, total_rows) as usize,
+            )),
             shared_buffer_ptr: SharedBufferPtr(std::ptr::null_mut()),
             top_margin: 0,
             bottom_margin: rows,
@@ -149,11 +162,19 @@ impl ScreenState {
     }
 
     pub fn get_current_screen(&self) -> &Screen {
-        if self.use_alternate_buffer { &self.alt_screen } else { &self.main_screen }
+        if self.use_alternate_buffer {
+            &self.alt_screen
+        } else {
+            &self.main_screen
+        }
     }
 
     pub fn get_current_screen_mut(&mut self) -> &mut Screen {
-        if self.use_alternate_buffer { &mut self.alt_screen } else { &mut self.main_screen }
+        if self.use_alternate_buffer {
+            &mut self.alt_screen
+        } else {
+            &mut self.main_screen
+        }
     }
 
     // --- 文本选择 ---
@@ -185,7 +206,11 @@ impl ScreenState {
         let bottom = self.bottom_margin;
         let style = self.current_style;
         self.get_current_screen_mut().scroll_up(top, bottom, style);
-        if !self.use_alternate_buffer && !self.auto_scroll_disabled && top == 0 && bottom == self.rows {
+        if !self.use_alternate_buffer
+            && !self.auto_scroll_disabled
+            && top == 0
+            && bottom == self.rows
+        {
             self.scroll_counter += 1;
             // 全屏滚动时，选择区域 Y 坐标跟随内容上移
             if let Some(ref mut sel) = self.selection {
@@ -199,7 +224,8 @@ impl ScreenState {
         let top = self.top_margin;
         let bottom = self.bottom_margin;
         let style = self.current_style;
-        self.get_current_screen_mut().scroll_down(top, bottom, style);
+        self.get_current_screen_mut()
+            .scroll_down(top, bottom, style);
     }
 
     pub fn set_alternate_buffer(&mut self, use_alt: bool) {
@@ -209,7 +235,12 @@ impl ScreenState {
             if let Some(obj) = &self.java_callback_obj {
                 if let Some(vm) = crate::JAVA_VM.get() {
                     if let Ok(mut env) = vm.get_env() {
-                        let _ = env.call_method(obj.as_obj(), "onBufferChanged", "(Z)V", &[JValue::Bool(use_alt as jni::sys::jboolean)]);
+                        let _ = env.call_method(
+                            obj.as_obj(),
+                            "onBufferChanged",
+                            "(Z)V",
+                            &[JValue::Bool(use_alt as jni::sys::jboolean)],
+                        );
                     }
                 }
             }
@@ -239,7 +270,12 @@ impl ScreenState {
             if let Some(vm) = crate::JAVA_VM.get() {
                 if let Ok(mut env) = vm.get_env() {
                     if let Ok(java_title) = env.new_string(title) {
-                        let _ = env.call_method(obj.as_obj(), "reportTitleChange", "(Ljava/lang/String;)V", &[JValue::Object(&java_title.into())]);
+                        let _ = env.call_method(
+                            obj.as_obj(),
+                            "reportTitleChange",
+                            "(Ljava/lang/String;)V",
+                            &[JValue::Object(&java_title.into())],
+                        );
                     }
                 }
             }
@@ -271,7 +307,7 @@ impl ScreenState {
                                 JValue::Int(height),
                                 JValue::Int(start_x),
                                 JValue::Int(start_y),
-                            ]
+                            ],
                         );
                     }
                 }
@@ -294,7 +330,12 @@ impl ScreenState {
             if let Some(vm) = crate::JAVA_VM.get() {
                 if let Ok(mut env) = vm.get_env() {
                     if let Ok(java_response) = env.new_string(response) {
-                        let _ = env.call_method(obj.as_obj(), "write", "(Ljava/lang/String;)V", &[JValue::Object(&java_response.into())]);
+                        let _ = env.call_method(
+                            obj.as_obj(),
+                            "write",
+                            "(Ljava/lang/String;)V",
+                            &[JValue::Object(&java_response.into())],
+                        );
                     }
                 }
             }
@@ -311,7 +352,15 @@ impl ScreenState {
 
     pub fn cursor_forward_tab(&mut self) {
         let mut new_col = self.cursor.x + 1;
-        while new_col < self.cols && !self.tab_stops.get(new_col as usize).copied().unwrap_or(false) { new_col += 1; }
+        while new_col < self.cols
+            && !self
+                .tab_stops
+                .get(new_col as usize)
+                .copied()
+                .unwrap_or(false)
+        {
+            new_col += 1;
+        }
         self.cursor.x = min(self.right_margin - 1, max(self.left_margin, new_col));
     }
 
@@ -320,7 +369,13 @@ impl ScreenState {
         let cx = self.cursor.x;
         let cy = self.cursor.y;
 
-        let (new_cx, new_cy) = self.main_screen.resize_with_reflow(cols as i32, rows as i32, style, cx as i32, cy as i32);
+        let (new_cx, new_cy) = self.main_screen.resize_with_reflow(
+            cols as i32,
+            rows as i32,
+            style,
+            cx as i32,
+            cy as i32,
+        );
 
         self.alt_screen = Screen::new(cols, rows, rows);
 
@@ -335,7 +390,10 @@ impl ScreenState {
         self.cursor.x = new_cx as i64;
         self.cursor.y = new_cy as i64;
 
-        self.flat_buffer = Some(FlatScreenBuffer::new(cols as usize, self.main_screen.buffer.len()));
+        self.flat_buffer = Some(FlatScreenBuffer::new(
+            cols as usize,
+            self.main_screen.buffer.len(),
+        ));
         self.cursor.clamp(cols, rows);
         self.sync_screen_to_flat_buffer();
     }
@@ -344,15 +402,20 @@ impl ScreenState {
         let y = self.cursor.y;
         let style = self.current_style;
         let x = self.cursor.x;
-        self.get_current_screen_mut().get_row_mut(y).insert_spaces(x as u64, n as u64, style);
+        self.get_current_screen_mut()
+            .get_row_mut(y)
+            .insert_spaces(x as u64, n as u64, style);
     }
 
     pub fn erase_in_display(&mut self, mode: i64) {
         let x = self.cursor.x;
         let y = self.cursor.y;
         let style = self.current_style;
-        self.get_current_screen_mut().erase_in_display(mode, y, x, style);
-        if mode == 3 { self.scroll_counter = 0; }
+        self.get_current_screen_mut()
+            .erase_in_display(mode, y, x, style);
+        if mode == 3 {
+            self.scroll_counter = 0;
+        }
 
         if mode == 2 {
             // ESC[2J - 清空整个可见屏幕，清除 Sixel 状态并通知 Java
@@ -397,14 +460,18 @@ impl ScreenState {
         let x = self.cursor.x as u64;
         let y = self.cursor.y;
         let style = self.current_style;
-        self.get_current_screen_mut().get_row_mut(y).delete_characters(x, n as u64, style);
+        self.get_current_screen_mut()
+            .get_row_mut(y)
+            .delete_characters(x, n as u64, style);
     }
 
     pub fn erase_characters(&mut self, n: i64) {
         let x = self.cursor.x as u64;
         let y = self.cursor.y;
         let style = self.current_style;
-        self.get_current_screen_mut().get_row_mut(y).clear(x, x + n as u64, style);
+        self.get_current_screen_mut()
+            .get_row_mut(y)
+            .clear(x, x + n as u64, style);
     }
 
     pub fn set_margins(&mut self, top: i64, bottom: i64) {
@@ -419,9 +486,13 @@ impl ScreenState {
 
     pub fn save_cursor(&mut self) {
         self.cursor.save_state(
-            self.current_style, self.modes.flags,
-            self.use_line_drawing_g0, self.use_line_drawing_g1,
-            self.use_line_drawing_uses_g0, self.fore_color, self.back_color,
+            self.current_style,
+            self.modes.flags,
+            self.use_line_drawing_g0,
+            self.use_line_drawing_g1,
+            self.use_line_drawing_uses_g0,
+            self.fore_color,
+            self.back_color,
         );
     }
 
@@ -461,7 +532,10 @@ impl ScreenState {
         let cols = self.cols as u64;
         for y in 0..self.rows {
             let r = self.get_current_screen_mut().get_row_mut(y);
-            for x in 0..(cols as usize) { r.text[x] = 'E'; r.styles[x] = STYLE_NORMAL; }
+            for x in 0..(cols as usize) {
+                r.text[x] = 'E';
+                r.styles[x] = STYLE_NORMAL;
+            }
         }
         self.cursor.x = 0;
         self.cursor.y = 0;
@@ -477,7 +551,7 @@ impl ScreenState {
         self.modes.reset(DECSET_BIT_APPLICATION_CURSOR_KEYS);
         self.modes.reset(DECSET_BIT_BRACKETED_PASTE_MODE);
         self.modes.set(DECSET_BIT_AUTOWRAP);
-        
+
         self.cursor_enabled = true;
         self.application_cursor_keys = false;
         self.bracketed_paste = false;
@@ -498,34 +572,76 @@ impl ScreenState {
         self.use_line_drawing_uses_g0 = true;
     }
 
-    pub fn cursor_horizontal_relative(&mut self, n: i64) { self.cursor.move_relative(n, 0, self.cols, self.rows); }
-    pub fn cursor_next_line(&mut self, n: i64) { self.cursor.y = min(self.bottom_margin - 1, self.cursor.y + n); self.cursor.x = self.left_margin; }
-    pub fn cursor_previous_line(&mut self, n: i64) { self.cursor.y = max(self.top_margin, self.cursor.y - n); self.cursor.x = self.left_margin; }
-    pub fn cursor_horizontal_absolute(&mut self, n: i64) { self.cursor.x = max(0, min(self.cols - 1, n - 1)); }
-    pub fn cursor_vertical_absolute(&mut self, n: i64) { self.cursor.y = max(0, min(self.rows - 1, n - 1)); }
-    pub fn cursor_vertical_relative(&mut self, n: i64) { self.cursor.y = max(0, min(self.rows - 1, self.cursor.y + n)); }
-    pub fn reverse_index_scroll(&mut self) { if self.cursor.y == self.top_margin { self.insert_lines(1); } else { self.cursor.y = max(self.top_margin, self.cursor.y - 1); } }
-    pub fn repeat_character(&mut self, n: i64, c: char) { for _ in 0..n { crate::terminal::handlers::print::handle_print(self, c); } }
+    pub fn cursor_horizontal_relative(&mut self, n: i64) {
+        self.cursor.move_relative(n, 0, self.cols, self.rows);
+    }
+    pub fn cursor_next_line(&mut self, n: i64) {
+        self.cursor.y = min(self.bottom_margin - 1, self.cursor.y + n);
+        self.cursor.x = self.left_margin;
+    }
+    pub fn cursor_previous_line(&mut self, n: i64) {
+        self.cursor.y = max(self.top_margin, self.cursor.y - n);
+        self.cursor.x = self.left_margin;
+    }
+    pub fn cursor_horizontal_absolute(&mut self, n: i64) {
+        self.cursor.x = max(0, min(self.cols - 1, n - 1));
+    }
+    pub fn cursor_vertical_absolute(&mut self, n: i64) {
+        self.cursor.y = max(0, min(self.rows - 1, n - 1));
+    }
+    pub fn cursor_vertical_relative(&mut self, n: i64) {
+        self.cursor.y = max(0, min(self.rows - 1, self.cursor.y + n));
+    }
+    pub fn reverse_index_scroll(&mut self) {
+        if self.cursor.y == self.top_margin {
+            self.insert_lines(1);
+        } else {
+            self.cursor.y = max(self.top_margin, self.cursor.y - 1);
+        }
+    }
+    pub fn repeat_character(&mut self, n: i64, c: char) {
+        for _ in 0..n {
+            crate::terminal::handlers::print::handle_print(self, c);
+        }
+    }
 
     pub fn cursor_backward_tab(&mut self, n: i64) {
         for _ in 0..n {
             let mut new_col = self.cursor.x - 1;
-            while new_col > self.left_margin && !self.tab_stops.get(new_col as usize).copied().unwrap_or(false) { new_col -= 1; }
+            while new_col > self.left_margin
+                && !self
+                    .tab_stops
+                    .get(new_col as usize)
+                    .copied()
+                    .unwrap_or(false)
+            {
+                new_col -= 1;
+            }
             self.cursor.x = max(self.left_margin, new_col);
         }
     }
 
     pub fn clear_tab_stop(&mut self, mode: i32) {
         match mode {
-            0 => if (self.cursor.x as usize) < self.tab_stops.len() { self.tab_stops[self.cursor.x as usize] = false; },
+            0 => {
+                if (self.cursor.x as usize) < self.tab_stops.len() {
+                    self.tab_stops[self.cursor.x as usize] = false;
+                }
+            }
             3 => self.tab_stops.fill(false),
             _ => {}
         }
     }
 
-    pub fn handle_osc18(&self) { self.report_terminal_response(&format!("\x1b]18;t={};{}t", self.cols, self.rows)); }
-    pub fn clamp_cursor(&mut self) { self.cursor.clamp(self.cols, self.rows); }
-    pub fn is_alternate_buffer_active(&self) -> bool { self.use_alternate_buffer }
+    pub fn handle_osc18(&self) {
+        self.report_terminal_response(&format!("\x1b]18;t={};{}t", self.cols, self.rows));
+    }
+    pub fn clamp_cursor(&mut self) {
+        self.cursor.clamp(self.cols, self.rows);
+    }
+    pub fn is_alternate_buffer_active(&self) -> bool {
+        self.use_alternate_buffer
+    }
 
     pub fn report_focus_gain(&self) {
         if self.send_focus_events {
@@ -548,9 +664,15 @@ impl ScreenState {
         }
     }
 
-    pub fn auto_wrap(&self) -> bool { self.modes.is_enabled(DECSET_BIT_AUTOWRAP) }
-    pub fn origin_mode(&self) -> bool { self.modes.is_enabled(DECSET_BIT_ORIGIN_MODE) }
-    pub fn leftright_margin_mode(&self) -> bool { self.modes.is_enabled(DECSET_BIT_LEFTRIGHT_MARGIN_MODE) }
+    pub fn auto_wrap(&self) -> bool {
+        self.modes.is_enabled(DECSET_BIT_AUTOWRAP)
+    }
+    pub fn origin_mode(&self) -> bool {
+        self.modes.is_enabled(DECSET_BIT_ORIGIN_MODE)
+    }
+    pub fn leftright_margin_mode(&self) -> bool {
+        self.modes.is_enabled(DECSET_BIT_LEFTRIGHT_MARGIN_MODE)
+    }
 
     pub fn do_decset_or_reset(&mut self, setting: bool, mode: u32) {
         use crate::vte_parser::Params;
@@ -560,7 +682,11 @@ impl ScreenState {
         self.handle_decset(&params, setting);
     }
 
-    pub fn scroll_up_lines(&mut self, n: i64) { for _ in 0..n { self.scroll_up(); } }
+    pub fn scroll_up_lines(&mut self, n: i64) {
+        for _ in 0..n {
+            self.scroll_up();
+        }
+    }
     pub fn scroll_down_lines(&mut self, n: i64) {
         let old_y = self.cursor.y;
         self.cursor.y = self.top_margin;
@@ -573,11 +699,19 @@ impl ScreenState {
             for &p in param.iter() {
                 match p {
                     4 => {
-                        if set { self.modes.set(MODE_INSERT); } else { self.modes.reset(MODE_INSERT); }
-                    },
+                        if set {
+                            self.modes.set(MODE_INSERT);
+                        } else {
+                            self.modes.reset(MODE_INSERT);
+                        }
+                    }
                     20 => {
-                        if set { self.modes.set(MODE_LNM); } else { self.modes.reset(MODE_LNM); }
-                    },
+                        if set {
+                            self.modes.set(MODE_LNM);
+                        } else {
+                            self.modes.reset(MODE_LNM);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -626,7 +760,12 @@ impl ScreenState {
                     if let Some(vm) = crate::JAVA_VM.get() {
                         if let Ok(mut env) = vm.get_env() {
                             if let Ok(j_text) = env.new_string(text) {
-                                let _ = env.call_method(obj.as_obj(), "onCopyTextToClipboard", "(Ljava/lang/String;)V", &[JValue::Object(&j_text.into())]);
+                                let _ = env.call_method(
+                                    obj.as_obj(),
+                                    "onCopyTextToClipboard",
+                                    "(Ljava/lang/String;)V",
+                                    &[JValue::Object(&j_text.into())],
+                                );
                             }
                         }
                     }
@@ -650,8 +789,12 @@ impl ScreenState {
         )
     }
 
-    pub fn saved_decset_flags(&self) -> i32 { self.cursor.saved_state.decset_flags }
-    pub fn decset_flags(&self) -> i32 { self.modes.flags }
+    pub fn saved_decset_flags(&self) -> i32 {
+        self.cursor.saved_state.decset_flags
+    }
+    pub fn decset_flags(&self) -> i32 {
+        self.modes.flags
+    }
 
     pub fn copy_row_text(&self, row: i64, dest: &mut [u16]) {
         let screen = self.get_current_screen();
@@ -665,28 +808,38 @@ impl ScreenState {
         let screen = self.get_current_screen();
         let r = screen.get_row(row);
         let len = min(r.text.len(), dest.len());
-        for i in 0..len { dest[i] = r.text[i] as i32; }
+        for i in 0..len {
+            dest[i] = r.text[i] as i32;
+        }
     }
 
     pub fn copy_row_styles_i64(&self, row: i64, dest: &mut [i64]) {
         let screen = self.get_current_screen();
         let r = screen.get_row(row);
         let len = min(r.styles.len(), dest.len());
-        for i in 0..len { dest[i] = r.styles[i] as i64; }
+        for i in 0..len {
+            dest[i] = r.styles[i] as i64;
+        }
     }
 
     pub fn sync_screen_to_flat_buffer(&mut self) {
-        if self.flat_buffer.is_none() { return; }
-        let screen = if self.use_alternate_buffer { &self.alt_screen } else { &self.main_screen };
+        if self.flat_buffer.is_none() {
+            return;
+        }
+        let screen = if self.use_alternate_buffer {
+            &self.alt_screen
+        } else {
+            &self.main_screen
+        };
         let flat = self.flat_buffer.as_mut().unwrap();
-        
+
         let rows = self.rows as usize;
         let cols = self.cols as usize;
-        
+
         for r in 0..rows {
             let row_data = screen.get_row(r as i64);
             let row_len = row_data.text.len();
-            
+
             for c_idx in 0..cols {
                 let flat_idx = r * cols + c_idx;
                 if c_idx < row_len {
@@ -714,22 +867,56 @@ impl ScreenState {
             .unwrap_or_default()
             .as_millis() as u64;
         [
-            self.cursor.x as i32,                                      // 0: Cursor Col
-            self.cursor.y as i32,                                      // 1: Cursor Row
-            self.cursor.style as i32,                                  // 2: Cursor Style
-            if self.cursor_enabled { 1 } else { 0 },                   // 3: Cursor Enabled
-            if self.cursor.should_be_visible(self.cursor_enabled, now_ms) { 1 } else { 0 }, // 4: Cursor Visible
-            if self.modes.is_enabled(crate::terminal::modes::DECSET_BIT_REVERSE_VIDEO) { 1 } else { 0 }, // 5: Reverse Video
-            if self.use_alternate_buffer { 1 } else { 0 },             // 6: Alternate Buffer
-            if self.modes.is_enabled(crate::terminal::modes::DECSET_BIT_APPLICATION_CURSOR_KEYS) { 1 } else { 0 }, // 7: Cursor Keys
-            if self.modes.is_enabled(crate::terminal::modes::DECSET_BIT_APPLICATION_KEYPAD) { 1 } else { 0 },    // 8: Keypad
-            if self.modes.is_enabled(crate::terminal::modes::DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE)
-               || self.modes.is_enabled(crate::terminal::modes::DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT) { 1 } else { 0 }, // 9: Mouse
-            if self.auto_scroll_disabled { 1 } else { 0 },             // 10: Auto Scroll Disabled
-            self.rows as i32,                                          // 11: Rows
-            self.cols as i32,                                          // 12: Cols
-            self.main_screen.get_active_transcript_rows() as i32,      // 13: Active Transcript Rows
-            self.scroll_counter as i32,                                // 14: Scroll Counter
+            self.cursor.x as i32,                    // 0: Cursor Col
+            self.cursor.y as i32,                    // 1: Cursor Row
+            self.cursor.style as i32,                // 2: Cursor Style
+            if self.cursor_enabled { 1 } else { 0 }, // 3: Cursor Enabled
+            if self.cursor.should_be_visible(self.cursor_enabled, now_ms) {
+                1
+            } else {
+                0
+            }, // 4: Cursor Visible
+            if self
+                .modes
+                .is_enabled(crate::terminal::modes::DECSET_BIT_REVERSE_VIDEO)
+            {
+                1
+            } else {
+                0
+            }, // 5: Reverse Video
+            if self.use_alternate_buffer { 1 } else { 0 }, // 6: Alternate Buffer
+            if self
+                .modes
+                .is_enabled(crate::terminal::modes::DECSET_BIT_APPLICATION_CURSOR_KEYS)
+            {
+                1
+            } else {
+                0
+            }, // 7: Cursor Keys
+            if self
+                .modes
+                .is_enabled(crate::terminal::modes::DECSET_BIT_APPLICATION_KEYPAD)
+            {
+                1
+            } else {
+                0
+            }, // 8: Keypad
+            if self
+                .modes
+                .is_enabled(crate::terminal::modes::DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE)
+                || self
+                    .modes
+                    .is_enabled(crate::terminal::modes::DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT)
+            {
+                1
+            } else {
+                0
+            }, // 9: Mouse
+            if self.auto_scroll_disabled { 1 } else { 0 }, // 10: Auto Scroll Disabled
+            self.rows as i32,                        // 11: Rows
+            self.cols as i32,                        // 12: Cols
+            self.main_screen.get_active_transcript_rows() as i32, // 13: Active Transcript Rows
+            self.scroll_counter as i32,              // 14: Scroll Counter
         ]
     }
 }
@@ -743,19 +930,34 @@ mod tests {
     // -------------------------------------------------------------------------
     #[test]
     fn selection_normalize_forward() {
-        let sel = Selection { x1: 2, y1: 1, x2: 5, y2: 3 };
+        let sel = Selection {
+            x1: 2,
+            y1: 1,
+            x2: 5,
+            y2: 3,
+        };
         assert_eq!(sel.normalize(), (2, 1, 5, 3));
     }
 
     #[test]
     fn selection_normalize_backward() {
-        let sel = Selection { x1: 5, y1: 3, x2: 2, y2: 1 };
+        let sel = Selection {
+            x1: 5,
+            y1: 3,
+            x2: 2,
+            y2: 1,
+        };
         assert_eq!(sel.normalize(), (2, 1, 5, 3));
     }
 
     #[test]
     fn selection_normalize_same_row_reversed() {
-        let sel = Selection { x1: 5, y1: 2, x2: 1, y2: 2 };
+        let sel = Selection {
+            x1: 5,
+            y1: 2,
+            x2: 1,
+            y2: 2,
+        };
         assert_eq!(sel.normalize(), (1, 2, 5, 2));
     }
 
@@ -927,7 +1129,12 @@ mod tests {
         state.set_alternate_buffer(true);
         state.cursor.x = 10;
         state.cursor.y = 5;
-        state.selection = Some(Selection { x1: 0, y1: 0, x2: 1, y2: 1 });
+        state.selection = Some(Selection {
+            x1: 0,
+            y1: 0,
+            x2: 1,
+            y2: 1,
+        });
         state.reset_to_initial_state();
         assert!(!state.is_alternate_buffer_active());
         assert_eq!(state.cursor.x, 0);

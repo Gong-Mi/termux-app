@@ -1,5 +1,5 @@
+use crate::terminal::style::STYLE_NORMAL;
 use std::cmp::{max, min};
-use crate::terminal::style::{STYLE_NORMAL};
 
 #[derive(Clone)]
 pub struct TerminalRow {
@@ -69,7 +69,11 @@ impl TerminalRow {
 
     pub fn get_space_used(&self) -> u64 {
         // 使用 rfind 替代手写 reverse 循环，编译器更容易优化（可能自动向量化）
-        self.text.iter().rposition(|&c| c != ' ').map(|i| (i + 1) as u64).unwrap_or(0)
+        self.text
+            .iter()
+            .rposition(|&c| c != ' ')
+            .map(|i| (i + 1) as u64)
+            .unwrap_or(0)
     }
 
     pub fn copy_text(&self, start: u64, end: u64, dest: &mut [u16]) {
@@ -88,10 +92,14 @@ impl TerminalRow {
             let c = self.text[cur_idx];
             let width = local_get_width(c as u32);
             if width > 0 {
-                if cur_col as u64 >= column { return cur_idx as u64; }
+                if cur_col as u64 >= column {
+                    return cur_idx as u64;
+                }
                 cur_col += width;
             } else {
-                if cur_col as u64 >= column { return cur_idx as u64; }
+                if cur_col as u64 >= column {
+                    return cur_idx as u64;
+                }
             }
             cur_idx += 1;
         }
@@ -100,18 +108,35 @@ impl TerminalRow {
 
     pub fn get_selected_text(&self, x1: u64, x2: u64) -> String {
         let cols = self.text.len() as u64;
-        if x1 >= cols { return String::new(); }
+        if x1 >= cols {
+            return String::new();
+        }
         let end = min(x2, cols);
-        self.text[x1 as usize..end as usize].iter().filter(|&&c| c != '\0').collect()
+        self.text[x1 as usize..end as usize]
+            .iter()
+            .filter(|&&c| c != '\0')
+            .collect()
     }
 
     pub fn get_word_at(&self, column: u64) -> String {
         let cols = self.text.len() as u64;
-        if column >= cols { return String::new(); }
-        fn is_word(c: char) -> bool { c.is_alphanumeric() || c == '_' }
-        if !is_word(self.text[column as usize]) { return String::new(); }
-        let mut s = column as usize; while s > 0 && is_word(self.text[s-1]) { s -= 1; }
-        let mut e = column as usize; while e + 1 < cols as usize && is_word(self.text[e+1]) { e += 1; }
+        if column >= cols {
+            return String::new();
+        }
+        fn is_word(c: char) -> bool {
+            c.is_alphanumeric() || c == '_'
+        }
+        if !is_word(self.text[column as usize]) {
+            return String::new();
+        }
+        let mut s = column as usize;
+        while s > 0 && is_word(self.text[s - 1]) {
+            s -= 1;
+        }
+        let mut e = column as usize;
+        while e + 1 < cols as usize && is_word(self.text[e + 1]) {
+            e += 1;
+        }
         self.text[s..=e].iter().collect()
     }
 }
@@ -132,14 +157,27 @@ impl Screen {
     pub fn new(cols: i64, rows: i64, total_rows: i64) -> Self {
         let t_u = max(rows as u64, total_rows as u64);
         let mut b = Vec::with_capacity(t_u as usize);
-        for _ in 0..t_u { b.push(TerminalRow::new_with_style(max(1, cols as u64), STYLE_NORMAL)); }
-        Self { rows, cols, buffer: b, first_row: 0, active_transcript_rows: 0 }
+        for _ in 0..t_u {
+            b.push(TerminalRow::new_with_style(
+                max(1, cols as u64),
+                STYLE_NORMAL,
+            ));
+        }
+        Self {
+            rows,
+            cols,
+            buffer: b,
+            first_row: 0,
+            active_transcript_rows: 0,
+        }
     }
 
     #[inline]
     pub fn internal_row(&self, row: i64) -> usize {
         let t = self.buffer.len() as i64;
-        if t == 0 { return 0; }
+        if t == 0 {
+            return 0;
+        }
         // Fast path: i64 checked_add avoids overflow while keeping native register width.
         let first = self.first_row as i64;
         if let Some(sum) = first.checked_add(row) {
@@ -151,7 +189,11 @@ impl Screen {
         let t128 = self.buffer.len() as i128;
         let sum128 = self.first_row as i128 + row as i128;
         let idx = sum128 % t128;
-        if idx < 0 { (idx + t128) as usize } else { idx as usize }
+        if idx < 0 {
+            (idx + t128) as usize
+        } else {
+            idx as usize
+        }
     }
 
     /// Get a row by external row number (e.g., 0 = first visible row, -1 = last history row)
@@ -190,32 +232,44 @@ impl Screen {
         for y in first_y..self.rows {
             let row = self.get_row(y);
             res.push_str(&row.get_selected_text(0, row.get_space_used()));
-            if !row.line_wrap && y < self.rows - 1 { res.push('\n'); }
+            if !row.line_wrap && y < self.rows - 1 {
+                res.push('\n');
+            }
         }
         res
     }
 
     pub fn get_selected_text(&self, x1: i64, y1: i64, x2: i64, y2: i64) -> String {
         let mut res = String::new();
-        let (sy, sx, ey, ex) = if y1 < y2 || (y1 == y2 && x1 <= x2) { (y1, x1, y2, x2) } else { (y2, x2, y1, x1) };
+        let (sy, sx, ey, ex) = if y1 < y2 || (y1 == y2 && x1 <= x2) {
+            (y1, x1, y2, x2)
+        } else {
+            (y2, x2, y1, x1)
+        };
         for y in sy..=ey {
             let row = self.get_row(y);
             let s_x = if y == sy { max(0, sx) as u64 } else { 0 };
-            let mut e_x = if y == ey { min(self.cols, ex + 1) as u64 } else { self.cols as u64 };
-            
+            let mut e_x = if y == ey {
+                min(self.cols, ex + 1) as u64
+            } else {
+                self.cols as u64
+            };
+
             // Trim trailing spaces for lines that don't wrap and aren't fully selected
             let space_used = row.get_space_used();
             if e_x > space_used && (!row.line_wrap || y == ey) {
                 e_x = space_used;
             }
-            
+
             if s_x < e_x {
                 let text = row.get_selected_text(s_x, e_x);
                 // Filter out the '\0' placeholder characters used for wide chars
                 let filtered: String = text.chars().filter(|&c| c != '\0').collect();
                 res.push_str(&filtered);
             }
-            if y < ey && !row.line_wrap { res.push('\n'); }
+            if y < ey && !row.line_wrap {
+                res.push('\n');
+            }
         }
         res
     }
@@ -237,7 +291,8 @@ impl Screen {
                     let idx = self.internal_row(y);
                     self.buffer[idx].clear(0, c, style);
                 }
-                self.get_row_mut(cursor_y).clear(0, (cursor_x + 1) as u64, style);
+                self.get_row_mut(cursor_y)
+                    .clear(0, (cursor_x + 1) as u64, style);
             }
             2 => {
                 // Full screen clear - bypass clamping since y is always in [0, rows)
@@ -259,7 +314,7 @@ impl Screen {
     pub fn clear_transcript(&mut self, style: u64) {
         let total_rows = self.buffer.len() as u64;
         let c = self.cols as u64;
-        
+
         if self.active_transcript_rows > 0 {
             // 清除逻辑：找到历史行的物理索引并清空，然后重置 active_transcript_rows
             if self.first_row < self.active_transcript_rows {
@@ -284,7 +339,7 @@ impl Screen {
     pub fn insert_lines(&mut self, cursor_y: i64, bottom: i64, n: i64, style: u64) {
         let to_insert = min(n, bottom - cursor_y);
         let to_move = (bottom - cursor_y) - to_insert;
-        
+
         if to_move > 0 {
             for i in (0..to_move).rev() {
                 let s = self.internal_row(cursor_y + i);
@@ -295,13 +350,15 @@ impl Screen {
                 std::mem::swap(&mut left[low], &mut right[0]);
             }
         }
-        for i in 0..to_insert { self.get_row_mut(cursor_y + i).clear_all(style); }
+        for i in 0..to_insert {
+            self.get_row_mut(cursor_y + i).clear_all(style);
+        }
     }
 
     pub fn delete_lines(&mut self, cursor_y: i64, bottom: i64, n: i64, style: u64) {
         let to_delete = min(n, bottom - cursor_y);
         let to_move = (bottom - cursor_y) - to_delete;
-        
+
         if to_move > 0 {
             for i in 0..to_move {
                 let s = self.internal_row(cursor_y + i + to_delete);
@@ -311,7 +368,9 @@ impl Screen {
                 std::mem::swap(&mut left[low], &mut right[0]);
             }
         }
-        for i in 0..to_delete { self.get_row_mut(bottom - i - 1).clear_all(style); }
+        for i in 0..to_delete {
+            self.get_row_mut(bottom - i - 1).clear_all(style);
+        }
     }
 
     pub fn scroll_up(&mut self, top: i64, bottom: i64, style: u64) {
@@ -330,7 +389,7 @@ impl Screen {
             for i in top..(bottom - 1) {
                 let d = self.internal_row(i);
                 let s = self.internal_row(i + 1);
-                
+
                 // Safe swap using split_at_mut
                 let (low, high) = if s < d { (s, d) } else { (d, s) };
                 let (left, right) = self.buffer.split_at_mut(high);
@@ -348,7 +407,7 @@ impl Screen {
         for i in (top..(bottom - 1)).rev() {
             let d = self.internal_row(i + 1);
             let s = self.internal_row(i);
-            
+
             // Safe swap using split_at_mut
             let (low, high) = if s < d { (s, d) } else { (d, s) };
             let (left, right) = self.buffer.split_at_mut(high);
@@ -364,13 +423,20 @@ impl Screen {
     /// - Uses `skipped_blank_lines` delay insertion mechanism like Java
     /// - Processes character by character with dynamic line wrapping
     /// - Properly handles cursor position tracking during reflow
-    /// 
+    ///
     /// ## Fast Path Optimization
-    /// 
+    ///
     /// When only rows change (columns unchanged) and new rows <= total rows,
     /// we use O(1) pointer adjustment instead of O(n) buffer rebuild.
     /// This matches Java's fast path behavior.
-    pub fn resize_with_reflow(&mut self, new_cols: i32, new_rows: i32, current_style: u64, cursor_x: i32, cursor_y: i32) -> (i32, i32) {
+    pub fn resize_with_reflow(
+        &mut self,
+        new_cols: i32,
+        new_rows: i32,
+        current_style: u64,
+        cursor_x: i32,
+        cursor_y: i32,
+    ) -> (i32, i32) {
         let old_cols = self.cols as usize;
         let old_total = self.buffer.len();
 
@@ -426,11 +492,19 @@ impl Screen {
         };
 
         // 辅助闭包：执行滚动（模拟 Java scrollDownOneLine）
-        let do_scroll = |first_row: &mut u64, active: &mut u64, sr: u64, style: u64, total: usize, max_active: u64, buf: &mut Vec<TerminalRow>| {
+        let do_scroll = |first_row: &mut u64,
+                         active: &mut u64,
+                         sr: u64,
+                         style: u64,
+                         total: usize,
+                         max_active: u64,
+                         buf: &mut Vec<TerminalRow>| {
             // Java: mScreenFirstRow = (mScreenFirstRow + 1) % mTotalRows;
             *first_row = (*first_row + 1) % total as u64;
             // Java: if (mActiveTranscriptRows < mTotalRows - mScreenRows) mActiveTranscriptRows++;
-            if *active < max_active { *active += 1; }
+            if *active < max_active {
+                *active += 1;
+            }
             // 清空新底部行
             let bottom_idx = ((*first_row + sr - 1) % total as u64) as usize;
             buf[bottom_idx].clear_all(style);
@@ -463,7 +537,15 @@ impl Screen {
                         if cursor_placed && new_cursor_y > 0 {
                             new_cursor_y -= 1;
                         }
-                        do_scroll(&mut screen_first_row, &mut new_active_transcript_rows, screen_rows, current_style, new_total_rows, max_transcript_rows, &mut new_buffer);
+                        do_scroll(
+                            &mut screen_first_row,
+                            &mut new_active_transcript_rows,
+                            screen_rows,
+                            current_style,
+                            new_total_rows,
+                            max_transcript_rows,
+                            &mut new_buffer,
+                        );
                     } else {
                         output_row += 1;
                     }
@@ -489,9 +571,15 @@ impl Screen {
             while i < last_non_space_index {
                 // BUG FIX: Emulate Java's justToCursor early break
                 // Stop processing trailing spaces on the cursor row once we pass the cursor
-                if just_to_cursor && i > cursor_x as u64 && last_non_space_index == old_line.text.len() as u64 {
+                if just_to_cursor
+                    && i > cursor_x as u64
+                    && last_non_space_index == old_line.text.len() as u64
+                {
                     // Check if the rest of the line is actually empty
-                    if old_line.text[(i as usize)..(last_non_space_index as usize)].iter().all(|&c| c == ' ') {
+                    if old_line.text[(i as usize)..(last_non_space_index as usize)]
+                        .iter()
+                        .all(|&c| c == ' ')
+                    {
                         break;
                     }
                 }
@@ -499,11 +587,17 @@ impl Screen {
                 let c = old_line.text[i as usize];
                 let code_point = c as u32;
                 let display_width = local_get_width(code_point);
-                
+
                 // 核心修复：宽字符原子性检测
                 // 如果当前是宽字符，检查下一个是否是 \0 占位符，并将它们作为一个整体处理
-                let is_atomic_pair = display_width == 2 && (i as usize) + 1 < old_line.text.len() && old_line.text[(i as usize) + 1] == '\0';
-                let unit_width = if is_atomic_pair { 2 } else { display_width as usize };
+                let is_atomic_pair = display_width == 2
+                    && (i as usize) + 1 < old_line.text.len()
+                    && old_line.text[(i as usize) + 1] == '\0';
+                let unit_width = if is_atomic_pair {
+                    2
+                } else {
+                    display_width as usize
+                };
 
                 // Update style for this column
                 if display_width > 0 && current_old_col < old_cols {
@@ -517,8 +611,18 @@ impl Screen {
                         new_buffer[idx].line_wrap = true;
                     }
                     if output_row >= screen_rows - 1 {
-                        if cursor_placed && new_cursor_y > 0 { new_cursor_y -= 1; }
-                        do_scroll(&mut screen_first_row, &mut new_active_transcript_rows, screen_rows, current_style, new_total_rows, max_transcript_rows, &mut new_buffer);
+                        if cursor_placed && new_cursor_y > 0 {
+                            new_cursor_y -= 1;
+                        }
+                        do_scroll(
+                            &mut screen_first_row,
+                            &mut new_active_transcript_rows,
+                            screen_rows,
+                            current_style,
+                            new_total_rows,
+                            max_transcript_rows,
+                            &mut new_buffer,
+                        );
                     } else {
                         output_row += 1;
                     }
@@ -530,7 +634,7 @@ impl Screen {
                     let idx = row_idx(screen_first_row, output_row, new_total_rows);
                     new_buffer[idx].text[output_col] = c;
                     new_buffer[idx].styles[output_col] = style_at_col;
-                    
+
                     if is_atomic_pair && output_col + 1 < n_cols {
                         new_buffer[idx].text[output_col + 1] = '\0';
                         new_buffer[idx].styles[output_col + 1] = style_at_col;
@@ -556,7 +660,15 @@ impl Screen {
                     if cursor_placed && new_cursor_y > 0 {
                         new_cursor_y -= 1;
                     }
-                    do_scroll(&mut screen_first_row, &mut new_active_transcript_rows, screen_rows, current_style, new_total_rows, max_transcript_rows, &mut new_buffer);
+                    do_scroll(
+                        &mut screen_first_row,
+                        &mut new_active_transcript_rows,
+                        screen_rows,
+                        current_style,
+                        new_total_rows,
+                        max_transcript_rows,
+                        &mut new_buffer,
+                    );
                 } else {
                     output_row += 1;
                 }
@@ -590,29 +702,35 @@ impl Screen {
     }
 
     /// Fast path resize: only rows change (columns unchanged)
-    /// 
+    ///
     /// This is O(1) pointer adjustment, matching Java's fast path behavior.
-    /// 
+    ///
     /// ## Parameters
     /// - `new_rows`: New number of visible rows
     /// - `cursor_x`, `cursor_y`: Current cursor position
     /// - `current_style`: Current text style for clearing blank lines
-    /// 
+    ///
     /// ## Returns
     /// - New cursor position (cursor_x, cursor_y)
-    /// 
+    ///
     /// ## Algorithm (matches Java TerminalBuffer.resize fast path)
     /// 1. Calculate `shift_down_of_top_row = old_rows - new_rows`
     /// 2. If shrinking (shift > 0), check if we can skip blank rows at bottom
     /// 3. If expanding (shift < 0), only move screen up if there's transcript
     /// 4. Adjust `first_row` pointer by shift amount
     /// 5. Update `active_transcript_rows` and cursor position
-    fn resize_rows_only(&mut self, new_rows: i32, cursor_x: i32, cursor_y: i32, current_style: u64) -> (i32, i32) {
+    fn resize_rows_only(
+        &mut self,
+        new_rows: i32,
+        cursor_x: i32,
+        cursor_y: i32,
+        current_style: u64,
+    ) -> (i32, i32) {
         let old_rows = self.rows as usize;
-        
+
         // Calculate shift: positive = shrinking, negative = expanding
         let mut shift_down_of_top_row = old_rows as i32 - new_rows as i32;
-        
+
         if shift_down_of_top_row > 0 && shift_down_of_top_row < old_rows as i32 {
             // Shrinking: check if we can skip blank rows at bottom below cursor
             for i in (1..old_rows).rev() {
@@ -631,47 +749,51 @@ impl Screen {
         } else if shift_down_of_top_row < 0 {
             // Expanding: only move screen up if there's transcript to show
             // Java logic: actualShift = max(shiftDownOfTopRow, -mActiveTranscriptRows)
-            let actual_shift = std::cmp::max(shift_down_of_top_row, -(self.active_transcript_rows as i32));
+            let actual_shift =
+                std::cmp::max(shift_down_of_top_row, -(self.active_transcript_rows as i32));
 
             if shift_down_of_top_row != actual_shift {
                 // The new lines revealed by resizing are not all from transcript.
                 // Blank the below ones.
                 let blank_count = actual_shift - shift_down_of_top_row;
-                
+
                 for i in 0..blank_count {
-                    let row_idx = (self.first_row as u128 + old_rows as u128 + i as u128) % self.buffer.len() as u128;
+                    let row_idx = (self.first_row as u128 + old_rows as u128 + i as u128)
+                        % self.buffer.len() as u128;
                     self.buffer[row_idx as usize].clear_all(current_style);
                 }
                 shift_down_of_top_row = actual_shift;
             }
         }
-        
+
         // Adjust first_row pointer (O(1) operation)
         let total_buf_len = self.buffer.len() as i128;
         let current_first_row = self.first_row as i128;
         let shift = shift_down_of_top_row as i128;
-        
+
         let new_first_row = (current_first_row + shift) % total_buf_len;
         self.first_row = ((new_first_row + total_buf_len) % total_buf_len) as u64;
-        
+
         // Update active_transcript_rows
         let shift_i64 = shift_down_of_top_row as i64;
         if shift_i64 > 0 {
             self.active_transcript_rows += shift_i64 as u64;
         } else {
-            self.active_transcript_rows = self.active_transcript_rows.saturating_sub((-shift_i64) as u64);
+            self.active_transcript_rows = self
+                .active_transcript_rows
+                .saturating_sub((-shift_i64) as u64);
         }
 
         // Ensure active_transcript_rows doesn't exceed max possible
         let max_transcript_rows = (self.buffer.len() as u64).saturating_sub(new_rows as u64);
         self.active_transcript_rows = self.active_transcript_rows.min(max_transcript_rows);
-        
+
         // Adjust cursor position
         let new_cursor_y = cursor_y - shift_down_of_top_row;
-        
+
         // Update rows
         self.rows = new_rows as i64;
-        
+
         (cursor_x, new_cursor_y)
     }
 
@@ -690,16 +812,21 @@ impl Screen {
             let line = &self.buffer[internal_row];
             let used = line.get_space_used();
             let is_blank = used == 0;
-            if !is_blank { break; }
+            if !is_blank {
+                break;
+            }
         }
-        
+
         // 物理缩容逻辑：缓解大吞吐量输出后的内存膨胀
         if self.buffer.capacity() > self.buffer.len() * 2 && self.buffer.capacity() > 1000 {
             // 只有当空闲空间超过一倍且基数较大时，才触发昂贵的 shrink 操作
             self.buffer.shrink_to_fit();
             crate::utils::android_log(
                 crate::utils::LogPriority::INFO,
-                &format!("[Screen] Physical buffer reclaimed. New capacity: {}", self.buffer.capacity())
+                &format!(
+                    "[Screen] Physical buffer reclaimed. New capacity: {}",
+                    self.buffer.capacity()
+                ),
             );
         }
 
@@ -760,8 +887,10 @@ mod tests {
     #[test]
     fn test_row_insert_spaces() {
         let mut r = TerminalRow::new(10);
-        r.text[0] = 'A'; r.styles[0] = 1;
-        r.text[2] = 'B'; r.styles[2] = 2;
+        r.text[0] = 'A';
+        r.styles[0] = 1;
+        r.text[2] = 'B';
+        r.styles[2] = 2;
 
         // Insert 2 spaces at column 1 with style 99
         r.insert_spaces(1, 2, 99);
@@ -902,13 +1031,19 @@ mod tests {
         let mut s = Screen::new(10, 5, 5);
         // Fill visible rows
         for r in 0..5 {
-            s.get_row_mut(r as i64).set_char(0, (b'A' + r as u8) as u32, 0);
+            s.get_row_mut(r as i64)
+                .set_char(0, (b'A' + r as u8) as u32, 0);
         }
 
         s.erase_in_display(2, 0, 0, 0); // erase all (mode=2, cursor at 0,0)
 
         for r in 0..5 {
-            assert_eq!(s.get_row(r as i64).text[0], ' ', "Row {} should be cleared", r);
+            assert_eq!(
+                s.get_row(r as i64).text[0],
+                ' ',
+                "Row {} should be cleared",
+                r
+            );
         }
     }
 
@@ -916,7 +1051,8 @@ mod tests {
     fn test_screen_erase_below_cursor() {
         let mut s = Screen::new(10, 5, 5);
         for r in 0..5 {
-            s.get_row_mut(r as i64).set_char(0, (b'A' + r as u8) as u32, 0);
+            s.get_row_mut(r as i64)
+                .set_char(0, (b'A' + r as u8) as u32, 0);
         }
 
         // mode=1: erase from cursor to end of screen
@@ -934,7 +1070,8 @@ mod tests {
     fn test_screen_insert_lines() {
         let mut s = Screen::new(10, 5, 10);
         for r in 0..5 {
-            s.get_row_mut(r as i64).set_char(0, (b'A' + r as u8) as u32, 0);
+            s.get_row_mut(r as i64)
+                .set_char(0, (b'A' + r as u8) as u32, 0);
         }
 
         // insert 2 lines at row 2, bottom=4 (scroll region [2, 4))
@@ -953,7 +1090,8 @@ mod tests {
     fn test_screen_delete_lines() {
         let mut s = Screen::new(10, 5, 10);
         for r in 0..5 {
-            s.get_row_mut(r as i64).set_char(0, (b'A' + r as u8) as u32, 0);
+            s.get_row_mut(r as i64)
+                .set_char(0, (b'A' + r as u8) as u32, 0);
         }
 
         // delete 2 lines at row 1, bottom=4 (scroll region [1, 4))
@@ -992,7 +1130,8 @@ mod tests {
         // The slow path reflow behavior is complex; just check dimensions.
         let mut s = Screen::new(10, 3, 5);
         for i in 0..10 {
-            s.get_row_mut(0).set_char(i as u64, (b'A' + i as u8) as u32, 0);
+            s.get_row_mut(0)
+                .set_char(i as u64, (b'A' + i as u8) as u32, 0);
         }
 
         let (_new_cx, _new_cy) = s.resize_with_reflow(5, 3, 0, 0, 0);
@@ -1006,7 +1145,8 @@ mod tests {
         // Fast path: only rows change (columns unchanged)
         let mut s = Screen::new(10, 3, 5);
         for i in 0..10 {
-            s.get_row_mut(0).set_char(i as u64, (b'A' + i as u8) as u32, 0);
+            s.get_row_mut(0)
+                .set_char(i as u64, (b'A' + i as u8) as u32, 0);
         }
 
         let (new_cx, new_cy) = s.resize_with_reflow(10, 5, 0, 0, 0);
@@ -1050,12 +1190,12 @@ mod tests {
         // Buffer of 5 rows, visible 3.
         let mut s = Screen::new(10, 3, 5);
         s.first_row = 4; // Screen starts at physical index 4
-        
+
         // visible row 0 (index 4)
         s.get_row_mut(0).set_char(0, 'X' as u32, 0);
-        
+
         s.scroll_up(0, 3, 0);
-        
+
         // first_row should be (4+1)%5 = 0
         assert_eq!(s.first_row, 0);
         // old row 0 (physical 4) is now history index -1
@@ -1069,9 +1209,13 @@ mod tests {
         // '中' is width 2.
         r.set_char(0, '中' as u32, 0);
         r.text[1] = '\0'; // Manually set placeholder
-        
+
         // It should return 2, because columns 0 and 1 are occupied.
-        assert_eq!(r.get_space_used(), 2, "Space used should account for wide char placeholder");
+        assert_eq!(
+            r.get_space_used(),
+            2,
+            "Space used should account for wide char placeholder"
+        );
     }
 
     #[test]
@@ -1081,15 +1225,18 @@ mod tests {
         s.get_row_mut(0).set_char(0, 'A' as u32, 0);
         s.get_row_mut(0).set_char(1, 'B' as u32, 0);
         s.get_row_mut(0).set_char(2, 'C' as u32, 0);
-        
+
         // Rows 1-4 are blank.
         // Cursor is at (0, 3) - row 3.
-        
+
         let (_nx, ny) = s.resize_with_reflow(10, 5, 0, 0, 3);
-        
+
         // The cursor position should be preserved relative to the content.
         // If blank lines are skipped and not accounted for, ny might become 1.
-        assert_eq!(ny, 3, "Cursor Y should be preserved even if preceding lines are blank");
+        assert_eq!(
+            ny, 3,
+            "Cursor Y should be preserved even if preceding lines are blank"
+        );
     }
 
     #[test]
@@ -1097,9 +1244,9 @@ mod tests {
         let cols = 100i64;
         let rows = 50i64;
         let total_rows = 5000i64;
-        
+
         let mut s = Screen::new(cols, rows, total_rows);
-        
+
         // 模拟填满 5000 行数据
         for i in 0..total_rows {
             let idx = s.internal_row(i - (total_rows - rows));
@@ -1111,13 +1258,13 @@ mod tests {
 
         // 计算近似堆内存占用
         let row_stack_size = std::mem::size_of::<TerminalRow>();
-        
+
         let mut total_heap = 0;
         for row in &s.buffer {
             total_heap += row.text.capacity() * std::mem::size_of::<char>();
             total_heap += row.styles.capacity() * std::mem::size_of::<u64>();
         }
-        
+
         let total_bytes = (s.buffer.capacity() * row_stack_size) + total_heap;
         let mb = total_bytes as f64 / 1024.0 / 1024.0;
 
@@ -1125,10 +1272,10 @@ mod tests {
         println!("总行数: {}, 列数: {}", total_rows, cols);
         println!("估算内存占用: {:.2} MB", mb);
         println!("每行占用: {} 字节", total_bytes / total_rows as usize);
-        
+
         // 验证基本功能
         assert_eq!(s.buffer.len(), 5000);
-        
+
         // 性能检查：执行一次全屏缩放（最耗时操作）
         let start = std::time::Instant::now();
         s.resize_with_reflow(80, 24, 0, 0, 0);
@@ -1171,7 +1318,10 @@ mod tests {
             assert!(
                 ptrs.insert(ptr),
                 "逻辑行 {} 映射到已存在的物理行 (first_row={}, rows={}, active={})",
-                r, screen.first_row, screen.rows, screen.active_transcript_rows
+                r,
+                screen.first_row,
+                screen.rows,
+                screen.active_transcript_rows
             );
         }
     }
@@ -1211,7 +1361,15 @@ mod tests {
             s.get_row_mut(r).set_char(0, (b'A' + r as u8) as u32, 0);
         }
         // 反复改变列数（触发慢路径 reflow）
-        let sizes = [(40, 25), (80, 25), (20, 25), (100, 25), (80, 20), (80, 30), (80, 25)];
+        let sizes = [
+            (40, 25),
+            (80, 25),
+            (20, 25),
+            (100, 25),
+            (80, 20),
+            (80, 30),
+            (80, 25),
+        ];
         for (cols, rows) in sizes {
             s.resize_with_reflow(cols, rows, 0, 0, 0);
             assert_no_duplicate_visible_rows(&s);
@@ -1224,7 +1382,8 @@ mod tests {
         let mut s = Screen::new(80, 10, 20);
         // 写满可见区并产生 5 行历史
         for r in 0..15 {
-            s.get_row_mut(r).set_char(0, (b'0' + (r % 10) as u8) as u32, 0);
+            s.get_row_mut(r)
+                .set_char(0, (b'0' + (r % 10) as u8) as u32, 0);
             if r >= 10 {
                 s.scroll_up(0, 10, 0);
             }
@@ -1234,7 +1393,10 @@ mod tests {
 
         // 缩到 5 行
         s.resize_rows_only(5, 0, 4, 0);
-        assert!(s.active_transcript_rows >= orig_active, "缩小时历史行不应丢失");
+        assert!(
+            s.active_transcript_rows >= orig_active,
+            "缩小时历史行不应丢失"
+        );
         assert!(s.active_transcript_rows <= (s.buffer.len() as u64).saturating_sub(s.rows as u64));
         assert_no_duplicate_visible_rows(&s);
 
@@ -1266,7 +1428,11 @@ mod tests {
         // 验证首行内容未被截断或重复
         let first_row = s.get_row(0);
         let text: String = first_row.text.iter().take(input.len()).collect();
-        assert!(text.starts_with("~$"), "resize 后首行应仍保留 ~$ 提示符，实际得到: {:?}", text);
+        assert!(
+            text.starts_with("~$"),
+            "resize 后首行应仍保留 ~$ 提示符，实际得到: {:?}",
+            text
+        );
     }
 
     #[test]
@@ -1285,8 +1451,11 @@ mod tests {
         for (row_idx, line) in lines.iter().enumerate() {
             let mut col = 0;
             for c in line.chars() {
-                if col >= 80 { break; }
-                s.get_row_mut(row_idx as i64).set_char(col as u64, c as u32, 0);
+                if col >= 80 {
+                    break;
+                }
+                s.get_row_mut(row_idx as i64)
+                    .set_char(col as u64, c as u32, 0);
                 col += crate::wcwidth::wcwidth(c as u32) as usize;
             }
         }
@@ -1312,7 +1481,10 @@ mod tests {
                         prev_trimmed,
                         curr_trimmed,
                         "第 {} 次 resize 后，行 {} 和行 {} 非空内容完全相同，疑似堆叠 (cols={})",
-                        i, r - 1, r, cols
+                        i,
+                        r - 1,
+                        r,
+                        cols
                     );
                 }
             }
@@ -1325,10 +1497,15 @@ mod tests {
         let mut s = Screen::new(80, 10, 50);
         // 写满 50 行，产生 40 行历史
         for r in 0..50 {
-            let content = format!("Line {:03}: This is a test line with enough length to fill most columns.", r);
+            let content = format!(
+                "Line {:03}: This is a test line with enough length to fill most columns.",
+                r
+            );
             let mut col = 0;
             for c in content.chars() {
-                if col >= 80 { break; }
+                if col >= 80 {
+                    break;
+                }
                 s.get_row_mut(r).set_char(col as u64, c as u32, 0);
                 col += 1;
             }
@@ -1346,7 +1523,8 @@ mod tests {
             assert_all_rows_unique(&s);
             assert!(
                 s.active_transcript_rows <= (s.buffer.len() as u64).saturating_sub(s.rows as u64),
-                "rows={} 时 active_transcript_rows 越界", rows
+                "rows={} 时 active_transcript_rows 越界",
+                rows
             );
         }
     }
@@ -1357,7 +1535,8 @@ mod tests {
         let mut s = Screen::new(80, 24, 100);
         for r in 0..24 {
             for c in 0..80 {
-                s.get_row_mut(r).set_char(c as u64, ((c + r * 80) % 95 + 32) as u32, 0);
+                s.get_row_mut(r)
+                    .set_char(c as u64, ((c + r * 80) % 95 + 32) as u32, 0);
             }
         }
         let mut rng = 12345u32;
@@ -1373,8 +1552,11 @@ mod tests {
                 s.resize_with_reflow(cols, rows, 0, 0, 0);
             }
             assert_no_duplicate_visible_rows(&s);
-            assert!(s.active_transcript_rows <= (s.buffer.len() as u64).saturating_sub(s.rows as u64),
-                "第 {} 次 resize 后 active_transcript_rows 越界", i);
+            assert!(
+                s.active_transcript_rows <= (s.buffer.len() as u64).saturating_sub(s.rows as u64),
+                "第 {} 次 resize 后 active_transcript_rows 越界",
+                i
+            );
             assert!(s.rows > 0, "rows 不应为 0 或负数");
             assert!(s.cols > 0, "cols 不应为 0 或负数");
         }

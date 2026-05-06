@@ -166,13 +166,14 @@ fn extract_zip_to_dir(
 
         // 设置执行权限 (bin/, libexec/ 等目录)
         let path_str = file_path.to_string_lossy();
-        if path_str.contains("/bin/") 
+        if path_str.contains("/bin/")
             || path_str.starts_with("bin/")
             || path_str.contains("/libexec/")
             || path_str.starts_with("libexec/")
             || path_str.contains("/lib/apt/")
             || path_str.starts_with("lib/apt/")
-            || path_str.ends_with("/bin") // Case like busybox
+            || path_str.ends_with("/bin")
+        // Case like busybox
         {
             #[cfg(unix)]
             {
@@ -227,14 +228,16 @@ mod tests {
         let mut buf = Vec::new();
         {
             let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
-            
+
             // 添加空目录 (注意末尾的斜杠)
-            zip.add_directory("empty_dir/", zip::write::SimpleFileOptions::default()).unwrap();
-            
+            zip.add_directory("empty_dir/", zip::write::SimpleFileOptions::default())
+                .unwrap();
+
             // 添加文件
-            zip.start_file("test.txt", zip::write::SimpleFileOptions::default()).unwrap();
+            zip.start_file("test.txt", zip::write::SimpleFileOptions::default())
+                .unwrap();
             zip.write_all(b"hello").unwrap();
-            
+
             zip.finish().unwrap();
         }
 
@@ -243,14 +246,25 @@ mod tests {
 
         // 验证目录是否创建
         let empty_dir_path = std::path::Path::new(target_dir_path).join("empty_dir");
-        assert!(empty_dir_path.exists(), "Empty directory should exist at {:?}", empty_dir_path);
-        assert!(empty_dir_path.is_dir(), "{:?} should be a directory", empty_dir_path);
+        assert!(
+            empty_dir_path.exists(),
+            "Empty directory should exist at {:?}",
+            empty_dir_path
+        );
+        assert!(
+            empty_dir_path.is_dir(),
+            "{:?} should be a directory",
+            empty_dir_path
+        );
 
         // 验证文件是否创建
         let file_path = std::path::Path::new(target_dir_path).join("test.txt");
         assert!(file_path.exists());
         let mut content = String::new();
-        File::open(file_path).unwrap().read_to_string(&mut content).unwrap();
+        File::open(file_path)
+            .unwrap()
+            .read_to_string(&mut content)
+            .unwrap();
         assert_eq!(content, "hello");
 
         // 清理
@@ -275,7 +289,8 @@ mod additional_tests {
         {
             let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
             // zip crate's enclosed_name() should reject this
-            zip.start_file("../../etc/passwd", zip::write::SimpleFileOptions::default()).unwrap();
+            zip.start_file("../../etc/passwd", zip::write::SimpleFileOptions::default())
+                .unwrap();
             zip.write_all(b"root").unwrap();
             zip.finish().unwrap();
         }
@@ -299,7 +314,8 @@ mod additional_tests {
         let mut buf = Vec::new();
         {
             let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
-            zip.start_file("/etc/passwd", zip::write::SimpleFileOptions::default()).unwrap();
+            zip.start_file("/etc/passwd", zip::write::SimpleFileOptions::default())
+                .unwrap();
             zip.write_all(b"root").unwrap();
             zip.finish().unwrap();
         }
@@ -328,9 +344,12 @@ mod additional_tests {
         let mut buf = Vec::new();
         {
             let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
-            zip.add_directory("a/", zip::write::SimpleFileOptions::default()).unwrap();
-            zip.add_directory("a/b/", zip::write::SimpleFileOptions::default()).unwrap();
-            zip.start_file("a/b/c.txt", zip::write::SimpleFileOptions::default()).unwrap();
+            zip.add_directory("a/", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.add_directory("a/b/", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.start_file("a/b/c.txt", zip::write::SimpleFileOptions::default())
+                .unwrap();
             zip.write_all(b"nested").unwrap();
             zip.finish().unwrap();
         }
@@ -341,7 +360,10 @@ mod additional_tests {
         let file_path = std::path::Path::new(target_dir).join("a/b/c.txt");
         assert!(file_path.exists());
         let mut content = String::new();
-        File::open(file_path).unwrap().read_to_string(&mut content).unwrap();
+        File::open(file_path)
+            .unwrap()
+            .read_to_string(&mut content)
+            .unwrap();
         assert_eq!(content, "nested");
 
         let _ = std::fs::remove_dir_all(target_dir);
@@ -379,9 +401,11 @@ mod additional_tests {
         let mut buf = Vec::new();
         {
             let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
-            zip.start_file("SYMLINKS.txt", zip::write::SimpleFileOptions::default()).unwrap();
+            zip.start_file("SYMLINKS.txt", zip::write::SimpleFileOptions::default())
+                .unwrap();
             zip.write_all("old1←new1\nold2←new2\n".as_bytes()).unwrap();
-            zip.start_file("real_file", zip::write::SimpleFileOptions::default()).unwrap();
+            zip.start_file("real_file", zip::write::SimpleFileOptions::default())
+                .unwrap();
             zip.write_all(b"data").unwrap();
             zip.finish().unwrap();
         }
@@ -424,7 +448,8 @@ mod additional_tests {
         let mut buf = Vec::new();
         {
             let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
-            zip.start_file("file.txt", zip::write::SimpleFileOptions::default()).unwrap();
+            zip.start_file("file.txt", zip::write::SimpleFileOptions::default())
+                .unwrap();
             zip.write_all(b"new").unwrap();
             zip.finish().unwrap();
         }

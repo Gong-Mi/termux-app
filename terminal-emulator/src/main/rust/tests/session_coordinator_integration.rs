@@ -1,7 +1,7 @@
 // Session 协调器集成测试（并行安全版）
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use std::sync::Arc;
 use termux_rust::coordinator::{SessionCoordinator, SessionState};
 
 /// 测试场景 1: Pkg 锁互斥
@@ -9,18 +9,18 @@ use termux_rust::coordinator::{SessionCoordinator, SessionState};
 fn test_pkg_lock_mutual_exclusion() {
     // 使用独立的实例，避免并行测试干扰
     let coordinator = Arc::new(SessionCoordinator::new_coordinator());
-    
+
     let session1 = coordinator.register_session();
     let session2 = coordinator.register_session();
-    
+
     // Session 1 获取锁
     let result1 = coordinator.try_acquire_pkg_lock(session1);
     assert!(result1, "Session 1 should acquire lock");
-    
+
     // Session 2 尝试获取锁
     let result2 = coordinator.try_acquire_pkg_lock(session2);
     assert!(!result2, "Session 2 should fail to acquire lock");
-    
+
     assert!(coordinator.is_pkg_lock_held());
     assert_eq!(coordinator.get_pkg_lock_owner(), session1);
 }
@@ -30,11 +30,11 @@ fn test_pkg_lock_mutual_exclusion() {
 fn test_lock_status_query() {
     let coordinator = Arc::new(SessionCoordinator::new_coordinator());
     assert!(!coordinator.is_pkg_lock_held());
-    
+
     let session = coordinator.register_session();
     coordinator.try_acquire_pkg_lock(session);
     assert!(coordinator.is_pkg_lock_held());
-    
+
     coordinator.release_pkg_lock(session);
     assert!(!coordinator.is_pkg_lock_held());
 }
@@ -60,8 +60,10 @@ fn test_concurrent_lock_contention() {
         handles.push(handle);
     }
 
-    for h in handles { h.join().unwrap(); }
-    
+    for h in handles {
+        h.join().unwrap();
+    }
+
     let final_success = success_count.load(std::sync::atomic::Ordering::SeqCst);
     assert!(final_success > 0 && final_success <= 10);
     println!("Lock contention test passed: {} success", final_success);
@@ -72,19 +74,22 @@ fn test_concurrent_lock_contention() {
 fn test_lock_release_on_unregister() {
     let coordinator = Arc::new(SessionCoordinator::new_coordinator());
     let session = coordinator.register_session();
-    
+
     coordinator.try_acquire_pkg_lock(session);
     assert!(coordinator.is_pkg_lock_held());
-    
+
     coordinator.unregister_session(session);
-    assert!(!coordinator.is_pkg_lock_held(), "Lock should be released when owner unregisters");
+    assert!(
+        !coordinator.is_pkg_lock_held(),
+        "Lock should be released when owner unregisters"
+    );
 }
 
 #[test]
 fn test_session_states() {
     let coordinator = SessionCoordinator::new_coordinator();
     let id = coordinator.register_session();
-    
+
     coordinator.update_session_state(id, SessionState::Busy);
     assert_eq!(coordinator.get_session_state(id), Some(SessionState::Busy));
 }

@@ -13,7 +13,10 @@ fn main() {
     };
 
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
-    let zip_path = format!("{}/../../../../termux-app/src/main/cpp/{}", manifest_dir, zip_name);
+    let zip_path = format!(
+        "{}/../../../../termux-app/src/main/cpp/{}",
+        manifest_dir, zip_name
+    );
 
     if !std::path::Path::new(&zip_path).exists() {
         panic!(

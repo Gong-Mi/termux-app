@@ -8,8 +8,8 @@
 
 use termux_rust::TerminalEngine;
 use termux_rust::renderer::TerminalRenderer;
-use termux_rust::terminal::style::*;
 use termux_rust::terminal::colors::*;
+use termux_rust::terminal::style::*;
 
 /// Helper: create a minimal offscreen canvas-like surface for color extraction tests.
 /// Since we can't render to a real canvas in tests, we verify the color logic
@@ -24,7 +24,7 @@ fn test_reverse_colors_basic() {
     println!("✅ Basic color reversal works");
 }
 
-/// Verify truecolor foreground + default background, when selected, 
+/// Verify truecolor foreground + default background, when selected,
 /// does NOT cause text to become invisible
 #[test]
 fn test_truecolor_fg_selected_reverses_correctly() {
@@ -54,7 +54,10 @@ fn test_truecolor_fg_selected_reverses_correctly() {
     // - rev_fg = 257 (default background index), rev_fg_tc = false
     // - rev_bg = 0xff6432 (the truecolor value), rev_bg_tc = true
     assert_eq!(rev_fg, 257, "Reversed FG should be default BG index");
-    assert_eq!(rev_bg as u32, 0xFFFF6432, "Reversed BG should be the truecolor FG value");
+    assert_eq!(
+        rev_bg as u32, 0xFFFF6432,
+        "Reversed BG should be the truecolor FG value"
+    );
     assert!(!rev_fg_tc, "Reversed FG_TC should be false");
     assert!(rev_bg_tc, "Reversed BG_TC should be true");
 
@@ -88,7 +91,10 @@ fn test_truecolor_bg_selected_reverses_correctly() {
     // After reversal:
     // - rev_fg = 0xff0064C8 (truecolor), rev_fg_tc = true
     // - rev_bg = 256 (default FG index), rev_bg_tc = false
-    assert_eq!(rev_fg as u32, 0xFF0064C8, "Reversed FG should be the truecolor BG value");
+    assert_eq!(
+        rev_fg as u32, 0xFF0064C8,
+        "Reversed FG should be the truecolor BG value"
+    );
     assert_eq!(rev_bg, 256, "Reversed BG should be default FG index");
     assert!(rev_fg_tc, "Reversed FG_TC should be true");
     assert!(!rev_bg_tc, "Reversed BG_TC should be false");
@@ -102,7 +108,7 @@ fn test_truecolor_bg_selected_reverses_correctly() {
 #[test]
 fn test_selection_invisibility_bug_scenario() {
     // This test demonstrates the exact bug that made selected text invisible.
-    // 
+    //
     // Scenario: text with default foreground (index 256) and truecolor background
     // When selected:
     //   - BEFORE FIX: fg_idx and bg_idx swapped, but fg_tc=false, bg_tc=true stayed
@@ -128,8 +134,8 @@ fn test_selection_invisibility_bug_scenario() {
 
     // Simulate the BUG (old behavior): only swap indices, NOT flags
     let (_bug_fg, _bug_bg) = TerminalRenderer::reverse_colors(fg as usize, bg as usize);
-    let _bug_fg_tc = fg_tc;  // BUG: didn't swap
-    let _bug_bg_tc = bg_tc;  // BUG: didn't swap
+    let _bug_fg_tc = fg_tc; // BUG: didn't swap
+    let _bug_bg_tc = bg_tc; // BUG: didn't swap
 
     // With the bug: FG would use palette lookup (since bug_fg_tc=false)
     // but bug_fg = bg as usize = 0xFF326496 (huge), so palette lookup fails → default
@@ -139,8 +145,8 @@ fn test_selection_invisibility_bug_scenario() {
 
     // Simulate the FIX (new behavior): swap both indices AND flags
     let (fix_fg, _fix_bg) = TerminalRenderer::reverse_colors(fg as usize, bg as usize);
-    let fix_fg_tc = bg_tc;  // FIXED: swapped
-    let fix_bg_tc = fg_tc;  // FIXED: swapped
+    let fix_fg_tc = bg_tc; // FIXED: swapped
+    let fix_bg_tc = fg_tc; // FIXED: swapped
 
     // With the fix:
     // - FG uses raw value (fix_fg_tc=true): 0xFF326496 = the original BG truecolor
@@ -149,9 +155,21 @@ fn test_selection_invisibility_bug_scenario() {
     assert!(!fix_bg_tc, "Fixed BG_TC should be false after reversal");
 
     // The fix FG should be the original BG truecolor value
-    assert_eq!((fix_fg as u32 >> 16) & 0xFF, 50, "Fixed FG red should be original BG red");
-    assert_eq!((fix_fg as u32 >> 8) & 0xFF, 100, "Fixed FG green should be original BG green");
-    assert_eq!(fix_fg as u32 & 0xFF, 150, "Fixed FG blue should be original BG blue");
+    assert_eq!(
+        (fix_fg as u32 >> 16) & 0xFF,
+        50,
+        "Fixed FG red should be original BG red"
+    );
+    assert_eq!(
+        (fix_fg as u32 >> 8) & 0xFF,
+        100,
+        "Fixed FG green should be original BG green"
+    );
+    assert_eq!(
+        fix_fg as u32 & 0xFF,
+        150,
+        "Fixed FG blue should be original BG blue"
+    );
 
     println!("✅ Selection invisibility bug scenario verified as fixed");
 }
@@ -181,9 +199,21 @@ fn test_both_truecolor_selected() {
     // After reversal: FG becomes blue, BG becomes red
     assert!(rev_fg_tc, "Reversed FG should still be truecolor");
     assert!(rev_bg_tc, "Reversed BG should still be truecolor");
-    assert_eq!((rev_fg as u32 >> 16) & 0xFF, 0, "Reversed FG should be blue (R=0)");
-    assert_eq!(rev_fg as u32 & 0xFF, 255, "Reversed FG should be blue (B=255)");
-    assert_eq!((rev_bg as u32 >> 16) & 0xFF, 255, "Reversed BG should be red (R=255)");
+    assert_eq!(
+        (rev_fg as u32 >> 16) & 0xFF,
+        0,
+        "Reversed FG should be blue (R=0)"
+    );
+    assert_eq!(
+        rev_fg as u32 & 0xFF,
+        255,
+        "Reversed FG should be blue (B=255)"
+    );
+    assert_eq!(
+        (rev_bg as u32 >> 16) & 0xFF,
+        255,
+        "Reversed BG should be red (R=255)"
+    );
     assert_eq!(rev_bg as u32 & 0xFF, 0, "Reversed BG should be red (B=0)");
 
     println!("✅ Both truecolor FG+BG selection reversal works correctly");
@@ -237,16 +267,28 @@ fn test_default_colors_selection_reversal() {
 
     assert!(!fg_tc, "Default FG should NOT be truecolor");
     assert!(!bg_tc, "Default BG should NOT be truecolor");
-    assert_eq!(fg as usize, COLOR_INDEX_FOREGROUND, "FG should be default FG index");
-    assert_eq!(bg as usize, COLOR_INDEX_BACKGROUND, "BG should be default BG index");
+    assert_eq!(
+        fg as usize, COLOR_INDEX_FOREGROUND,
+        "FG should be default FG index"
+    );
+    assert_eq!(
+        bg as usize, COLOR_INDEX_BACKGROUND,
+        "BG should be default BG index"
+    );
 
     // Simulate selection reversal
     let (rev_fg, rev_bg) = TerminalRenderer::reverse_colors(fg as usize, bg as usize);
     let _rev_fg_tc = bg_tc;
     let _rev_bg_tc = fg_tc;
 
-    assert_eq!(rev_fg, COLOR_INDEX_BACKGROUND, "Reversed FG should be default BG");
-    assert_eq!(rev_bg, COLOR_INDEX_FOREGROUND, "Reversed BG should be default FG");
+    assert_eq!(
+        rev_fg, COLOR_INDEX_BACKGROUND,
+        "Reversed FG should be default BG"
+    );
+    assert_eq!(
+        rev_bg, COLOR_INDEX_FOREGROUND,
+        "Reversed BG should be default FG"
+    );
 
     println!("✅ Default colors selection reversal works correctly");
 }
@@ -264,10 +306,22 @@ fn test_selection_never_invisible_after_fix() {
         ("", "", "default FG + default BG"),
         ("\x1b[38;2;255;0;0m", "", "truecolor FG + default BG"),
         ("", "\x1b[48;2;0;255;0m", "default FG + truecolor BG"),
-        ("\x1b[38;2;255;0;0m", "\x1b[48;2;0;0;255m", "truecolor FG + truecolor BG"),
+        (
+            "\x1b[38;2;255;0;0m",
+            "\x1b[48;2;0;0;255m",
+            "truecolor FG + truecolor BG",
+        ),
         ("\x1b[38;5;1m", "\x1b[48;5;4m", "index FG + index BG"),
-        ("\x1b[38;5;1m", "\x1b[48;2;0;100;200m", "index FG + truecolor BG"),
-        ("\x1b[38;2;0;100;200m", "\x1b[48;5;4m", "truecolor FG + index BG"),
+        (
+            "\x1b[38;5;1m",
+            "\x1b[48;2;0;100;200m",
+            "index FG + truecolor BG",
+        ),
+        (
+            "\x1b[38;2;0;100;200m",
+            "\x1b[48;5;4m",
+            "truecolor FG + index BG",
+        ),
     ];
 
     for (fg_seq, bg_seq, desc) in test_cases {

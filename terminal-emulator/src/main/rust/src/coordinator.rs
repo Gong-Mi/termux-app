@@ -1,16 +1,16 @@
 //! Session 协调器模块
-//! 
+//!
 //! 负责管理多个 Termux Session 之间的协调和资源共享
 //! - Pkg 操作互斥锁
 //! - Session 状态管理
 //! - Session 注册和注销
 
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Mutex;
 use once_cell::sync::OnceCell;
+use std::collections::HashMap;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use crate::utils::{android_log, LogPriority};
+use crate::utils::{LogPriority, android_log};
 
 /// 全局 Session 协调器实例
 static SESSION_COORDINATOR: OnceCell<SessionCoordinator> = OnceCell::new();
@@ -19,11 +19,11 @@ static SESSION_COORDINATOR: OnceCell<SessionCoordinator> = OnceCell::new();
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SessionState {
-    Idle = 0,           // 空闲
-    Running = 1,        // 命令执行中
-    Busy = 2,           // 忙碌（如 pkg 操作）
-    WaitingLock = 3,    // 等待锁
-    Finished = 4,       // 已结束
+    Idle = 0,        // 空闲
+    Running = 1,     // 命令执行中
+    Busy = 2,        // 忙碌（如 pkg 操作）
+    WaitingLock = 3, // 等待锁
+    Finished = 4,    // 已结束
 }
 
 impl SessionState {
@@ -82,7 +82,7 @@ impl SessionCoordinator {
             ptr_to_session: Mutex::new(HashMap::new()),
         }
     }
-    
+
     /// 注册新 Session（仅分配 ID，不绑定数据）
     /// 返回唯一的 Session ID
     pub fn register_session(&self) -> usize {
@@ -90,11 +90,11 @@ impl SessionCoordinator {
         self.update_session_state(id, SessionState::Idle);
         android_log(
             LogPriority::INFO,
-            &format!("[SessionCoordinator] Registered session {}", id)
+            &format!("[SessionCoordinator] Registered session {}", id),
         );
         id
     }
-    
+
     /// 绑定 Session 完整数据（PTY fd、PID、engine context）
     /// 调用时机：PTY 和引擎创建成功后
     pub fn bind_session_data(&self, session_id: usize, pty_fd: i32, pid: i32, context_ptr: usize) {
@@ -116,31 +116,36 @@ impl SessionCoordinator {
             &format!(
                 "[SessionCoordinator] Bound session {}: pty_fd={}, pid={}, context_ptr={:p}",
                 session_id, pty_fd, pid, context_ptr as *const ()
-            )
+            ),
         );
     }
-    
+
     /// 注销 Session
     pub fn unregister_session(&self, session_id: usize) {
         self.update_session_state(session_id, SessionState::Finished);
-        
+
         // 如果这个 session 持有 pkg 锁，释放它
         let owner = self.pkg_lock_owner.load(Ordering::SeqCst);
         if owner == session_id {
             self.release_pkg_lock(session_id);
         }
-        
+
         // 从数据表中移除，并清理反向索引
         if let Ok(mut data_map) = self.session_data.lock() {
             if let Some(data) = data_map.remove(&session_id) {
                 // 关键修复：释放 Arc 引用计数，否则 TerminalEngine 和其持有的 GlobalRef 永不销毁
                 if data.context_ptr != 0 {
                     unsafe {
-                        let _ = std::sync::Arc::from_raw(data.context_ptr as *const crate::engine::TerminalContext);
+                        let _ = std::sync::Arc::from_raw(
+                            data.context_ptr as *const crate::engine::TerminalContext,
+                        );
                     }
                     android_log(
                         LogPriority::DEBUG,
-                        &format!("[SessionCoordinator] Released Arc<TerminalContext> for session {}", session_id)
+                        &format!(
+                            "[SessionCoordinator] Released Arc<TerminalContext> for session {}",
+                            session_id
+                        ),
                     );
                 }
 
@@ -149,35 +154,41 @@ impl SessionCoordinator {
                 }
             }
         }
-        
+
         // 从状态表中移除
         if let Ok(mut states) = self.session_states.lock() {
             states.remove(&session_id);
         }
-        
+
         android_log(
             LogPriority::INFO,
-            &format!("[SessionCoordinator] Unregistered session {}", session_id)
+            &format!("[SessionCoordinator] Unregistered session {}", session_id),
         );
     }
-    
+
     /// 尝试获取 pkg 操作锁
-    /// 
+    ///
     /// # Arguments
     /// * `session_id` - 请求锁的 Session ID
-    /// 
+    ///
     /// # Returns
     /// * `true` - 成功获取锁
     /// * `false` - 锁已被其他 session 占用
     pub fn try_acquire_pkg_lock(&self, session_id: usize) -> bool {
-        match self.pkg_lock.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst) {
+        match self
+            .pkg_lock
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        {
             Ok(_) => {
                 // 成功获取锁
                 self.pkg_lock_owner.store(session_id, Ordering::SeqCst);
                 self.update_session_state(session_id, SessionState::Busy);
                 android_log(
                     LogPriority::INFO,
-                    &format!("[SessionCoordinator] Session {} acquired pkg lock", session_id)
+                    &format!(
+                        "[SessionCoordinator] Session {} acquired pkg lock",
+                        session_id
+                    ),
                 );
                 true
             }
@@ -189,16 +200,16 @@ impl SessionCoordinator {
                     &format!(
                         "[SessionCoordinator] Session {} failed to acquire pkg lock - owned by session {}",
                         session_id, owner
-                    )
+                    ),
                 );
                 self.update_session_state(session_id, SessionState::WaitingLock);
                 false
             }
         }
     }
-    
+
     /// 释放 pkg 操作锁
-    /// 
+    ///
     /// # Arguments
     /// * `session_id` - 释放锁的 Session ID（必须是锁的所有者）
     pub fn release_pkg_lock(&self, session_id: usize) {
@@ -209,7 +220,10 @@ impl SessionCoordinator {
             self.update_session_state(session_id, SessionState::Running);
             android_log(
                 LogPriority::INFO,
-                &format!("[SessionCoordinator] Session {} released pkg lock", session_id)
+                &format!(
+                    "[SessionCoordinator] Session {} released pkg lock",
+                    session_id
+                ),
             );
         } else {
             android_log(
@@ -217,77 +231,92 @@ impl SessionCoordinator {
                 &format!(
                     "[SessionCoordinator] Session {} tried to release pkg lock but doesn't own it (owner: {})",
                     session_id, owner
-                )
+                ),
             );
         }
     }
-    
+
     /// 检查 pkg 锁是否被占用
     pub fn is_pkg_lock_held(&self) -> bool {
         self.pkg_lock.load(Ordering::SeqCst)
     }
-    
+
     /// 获取 pkg 锁所有者的 Session ID
     /// 返回 0 表示无所有者（锁未被占用）
     pub fn get_pkg_lock_owner(&self) -> usize {
         self.pkg_lock_owner.load(Ordering::SeqCst)
     }
-    
+
     /// 更新 Session 状态
     pub fn update_session_state(&self, session_id: usize, state: SessionState) {
         if let Ok(mut states) = self.session_states.lock() {
             states.insert(session_id, state);
         }
     }
-    
+
     /// 获取 Session 状态
     pub fn get_session_state(&self, session_id: usize) -> Option<SessionState> {
-        self.session_states.lock().ok().and_then(|states| states.get(&session_id).copied())
+        self.session_states
+            .lock()
+            .ok()
+            .and_then(|states| states.get(&session_id).copied())
     }
-    
+
     /// 通过 session_id 获取 Session 数据
     pub fn get_session_data(&self, session_id: usize) -> Option<SessionData> {
-        self.session_data.lock().ok().and_then(|data| data.get(&session_id).cloned())
+        self.session_data
+            .lock()
+            .ok()
+            .and_then(|data| data.get(&session_id).cloned())
     }
-    
+
     /// 通过 context_ptr 获取 session_id
     pub fn get_session_id_by_ptr(&self, context_ptr: usize) -> Option<usize> {
-        self.ptr_to_session.lock().ok().and_then(|map| map.get(&context_ptr).copied())
+        self.ptr_to_session
+            .lock()
+            .ok()
+            .and_then(|map| map.get(&context_ptr).copied())
     }
-    
+
     /// 通过 context_ptr 获取 Session 数据
     pub fn get_session_data_by_ptr(&self, context_ptr: usize) -> Option<SessionData> {
         let session_id = self.get_session_id_by_ptr(context_ptr)?;
         self.get_session_data(session_id)
     }
-    
+
     /// 获取 Session 的 PID（供 JNI 查询）
     pub fn get_session_pid(&self, session_id: usize) -> i32 {
-        self.get_session_data(session_id).map(|d| d.pid).unwrap_or(-1)
+        self.get_session_data(session_id)
+            .map(|d| d.pid)
+            .unwrap_or(-1)
     }
-    
+
     /// 获取 Session 的 PTY fd（供 JNI 查询）
     pub fn get_session_pty_fd(&self, session_id: usize) -> i32 {
-        self.get_session_data(session_id).map(|d| d.pty_fd).unwrap_or(-1)
+        self.get_session_data(session_id)
+            .map(|d| d.pty_fd)
+            .unwrap_or(-1)
     }
-    
+
     /// 检查 Session 是否仍在运行（进程存活）
     pub fn is_session_running(&self, session_id: usize) -> bool {
         self.get_session_data(session_id)
             .map(|d| d.state != SessionState::Finished && d.pid > 0)
             .unwrap_or(false)
     }
-    
+
     /// 获取所有 Session 的状态列表（用于调试）
     pub fn get_all_session_states(&self) -> Vec<(usize, SessionState)> {
-        self.session_states.lock()
+        self.session_states
+            .lock()
             .map(|states| states.iter().map(|(&k, &v)| (k, v)).collect())
             .unwrap_or_default()
     }
-    
+
     /// 检查是否有 session 在等待 pkg 锁
     pub fn has_waiting_sessions(&self) -> bool {
-        self.session_states.lock()
+        self.session_states
+            .lock()
             .map(|states| states.values().any(|&s| s == SessionState::WaitingLock))
             .unwrap_or(false)
     }
@@ -299,7 +328,7 @@ impl SessionCoordinator {
 
 use jni::JNIEnv;
 use jni::objects::JClass;
-use jni::sys::{jint, jboolean, jstring};
+use jni::sys::{jboolean, jint, jstring};
 
 /// 注册新 Session 并返回 Session ID
 #[unsafe(no_mangle)]
@@ -357,11 +386,7 @@ pub extern "system" fn Java_com_termux_terminal_JNI_isPkgLockHeld(
     _class: JClass,
 ) -> jboolean {
     let coordinator = SessionCoordinator::get();
-    if coordinator.is_pkg_lock_held() {
-        1
-    } else {
-        0
-    }
+    if coordinator.is_pkg_lock_held() { 1 } else { 0 }
 }
 
 /// 获取 pkg 锁所有者的 Session ID
@@ -382,9 +407,10 @@ pub extern "system" fn Java_com_termux_terminal_JNI_getSessionState(
     session_id: jint,
 ) -> jstring {
     let coordinator = SessionCoordinator::get();
-    let state = coordinator.get_session_state(session_id as usize)
+    let state = coordinator
+        .get_session_state(session_id as usize)
         .unwrap_or(SessionState::Idle);
-    
+
     let state_str = state.as_str();
     match env.new_string(state_str) {
         Ok(j_str) => j_str.into_raw(),
@@ -400,12 +426,12 @@ pub extern "system" fn Java_com_termux_terminal_JNI_getAllSessionStates(
 ) -> jstring {
     let coordinator = SessionCoordinator::get();
     let states = coordinator.get_all_session_states();
-    
+
     let mut result = String::from("Session States:\n");
     for (id, state) in states {
         result.push_str(&format!("  Session {}: {}\n", id, state.as_str()));
     }
-    
+
     match env.new_string(result) {
         Ok(j_str) => j_str.into_raw(),
         Err(_) => std::ptr::null_mut(),
@@ -420,7 +446,8 @@ pub extern "system" fn Java_com_termux_terminal_JNI_sessionGetPid(
     engine_ptr: jni::sys::jlong,
 ) -> jint {
     let coordinator = SessionCoordinator::get();
-    coordinator.get_session_data_by_ptr(engine_ptr as usize)
+    coordinator
+        .get_session_data_by_ptr(engine_ptr as usize)
         .map(|d| d.pid)
         .unwrap_or(-1)
 }
@@ -433,7 +460,8 @@ pub extern "system" fn Java_com_termux_terminal_JNI_sessionGetPtyFd(
     engine_ptr: jni::sys::jlong,
 ) -> jint {
     let coordinator = SessionCoordinator::get();
-    coordinator.get_session_data_by_ptr(engine_ptr as usize)
+    coordinator
+        .get_session_data_by_ptr(engine_ptr as usize)
         .map(|d| d.pty_fd)
         .unwrap_or(-1)
 }
@@ -446,7 +474,8 @@ pub extern "system" fn Java_com_termux_terminal_JNI_sessionIsRunning(
     engine_ptr: jni::sys::jlong,
 ) -> jboolean {
     let coordinator = SessionCoordinator::get();
-    let is_running = coordinator.get_session_data_by_ptr(engine_ptr as usize)
+    let is_running = coordinator
+        .get_session_data_by_ptr(engine_ptr as usize)
         .map(|d| {
             if d.state == SessionState::Finished {
                 return false;
@@ -568,7 +597,10 @@ mod tests {
         let id2 = coord.register_session();
         coord.try_acquire_pkg_lock(id1);
         coord.try_acquire_pkg_lock(id2);
-        assert_eq!(coord.get_session_state(id2), Some(SessionState::WaitingLock));
+        assert_eq!(
+            coord.get_session_state(id2),
+            Some(SessionState::WaitingLock)
+        );
     }
 
     #[test]
@@ -726,8 +758,8 @@ mod tests {
 
         // 关键修复：必须使用真实的 Arc 指针，因为 unregister_session 会调用 Arc::from_raw。
         // 使用伪造的指针（如 0xBEEF）会导致段错误。
+        use crate::engine::{TerminalContext, TerminalEngine};
         use std::sync::Arc;
-        use crate::engine::{TerminalEngine, TerminalContext};
         let engine = TerminalEngine::new(80, 24, 100, 10, 20);
         let context = Arc::new(TerminalContext::new(engine));
         let ptr = Arc::into_raw(context) as usize;

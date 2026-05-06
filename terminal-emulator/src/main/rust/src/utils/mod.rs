@@ -23,7 +23,7 @@ pub fn android_log(prio: LogPriority, msg: &str) {
             __android_log_print(prio as i32, tag.as_ptr(), msg_c.as_ptr());
         }
     }
-    
+
     #[cfg(not(target_os = "android"))]
     {
         let prefix = match prio {
@@ -39,13 +39,40 @@ pub fn android_log(prio: LogPriority, msg: &str) {
 
 pub fn map_line_drawing(c: u8) -> char {
     match c {
-        b'_' => ' ', b'`' => '◆', b'0' => '█', b'a' => '▒', b'b' => '␉',
-        b'c' => '␌', b'd' => '\r', b'e' => '␊', b'f' => '°', b'g' => '±',
-        b'h' => '\n', b'i' => '␋', b'j' => '┘', b'k' => '┐', b'l' => '┌',
-        b'm' => '└', b'n' => '┼', b'o' => '⎺', b'p' => '⎻', b'q' => '─',
-        b'r' => '⎼', b's' => '⎽', b't' => '├', b'u' => '┤', b'v' => '┴',
-        b'w' => '┬', b'x' => '│', b'y' => '≤', b'z' => '≥', b'{' => 'π',
-        b'|' => '≠', b'}' => '£', b'~' => '·', _ => c as char,
+        b'_' => ' ',
+        b'`' => '◆',
+        b'0' => '█',
+        b'a' => '▒',
+        b'b' => '␉',
+        b'c' => '␌',
+        b'd' => '\r',
+        b'e' => '␊',
+        b'f' => '°',
+        b'g' => '±',
+        b'h' => '\n',
+        b'i' => '␋',
+        b'j' => '┘',
+        b'k' => '┐',
+        b'l' => '┌',
+        b'm' => '└',
+        b'n' => '┼',
+        b'o' => '⎺',
+        b'p' => '⎻',
+        b'q' => '─',
+        b'r' => '⎼',
+        b's' => '⎽',
+        b't' => '├',
+        b'u' => '┤',
+        b'v' => '┴',
+        b'w' => '┬',
+        b'x' => '│',
+        b'y' => '≤',
+        b'z' => '≥',
+        b'{' => 'π',
+        b'|' => '≠',
+        b'}' => '£',
+        b'~' => '·',
+        _ => c as char,
     }
 }
 

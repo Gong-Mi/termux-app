@@ -1,12 +1,12 @@
+use jni::sys::{jint, jlong};
 /// 渲染线程管理
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
-use jni::sys::{jint, jlong};
 
-use crate::utils::{android_log, LogPriority};
+use crate::renderer::{RenderFrame, TerminalRenderer};
+use crate::utils::{LogPriority, android_log};
 use crate::vulkan_context::VulkanContext;
-use crate::renderer::{TerminalRenderer, RenderFrame};
 use once_cell::sync::OnceCell;
 
 static VULKAN_CONTEXT: OnceCell<Mutex<Option<VulkanContext>>> = OnceCell::new();
@@ -97,12 +97,15 @@ pub fn notify_size_change(width: u32, height: u32) {
     *SURFACE_NEW_WIDTH.lock().unwrap() = width;
     *SURFACE_NEW_HEIGHT.lock().unwrap() = height;
     SIZE_CHANGE_PENDING.store(true, Ordering::SeqCst);
-    *SIZE_CHANGE_DEBOUNCE_UNTIL.lock().unwrap() = Some(
-        Instant::now() + Duration::from_millis(SWAPCHAIN_RECREATE_DEBOUNCE_MS)
+    *SIZE_CHANGE_DEBOUNCE_UNTIL.lock().unwrap() =
+        Some(Instant::now() + Duration::from_millis(SWAPCHAIN_RECREATE_DEBOUNCE_MS));
+    android_log(
+        LogPriority::DEBUG,
+        &format!(
+            "notify_size_change: {}x{}, debounce {}ms",
+            width, height, SWAPCHAIN_RECREATE_DEBOUNCE_MS
+        ),
     );
-    android_log(LogPriority::DEBUG, &format!(
-        "notify_size_change: {}x{}, debounce {}ms", width, height, SWAPCHAIN_RECREATE_DEBOUNCE_MS
-    ));
     request_render();
 }
 
@@ -121,23 +124,43 @@ pub fn try_start_render_thread() {
     let surface_ready = SURFACE_READY.load(Ordering::SeqCst);
     let engine_ready = ENGINE_READY.load(Ordering::SeqCst);
 
-    android_log(LogPriority::DEBUG, &format!(
-        "try_start_render_thread: surface_ready={}, engine_ready={}, already_running={}",
-        surface_ready, engine_ready, RENDER_THREAD_RUNNING.load(Ordering::SeqCst)
-    ));
+    android_log(
+        LogPriority::DEBUG,
+        &format!(
+            "try_start_render_thread: surface_ready={}, engine_ready={}, already_running={}",
+            surface_ready,
+            engine_ready,
+            RENDER_THREAD_RUNNING.load(Ordering::SeqCst)
+        ),
+    );
 
     if surface_ready && engine_ready {
         let engine_ptr = *ENGINE_POINTER.lock().unwrap();
         if engine_ptr != 0 && !RENDER_THREAD_RUNNING.load(Ordering::SeqCst) {
-            android_log(LogPriority::INFO, &format!("try_start_render_thread: Both conditions met, starting render thread with engine={}", engine_ptr));
+            android_log(
+                LogPriority::INFO,
+                &format!(
+                    "try_start_render_thread: Both conditions met, starting render thread with engine={}",
+                    engine_ptr
+                ),
+            );
             spawn_render_thread(engine_ptr);
         } else if engine_ptr == 0 {
-            android_log(LogPriority::ERROR, "try_start_render_thread: engine_ptr is 0, cannot start render thread");
+            android_log(
+                LogPriority::ERROR,
+                "try_start_render_thread: engine_ptr is 0, cannot start render thread",
+            );
         } else {
-            android_log(LogPriority::DEBUG, "try_start_render_thread: Render thread already running, skipping");
+            android_log(
+                LogPriority::DEBUG,
+                "try_start_render_thread: Render thread already running, skipping",
+            );
         }
     } else {
-        android_log(LogPriority::DEBUG, "try_start_render_thread: Waiting for both surface and engine to be ready");
+        android_log(
+            LogPriority::DEBUG,
+            "try_start_render_thread: Waiting for both surface and engine to be ready",
+        );
     }
 }
 
@@ -145,7 +168,10 @@ pub fn try_start_render_thread() {
 pub fn cleanup_engine(ptr: jlong) {
     let mut guard = ENGINE_POINTER.lock().unwrap();
     if *guard == ptr {
-        android_log(LogPriority::INFO, &format!("cleanup_engine: Nulling ENGINE_POINTER {}", ptr));
+        android_log(
+            LogPriority::INFO,
+            &format!("cleanup_engine: Nulling ENGINE_POINTER {}", ptr),
+        );
         *guard = 0;
         ENGINE_READY.store(false, Ordering::SeqCst);
     }
@@ -154,7 +180,13 @@ pub fn cleanup_engine(ptr: jlong) {
 /// 实际启动渲染线程的内部函数
 fn spawn_render_thread(engine_ptr: jlong) {
     RENDER_THREAD_RUNNING.store(true, Ordering::SeqCst);
-    android_log(LogPriority::INFO, &format!("spawn_render_thread: Starting Vulkan render thread (engine={})", engine_ptr));
+    android_log(
+        LogPriority::INFO,
+        &format!(
+            "spawn_render_thread: Starting Vulkan render thread (engine={})",
+            engine_ptr
+        ),
+    );
 
     let handle = std::thread::Builder::new()
         .name("VulkanRender".to_string())

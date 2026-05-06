@@ -2,7 +2,7 @@
 // 验证物理设备支持的 surface format，揭露硬编码 R8G8B8A8_UNORM 的匹配风险
 // 运行: cargo test --test vulkan_format_probe -- --nocapture
 
-use ash::{vk, Entry, Instance};
+use ash::{Entry, Instance, vk};
 use std::ffi::CStr;
 
 fn find_physical_device(instance: &Instance) -> Option<vk::PhysicalDevice> {
@@ -18,13 +18,18 @@ fn test_physical_device_format_support() {
 
     let app_info = vk::ApplicationInfo::default().api_version(vk::API_VERSION_1_0);
     let create_info = vk::InstanceCreateInfo::default().application_info(&app_info);
-    let instance = unsafe { entry.create_instance(&create_info, None).expect("Failed to create Vulkan instance") };
+    let instance = unsafe {
+        entry
+            .create_instance(&create_info, None)
+            .expect("Failed to create Vulkan instance")
+    };
 
     let pdev = find_physical_device(&instance).expect("No Vulkan physical device found");
     let props = unsafe { instance.get_physical_device_properties(pdev) };
     let device_name = unsafe { CStr::from_ptr(props.device_name.as_ptr()) };
     println!("设备: {}", device_name.to_string_lossy());
-    println!("驱动版本: {}.{}.{}",
+    println!(
+        "驱动版本: {}.{}.{}",
         vk::api_version_major(props.driver_version),
         vk::api_version_minor(props.driver_version),
         vk::api_version_patch(props.driver_version)
@@ -36,8 +41,14 @@ fn test_physical_device_format_support() {
         (vk::Format::R8G8B8A8_UNORM, "R8G8B8A8_UNORM"),
         (vk::Format::B8G8R8A8_UNORM, "B8G8R8A8_UNORM"),
         (vk::Format::A8B8G8R8_UNORM_PACK32, "A8B8G8R8_UNORM_PACK32"),
-        (vk::Format::A2B10G10R10_UNORM_PACK32, "A2B10G10R10_UNORM_PACK32"),
-        (vk::Format::A2R10G10B10_UNORM_PACK32, "A2R10G10B10_UNORM_PACK32"),
+        (
+            vk::Format::A2B10G10R10_UNORM_PACK32,
+            "A2B10G10R10_UNORM_PACK32",
+        ),
+        (
+            vk::Format::A2R10G10B10_UNORM_PACK32,
+            "A2R10G10B10_UNORM_PACK32",
+        ),
         (vk::Format::R8G8B8A8_SRGB, "R8G8B8A8_SRGB"),
         (vk::Format::B8G8R8A8_SRGB, "B8G8R8A8_SRGB"),
         (vk::Format::R5G6B5_UNORM_PACK16, "R5G6B5_UNORM_PACK16"),
@@ -58,7 +69,11 @@ fn test_physical_device_format_support() {
         }
         let optimal = fmt_props.format_properties.optimal_tiling_features;
         let supported = optimal.contains(vk::FormatFeatureFlags::COLOR_ATTACHMENT);
-        let flag_str = if supported { "✅ 支持" } else { "❌ 不支持" };
+        let flag_str = if supported {
+            "✅ 支持"
+        } else {
+            "❌ 不支持"
+        };
         println!("  {:<30} {}", name, flag_str);
 
         if supported {
@@ -100,7 +115,9 @@ fn test_physical_device_format_support() {
     println!("  - 后果: 色彩通道错乱、Validation Error、或驱动崩溃");
     println!();
 
-    unsafe { instance.destroy_instance(None); };
+    unsafe {
+        instance.destroy_instance(None);
+    };
 }
 
 #[test]
@@ -112,27 +129,41 @@ fn test_surfaceless_query_colorspace() {
 
     let app_info = vk::ApplicationInfo::default().api_version(vk::API_VERSION_1_0);
     let create_info = vk::InstanceCreateInfo::default().application_info(&app_info);
-    let instance = unsafe { entry.create_instance(&create_info, None).expect("Failed to create Vulkan instance") };
+    let instance = unsafe {
+        entry
+            .create_instance(&create_info, None)
+            .expect("Failed to create Vulkan instance")
+    };
 
     let pdev = find_physical_device(&instance).expect("No Vulkan physical device found");
 
     // 查询物理设备属性，看是否有 VK_GOOGLE_surfaceless_query
-    let ext_props = unsafe { instance.enumerate_device_extension_properties(pdev).unwrap_or_default() };
+    let ext_props = unsafe {
+        instance
+            .enumerate_device_extension_properties(pdev)
+            .unwrap_or_default()
+    };
     let has_surfaceless = ext_props.iter().any(|p| {
         let name = unsafe { CStr::from_ptr(p.extension_name.as_ptr()) };
         name.to_str().unwrap_or("") == "VK_GOOGLE_surfaceless_query"
     });
 
-    println!("VK_GOOGLE_surfaceless_query 支持: {}", if has_surfaceless { "是" } else { "否" });
+    println!(
+        "VK_GOOGLE_surfaceless_query 支持: {}",
+        if has_surfaceless { "是" } else { "否" }
+    );
 
     // 查询设备级别的 color space 支持
     let mut props2 = vk::PhysicalDeviceProperties2::default();
     unsafe { instance.get_physical_device_properties2(pdev, &mut props2) };
-    println!("API version: {}.{}.{}",
+    println!(
+        "API version: {}.{}.{}",
         vk::api_version_major(props2.properties.api_version),
         vk::api_version_minor(props2.properties.api_version),
         vk::api_version_patch(props2.properties.api_version)
     );
 
-    unsafe { instance.destroy_instance(None); };
+    unsafe {
+        instance.destroy_instance(None);
+    };
 }

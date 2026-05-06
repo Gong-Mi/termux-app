@@ -37,11 +37,26 @@ fn test_sixel_basic_image_event() {
     let image_events: Vec<_> = engine
         .take_events()
         .into_iter()
-        .filter(|e| matches!(e, termux_rust::engine::events::TerminalEvent::SixelImage { .. }))
+        .filter(|e| {
+            matches!(
+                e,
+                termux_rust::engine::events::TerminalEvent::SixelImage { .. }
+            )
+        })
         .collect();
 
-    assert_eq!(image_events.len(), 1, "Expected exactly one SixelImage event");
-    if let termux_rust::engine::events::TerminalEvent::SixelImage { width, height, rgba_data, .. } = &image_events[0] {
+    assert_eq!(
+        image_events.len(),
+        1,
+        "Expected exactly one SixelImage event"
+    );
+    if let termux_rust::engine::events::TerminalEvent::SixelImage {
+        width,
+        height,
+        rgba_data,
+        ..
+    } = &image_events[0]
+    {
         assert_eq!(*width, 1);
         assert_eq!(*height, 6);
         assert_eq!(rgba_data.len(), 1 * 6 * 4); // 1 col * 6 rows * 4 bytes RGBA
@@ -70,12 +85,12 @@ fn test_sixel_multiline_image() {
 
     let d = &engine.state.sixel_decoder;
     assert_eq!(d.height, 12);
-    assert_eq!(d.pixel_data[0].len(), 2);   // row 0 has 2 columns
+    assert_eq!(d.pixel_data[0].len(), 2); // row 0 has 2 columns
     // New rows are padded to self.width.max(1) at the time of ensure_height,
     // so row 6 gets width=2 (current width after ~~)
     assert_eq!(d.pixel_data[6].len(), 2);
-    assert_eq!(d.pixel_data[0][0], 1);      // bit 0 of '~'
-    assert_eq!(d.pixel_data[6][0], 1);      // bit 0 of '@'
+    assert_eq!(d.pixel_data[0][0], 1); // bit 0 of '~'
+    assert_eq!(d.pixel_data[6][0], 1); // bit 0 of '@'
 }
 
 #[test]
@@ -88,11 +103,18 @@ fn test_sixel_color_and_event_data() {
     let image_events: Vec<_> = engine
         .take_events()
         .into_iter()
-        .filter(|e| matches!(e, termux_rust::engine::events::TerminalEvent::SixelImage { .. }))
+        .filter(|e| {
+            matches!(
+                e,
+                termux_rust::engine::events::TerminalEvent::SixelImage { .. }
+            )
+        })
         .collect();
 
     assert_eq!(image_events.len(), 1);
-    if let termux_rust::engine::events::TerminalEvent::SixelImage { rgba_data, .. } = &image_events[0] {
+    if let termux_rust::engine::events::TerminalEvent::SixelImage { rgba_data, .. } =
+        &image_events[0]
+    {
         // ~ fills all 6 rows, all should be red
         assert_eq!(rgba_data.len(), 24);
         for row in 0..6 {
@@ -198,4 +220,3 @@ fn test_osc_malformed_sequences() {
     engine.state.copy_row_text(0 as i64, &mut text);
     assert_eq!(text[0] as u8, b'N');
 }
-

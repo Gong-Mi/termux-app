@@ -97,14 +97,14 @@ impl SixelDecoder {
     /// 开始解析 DCS Sixel 序列
     pub fn start(&mut self, params: &Params) {
         self.reset();
-        
+
         // 解析 DCS 参数：[Pq; Pi; Pa]
         // Pq: 纵横比 (0, 1, 7, 8, 9)
         // Pi: 背景透明 (1=不透明, 0/2=透明)
         // Pa: 水平网格大小
         let pq = params.get(0, 0);
         let pi = params.get(1, 0);
-        
+
         self.transparent = pi != 1;
         self.aspect_ratio = match pq {
             0 | 1 => (2, 1), // 2:1
@@ -145,7 +145,9 @@ impl SixelDecoder {
                             self.current_col = 0;
                             self.ensure_height(self.current_row + 6);
                         }
-                        b'\r' => { self.current_col = 0; }
+                        b'\r' => {
+                            self.current_col = 0;
+                        }
                         b'\n' => {
                             self.current_row += 6;
                             self.current_col = 0;
@@ -158,7 +160,9 @@ impl SixelDecoder {
                     if byte.is_ascii_digit() {
                         self.repeat_count = self.repeat_count * 10 + (byte - b'0') as usize;
                     } else {
-                        if self.repeat_count == 0 { self.repeat_count = 1; }
+                        if self.repeat_count == 0 {
+                            self.repeat_count = 1;
+                        }
                         self.state = SixelState::RepeatChar;
                         // 重新处理当前字节（作为重复的目标字符）
                         if (63..=126).contains(&byte) {
@@ -175,22 +179,28 @@ impl SixelDecoder {
                 }
                 SixelState::ColorParam => {
                     if byte.is_ascii_digit() {
-                        if self.current_param < 0 { self.current_param = 0; }
+                        if self.current_param < 0 {
+                            self.current_param = 0;
+                        }
                         self.current_param = self.current_param * 10 + (byte - b'0') as i32;
                     } else if byte == b';' {
-                        self.params.push(if self.current_param < 0 { 0 } else { self.current_param });
+                        self.params.push(if self.current_param < 0 {
+                            0
+                        } else {
+                            self.current_param
+                        });
                         self.current_param = -1;
                     } else {
                         // 颜色参数结束
                         if self.current_param >= 0 {
                             self.params.push(self.current_param);
                         }
-                        
+
                         self.apply_color_select();
                         self.params.clear(); // 在应用后清理
                         self.current_param = -1;
                         self.state = SixelState::Data;
-                        
+
                         // 重新处理导致退出的字节
                         if (63..=126).contains(&byte) {
                             self.render_sixel(byte - 63, 1);
@@ -205,7 +215,7 @@ impl SixelDecoder {
                 }
             }
         }
-        
+
         self.height = self.height.max(self.pixel_data.len());
         // 确保 self.width 反映了所有行中最长的长度，或者保持预设的宽度
         for row in &self.pixel_data {
@@ -214,13 +224,15 @@ impl SixelDecoder {
     }
 
     fn render_sixel(&mut self, sixel_value: u8, count: usize) {
-        if count == 0 { return; }
-        
+        if count == 0 {
+            return;
+        }
+
         let target_col = self.current_col + count;
-        
+
         // 确保高度
         self.ensure_height(self.current_row + 6);
-        
+
         // 确保宽度
         for row in self.current_row..self.current_row + 6 {
             if self.pixel_data[row].len() < target_col {
@@ -231,12 +243,13 @@ impl SixelDecoder {
         for _ in 0..count {
             for bit in 0..6 {
                 if (sixel_value & (1 << bit)) != 0 {
-                    self.pixel_data[self.current_row + bit][self.current_col] = (self.current_color + 1) as u8;
+                    self.pixel_data[self.current_row + bit][self.current_col] =
+                        (self.current_color + 1) as u8;
                 }
             }
             self.current_col += 1;
         }
-        
+
         if self.current_col > self.width {
             self.width = self.current_col;
         }
@@ -250,8 +263,10 @@ impl SixelDecoder {
 
     /// 应用颜色选择
     fn apply_color_select(&mut self) {
-        if self.params.is_empty() { return; }
-        
+        if self.params.is_empty() {
+            return;
+        }
+
         let color_index = self.params[0] as usize % 256;
 
         if self.params.len() >= 4 {
@@ -259,10 +274,14 @@ impl SixelDecoder {
             let p1 = self.params[2] as u32;
             let p2 = self.params[3] as u32;
             let p3 = self.params.get(4).copied().unwrap_or(0) as u32;
-            
+
             let (r, g, b) = if color_space == 2 {
                 // RGB 空间：值 0-100 百分比
-                ((p1 * 255 / 100).min(255) as u8, (p2 * 255 / 100).min(255) as u8, (p3 * 255 / 100).min(255) as u8)
+                (
+                    (p1 * 255 / 100).min(255) as u8,
+                    (p2 * 255 / 100).min(255) as u8,
+                    (p3 * 255 / 100).min(255) as u8,
+                )
             } else if color_space == 1 {
                 // HLS 空间
                 hls_to_rgb(p1, p2, p3)
@@ -271,7 +290,7 @@ impl SixelDecoder {
             };
             self.color_registers[color_index] = Some(SixelColor { r, g, b });
         }
-        
+
         self.current_color = color_index;
     }
 
@@ -296,11 +315,15 @@ impl SixelDecoder {
         #[cfg(target_arch = "aarch64")]
         {
             if std::arch::is_aarch64_feature_detected!("sve2") {
-                unsafe { self.get_image_data_sve2(&mut rgba_data); }
+                unsafe {
+                    self.get_image_data_sve2(&mut rgba_data);
+                }
                 return rgba_data;
             }
             if std::arch::is_aarch64_feature_detected!("neon") {
-                unsafe { self.get_image_data_neon(&mut rgba_data); }
+                unsafe {
+                    self.get_image_data_neon(&mut rgba_data);
+                }
                 return rgba_data;
             }
         }
@@ -326,7 +349,7 @@ impl SixelDecoder {
     unsafe fn get_image_data_neon(&self, rgba_data: &mut Vec<u8>) {
         // 预计算颜色表以加速查找
         let color_table = self.build_fast_color_table();
-        
+
         for row in &self.pixel_data {
             let mut chunks = row.chunks_exact(16);
             for chunk in &mut chunks {
@@ -348,7 +371,7 @@ impl SixelDecoder {
     #[target_feature(enable = "sve2")]
     unsafe fn get_image_data_sve2(&self, rgba_data: &mut Vec<u8>) {
         let color_table = self.build_fast_color_table();
-        
+
         for row in &self.pixel_data {
             // 在 SVE2 环境下，编译器会自动识别并应用更宽的向量指令（如 256/512 bit）
             for &idx in row {
@@ -422,33 +445,43 @@ pub fn hls_to_rgb(h: u32, l: u32, s: u32) -> (u8, u8, u8) {
     let h_norm = (h % 360) as f32 / 360.0;
     let l_norm = l as f32 / 100.0;
     let s_norm = s as f32 / 100.0;
-    
+
     if s_norm == 0.0 {
         // 无饱和度，灰色
         let gray = (l_norm * 255.0) as u8;
         return (gray, gray, gray);
     }
-    
+
     let q = if l_norm < 0.5 {
         l_norm * (1.0 + s_norm)
     } else {
         l_norm + s_norm - l_norm * s_norm
     };
     let p = 2.0 * l_norm - q;
-    
+
     let hue_to_rgb = |p: f32, q: f32, mut t: f32| -> f32 {
-        if t < 0.0 { t += 1.0; }
-        if t > 1.0 { t -= 1.0; }
-        if t < 1.0 / 6.0 { return p + (q - p) * 6.0 * t; }
-        if t < 1.0 / 2.0 { return q; }
-        if t < 2.0 / 3.0 { return p + (q - p) * (2.0 / 3.0 - t) * 6.0; }
+        if t < 0.0 {
+            t += 1.0;
+        }
+        if t > 1.0 {
+            t -= 1.0;
+        }
+        if t < 1.0 / 6.0 {
+            return p + (q - p) * 6.0 * t;
+        }
+        if t < 1.0 / 2.0 {
+            return q;
+        }
+        if t < 2.0 / 3.0 {
+            return p + (q - p) * (2.0 / 3.0 - t) * 6.0;
+        }
         p
     };
-    
+
     let r = (hue_to_rgb(p, q, h_norm + 1.0 / 3.0) * 255.0) as u8;
     let g = (hue_to_rgb(p, q, h_norm) * 255.0) as u8;
     let b = (hue_to_rgb(p, q, h_norm - 1.0 / 3.0) * 255.0) as u8;
-    
+
     (r, g, b)
 }
 
@@ -473,7 +506,7 @@ pub fn index_to_default_color(index: usize) -> (u8, u8, u8) {
         (85, 255, 255),  // 14: 亮青
         (255, 255, 255), // 15: 亮白
     ];
-    
+
     if index < 16 {
         DEFAULT_COLORS[index]
     } else {
@@ -497,8 +530,10 @@ mod tests {
     fn test_sixel_start_transparent_opaque() {
         let mut decoder = SixelDecoder::new();
         let mut params = Params::new();
-        params.values[0] = 0; params.len = 1; // Pq=0
-        params.values[1] = 1; params.len = 2; // Pi=1 (opaque)
+        params.values[0] = 0;
+        params.len = 1; // Pq=0
+        params.values[1] = 1;
+        params.len = 2; // Pi=1 (opaque)
         decoder.start(&params);
         assert!(!decoder.transparent);
         assert_eq!(decoder.aspect_ratio, (2, 1));
@@ -509,29 +544,45 @@ mod tests {
         for (pi, expected) in [(0, true), (1, false), (2, true)] {
             let mut decoder = SixelDecoder::new();
             let mut params = Params::new();
-            params.values[0] = 0; params.len = 1;
-            params.values[1] = pi; params.len = 2;
+            params.values[0] = 0;
+            params.len = 1;
+            params.values[1] = pi;
+            params.len = 2;
             decoder.start(&params);
-            assert_eq!(decoder.transparent, expected, "Pi={} should yield transparent={}", pi, expected);
+            assert_eq!(
+                decoder.transparent, expected,
+                "Pi={} should yield transparent={}",
+                pi, expected
+            );
         }
     }
 
     #[test]
     fn test_sixel_start_aspect_ratio_mapping() {
         let cases = [
-            (0, (2, 1)), (1, (2, 1)),
+            (0, (2, 1)),
+            (1, (2, 1)),
             (2, (5, 1)),
-            (3, (3, 1)), (4, (3, 1)),
-            (5, (2, 1)), (6, (2, 1)),
-            (7, (1, 1)), (8, (1, 1)), (9, (1, 1)),
+            (3, (3, 1)),
+            (4, (3, 1)),
+            (5, (2, 1)),
+            (6, (2, 1)),
+            (7, (1, 1)),
+            (8, (1, 1)),
+            (9, (1, 1)),
             (99, (2, 1)), // invalid fallback
         ];
         for (pq, expected) in cases {
             let mut decoder = SixelDecoder::new();
             let mut params = Params::new();
-            params.values[0] = pq; params.len = 1;
+            params.values[0] = pq;
+            params.len = 1;
             decoder.start(&params);
-            assert_eq!(decoder.aspect_ratio, expected, "Pq={} should map to {:?}", pq, expected);
+            assert_eq!(
+                decoder.aspect_ratio, expected,
+                "Pq={} should map to {:?}",
+                pq, expected
+            );
         }
     }
 
@@ -542,7 +593,8 @@ mod tests {
         assert_eq!(decoder.width, 10);
 
         let mut params = Params::new();
-        params.values[0] = 0; params.len = 1;
+        params.values[0] = 0;
+        params.len = 1;
         decoder.start(&params);
 
         assert_eq!(decoder.width, 0);
@@ -816,9 +868,9 @@ mod tests {
         // 1 column * 6 rows * 4 bytes = 24 bytes
         assert_eq!(rgba.len(), 24);
         // Pixel (0,0) has value 1 -> color index 0 -> default black (0,0,0,255)
-        assert_eq!(rgba[0], 0);   // R
-        assert_eq!(rgba[1], 0);   // G
-        assert_eq!(rgba[2], 0);   // B
+        assert_eq!(rgba[0], 0); // R
+        assert_eq!(rgba[1], 0); // G
+        assert_eq!(rgba[2], 0); // B
         assert_eq!(rgba[3], 255); // A
     }
 
@@ -843,8 +895,10 @@ mod tests {
     fn test_sixel_image_data_transparent_background() {
         let mut decoder = SixelDecoder::new();
         let mut params = Params::new();
-        params.values[0] = 0; params.len = 1;
-        params.values[1] = 0; params.len = 2; // transparent
+        params.values[0] = 0;
+        params.len = 1;
+        params.values[1] = 0;
+        params.len = 2; // transparent
         decoder.start(&params);
         decoder.process_data(b"@"); // only 1 bit set -> 5 transparent pixels
         let rgba = decoder.get_image_data();
@@ -879,7 +933,11 @@ mod tests {
     fn test_sixel_reset_clears_all() {
         let mut decoder = SixelDecoder::new();
         decoder.process_data(b"!10~");
-        decoder.color_registers[3] = Some(SixelColor { r: 128, g: 128, b: 128 });
+        decoder.color_registers[3] = Some(SixelColor {
+            r: 128,
+            g: 128,
+            b: 128,
+        });
         decoder.reset();
         assert_eq!(decoder.width, 0);
         assert_eq!(decoder.pixel_data.len(), 0);
@@ -927,8 +985,8 @@ mod tests {
 
     #[test]
     fn test_index_to_default_color_first_16() {
-        assert_eq!(index_to_default_color(0), (0, 0, 0));       // black
-        assert_eq!(index_to_default_color(1), (170, 0, 0));     // red
+        assert_eq!(index_to_default_color(0), (0, 0, 0)); // black
+        assert_eq!(index_to_default_color(1), (170, 0, 0)); // red
         assert_eq!(index_to_default_color(7), (170, 170, 170)); // white
         assert_eq!(index_to_default_color(15), (255, 255, 255)); // bright white
     }

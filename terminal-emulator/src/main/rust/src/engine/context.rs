@@ -1,11 +1,11 @@
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
 /// 终端引擎和上下文管理
-use std::sync::{RwLock, Mutex};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicI32, Ordering};
+use std::sync::{Mutex, RwLock};
 
-use crate::vte_parser::Parser;
-use crate::engine::state::ScreenState;
 use crate::engine::events::TerminalEvent;
 use crate::engine::perform_handler::PerformHandler;
+use crate::engine::state::ScreenState;
+use crate::vte_parser::Parser;
 
 /// 终端引擎 - 主结构体
 pub struct TerminalEngine {
@@ -29,7 +29,10 @@ impl TerminalEngine {
 
     pub fn process_bytes(&mut self, data: &[u8]) {
         let prev = self.state.snapshot();
-        let mut handler = PerformHandler { state: &mut self.state, events: &mut self.events };
+        let mut handler = PerformHandler {
+            state: &mut self.state,
+            events: &mut self.events,
+        };
         self.parser.advance(&mut handler, data);
         self.state.sync_screen_to_flat_buffer();
         let curr = self.state.snapshot();
@@ -40,7 +43,8 @@ impl TerminalEngine {
             }
         }
         if mask != 0 {
-            self.events.push(TerminalEvent::StateChanged { mask, values: curr });
+            self.events
+                .push(TerminalEvent::StateChanged { mask, values: curr });
         }
         self.events.push(TerminalEvent::ScreenUpdated);
     }
@@ -56,7 +60,9 @@ impl TerminalEngine {
     pub fn notify_screen_updated(&self) {
         if let Some(obj) = &self.state.java_callback_obj {
             if let Some(vm) = crate::JAVA_VM.get() {
-                let env_res = vm.get_env().or_else(|_| vm.attach_current_thread_as_daemon());
+                let env_res = vm
+                    .get_env()
+                    .or_else(|_| vm.attach_current_thread_as_daemon());
                 if let Ok(mut env) = env_res {
                     let _ = env.call_method(obj.as_obj(), "onScreenUpdated", "()V", &[]);
                 }

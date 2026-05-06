@@ -1,16 +1,16 @@
 use jni::JNIEnv;
-use jni::objects::{JObjectArray, JString, JIntArray};
+use jni::objects::{JIntArray, JObjectArray, JString};
 use jni::sys::{jint, jintArray, jobjectArray, jstring};
-use nix::unistd::{ForkResult, fork, setsid, chdir};
+use nix::unistd::{ForkResult, chdir, fork, setsid};
+use once_cell::sync::Lazy;
+use std::collections::HashMap;
 use std::ffi::CString;
 use std::io::Read;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::collections::HashMap;
 use std::time::Duration;
-use once_cell::sync::Lazy;
 
-use crate::utils::{android_log, LogPriority};
+use crate::utils::{LogPriority, android_log};
 
 #[cfg(not(feature = "test-helpers"))]
 type WatcherCallback = jni::objects::GlobalRef;
@@ -21,7 +21,8 @@ static PTY_ALLOC_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 /// 进程创建信号量：限制瞬时并发 fork 数量为 4。
 /// 即使上层请求 40 个进程，底层也会排队执行 fork，避免内核资源瞬间被掏空。
-static SPAWN_SEMAPHORE: Lazy<std::sync::Arc<std::sync::Condvar>> = Lazy::new(|| std::sync::Arc::new(std::sync::Condvar::new()));
+static SPAWN_SEMAPHORE: Lazy<std::sync::Arc<std::sync::Condvar>> =
+    Lazy::new(|| std::sync::Arc::new(std::sync::Condvar::new()));
 static SPAWN_COUNTER: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
 const MAX_CONCURRENT_SPAWN: usize = 4;
 
@@ -41,12 +42,16 @@ pub unsafe fn create_subprocess(
     let cmd_str = if !cmd.is_null() {
         let js = unsafe { JString::from_raw(cmd) };
         env.get_string(&js).map(|s| s.into()).unwrap_or_default()
-    } else { String::new() };
+    } else {
+        String::new()
+    };
 
     let cwd_str = if !cwd.is_null() {
         let js = unsafe { JString::from_raw(cwd) };
         env.get_string(&js).map(|s| s.into()).unwrap_or_default()
-    } else { String::new() };
+    } else {
+        String::new()
+    };
 
     let mut argv = Vec::new();
     let args_obj = unsafe { JObjectArray::from_raw(args) };
@@ -55,7 +60,9 @@ pub unsafe fn create_subprocess(
             for i in 0..len {
                 if let Ok(arg_obj) = env.get_object_array_element(&args_obj, i) {
                     let arg_java: JString = arg_obj.into();
-                    if let Ok(s) = env.get_string(&arg_java) { argv.push(String::from(s)); }
+                    if let Ok(s) = env.get_string(&arg_java) {
+                        argv.push(String::from(s));
+                    }
                 }
             }
         }
@@ -81,7 +88,10 @@ pub fn parse_shebang(buffer: &[u8]) -> Option<(String, Option<String>)> {
         return None;
     }
     // Shebang line ends at first newline (or end of buffer)
-    let line_end = buffer.iter().position(|&b| b == b'\n').unwrap_or(buffer.len());
+    let line_end = buffer
+        .iter()
+        .position(|&b| b == b'\n')
+        .unwrap_or(buffer.len());
     let line = String::from_utf8_lossy(&buffer[2..line_end]);
     let trimmed = line.trim();
     if trimmed.is_empty() {
@@ -107,7 +117,9 @@ pub fn map_interpreter(interp: &str, normalize: &dyn Fn(String) -> String) -> St
     } else if interp.starts_with("/bin/") || interp.starts_with("/usr/bin/") {
         let binary = interp.rsplit('/').next().unwrap_or("sh");
         format!("/data/data/com.termux/files/usr/bin/{}", binary)
-    } else if interp.starts_with("/data/data/com.termux/") || interp.starts_with("/data/user/0/com.termux/") {
+    } else if interp.starts_with("/data/data/com.termux/")
+        || interp.starts_with("/data/user/0/com.termux/")
+    {
         normalize(interp.to_string())
     } else {
         interp.to_string()
@@ -124,7 +136,13 @@ pub fn create_subprocess_with_data(
     ch: jint,
     is_failsafe: bool,
 ) -> Result<(jint, i32), ()> {
-    android_log(LogPriority::DEBUG, &format!("[PTY] create_subprocess_with_data: cmd={}, cwd={}", cmd_str, cwd_str));
+    android_log(
+        LogPriority::DEBUG,
+        &format!(
+            "[PTY] create_subprocess_with_data: cmd={}, cwd={}",
+            cmd_str, cwd_str
+        ),
+    );
     // ------------------------------------------------------------------
     // 并发限制机制 (Semaphore/Throttling)
     // ------------------------------------------------------------------
@@ -135,7 +153,7 @@ pub fn create_subprocess_with_data(
         }
         *count += 1;
     }
-    
+
     // 确保函数退出时释放信号量
     struct SpawnGuard;
     impl Drop for SpawnGuard {
@@ -180,7 +198,7 @@ pub fn create_subprocess_with_data(
             "/system/bin/sh",
             "/data/data/com.termux/files/usr/bin/login",
         ];
-        
+
         for shell in &default_shells {
             if std::path::Path::new(shell).exists() {
                 real_cmd = shell.to_string();
@@ -193,13 +211,25 @@ pub fn create_subprocess_with_data(
                     shell.to_string()
                 };
                 real_argv = vec![process_name];
-                android_log(LogPriority::INFO, &format!("[TRACE_SESSION] No command provided, selected default shell: {}", real_cmd));
+                android_log(
+                    LogPriority::INFO,
+                    &format!(
+                        "[TRACE_SESSION] No command provided, selected default shell: {}",
+                        real_cmd
+                    ),
+                );
                 break;
             }
         }
     }
 
-    android_log(LogPriority::INFO, &format!("[TRACE_SESSION] Preparing to exec: {} with argv: {:?}", real_cmd, real_argv));
+    android_log(
+        LogPriority::INFO,
+        &format!(
+            "[TRACE_SESSION] Preparing to exec: {} with argv: {:?}",
+            real_cmd, real_argv
+        ),
+    );
 
     let _cmd_log = real_cmd.clone();
 
@@ -208,7 +238,12 @@ pub fn create_subprocess_with_data(
         use std::io::Read;
         let mut buffer = [0u8; 256];
         if let Ok(n) = file.read(&mut buffer) {
-            if n > 4 && buffer[0] == 0x7F && buffer[1] == b'E' && buffer[2] == b'L' && buffer[3] == b'F' {
+            if n > 4
+                && buffer[0] == 0x7F
+                && buffer[1] == b'E'
+                && buffer[2] == b'L'
+                && buffer[3] == b'F'
+            {
                 // ELF file - execute directly.
                 // argv[0] is already set (e.g. "-login" or the binary name).
                 (real_cmd, real_argv)
@@ -233,10 +268,13 @@ pub fn create_subprocess_with_data(
                     new_argv.extend(real_argv[1..].iter().cloned());
                 }
 
-                android_log(LogPriority::INFO, &format!(
-                    "[PTY] Shebang detected: interpreter={}, args={:?}, script={}, new_argv={:?}",
-                    interpreter, shebang_args, real_cmd, new_argv
-                ));
+                android_log(
+                    LogPriority::INFO,
+                    &format!(
+                        "[PTY] Shebang detected: interpreter={}, args={:?}, script={}, new_argv={:?}",
+                        interpreter, shebang_args, real_cmd, new_argv
+                    ),
+                );
                 (interpreter, new_argv)
             } else {
                 // No shebang and no ELF - default to $PREFIX/bin/sh.
@@ -249,7 +287,10 @@ pub fn create_subprocess_with_data(
                 if real_argv.len() > 1 {
                     new_argv.extend(real_argv[1..].iter().cloned());
                 }
-                android_log(LogPriority::INFO, &format!("[PTY] No shebang/ELF, defaulting to shell: {}", interpreter));
+                android_log(
+                    LogPriority::INFO,
+                    &format!("[PTY] No shebang/ELF, defaulting to shell: {}", interpreter),
+                );
                 (interpreter, new_argv)
             }
         } else {
@@ -258,8 +299,6 @@ pub fn create_subprocess_with_data(
     } else {
         (real_cmd, real_argv)
     };
-
-
 
     // Linker Wrapper Bypass for Android 10+ (W^X)
     // Only wrap actual ELF binaries with the system linker; skip shebang scripts
@@ -290,20 +329,34 @@ pub fn create_subprocess_with_data(
         if final_argv.len() > 1 {
             wrapped_argv.extend(final_argv[1..].iter().cloned());
         }
-        android_log(LogPriority::INFO, &format!("[PTY] W^X Bypass: execvp({}, {:?})", linker_path, wrapped_argv));
+        android_log(
+            LogPriority::INFO,
+            &format!(
+                "[PTY] W^X Bypass: execvp({}, {:?})",
+                linker_path, wrapped_argv
+            ),
+        );
         (linker_path.to_string(), wrapped_argv)
     } else {
         (final_cmd, final_argv)
     };
 
     let c_exec_cmd = CString::new(exec_cmd).unwrap();
-    let c_exec_args: Vec<CString> = exec_argv.iter().map(|a| CString::new(a.clone()).unwrap()).collect();
+    let c_exec_args: Vec<CString> = exec_argv
+        .iter()
+        .map(|a| CString::new(a.clone()).unwrap())
+        .collect();
 
     let (ptm, c_pts) = {
         let _guard = PTY_ALLOC_LOCK.lock().unwrap();
         unsafe {
-            let ptm = libc::open("/dev/ptmx\0".as_ptr() as *const _, libc::O_RDWR | libc::O_CLOEXEC);
-            if ptm < 0 { return Err(()); }
+            let ptm = libc::open(
+                "/dev/ptmx\0".as_ptr() as *const _,
+                libc::O_RDWR | libc::O_CLOEXEC,
+            );
+            if ptm < 0 {
+                return Err(());
+            }
 
             if libc::grantpt(ptm) != 0 || libc::unlockpt(ptm) != 0 {
                 libc::close(ptm);
@@ -316,7 +369,7 @@ pub fn create_subprocess_with_data(
                 libc::close(ptm);
                 return Err(());
             }
-            
+
             let name_cstr = std::ffi::CStr::from_ptr(buf.as_ptr());
             let c_pts = name_cstr.to_owned();
             (ptm, c_pts)
@@ -345,9 +398,16 @@ pub fn create_subprocess_with_data(
         // fork 后子进程中只有一个线程，若其他 Rust 线程在 fork 前持有
         // 全局分配器锁，子进程再 malloc 会死锁（phantom thread 问题）。
         // ------------------------------------------------------------------
-        let c_cwd = if cwd_str.is_empty() { None } else { CString::new(cwd_str).ok() };
-        let ptr_args: Vec<_> = c_exec_args.iter().map(|s| s.as_ptr())
-            .chain(std::iter::once(std::ptr::null())).collect();
+        let c_cwd = if cwd_str.is_empty() {
+            None
+        } else {
+            CString::new(cwd_str).ok()
+        };
+        let ptr_args: Vec<_> = c_exec_args
+            .iter()
+            .map(|s| s.as_ptr())
+            .chain(std::iter::once(std::ptr::null()))
+            .collect();
         let fallback_cmd = CString::new("/system/bin/sh").unwrap();
         let fallback_arg0 = CString::new("sh").unwrap();
         let fallback_args = [fallback_arg0.as_ptr(), std::ptr::null()];
@@ -364,14 +424,18 @@ pub fn create_subprocess_with_data(
                 let _ = setsid();
 
                 let pts = libc::open(c_pts.as_ptr(), libc::O_RDWR);
-                if pts < 0 { libc::_exit(-1); }
+                if pts < 0 {
+                    libc::_exit(-1);
+                }
 
                 libc::ioctl(pts, libc::TIOCSCTTY as _, 0);
                 libc::dup2(pts, 0);
                 libc::dup2(pts, 1);
                 libc::dup2(pts, 2);
 
-                if pts > 2 { libc::close(pts); }
+                if pts > 2 {
+                    libc::close(pts);
+                }
 
                 // Close inherited file descriptors (except stdio) to match upstream behavior.
                 // 使用纯 libc atoi（无分配），避免 fork 后调用 Rust 分配器。
@@ -380,7 +444,9 @@ pub fn create_subprocess_with_data(
                     let self_dir_fd = libc::dirfd(self_dir);
                     loop {
                         let entry = libc::readdir(self_dir);
-                        if entry.is_null() { break; }
+                        if entry.is_null() {
+                            break;
+                        }
                         let name_ptr = (*entry).d_name.as_ptr();
                         let fd = libc::atoi(name_ptr);
                         if fd > 2 && fd != self_dir_fd {
@@ -422,7 +488,9 @@ pub fn create_subprocess_with_data(
 }
 
 pub fn write_to_fd(fd: jint, data: &[u8]) -> jint {
-    if fd < 0 { return -1; }
+    if fd < 0 {
+        return -1;
+    }
     let res = unsafe { libc::write(fd, data.as_ptr() as *const _, data.len()) };
     res as jint
 }
@@ -433,10 +501,12 @@ struct WatcherState {
     thread: Option<std::thread::JoinHandle<()>>,
 }
 
-static WATCHER_STATE: Lazy<Mutex<WatcherState>> = Lazy::new(|| Mutex::new(WatcherState {
-    map: HashMap::new(),
-    thread: None,
-}));
+static WATCHER_STATE: Lazy<Mutex<WatcherState>> = Lazy::new(|| {
+    Mutex::new(WatcherState {
+        map: HashMap::new(),
+        thread: None,
+    })
+});
 static WATCHER_SHUTDOWN: AtomicBool = AtomicBool::new(false);
 
 #[inline]
@@ -449,7 +519,7 @@ fn notify_process_exit(callback: &WatcherCallback, exit_code: i32) {
                     callback.as_obj(),
                     "onProcessExited",
                     "(I)V",
-                    &[jni::objects::JValue::Int(exit_code)]
+                    &[jni::objects::JValue::Int(exit_code)],
                 );
             }
         }
@@ -476,7 +546,10 @@ fn ensure_watcher_thread_locked(state: &mut WatcherState) {
             android_log(LogPriority::INFO, "Global ChildWatcher thread started");
             loop {
                 if WATCHER_SHUTDOWN.load(Ordering::SeqCst) {
-                    android_log(LogPriority::INFO, "[Watcher] Shutdown signal received, exiting");
+                    android_log(
+                        LogPriority::INFO,
+                        "[Watcher] Shutdown signal received, exiting",
+                    );
                     break;
                 }
                 let targets: Vec<(i32, WatcherCallback)> = {
@@ -494,10 +567,17 @@ fn ensure_watcher_thread_locked(state: &mut WatcherState) {
                     let res = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
 
                     if res == pid {
-                        let exit_code = if libc::WIFEXITED(status) { libc::WEXITSTATUS(status) }
-                                       else if libc::WIFSIGNALED(status) { -libc::WTERMSIG(status) }
-                                       else { 0 };
-                        android_log(LogPriority::INFO, &format!("[Watcher] Process {} exited with status {}", pid, exit_code));
+                        let exit_code = if libc::WIFEXITED(status) {
+                            libc::WEXITSTATUS(status)
+                        } else if libc::WIFSIGNALED(status) {
+                            -libc::WTERMSIG(status)
+                        } else {
+                            0
+                        };
+                        android_log(
+                            LogPriority::INFO,
+                            &format!("[Watcher] Process {} exited with status {}", pid, exit_code),
+                        );
                         {
                             let mut state = WATCHER_STATE.lock().unwrap();
                             state.map.remove(&pid);
@@ -508,7 +588,10 @@ fn ensure_watcher_thread_locked(state: &mut WatcherState) {
                     } else {
                         match nix::errno::Errno::last() {
                             nix::errno::Errno::ECHILD => {
-                                android_log(LogPriority::INFO, &format!("[Watcher] Process {} already reaped (ECHILD)", pid));
+                                android_log(
+                                    LogPriority::INFO,
+                                    &format!("[Watcher] Process {} already reaped (ECHILD)", pid),
+                                );
                                 {
                                     let mut state = WATCHER_STATE.lock().unwrap();
                                     state.map.remove(&pid);
@@ -519,7 +602,10 @@ fn ensure_watcher_thread_locked(state: &mut WatcherState) {
                                 // 被信号中断，保留到下一轮检查
                             }
                             other => {
-                                android_log(LogPriority::WARN, &format!("[Watcher] waitpid({}) failed: {:?}", pid, other));
+                                android_log(
+                                    LogPriority::WARN,
+                                    &format!("[Watcher] waitpid({}) failed: {:?}", pid, other),
+                                );
                                 {
                                     let mut state = WATCHER_STATE.lock().unwrap();
                                     state.map.remove(&pid);
@@ -531,7 +617,8 @@ fn ensure_watcher_thread_locked(state: &mut WatcherState) {
 
                 std::thread::sleep(Duration::from_millis(100));
             }
-        }).expect("Failed to spawn watcher thread");
+        })
+        .expect("Failed to spawn watcher thread");
     state.thread = Some(handle);
 }
 
@@ -592,23 +679,31 @@ pub fn watcher_thread_count() -> usize {
 }
 
 pub fn set_pty_window_size(fd: jint, rows: jint, cols: jint, cell_width: jint, cell_height: jint) {
-    if fd < 0 { return; }
+    if fd < 0 {
+        return;
+    }
     let sz = libc::winsize {
         ws_row: rows as u16,
         ws_col: cols as u16,
         ws_xpixel: (cols as u32 * cell_width as u32) as u16,
         ws_ypixel: (rows as u32 * cell_height as u32) as u16,
     };
-    unsafe { libc::ioctl(fd, libc::TIOCSWINSZ, &sz); }
+    unsafe {
+        libc::ioctl(fd, libc::TIOCSWINSZ, &sz);
+    }
 }
 
 pub fn wait_for(pid: i32) -> jint {
     let mut status: i32 = 0;
     unsafe {
         libc::waitpid(pid, &mut status, 0);
-        if libc::WIFEXITED(status) { libc::WEXITSTATUS(status) }
-        else if libc::WIFSIGNALED(status) { -libc::WTERMSIG(status) }
-        else { 0 }
+        if libc::WIFEXITED(status) {
+            libc::WEXITSTATUS(status)
+        } else if libc::WIFSIGNALED(status) {
+            -libc::WTERMSIG(status)
+        } else {
+            0
+        }
     }
 }
 
@@ -630,14 +725,20 @@ mod tests {
     fn parse_shebang_with_env() {
         let data = b"#!/usr/bin/env bash\necho hello";
         let result = parse_shebang(data);
-        assert_eq!(result, Some(("/usr/bin/env".to_string(), Some("bash".to_string()))));
+        assert_eq!(
+            result,
+            Some(("/usr/bin/env".to_string(), Some("bash".to_string())))
+        );
     }
 
     #[test]
     fn parse_shebang_with_args() {
         let data = b"#!/usr/bin/env python3 -u\nprint(1)";
         let result = parse_shebang(data);
-        assert_eq!(result, Some(("/usr/bin/env".to_string(), Some("python3 -u".to_string()))));
+        assert_eq!(
+            result,
+            Some(("/usr/bin/env".to_string(), Some("python3 -u".to_string())))
+        );
     }
 
     #[test]
@@ -673,7 +774,9 @@ mod tests {
     // -------------------------------------------------------------------------
     // map_interpreter
     // -------------------------------------------------------------------------
-    fn noop_normalize(s: String) -> String { s }
+    fn noop_normalize(s: String) -> String {
+        s
+    }
 
     #[test]
     fn map_interpreter_env() {
@@ -702,7 +805,10 @@ mod tests {
     #[test]
     fn map_interpreter_termux_path() {
         assert_eq!(
-            map_interpreter("/data/data/com.termux/files/usr/bin/python", &noop_normalize),
+            map_interpreter(
+                "/data/data/com.termux/files/usr/bin/python",
+                &noop_normalize
+            ),
             "/data/data/com.termux/files/usr/bin/python"
         );
     }
@@ -710,7 +816,10 @@ mod tests {
     #[test]
     fn map_interpreter_user_path() {
         assert_eq!(
-            map_interpreter("/data/user/0/com.termux/files/usr/bin/ruby", &noop_normalize),
+            map_interpreter(
+                "/data/user/0/com.termux/files/usr/bin/ruby",
+                &noop_normalize
+            ),
             "/data/user/0/com.termux/files/usr/bin/ruby"
         );
     }
@@ -725,9 +834,8 @@ mod tests {
 
     #[test]
     fn map_interpreter_absolute_termux() {
-        let normalize = |s: String| -> String {
-            s.replace("/data/user/0/com.termux", "/data/data/com.termux")
-        };
+        let normalize =
+            |s: String| -> String { s.replace("/data/user/0/com.termux", "/data/data/com.termux") };
         assert_eq!(
             map_interpreter("/data/user/0/com.termux/files/usr/bin/perl", &normalize),
             "/data/data/com.termux/files/usr/bin/perl"

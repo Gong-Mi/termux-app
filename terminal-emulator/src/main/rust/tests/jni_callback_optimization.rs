@@ -15,7 +15,9 @@ fn test_process_bytes_generates_screen_updated() {
     engine.process_bytes(b"hello");
     let events = engine.take_events();
     assert!(
-        events.iter().any(|e| matches!(e, TerminalEvent::ScreenUpdated)),
+        events
+            .iter()
+            .any(|e| matches!(e, TerminalEvent::ScreenUpdated)),
         "process_bytes 应该产生 ScreenUpdated 事件"
     );
     println!("✅ process_bytes 正确产生 ScreenUpdated 事件");
@@ -77,17 +79,28 @@ fn test_high_throughput_event_deduplication() {
     let events = engine.take_events();
 
     // ScreenUpdated 可能出现多次，但都会被过滤
-    let screen_updated_count = events.iter().filter(|e| matches!(e, TerminalEvent::ScreenUpdated)).count();
+    let screen_updated_count = events
+        .iter()
+        .filter(|e| matches!(e, TerminalEvent::ScreenUpdated))
+        .count();
     let other_events: Vec<_> = events
         .into_iter()
         .filter(|e| !matches!(e, TerminalEvent::ScreenUpdated))
         .collect();
 
-    println!("  总事件数: {} (ScreenUpdated: {}, 其他: {})", screen_updated_count + other_events.len(), screen_updated_count, other_events.len());
+    println!(
+        "  总事件数: {} (ScreenUpdated: {}, 其他: {})",
+        screen_updated_count + other_events.len(),
+        screen_updated_count,
+        other_events.len()
+    );
 
     // 优化后：ScreenUpdated 不通过 JNI，所以 JNI 回调次数 = other_events.len()
     // 这对高吞吐量场景大幅减少 JNI 调用
-    println!("✅ 高吞吐量场景：{} 个 ScreenUpdated 被过滤，JNI 回调减少 {} 次", screen_updated_count, screen_updated_count);
+    println!(
+        "✅ 高吞吐量场景：{} 个 ScreenUpdated 被过滤，JNI 回调减少 {} 次",
+        screen_updated_count, screen_updated_count
+    );
 }
 
 /// 验证：混合事件类型的正确过滤
@@ -116,7 +129,11 @@ fn test_mixed_event_filtering() {
         .filter(|e| !matches!(e, TerminalEvent::ScreenUpdated))
         .collect();
 
-    assert_eq!(filtered.len(), 6, "应该过滤掉 3 个 ScreenUpdated，保留 6 个其他事件");
+    assert_eq!(
+        filtered.len(),
+        6,
+        "应该过滤掉 3 个 ScreenUpdated，保留 6 个其他事件"
+    );
 
     // 验证每种事件类型都正确保留
     assert!(matches!(filtered[0], TerminalEvent::Bell));
@@ -134,7 +151,10 @@ fn test_mixed_event_filtering() {
 fn test_edge_cases() {
     // 空列表
     let empty: Vec<TerminalEvent> = vec![];
-    let filtered: Vec<TerminalEvent> = empty.into_iter().filter(|e| !matches!(e, TerminalEvent::ScreenUpdated)).collect();
+    let filtered: Vec<TerminalEvent> = empty
+        .into_iter()
+        .filter(|e| !matches!(e, TerminalEvent::ScreenUpdated))
+        .collect();
     assert!(filtered.is_empty());
 
     // 只有 ScreenUpdated
@@ -143,7 +163,10 @@ fn test_edge_cases() {
         TerminalEvent::ScreenUpdated,
         TerminalEvent::ScreenUpdated,
     ];
-    let filtered: Vec<TerminalEvent> = only_screen.into_iter().filter(|e| !matches!(e, TerminalEvent::ScreenUpdated)).collect();
+    let filtered: Vec<TerminalEvent> = only_screen
+        .into_iter()
+        .filter(|e| !matches!(e, TerminalEvent::ScreenUpdated))
+        .collect();
     assert!(filtered.is_empty(), "全部 ScreenUpdated 时应无 JNI 回调");
 
     println!("✅ 边界情况处理正确：空列表和纯 ScreenUpdated 列表");
@@ -162,14 +185,21 @@ fn test_write_to_fd_direct_pty_writeback() {
     // 模拟 I/O 线程直接写回 PTY 的行为
     let test_data = b"\x1b[1;1R"; // DSR 响应
     let written = termux_rust::pty::write_to_fd(write_fd, test_data);
-    assert_eq!(written, test_data.len() as i32, "write_to_fd 应该成功写入全部数据");
+    assert_eq!(
+        written,
+        test_data.len() as i32,
+        "write_to_fd 应该成功写入全部数据"
+    );
 
     // 验证数据可以从另一端读取
     let mut buf = [0u8; 16];
     let n = std::io::Read::read(&mut read_end, &mut buf).unwrap();
     assert_eq!(&buf[..n], test_data, "写入的数据应该可以从 pipe 另一端读取");
 
-    println!("✅ write_to_fd 直接写回 PTY 验证通过：{:?}", std::str::from_utf8(test_data).unwrap_or("<binary>"));
+    println!(
+        "✅ write_to_fd 直接写回 PTY 验证通过：{:?}",
+        std::str::from_utf8(test_data).unwrap_or("<binary>")
+    );
 }
 
 /// 验证：DSR 查询响应直接写回 PTY 的完整流程
@@ -191,9 +221,16 @@ fn test_terminal_response_direct_writeback_simulation() {
     let events = engine.take_events();
 
     // 查找 TerminalResponse 事件
-    let responses: Vec<_> = events.iter().filter_map(|e| {
-        if let TerminalEvent::TerminalResponse(s) = e { Some(s.clone()) } else { None }
-    }).collect();
+    let responses: Vec<_> = events
+        .iter()
+        .filter_map(|e| {
+            if let TerminalEvent::TerminalResponse(s) = e {
+                Some(s.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
 
     if !responses.is_empty() {
         // 模拟 I/O 线程直接写回 PTY
@@ -208,6 +245,8 @@ fn test_terminal_response_direct_writeback_simulation() {
         let received = std::str::from_utf8(&buf[..n]).unwrap_or("<invalid utf8>");
         println!("✅ TerminalResponse 直接写回 PTY 成功：收到 '{}'", received);
     } else {
-        println!("ℹ️  当前引擎实现未对 DSR 产生 TerminalResponse（可能行为不同），但 write_to_fd 机制已验证");
+        println!(
+            "ℹ️  当前引擎实现未对 DSR 产生 TerminalResponse（可能行为不同），但 write_to_fd 机制已验证"
+        );
     }
 }
