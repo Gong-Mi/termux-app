@@ -860,8 +860,8 @@ impl ScreenState {
         }
     }
 
-    /// 获取 15 个状态字段的快照（与 Java syncState() JNI 顺序一致）
-    pub fn snapshot(&self) -> [i32; 15] {
+    /// 获取 16 个状态字段的快照（与 Java syncState() JNI 顺序一致）
+    pub fn snapshot(&self) -> [i32; 16] {
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -913,10 +913,15 @@ impl ScreenState {
                 0
             }, // 9: Mouse
             if self.auto_scroll_disabled { 1 } else { 0 }, // 10: Auto Scroll Disabled
-            self.rows as i32,                        // 11: Rows
-            self.cols as i32,                        // 12: Cols
+            self.rows as i32,                              // 11: Rows
+            self.cols as i32,                              // 12: Cols
             self.main_screen.get_active_transcript_rows() as i32, // 13: Active Transcript Rows
-            self.scroll_counter as i32,              // 14: Scroll Counter
+            self.scroll_counter as i32,                    // 14: Scroll Counter
+            if self.modes.is_enabled(crate::terminal::modes::MODE_INSERT) {
+                1
+            } else {
+                0
+            }, // 15: Insert Mode
         ]
     }
 }

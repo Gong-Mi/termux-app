@@ -408,11 +408,10 @@ fn flush_events_to_java(
     for event in events {
         match event {
             TerminalEvent::ScreenUpdated => {
-                // 【优化】ScreenUpdated 已由 Rust 渲染线程自主处理，
-                // 不再通过 JNI 回调 Java。保留分支以兼容旧代码。
+                let _ = env.call_method(obj, "onScreenUpdated", "()V", &[]);
             }
             TerminalEvent::StateChanged { mask, values } => {
-                if let Ok(arr) = env.new_int_array(15) {
+                if let Ok(arr) = env.new_int_array(16) {
                     let _ = env.set_int_array_region(&arr, 0, &values[..]);
                     let _ = env.call_method(
                         obj,
@@ -546,12 +545,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatch(
             }
             (engine.take_events(), engine.state.java_callback_obj.clone())
         };
-        // 【优化】过滤 ScreenUpdated，已由 request_render() 处理
-        let java_events: Vec<TerminalEvent> = events
-            .into_iter()
-            .filter(|e| !matches!(e, TerminalEvent::ScreenUpdated))
-            .collect();
-        flush_events_to_java(&mut env, &cb, java_events);
+        flush_events_to_java(&mut env, &cb, events);
         render_thread::request_render();
         let dt = t0.elapsed().as_micros() as f64 / 1000.0;
         if dt > 5.0 {
@@ -598,12 +592,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatchDirect(
 
             (engine.take_events(), engine.state.java_callback_obj.clone())
         };
-        // 【优化】过滤 ScreenUpdated，已由 request_render() 处理
-        let java_events: Vec<TerminalEvent> = events
-            .into_iter()
-            .filter(|e| !matches!(e, TerminalEvent::ScreenUpdated))
-            .collect();
-        flush_events_to_java(&mut env, &cb, java_events);
+        flush_events_to_java(&mut env, &cb, events);
         render_thread::request_render();
         let dt = t0.elapsed().as_micros() as f64 / 1000.0;
         if dt > 5.0 {
@@ -634,12 +623,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processCodePoint(
             engine.process_code_point(code_point as u32);
             (engine.take_events(), engine.state.java_callback_obj.clone())
         };
-        // 【优化】过滤 ScreenUpdated，已由 request_render() 处理
-        let java_events: Vec<TerminalEvent> = events
-            .into_iter()
-            .filter(|e| !matches!(e, TerminalEvent::ScreenUpdated))
-            .collect();
-        flush_events_to_java(&mut env, &cb, java_events);
+        flush_events_to_java(&mut env, &cb, events);
         render_thread::request_render();
     }));
     let _ = Arc::into_raw(context);
@@ -825,14 +809,10 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_startIoThread(
                                 (engine.take_events(), engine.state.java_callback_obj.clone())
                             };
                             render_thread::request_render();
-                            // 【优化】I/O 线程内直接处理 TerminalResponse，避免 JNI 环路
-                            // ScreenUpdated 已由 request_render() 处理，无需 JNI 回调
+                            // 【优化】直接处理 TerminalResponse，避免 JNI 环路
                             let mut java_events = Vec::with_capacity(events.len());
                             for event in events {
                                 match event {
-                                    TerminalEvent::ScreenUpdated => {
-                                        // 已由 render_thread::request_render() 处理
-                                    }
                                     TerminalEvent::TerminalResponse(resp) => {
                                         // 直接写回 PTY，避免 Rust → Java → Rust 环路
                                         let _ = crate::pty::write_to_fd(pty_fd, resp.as_bytes());
@@ -958,53 +938,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getTerminalState(
 
     let state_array = {
         let engine = context.lock.read().unwrap();
-        let s = &engine.state;
-
-        [
-            s.cursor.x as i32,                    // 0: Cursor Col
-            s.cursor.y as i32,                    // 1: Cursor Row
-            s.cursor.style as i32,                // 2: Cursor Style
-            if s.cursor_enabled { 1 } else { 0 }, // 3: Cursor Enabled
-            {
-                let now_ms = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as u64;
-                if s.cursor.should_be_visible(s.cursor_enabled, now_ms) {
-                    1
-                } else {
-                    0
-                }
-            }, // 4: Cursor Visible
-            if s.modes.is_enabled(DECSET_BIT_REVERSE_VIDEO) {
-                1
-            } else {
-                0
-            }, // 5: Reverse Video
-            if s.use_alternate_buffer { 1 } else { 0 }, // 6: Alternate Buffer
-            if s.modes.is_enabled(DECSET_BIT_APPLICATION_CURSOR_KEYS) {
-                1
-            } else {
-                0
-            }, // 7: Cursor Keys
-            if s.modes.is_enabled(DECSET_BIT_APPLICATION_KEYPAD) {
-                1
-            } else {
-                0
-            }, // 8: Keypad
-            if s.modes.is_enabled(DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE)
-                || s.modes.is_enabled(DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT)
-            {
-                1
-            } else {
-                0
-            }, // 9: Mouse
-            if s.auto_scroll_disabled { 1 } else { 0 }, // 10: Auto Scroll Disabled
-            s.rows as i32,                        // 11: Rows
-            s.cols as i32,                        // 12: Cols
-            s.main_screen.get_active_transcript_rows() as i32, // 13: Active Transcript Rows
-            s.scroll_counter as i32,              // 14: Scroll Counter
-        ]
+        engine.state.snapshot()
     };
 
     let result = match env.new_int_array(state_array.len() as i32) {

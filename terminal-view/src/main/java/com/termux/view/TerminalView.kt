@@ -355,10 +355,21 @@ class TerminalView @JvmOverloads constructor(
         if (session === mTermSession) return false
         mTopRow = 0
         mTermSession = session
-        mEmulator = null
-        mEnginePointerSet = false  // 关键修复：切换 session 时必须重置，否则新 session 的 engine 指针永远不会被设置
+        mEmulator = session?.mEmulator
+        mEnginePointerSet = false
         mCombiningAccent = 0
         updateSize()
+
+        // 关键修复：主动同步指针，不再等待第一次回调，避免黑屏
+        mEmulator?.let { emu ->
+            val ptr = emu.getNativePointer()
+            if (ptr != 0L) {
+                Log.i("TerminalView-Engine", "attachSession: Calling nativeSetEnginePointer with ptr=$ptr")
+                nativeSetEnginePointer(ptr)
+                mEnginePointerSet = true
+            }
+        }
+
         isVerticalScrollBarEnabled = true
         return true
     }

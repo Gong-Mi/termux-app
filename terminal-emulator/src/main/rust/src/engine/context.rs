@@ -37,7 +37,7 @@ impl TerminalEngine {
         self.state.sync_screen_to_flat_buffer();
         let curr = self.state.snapshot();
         let mut mask = 0u32;
-        for i in 0..15 {
+        for i in 0..16 {
             if prev[i] != curr[i] {
                 mask |= 1 << i;
             }

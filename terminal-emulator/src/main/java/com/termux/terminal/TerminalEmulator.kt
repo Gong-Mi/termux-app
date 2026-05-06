@@ -66,6 +66,7 @@ class TerminalEmulator(
     private var mCachedCols = 0
     private var mCachedActiveTranscriptRows = 0
     private var mCachedScrollCounter = 0
+    private var mCachedInsertMode = false
 
     init {
         mActiveCallback = if (client is RustEngineCallback) {
@@ -135,7 +136,7 @@ class TerminalEmulator(
      * 增量状态推送：Rust 引擎在状态变化时主动调用，替代轮询 syncState()
      */
     fun onStateChanged(mask: Int, values: IntArray) {
-        if (values.size < 15) return
+        if (values.size < 16) return
         if (mask and 0x01 != 0) mCachedCursorCol = values[0]
         if (mask and 0x02 != 0) mCachedCursorRow = values[1]
         if (mask and 0x04 != 0) mCachedCursorStyle = values[2]
@@ -151,13 +152,14 @@ class TerminalEmulator(
         if (mask and 0x1000 != 0) mCachedCols = values[12]
         if (mask and 0x2000 != 0) mCachedActiveTranscriptRows = values[13]
         if (mask and 0x4000 != 0) mCachedScrollCounter = values[14]
+        if (mask and 0x8000 != 0) mCachedInsertMode = values[15] != 0
     }
 
     /** @deprecated 已由 Rust 增量推送替代，保留以便兼容旧代码 */
     fun syncState() {
         if (mEnginePtr == 0L) return
         val state = RustTerminal.getTerminalState(mEnginePtr) ?: return
-        if (state.size >= 15) {
+        if (state.size >= 16) {
             mCachedCursorCol = state[0]
             mCachedCursorRow = state[1]
             mCachedCursorStyle = state[2]
@@ -173,6 +175,7 @@ class TerminalEmulator(
             mCachedCols = state[12]
             mCachedActiveTranscriptRows = state[13]
             mCachedScrollCounter = state[14]
+            mCachedInsertMode = state[15] != 0
         }
     }
 
@@ -216,6 +219,7 @@ class TerminalEmulator(
 
     // --- 滚动 ---
     fun getScrollCounter(): Int = mCachedScrollCounter
+    fun isInsertMode(): Boolean = mCachedInsertMode
     fun clearScrollCounter() {
         RustTerminal.clearScrollCounter(mEnginePtr)
     }
