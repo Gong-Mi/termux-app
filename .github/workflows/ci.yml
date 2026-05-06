@@ -29,6 +29,10 @@ jobs:
         java-version: '21'
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@stable
+    - name: Install system dependencies (Skia linking)
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
     - name: Check Rust formatting
       run: |
         cd terminal-emulator/src/main/rust
