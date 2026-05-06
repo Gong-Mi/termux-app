@@ -148,9 +148,11 @@ jobs:
           APK_VERSION_TAG="$RELEASE_VERSION_NAME-apt-android-7-github-debug"
           APK_BASENAME_PREFIX="termux-app_$APK_VERSION_TAG"
 
-          echo "APK_DIR_PATH=$APK_DIR_PATH" >> $GITHUB_ENV
-          echo "APK_VERSION_TAG=$APK_VERSION_TAG" >> $GITHUB_ENV
-          echo "APK_BASENAME_PREFIX=$APK_BASENAME_PREFIX" >> $GITHUB_ENV
+          {
+            echo "APK_DIR_PATH=$APK_DIR_PATH"
+            echo "APK_VERSION_TAG=$APK_VERSION_TAG"
+            echo "APK_BASENAME_PREFIX=$APK_BASENAME_PREFIX"
+          } >> "$GITHUB_ENV"
 
           export TERMUX_APP_VERSION_NAME="${RELEASE_VERSION_NAME/v/}"
           export TERMUX_APK_VERSION_TAG="$APK_VERSION_TAG"
