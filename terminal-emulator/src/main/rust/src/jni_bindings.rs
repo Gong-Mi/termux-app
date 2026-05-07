@@ -742,13 +742,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_startIoThread(
             let mut read_buf = Vec::with_capacity(65536);
             let mut temp = [0u8; 16384];
 
-            while context.running.load(std::sync::atomic::Ordering::SeqCst) {
-                // 使用 attach_current_thread_as_daemon 并在循环内使用 local_frame 防止局部引用泄露
-                if let Ok(mut env) = crate::JAVA_VM
-                    .get()
-                    .unwrap()
-                    .attach_current_thread_as_daemon()
-                {
+            // 【性能优化】在循环外 attach 一次，避免高频系统调用
+            if let Ok(mut env) = crate::JAVA_VM.get().unwrap().attach_current_thread_as_daemon() {
+                while context.running.load(std::sync::atomic::Ordering::SeqCst) {
                     let _ = env.with_local_frame::<_, _, jni::errors::Error>(16, |env| {
                         read_buf.clear();
 
@@ -824,10 +820,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_startIoThread(
                         }
                         Ok(())
                     });
-                } else {
-                    android_log(LogPriority::ERROR, " IO Thread: Failed to attach to JVM");
-                    break;
                 }
+            } else {
+                android_log(LogPriority::ERROR, " IO Thread: Failed to attach to JVM");
             }
             // 释放 fd 所有权，不自动 close，由 destroyEngine 统一关闭
             // 避免 fdsan double-close 检测导致 SIGABRT
@@ -2005,13 +2000,13 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
         let context = Arc::new(TerminalContext::new(engine));
 
         // 关键修复：分别为 Java 层和协调器创建独立的 Arc 引用。
-        // 否则 Java 层的 destroyEngine 和协调器的 unregister_session 会对同一个指针调用 Arc::from_raw，
-        // 导致 Double-Free 或 Use-After-Free 崩溃。
+        // Java 层持有一个原始指针，协调器内部持有 Arc。
         let context_ptr_java = Arc::into_raw(context.clone());
-        let context_ptr_coord = Arc::into_raw(context.clone());
+        let context_ptr_coord = context.clone();
 
         // ★ 关键：把 session 的完整数据绑定到 Rust 协调器
         // Java 层后续通过 enginePtr 反向查询 PID/fd/state
+<<<<<<< HEAD
         coordinator.bind_session_data(session_id, pty_fd, pid, context_ptr_coord as usize);
 
         android_log(
@@ -2020,6 +2015,13 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
                 "[TRACE_SESSION] Engine context created at ptr: {:p}",
                 context_ptr_java
             ),
+=======
+        coordinator.bind_session_data(
+            session_id,
+            pty_fd,
+            pid,
+            Arc::into_raw(context_ptr_coord) as usize,
+>>>>>>> b34ec99b (feat: optimize HDR pipeline, performance, memory safety, and session management)
         );
 
         if let Some(ref cb) = callback_ref {

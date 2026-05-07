@@ -151,6 +151,8 @@ pub struct VulkanContext {
     _pipeline_cache_data: Vec<u8>,
     /// 当前 Swapchain 对应的 Skia Vulkan Format，避免硬编码与实际 Image 格式不匹配
     skia_format: skia_safe::gpu::vk::Format,
+    /// 当前 Swapchain 的颜色空间，用于映射 Skia ColorSpace
+    vk_color_space: ash_vk::ColorSpaceKHR,
 }
 
 unsafe impl Send for VulkanContext {}
@@ -588,6 +590,7 @@ impl VulkanContext {
             pipeline_cache,
             _pipeline_cache_data: pipeline_cache_data,
             skia_format: skia_safe::gpu::vk::Format::R8G8B8A8_UNORM,
+            vk_color_space: ash_vk::ColorSpaceKHR::SRGB_NONLINEAR,
         };
 
         let swapchain_ok = ctx.recreate_swapchain(extent.width, extent.height);
@@ -660,20 +663,18 @@ impl VulkanContext {
                     );
                 }
 
-                // 性能优化与画质优先：
-                // 1. 优先 A2B10G10R10 / A2R10G10B10 (10-bit 广色域)，利用高灰阶消除色彩断层。
-                //    注：Android SurfaceFlinger 原生提供的一般是 A2R10G10B10 (HAL_PIXEL_FORMAT_RGBA_1010102)，
-                //    而 Mali GPU 驱动也可能同时暴露 A2B10G10R10。两者都需匹配，否则回退 8-bit。
-                // 2. 其次 BGRA (Mali GPU 8-bit 原生最优)
-                // 3. 再次 RGBA (通用 8-bit)
-                // 4. 回退到其他 8-bit 格式
+                // 性能优化与画质优先 (Multi-pipeline Selection):
+                // 1. 优先 HDR10 (Rec.2020 + PQ)，如果支持。
+                // 2. 其次 WCG (Display P3)，消除色彩断层。
+                // 3. 再次 scRGB (F16 Linear)，用于广色域处理。
+                // 4. 回退 8-bit (BGRA/RGBA)。
                 surface_formats.iter()
-                    .find(|f| f.format == ash_vk::Format::A2B10G10R10_UNORM_PACK32)
-                    .or_else(|| surface_formats.iter().find(|f| f.format == ash_vk::Format::A2R10G10B10_UNORM_PACK32))
+                    .find(|f| f.format == ash_vk::Format::A2B10G10R10_UNORM_PACK32 && f.color_space == ash_vk::ColorSpaceKHR::HDR10_ST2084_EXT)
+                    .or_else(|| surface_formats.iter().find(|f| f.format == ash_vk::Format::A2B10G10R10_UNORM_PACK32 && f.color_space == ash_vk::ColorSpaceKHR::DISPLAY_P3_NONLINEAR_EXT))
+                    .or_else(|| surface_formats.iter().find(|f| f.format == ash_vk::Format::A2B10G10R10_UNORM_PACK32))
+                    .or_else(|| surface_formats.iter().find(|f| f.format == ash_vk::Format::R16G16B16A16_SFLOAT))
                     .or_else(|| surface_formats.iter().find(|f| f.format == ash_vk::Format::B8G8R8A8_UNORM))
                     .or_else(|| surface_formats.iter().find(|f| f.format == ash_vk::Format::R8G8B8A8_UNORM))
-                    .or_else(|| surface_formats.iter().find(|f| f.format == ash_vk::Format::B8G8R8A8_SRGB))
-                    .or_else(|| surface_formats.iter().find(|f| f.format == ash_vk::Format::R8G8B8A8_SRGB))
                     .copied()
                     .unwrap_or_else(|| {
                         android_log(LogPriority::WARN, "Vulkan: No high-bit or standard 8-bit format found, falling back to first available");
@@ -683,6 +684,7 @@ impl VulkanContext {
 
             // 同步 Skia ImageInfo format 与实际 Swapchain Image format
             self.skia_format = ash_format_to_skia_format(format.format);
+<<<<<<< HEAD
             android_log(
                 LogPriority::INFO,
                 &format!(
@@ -690,6 +692,13 @@ impl VulkanContext {
                     format.format, self.skia_format
                 ),
             );
+=======
+            self.vk_color_space = format.color_space;
+            android_log(LogPriority::INFO, &format!(
+                "Vulkan: Selected swapchain format {:?} (mapped to Skia format {:?}) in color space {:?}",
+                format.format, self.skia_format, self.vk_color_space
+            ));
+>>>>>>> b34ec99b (feat: optimize HDR pipeline, performance, memory safety, and session management)
 
             let caps = self
                 .surface_loader
@@ -971,12 +980,36 @@ impl VulkanContext {
             _ => ColorType::RGBA8888,
         };
 
+        // Multi-pipeline ColorSpace Mapping:
+        // 根据 Vulkan 交换链的颜色空间，显式设置 Skia 的色彩空间，以确保正确渲染。
+        let sk_color_space = match self.vk_color_space {
+            ash_vk::ColorSpaceKHR::DISPLAY_P3_NONLINEAR_EXT => {
+                // Display P3 广色域 (D65)
+                skia_safe::ColorSpace::new_cicp(
+                    skia_safe::named_primaries::CicpId::SMPTE_EG_432_1,
+                    skia_safe::named_transfer_fn::CicpId::SRGB,
+                )
+            }
+            ash_vk::ColorSpaceKHR::HDR10_ST2084_EXT => {
+                // HDR10 (Rec.2020 + PQ)
+                skia_safe::ColorSpace::new_cicp(
+                    skia_safe::named_primaries::CicpId::Rec2020,
+                    skia_safe::named_transfer_fn::CicpId::PQ,
+                )
+            }
+            ash_vk::ColorSpaceKHR::EXTENDED_SRGB_LINEAR_EXT => {
+                // scRGB HDR (F16 Linear)
+                Some(skia_safe::ColorSpace::new_srgb_linear())
+            }
+            _ => Some(skia_safe::ColorSpace::new_srgb()),
+        };
+
         skia_safe::gpu::surfaces::wrap_backend_render_target(
             self.context.as_mut().unwrap(),
             &render_target,
             skia_safe::gpu::SurfaceOrigin::TopLeft,
             color_type,
-            Some(skia_safe::ColorSpace::new_srgb()),
+            sk_color_space,
             None,
         )
     }

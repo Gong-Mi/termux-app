@@ -9,6 +9,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.PixelFormat
 import android.graphics.SurfaceTexture
 import android.graphics.Typeface
 import android.os.Build
@@ -166,6 +167,13 @@ class TerminalView @JvmOverloads constructor(
         setWillNotDraw(false)
         holder.addCallback(this)
         updateRefreshRate(context)
+
+        // 启用 10-bit 广色域支持。
+        // 这要求 Activity 已经调用了 getWindow().setColorMode(ActivityInfo.COLOR_MODE_WIDE_COLOR_GAMUT)。
+        // 显式请求 RGBA_1010102 像素格式，以便 Android HWC 能分配高位深 Buffer。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            holder.setFormat(PixelFormat.RGBA_1010102)
+        }
 
         mGestureRecognizer = GestureAndScaleRecognizer(context, object : GestureAndScaleRecognizer.Listener {
             override fun onUp(event: MotionEvent): Boolean {

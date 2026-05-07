@@ -1449,14 +1449,23 @@ pub enum HdrColorSpace {
 }
 
 impl HdrColorSpace {
-    /// 返回该 HDR 空间建议的 Skia ColorSpace 构造方式（预留）
-    /// TODO: 接入 skia_safe::ColorSpace::new_rgb(...) 或 new_srgb_linear() 等
+    /// 返回该 HDR 空间建议的 Skia ColorSpace 构造方式
     pub fn to_skia_colorspace(&self) -> Option<skia_safe::ColorSpace> {
         match self {
             HdrColorSpace::SdrSrgb => Some(skia_safe::ColorSpace::new_srgb()),
-            // 其余 HDR 空间需要 skia_safe::ColorSpace::new_rgb() 构造，
-            // 待明确 Skia 绑定版本是否暴露该 API 后再实现
-            _ => None,
+            HdrColorSpace::Rec2020Hlg => skia_safe::ColorSpace::new_cicp(
+                skia_safe::named_primaries::CicpId::Rec2020,
+                skia_safe::named_transfer_fn::CicpId::HLG,
+            ),
+            HdrColorSpace::Rec2020Pq => skia_safe::ColorSpace::new_cicp(
+                skia_safe::named_primaries::CicpId::Rec2020,
+                skia_safe::named_transfer_fn::CicpId::PQ,
+            ),
+            HdrColorSpace::DisplayP3Pq => skia_safe::ColorSpace::new_cicp(
+                skia_safe::named_primaries::CicpId::SMPTE_EG_432_1,
+                skia_safe::named_transfer_fn::CicpId::PQ,
+            ),
+            HdrColorSpace::ScRgbLinear => Some(skia_safe::ColorSpace::new_srgb_linear()),
         }
     }
 
@@ -1484,7 +1493,8 @@ pub struct HdrImageOverlay {
     pub visible: bool,
     /// 混合模式：通常 SrcOver（半透明）或 Src（不透明）
     pub blend_mode: skia_safe::BlendMode,
-    // TODO: 后续接入 Skia Image 引用或 Vulkan Texture 句柄
+    /// 实际的 Skia 图片对象
+    pub image: Option<skia_safe::Image>,
 }
 
 impl Default for HdrImageOverlay {
@@ -1497,6 +1507,7 @@ impl Default for HdrImageOverlay {
             max_fall: None,
             visible: true,
             blend_mode: skia_safe::BlendMode::SrcOver,
+            image: None,
         }
     }
 }
@@ -1504,7 +1515,6 @@ impl Default for HdrImageOverlay {
 /// HDR 覆盖层管理器
 ///
 /// 负责维护一组待渲染的 HDR 覆盖层，并在每帧绘制结束后将其合成到终端画面上。
-/// 当前为框架实现，draw_overlays 留空，避免影响现有渲染性能。
 pub struct HdrOverlayManager {
     overlays: std::collections::HashMap<u64, HdrImageOverlay>,
 }
@@ -1541,25 +1551,21 @@ impl HdrOverlayManager {
         self.overlays.values().filter(|o| o.visible).count()
     }
 
-    /// 绘制所有可见的 HDR 覆盖层
-    ///
-    /// TODO: 未来实现：
-    ///   1. 根据 overlay.color_space 获取/创建对应的 Skia ColorSpace
-    ///   2. 将外部上传的 HDR 纹理包装为 skia_safe::Image
-    ///   3. 通过 canvas.draw_image_rect / draw_image 绘制到指定 rect
-    ///   4. 若交换链为 10-bit + PQ/HLG，需确保 Skia 颜色空间链路与 Swapchain 一致
-    pub fn draw_overlays(&self, _canvas: &Canvas) {
-        for (_id, overlay) in self.overlays.iter() {
-            if !overlay.visible {
-                continue;
+    /// 绘制所有可见 detour 的 HDR 覆盖层
+    pub fn draw_overlays(&self, canvas: &Canvas) {
+        for overlay in self.overlays.values().filter(|o| o.visible) {
+            if let Some(image) = &overlay.image {
+                let mut paint = skia_safe::Paint::default();
+                paint.set_blend_mode(overlay.blend_mode);
+                
+                // 绘制到指定区域
+                canvas.draw_image_rect(
+                    image,
+                    None,
+                    &overlay.rect,
+                    &paint,
+                );
             }
-            // 占位：未来在此接入实际 HDR 纹理绘制
-            // 示例伪代码：
-            //   if let Some(image) = self.image_cache.get(id) {
-            //       let paint = Paint::default();
-            //       paint.set_blend_mode(overlay.blend_mode);
-            //       canvas.draw_image_rect(image, None, overlay.rect, &paint);
-            //   }
         }
     }
 }
@@ -1792,5 +1798,76 @@ mod tests {
                 r
             );
         }
+    }
+
+    #[test]
+    fn test_hdr_colorspace_mapping() {
+        use super::super::HdrColorSpace;
+        
+        assert!(HdrColorSpace::SdrSrgb.to_skia_colorspace().is_some());
+        assert!(HdrColorSpace::Rec2020Hlg.to_skia_colorspace().is_some());
+        assert!(HdrColorSpace::Rec2020Pq.to_skia_colorspace().is_some());
+        assert!(HdrColorSpace::DisplayP3Pq.to_skia_colorspace().is_some());
+        assert!(HdrColorSpace::ScRgbLinear.to_skia_colorspace().is_some());
+        
+        assert!(!HdrColorSpace::SdrSrgb.is_hdr());
+        assert!(HdrColorSpace::Rec2020Pq.is_hdr());
+    }
+
+    #[test]
+    fn test_hdr_overlay_manager_logic() {
+        use super::super::{HdrOverlayManager, HdrImageOverlay};
+        
+        let mut manager = HdrOverlayManager::new();
+        assert_eq!(manager.visible_count(), 0);
+        
+        let mut overlay1 = HdrImageOverlay::default();
+        overlay1.id = 100;
+        overlay1.visible = true;
+        manager.set_overlay(overlay1);
+        
+        let mut overlay2 = HdrImageOverlay::default();
+        overlay2.id = 200;
+        overlay2.visible = false;
+        manager.set_overlay(overlay2);
+        
+        assert_eq!(manager.visible_count(), 1);
+        assert!(manager.get_overlay(100).is_some());
+        
+        manager.remove_overlay(100);
+        assert_eq!(manager.visible_count(), 0);
+        
+        manager.clear();
+        assert!(manager.get_overlay(200).is_none());
+    }
+
+    #[test]
+    fn test_hdr_draw_overlays_no_panic() {
+        use super::super::{HdrOverlayManager, HdrImageOverlay};
+        use skia_safe::surfaces;
+        
+        let mut manager = HdrOverlayManager::new();
+        let mut surface = surfaces::raster_n32_premul((100, 100)).expect("Failed to create surface");
+        let canvas = surface.canvas();
+        
+        // 测试 1: 空管理器绘制
+        manager.draw_overlays(canvas);
+        
+        // 测试 2: 有覆盖层但没有图片绘制
+        let mut overlay = HdrImageOverlay::default();
+        overlay.id = 1;
+        overlay.visible = true;
+        manager.set_overlay(overlay);
+        manager.draw_overlays(canvas);
+        
+        // 测试 3: 有图片绘制
+        let mut overlay_with_img = HdrImageOverlay::default();
+        overlay_with_img.id = 2;
+        overlay_with_img.visible = true;
+        let mut img_surface = surfaces::raster_n32_premul((10, 10)).unwrap();
+        overlay_with_img.image = Some(img_surface.image_snapshot());
+        manager.set_overlay(overlay_with_img);
+        
+        manager.draw_overlays(canvas);
     }
 }

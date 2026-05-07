@@ -55,6 +55,10 @@ strip = false
 # Cargo 默认自动发现 tests/ 目录下所有 .rs 文件作为集成测试。
 # 仅需显式声明需要特殊配置（如 required-features）的测试。
 [[test]]
+name = "color_pipeline_test"
+path = "tests/color_pipeline_test.rs"
+
+[[test]]
 name = "child_watcher_regression"
 path = "tests/child_watcher_regression.rs"
 required-features = ["test-helpers"]

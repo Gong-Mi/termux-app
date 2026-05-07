@@ -34,19 +34,25 @@ impl TerminalEngine {
             events: &mut self.events,
         };
         self.parser.advance(&mut handler, data);
-        self.state.sync_screen_to_flat_buffer();
-        let curr = self.state.snapshot();
-        let mut mask = 0u32;
-        for i in 0..16 {
-            if prev[i] != curr[i] {
-                mask |= 1 << i;
+        
+        // 【性能优化】仅当有实际变更且需要刷新时才同步 FlatBuffer
+        // 且仅同步一次，而不是在 parser 内部多次同步
+        if !self.events.is_empty() {
+            self.state.sync_screen_to_flat_buffer();
+            
+            let curr = self.state.snapshot();
+            let mut mask = 0u32;
+            for i in 0..16 {
+                if prev[i] != curr[i] {
+                    mask |= 1 << i;
+                }
             }
+            if mask != 0 {
+                self.events
+                    .push(TerminalEvent::StateChanged { mask, values: curr });
+            }
+            self.events.push(TerminalEvent::ScreenUpdated);
         }
-        if mask != 0 {
-            self.events
-                .push(TerminalEvent::StateChanged { mask, values: curr });
-        }
-        self.events.push(TerminalEvent::ScreenUpdated);
     }
 
     pub fn process_code_point(&mut self, code_point: u32) {

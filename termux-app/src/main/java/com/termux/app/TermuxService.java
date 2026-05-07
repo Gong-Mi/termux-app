@@ -293,7 +293,17 @@ public final class TermuxService extends Service {
                                                         @Nullable String workingDirectory,
                                                         boolean isFailSafe,
                                                         String sessionName) {
-        android.util.Log.d("TermuxTrace", "[TermuxService] createTermuxSession: " + sessionName);
+        return createTermuxSession(executable, arguments, stdin, workingDirectory, isFailSafe, sessionName, true);
+    }
+
+    public @NonNull TerminalSession createTermuxSession(File executable,
+                                                        @NonNull String[] arguments,
+                                                        String stdin,
+                                                        @Nullable String workingDirectory,
+                                                        boolean isFailSafe,
+                                                        String sessionName,
+                                                        boolean notify) {
+        android.util.Log.d("TermuxTrace", "[TermuxService] createTermuxSession: " + sessionName + ", notify=" + notify);
         var sessionClient = new TerminalSessionClient() {
             @Override
             public void onSessionStateChanged(@NonNull TerminalSession session) {
@@ -443,9 +453,10 @@ public final class TermuxService extends Service {
 
         mTerminalSessions.add(newTermuxSession);
 
-        notifySessionListUpdated();
-
-        updateNotification();
+        if (notify) {
+            notifySessionListUpdated();
+            updateNotification();
+        }
 
         return newTermuxSession;
     }
