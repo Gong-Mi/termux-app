@@ -206,7 +206,7 @@ class TerminalEmulator(
         RustTerminal.doDecSetOrReset(mEnginePtr, setting, mode)
     }
     fun toggleAutoScrollDisabled() {
-        RustTerminal.toggleAutoScrollDisabled(mEnginePtr)
+        mCachedAutoScrollDisabled = RustTerminal.toggleAutoScrollDisabled(mEnginePtr)
     }
 
     // --- 尺寸 ---

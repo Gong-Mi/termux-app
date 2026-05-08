@@ -100,7 +100,7 @@ object RustTerminal {
     external fun doDecSetOrReset(enginePtr: Long, setting: Boolean, mode: Int)
 
     @JvmStatic
-    external fun toggleAutoScrollDisabled(enginePtr: Long)
+    external fun toggleAutoScrollDisabled(enginePtr: Long): Boolean
 
     // --- 屏幕数据读取 ---
 

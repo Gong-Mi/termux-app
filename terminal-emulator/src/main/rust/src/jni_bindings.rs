@@ -1423,18 +1423,31 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_toggleAutoScrollDis
     mut env: JNIEnv,
     _class: JClass,
     ptr: jlong,
-) {
+) -> jboolean {
     if ptr == 0 {
-        return;
+        return 0;
     }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
-    let (events, cb) = {
+    let (events, cb, new_value) = {
         let mut engine = context.lock.write().unwrap();
         engine.state.auto_scroll_disabled = !engine.state.auto_scroll_disabled;
-        (engine.take_events(), engine.state.java_callback_obj.clone())
+        let new_value = engine.state.auto_scroll_disabled;
+        // Push StateChanged event so Java cache gets updated
+        let curr = engine.state.snapshot();
+        let mut mask = 0u32;
+        for i in 0..16 {
+            if i == 10 { // auto_scroll_disabled is index 10
+                mask |= 1 << i;
+            }
+        }
+        if mask != 0 {
+            engine.events.push(TerminalEvent::StateChanged { mask, values: curr });
+        }
+        (engine.take_events(), engine.state.java_callback_obj.clone(), new_value)
     };
     flush_events_to_java(&mut env, &cb, events);
     let _ = Arc::into_raw(context);
+    if new_value { 1 } else { 0 }
 }
 
 /// 鼠标事件
