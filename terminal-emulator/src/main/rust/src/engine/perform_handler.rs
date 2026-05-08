@@ -41,6 +41,8 @@ impl<'a> Perform for PerformHandler<'a> {
     fn hook(&mut self, params: &Params, intermediates: &[u8], _ignore: bool, action: char) {
         if action == 'q' && intermediates.is_empty() {
             self.state.sixel_decoder.start(params);
+            self.state.sixel_decoder.start_x = self.state.cursor.x as i32;
+            self.state.sixel_decoder.start_y = self.state.cursor.y as i32;
         }
     }
 

@@ -29,8 +29,8 @@ pub struct SixelDecoder {
     pub params: Vec<i32>,
     /// 当前参数值
     pub current_param: i32,
-    /// 像素数据（每行）- 存储颜色索引
-    pub pixel_data: Vec<Vec<u8>>,
+    /// 像素数据（每行）- 存储颜色索引 (+1)
+    pub pixel_data: Vec<Vec<u16>>,
     /// 当前颜色索引
     pub current_color: usize,
     /// 图像宽度（像素）
@@ -116,7 +116,7 @@ impl SixelDecoder {
         };
 
         // 预分配一些行
-        self.pixel_data = vec![vec![0u8; 1]; 6];
+        self.pixel_data = vec![vec![0u16; 1]; 6];
     }
 
     pub fn process_data(&mut self, data: &[u8]) {
@@ -244,7 +244,7 @@ impl SixelDecoder {
             for bit in 0..6 {
                 if (sixel_value & (1 << bit)) != 0 {
                     self.pixel_data[self.current_row + bit][self.current_col] =
-                        (self.current_color + 1) as u8;
+                        (self.current_color + 1) as u16;
                 }
             }
             self.current_col += 1;
@@ -257,7 +257,7 @@ impl SixelDecoder {
 
     fn ensure_height(&mut self, height: usize) {
         while self.pixel_data.len() < height {
-            self.pixel_data.push(vec![0u8; self.width.max(1)]);
+            self.pixel_data.push(vec![0u16; self.width.max(1)]);
         }
     }
 
@@ -347,7 +347,7 @@ impl SixelDecoder {
     #[cfg(target_arch = "aarch64")]
     #[target_feature(enable = "neon")]
     unsafe fn get_image_data_neon(&self, rgba_data: &mut Vec<u8>) {
-        // 预计算颜色表以加速查找
+        // 预计算颜色表以加速查找 (256 色 + 1 背景)
         let color_table = self.build_fast_color_table();
 
         for row in &self.pixel_data {
@@ -381,12 +381,12 @@ impl SixelDecoder {
         }
     }
 
-    /// 辅助：构建 256 色的快速查找表 [R, G, B, A]
-    fn build_fast_color_table(&self) -> [[u8; 4]; 256] {
-        let mut table = [[0u8; 4]; 256];
+    /// 辅助：构建 256 色 + 1 背景的快速查找表 [R, G, B, A]
+    fn build_fast_color_table(&self) -> [[u8; 4]; 257] {
+        let mut table = [[0u8; 4]; 257];
         // index 0 = 未设置/透明背景
         table[0] = [0, 0, 0, if self.transparent { 0 } else { 255 }];
-        for i in 1..256 {
+        for i in 1..=256 {
             let color_idx = i - 1;
             let (r, g, b) = if let Some(color) = &self.color_registers[color_idx] {
                 (color.r, color.g, color.b)

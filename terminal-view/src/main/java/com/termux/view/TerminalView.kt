@@ -168,11 +168,13 @@ class TerminalView @JvmOverloads constructor(
         holder.addCallback(this)
         updateRefreshRate(context)
 
-        // 启用 10-bit 广色域支持。
+        // 启用 10-bit 广色域支持（仅当设备硬件支持且 Activity 已开启广色域模式时）。
         // 这要求 Activity 已经调用了 getWindow().setColorMode(ActivityInfo.COLOR_MODE_WIDE_COLOR_GAMUT)。
         // 显式请求 RGBA_1010102 像素格式，以便 Android HWC 能分配高位深 Buffer。
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && context.resources.configuration.isScreenWideColorGamut) {
             holder.setFormat(PixelFormat.RGBA_1010102)
+        } else {
+            holder.setFormat(PixelFormat.RGBA_8888)
         }
 
         mGestureRecognizer = GestureAndScaleRecognizer(context, object : GestureAndScaleRecognizer.Listener {
@@ -368,8 +370,9 @@ class TerminalView @JvmOverloads constructor(
         mCombiningAccent = 0
         updateSize()
 
-        // 关键修复：主动同步指针，不再等待第一次回调，避免黑屏
+        // 关键修复：主动同步指针并拉取全量状态，不再等待第一次回调，避免黑屏
         mEmulator?.let { emu ->
+            emu.syncState()
             val ptr = emu.getNativePointer()
             if (ptr != 0L) {
                 Log.i("TerminalView-Engine", "attachSession: Calling nativeSetEnginePointer with ptr=$ptr")
