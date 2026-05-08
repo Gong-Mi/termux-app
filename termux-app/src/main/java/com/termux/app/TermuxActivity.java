@@ -496,18 +496,6 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     }
 
     private void setTerminalToolbarView(Bundle savedInstanceState) {
-        // Register listeners for sidebar buttons
-        findViewById(R.id.new_session_button).setOnClickListener(v -> {
-            mTermuxTerminalSessionActivityClient.addNewSession(false, null, null, null);
-        });
-        findViewById(R.id.toggle_keyboard_button).setOnClickListener(v -> {
-            mTermuxTerminalViewClient.onToggleSoftKeyboardRequest();
-            getDrawer().closeDrawers();
-        });
-        findViewById(R.id.settings_button).setOnClickListener(v -> {
-            showTransientMessage("Settings not yet implemented in Rust branch", true);
-        });
-
         mTermuxTerminalExtraKeys = new TermuxTerminalExtraKeys(this, mTerminalView,
             mTermuxTerminalViewClient, mTermuxTerminalSessionActivityClient);
 
