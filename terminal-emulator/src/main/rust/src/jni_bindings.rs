@@ -2291,9 +2291,22 @@ pub extern "system" fn Java_com_termux_terminal_JNI_getKeyCode(
     cursor_app: jboolean,
     keypad: jboolean,
 ) -> jstring {
+    // Java 层传入的 key_mode: 1=shift, 2=alt, 4=ctrl
+    // 转换为 Rust key_handler 的位掩码
+    let mut rust_key_mode = 0u32;
+    if (key_mode & 1) != 0 {
+        rust_key_mode |= crate::terminal::key_handler::KEYMOD_SHIFT;
+    }
+    if (key_mode & 2) != 0 {
+        rust_key_mode |= crate::terminal::key_handler::KEYMOD_ALT;
+    }
+    if (key_mode & 4) != 0 {
+        rust_key_mode |= crate::terminal::key_handler::KEYMOD_CTRL;
+    }
+
     let result = crate::terminal::key_handler::get_code(
         key_code,
-        key_mode as u32,
+        rust_key_mode,
         cursor_app != 0,
         keypad != 0,
     );
