@@ -684,11 +684,21 @@ impl VulkanContext {
 
             // 同步 Skia ImageInfo format 与实际 Swapchain Image format
             self.skia_format = ash_format_to_skia_format(format.format);
+<<<<<<< HEAD
+            android_log(
+                LogPriority::INFO,
+                &format!(
+                    "Vulkan: Selected swapchain format {:?} (mapped to Skia format {:?})",
+                    format.format, self.skia_format
+                ),
+            );
+=======
             self.vk_color_space = format.color_space;
             android_log(LogPriority::INFO, &format!(
                 "Vulkan: Selected swapchain format {:?} (mapped to Skia format {:?}) in color space {:?}",
                 format.format, self.skia_format, self.vk_color_space
             ));
+>>>>>>> b34ec99b (feat: optimize HDR pipeline, performance, memory safety, and session management)
 
             let caps = self
                 .surface_loader
