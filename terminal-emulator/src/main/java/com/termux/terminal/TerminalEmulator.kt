@@ -51,22 +51,22 @@ class TerminalEmulator(
     private var mActiveCallback: RustEngineCallback
 
     // --- 状态缓存 ---
-    private var mCachedCursorCol = 0
-    private var mCachedCursorRow = 0
-    private var mCachedCursorStyle = 0
-    private var mCachedCursorEnabled = true
-    private var mCachedCursorVisible = true
-    private var mCachedReverseVideo = false
-    private var mCachedAlternateBuffer = false
-    private var mCachedCursorKeysMode = false
-    private var mCachedKeypadMode = false
-    private var mCachedMouseTracking = false
-    private var mCachedAutoScrollDisabled = false
-    private var mCachedRows = 0
-    private var mCachedCols = 0
-    private var mCachedActiveTranscriptRows = 0
-    private var mCachedScrollCounter = 0
-    private var mCachedInsertMode = false
+    @Volatile private var mCachedCursorCol = 0
+    @Volatile private var mCachedCursorRow = 0
+    @Volatile private var mCachedCursorStyle = 0
+    @Volatile private var mCachedCursorEnabled = true
+    @Volatile private var mCachedCursorVisible = true
+    @Volatile private var mCachedReverseVideo = false
+    @Volatile private var mCachedAlternateBuffer = false
+    @Volatile private var mCachedCursorKeysMode = false
+    @Volatile private var mCachedKeypadMode = false
+    @Volatile private var mCachedMouseTracking = false
+    @Volatile private var mCachedAutoScrollDisabled = false
+    @Volatile private var mCachedRows = 0
+    @Volatile private var mCachedCols = 0
+    @Volatile private var mCachedActiveTranscriptRows = 0
+    @Volatile private var mCachedScrollCounter = 0
+    @Volatile private var mCachedInsertMode = false
 
     init {
         mActiveCallback = if (client is RustEngineCallback) {
@@ -251,10 +251,18 @@ class TerminalEmulator(
     fun sendMouseEvent(button: Int, col: Int, row: Int, pressed: Boolean) {
         RustTerminal.sendMouseEvent(mEnginePtr, button, col, row, pressed)
     }
-    fun sendKeyEvent(keyCode: Int, metaState: Int): String? =
-        RustTerminal.sendKeyCode(mEnginePtr, keyCode, null, metaState)
-    fun sendCharEvent(c: Char, metaState: Int) {
-        RustTerminal.sendKeyCode(mEnginePtr, 0, c.toString(), metaState)
+    fun sendKeyEvent(keyCode: Int, metaState: Int): String? {
+        var keyMode = 0
+        if ((metaState & android.view.KeyEvent.META_SHIFT_ON) != 0 || (metaState & android.view.KeyEvent.META_SHIFT_LEFT_ON) != 0 || (metaState & android.view.KeyEvent.META_SHIFT_RIGHT_ON) != 0) {
+            keyMode = keyMode or 1
+        }
+        if ((metaState & android.view.KeyEvent.META_ALT_ON) != 0 || (metaState & android.view.KeyEvent.META_ALT_LEFT_ON) != 0 || (metaState & android.view.KeyEvent.META_ALT_RIGHT_ON) != 0) {
+            keyMode = keyMode or 2
+        }
+        if ((metaState & android.view.KeyEvent.META_CTRL_ON) != 0 || (metaState & android.view.KeyEvent.META_CTRL_LEFT_ON) != 0 || (metaState & android.view.KeyEvent.META_CTRL_RIGHT_ON) != 0) {
+            keyMode = keyMode or 4
+        }
+        return JNI.getKeyCode(keyCode, keyMode, mCachedCursorKeysMode, mCachedKeypadMode)
     }
     fun paste(text: String) {
         RustTerminal.pasteText(mEnginePtr, text)

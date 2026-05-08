@@ -432,16 +432,19 @@ public final class TermuxTerminalSessionActivityClient implements TerminalSessio
     }
 
     public void addNewSession(boolean isFailSafe, String sessionName, File executable, @Nullable Intent sessionIntent) {
-        android.util.Log.d("TermuxTrace", "[addNewSession] isFailSafe=" + isFailSafe + ", sessionName=" + sessionName);
+        android.util.Log.d("TermuxTrace", "[addNewSession] isFailSafe=" + isFailSafe + ", sessionName=" + sessionName + ", executable=" + executable);
         var service = mActivity.getTermuxService();
         if (service == null) {
-            android.util.Log.e("TermuxTrace", "[addNewSession] Service is NULL!");
+            android.util.Log.e("TermuxTrace", "[addNewSession] Service is NULL! Connection might be lost.");
+            mActivity.showTransientMessage("Error: TermuxService not connected", true);
             return;
         }
 
-        android.util.Log.d("TermuxTrace", "[addNewSession] Current session count: " + service.getTermuxSessionsSize());
+        int currentSessionCount = service.getTermuxSessionsSize();
+        android.util.Log.d("TermuxTrace", "[addNewSession] Current session count: " + currentSessionCount);
 
-        if (service.getTermuxSessionsSize() >= MAX_SESSIONS) {
+        if (currentSessionCount >= MAX_SESSIONS) {
+            android.util.Log.w("TermuxTrace", "[addNewSession] Max sessions reached: " + MAX_SESSIONS);
             new AlertDialog.Builder(mActivity)
                 .setTitle(R.string.title_max_terminals_reached)
                 .setMessage(R.string.msg_max_terminals_reached)
@@ -460,10 +463,21 @@ public final class TermuxTerminalSessionActivityClient implements TerminalSessio
             if (workingDirectory == null) {
                 workingDirectory = currentSession == null ? TermuxConstants.HOME_PATH : currentSession.getCwd();
             }
-            var newTermuxSession = service.createTermuxSession(executable, arguments, null, workingDirectory, isFailSafe, sessionName);
-            android.util.Log.d("TermuxTrace", "[addNewSession] Created session: " + newTermuxSession.mHandle);
-            setCurrentSession(newTermuxSession);
-            mActivity.getDrawer().closeDrawers();
+
+            try {
+                var newTermuxSession = service.createTermuxSession(executable, arguments, null, workingDirectory, isFailSafe, sessionName);
+                if (newTermuxSession == null) {
+                    android.util.Log.e("TermuxTrace", "[addNewSession] createTermuxSession returned NULL!");
+                    mActivity.showTransientMessage("Failed to create new session", true);
+                    return;
+                }
+                android.util.Log.d("TermuxTrace", "[addNewSession] Created session: " + newTermuxSession.mHandle);
+                setCurrentSession(newTermuxSession);
+                mActivity.getDrawer().closeDrawers();
+            } catch (Exception e) {
+                android.util.Log.e("TermuxTrace", "[addNewSession] Exception while creating session", e);
+                mActivity.showTransientMessage("Error creating session: " + e.getMessage(), true);
+            }
         }
     }
 

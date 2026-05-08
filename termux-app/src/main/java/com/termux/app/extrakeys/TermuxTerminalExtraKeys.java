@@ -136,7 +136,7 @@ public final class TermuxTerminalExtraKeys {
                 if (shiftDown) metaState |= KeyEvent.META_SHIFT_ON | KeyEvent.META_SHIFT_LEFT_ON;
                 if (fnDown) metaState |= KeyEvent.META_FUNCTION_ON;
 
-                KeyEvent keyEvent = new KeyEvent(0, 0, KeyEvent.ACTION_UP, keyCode, 0, metaState);
+                KeyEvent keyEvent = new KeyEvent(0, 0, KeyEvent.ACTION_DOWN, keyCode, 0, metaState);
                 mActivity.getTerminalView().onKeyDown(keyCode, keyEvent);
             } else {
                 // not a control char

@@ -313,8 +313,8 @@ class TerminalSession(
                     mEmulator!!.append(bytesToWrite, bytesToWrite.size)
                     notifyScreenUpdate()
                 }
-                cleanupResources(exitCode)
                 mClient.onSessionFinished(this@TerminalSession)
+                cleanupResources(exitCode)
             }
         }
     }

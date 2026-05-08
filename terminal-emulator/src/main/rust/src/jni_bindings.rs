@@ -2006,8 +2006,12 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
 
         // ★ 关键：把 session 的完整数据绑定到 Rust 协调器
         // Java 层后续通过 enginePtr 反向查询 PID/fd/state
-<<<<<<< HEAD
-        coordinator.bind_session_data(session_id, pty_fd, pid, context_ptr_coord as usize);
+        coordinator.bind_session_data(
+            session_id,
+            pty_fd,
+            pid,
+            Arc::into_raw(context_ptr_coord) as usize,
+        );
 
         android_log(
             LogPriority::INFO,
@@ -2015,13 +2019,6 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
                 "[TRACE_SESSION] Engine context created at ptr: {:p}",
                 context_ptr_java
             ),
-=======
-        coordinator.bind_session_data(
-            session_id,
-            pty_fd,
-            pid,
-            Arc::into_raw(context_ptr_coord) as usize,
->>>>>>> b34ec99b (feat: optimize HDR pipeline, performance, memory safety, and session management)
         );
 
         if let Some(ref cb) = callback_ref {

@@ -63,6 +63,22 @@ public final class TermuxProperties {
         return properties.getProperty("extra-keys-style", EXTRA_KEYS_STYLE_DEFAULT);
     }
 
+    public boolean areHardwareKeyboardShortcutsDisabled() {
+        return properties.getProperty("disable-hardware-keyboard-shortcuts", "false").equalsIgnoreCase("true");
+    }
+
+    public boolean shouldOpenTerminalTranscriptURLOnClick() {
+        return properties.getProperty("terminal-transcript-url-click", "true").equalsIgnoreCase("true");
+    }
+
+    public boolean shouldAutoCloseSessionOnExit() {
+        return properties.getProperty("close-session-on-exit", "false").equalsIgnoreCase("true");
+    }
+
+    public boolean isUsingCtrlSpaceWorkaround() {
+        return properties.getProperty("ctrl-space-workaround", "false").equalsIgnoreCase("true");
+    }
+
     public enum BellBehaviour {
         VIBRATE, BEEP, IGNORE
     }
