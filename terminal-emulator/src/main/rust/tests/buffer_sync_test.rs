@@ -72,6 +72,9 @@ fn test_buffer_sync_shared_memory() {
     // 写入数据
     engine.process_bytes(b"Shared Memory Test");
 
+    // 触发同步到 flat_buffer（并自动同步到 shared_buffer_ptr）
+    engine.state.sync_screen_to_flat_buffer();
+
     // 验证共享内存中的版本号是否增加
     unsafe {
         assert!(
