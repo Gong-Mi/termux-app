@@ -253,13 +253,13 @@ class TerminalEmulator(
     }
     fun sendKeyEvent(keyCode: Int, metaState: Int): String? {
         var keyMode = 0
-        if ((metaState & android.view.KeyEvent.META_SHIFT_ON) != 0 || (metaState & android.view.KeyEvent.META_SHIFT_LEFT_ON) != 0 || (metaState & android.view.KeyEvent.META_SHIFT_RIGHT_ON) != 0) {
+        if ((metaState and android.view.KeyEvent.META_SHIFT_ON) != 0 || (metaState and android.view.KeyEvent.META_SHIFT_LEFT_ON) != 0 || (metaState and android.view.KeyEvent.META_SHIFT_RIGHT_ON) != 0) {
             keyMode = keyMode or 1
         }
-        if ((metaState & android.view.KeyEvent.META_ALT_ON) != 0 || (metaState & android.view.KeyEvent.META_ALT_LEFT_ON) != 0 || (metaState & android.view.KeyEvent.META_ALT_RIGHT_ON) != 0) {
+        if ((metaState and android.view.KeyEvent.META_ALT_ON) != 0 || (metaState and android.view.KeyEvent.META_ALT_LEFT_ON) != 0 || (metaState and android.view.KeyEvent.META_ALT_RIGHT_ON) != 0) {
             keyMode = keyMode or 2
         }
-        if ((metaState & android.view.KeyEvent.META_CTRL_ON) != 0 || (metaState & android.view.KeyEvent.META_CTRL_LEFT_ON) != 0 || (metaState & android.view.KeyEvent.META_CTRL_RIGHT_ON) != 0) {
+        if ((metaState and android.view.KeyEvent.META_CTRL_ON) != 0 || (metaState and android.view.KeyEvent.META_CTRL_LEFT_ON) != 0 || (metaState and android.view.KeyEvent.META_CTRL_RIGHT_ON) != 0) {
             keyMode = keyMode or 4
         }
         return JNI.getKeyCode(keyCode, keyMode, mCachedCursorKeysMode, mCachedKeypadMode)
