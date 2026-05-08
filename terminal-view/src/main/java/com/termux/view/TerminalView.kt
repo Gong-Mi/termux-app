@@ -387,7 +387,7 @@ class TerminalView @JvmOverloads constructor(
 
     private fun getFontWidth(): Float = if (mNativeFontWidth > 0) mNativeFontWidth else 1.0f
     private fun getFontLineSpacing(): Float = if (mNativeFontHeight > 0) mNativeFontHeight else 1.0f
-    private fun getFontLineSpacingAndAscent(): Float = mNativeFontHeight + mNativeFontAscent
+    private fun getFontLineSpacingAndAscent(): Float = 0f
 
     private fun refreshFontMetrics() {
         nativeGetFontMetrics(mNativeFontMetricsBuffer)

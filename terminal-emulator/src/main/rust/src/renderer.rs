@@ -995,7 +995,7 @@ impl TerminalRenderer {
         self.paint.set_color4f(fg_color_4f, None);
 
         let mut current_x = x;
-        let y_adjusted = y_base + self.font_cache.font_ascent * 0.15;
+        let y_adjusted = y_base - (self.font_cache.font_height + self.font_cache.font_ascent);
 
         // 分组绘制：将连续使用相同字体的字符合并为一个子 Run
         // 块元素特殊处理：使用矩形填充代替字体 glyph
@@ -1371,7 +1371,7 @@ impl TerminalRenderer {
             canvas,
             &ch.to_string(),
             x,
-            y_base + self.font_cache.font_ascent * 0.15,
+            y_base - (self.font_cache.font_height + self.font_cache.font_ascent),
             &font,
             cell_w,
         );

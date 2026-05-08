@@ -207,7 +207,6 @@ impl ScreenState {
         let style = self.current_style;
         self.get_current_screen_mut().scroll_up(top, bottom, style);
         if !self.use_alternate_buffer
-            && !self.auto_scroll_disabled
             && top == 0
             && bottom == self.rows
         {
@@ -1174,6 +1173,14 @@ mod tests {
         assert_eq!(state.scroll_counter, 1);
         state.scroll_up();
         assert_eq!(state.scroll_counter, 2);
+    }
+
+    #[test]
+    fn scroll_up_increments_counter_even_when_auto_scroll_disabled() {
+        let mut state = ScreenState::new(80, 24, 100, 8, 16);
+        state.auto_scroll_disabled = true;
+        state.scroll_up();
+        assert_eq!(state.scroll_counter, 1, "scroll_counter should increment even if auto_scroll_disabled is true");
     }
 
     #[test]
