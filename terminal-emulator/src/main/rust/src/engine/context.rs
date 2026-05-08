@@ -29,16 +29,17 @@ impl TerminalEngine {
 
     pub fn process_bytes(&mut self, data: &[u8]) {
         let prev = self.state.snapshot();
-        let mut handler = PerformHandler {
-            state: &mut self.state,
-            events: &mut self.events,
-        };
-        self.parser.advance(&mut handler, data);
-        
-        // 【性能优化】仅当有实际变更且需要刷新时才同步 FlatBuffer
-        // 且仅同步一次，而不是在 parser 内部多次同步
+        {
+            let mut handler = PerformHandler {
+                state: &mut self.state,
+                events: &mut self.events,
+            };
+            self.parser.advance(&mut handler, data);
+        }
+
+        // 【性能优化】仅同步一次，而不是在 parser 内部多次同步
         self.state.sync_screen_to_flat_buffer();
-        
+
         let curr = self.state.snapshot();
         let mut mask = 0u32;
         for i in 0..16 {
