@@ -2794,10 +2794,10 @@ fn test_auto_scroll_disabled() {
         engine.process_bytes(line.as_bytes());
     }
 
-    // 滚动计数器不应增加
-    assert_eq!(
-        engine.state.scroll_counter, 0,
-        "Scroll counter should not increment when auto-scroll is disabled"
+    // 即使禁用自动滚动，滚动计数器也应增加（以供 UI 维护相对视口）
+    assert!(
+        engine.state.scroll_counter > 0,
+        "Scroll counter should still increment even when auto-scroll is disabled (to allow UI tracking)"
     );
 }
 
