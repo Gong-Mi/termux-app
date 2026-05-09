@@ -23,7 +23,7 @@ impl<'a> Perform for PerformHandler<'a> {
     }
 
     fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], _ignore: bool, action: char) {
-        crate::terminal::handlers::csi::handle_csi(self.state, params, intermediates, action);
+        crate::terminal::handlers::csi::handle_csi(self.state, self.events, params, intermediates, action);
     }
 
     fn osc_dispatch(&mut self, params: &[&[u8]], _bell_terminated: bool) {

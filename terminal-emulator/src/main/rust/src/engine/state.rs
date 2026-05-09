@@ -77,6 +77,8 @@ pub struct ScreenState {
     pub auto_scroll_disabled: bool,
     pub underline_color: u64,
     pub selection: Option<Selection>,
+    /// 待发送回 Java 的事件（由 TerminalEngine 收集并发送）
+    pub pending_events: std::sync::Mutex<Vec<crate::engine::events::TerminalEvent>>,
 }
 
 impl Drop for ScreenState {
@@ -158,6 +160,7 @@ impl ScreenState {
             auto_scroll_disabled: false,
             underline_color: COLOR_INDEX_FOREGROUND as u64,
             selection: None,
+            pending_events: std::sync::Mutex::new(Vec::with_capacity(4)),
         }
     }
 
@@ -281,63 +284,17 @@ impl ScreenState {
         }
     }
 
-    pub fn report_sixel_image(&self, callback_obj: &Option<jni::objects::GlobalRef>) {
-        if let Some(obj) = callback_obj {
-            if let Some(vm) = crate::JAVA_VM.get() {
-                if let Ok(mut env) = vm.get_env() {
-                    let decoder = &self.sixel_decoder;
-                    let rgba_data = decoder.get_image_data();
-                    let width = decoder.width.max(1) as i32;
-                    let height = decoder.height.max(1) as i32;
-                    let start_x = decoder.start_x as i32;
-                    let start_y = decoder.start_y as i32;
-
-                    if let Ok(byte_array) = env.new_byte_array(rgba_data.len() as i32) {
-                        let bytes: Vec<i8> = rgba_data.iter().map(|&b| b as i8).collect();
-                        let _ = env.set_byte_array_region(&byte_array, 0, &bytes);
-
-                        let _ = env.call_method(
-                            obj.as_obj(),
-                            "onSixelImage",
-                            "([BIIII)V",
-                            &[
-                                JValue::Object(&byte_array.into()),
-                                JValue::Int(width),
-                                JValue::Int(height),
-                                JValue::Int(start_x),
-                                JValue::Int(start_y),
-                            ],
-                        );
-                    }
-                }
-            }
-        }
-    }
-
     pub fn report_clear_screen(&self) {
-        if let Some(obj) = &self.java_callback_obj {
-            if let Some(vm) = crate::JAVA_VM.get() {
-                if let Ok(mut env) = vm.get_env() {
-                    let _ = env.call_method(obj.as_obj(), "onClearScreen", "()V", &[]);
-                }
-            }
+        if let Ok(mut pending) = self.pending_events.lock() {
+            pending.push(crate::engine::events::TerminalEvent::ScreenUpdated);
         }
     }
 
     pub fn report_terminal_response(&self, response: &str) {
-        if let Some(obj) = &self.java_callback_obj {
-            if let Some(vm) = crate::JAVA_VM.get() {
-                if let Ok(mut env) = vm.get_env() {
-                    if let Ok(java_response) = env.new_string(response) {
-                        let _ = env.call_method(
-                            obj.as_obj(),
-                            "write",
-                            "(Ljava/lang/String;)V",
-                            &[JValue::Object(&java_response.into())],
-                        );
-                    }
-                }
-            }
+        if let Ok(mut pending) = self.pending_events.lock() {
+            pending.push(crate::engine::events::TerminalEvent::TerminalResponse(
+                response.to_string(),
+            ));
         }
     }
 
@@ -734,16 +691,17 @@ impl ScreenState {
     }
 
     pub fn report_bell(&self) {
-        if let Some(obj) = &self.java_callback_obj {
-            if let Some(vm) = crate::JAVA_VM.get() {
-                if let Ok(mut env) = vm.get_env() {
-                    let _ = env.call_method(obj.as_obj(), "onBell", "()V", &[]);
-                }
-            }
+        if let Ok(mut pending) = self.pending_events.lock() {
+            pending.push(crate::engine::events::TerminalEvent::Bell);
         }
     }
 
-    pub fn report_colors_changed(&self) {}
+    pub fn report_colors_changed(&self) {
+        if let Ok(mut pending) = self.pending_events.lock() {
+            pending.push(crate::engine::events::TerminalEvent::ColorsChanged);
+        }
+    }
+
     pub fn report_color_response(&self, response: &str) {
         self.report_terminal_response(&format!("\x1b]{}\x07", response));
     }
@@ -752,22 +710,11 @@ impl ScreenState {
     pub fn handle_osc14(&mut self) {}
     pub fn handle_osc19(&mut self) {}
     pub fn handle_osc52(&mut self, _events: &mut Vec<TerminalEvent>, base64_data: &str) {
-        use base64::{Engine as _, engine::general_purpose};
+        use base64::{engine::general_purpose, Engine as _};
         if let Ok(decoded) = general_purpose::STANDARD.decode(base64_data) {
             if let Ok(text) = String::from_utf8(decoded) {
-                if let Some(obj) = &self.java_callback_obj {
-                    if let Some(vm) = crate::JAVA_VM.get() {
-                        if let Ok(mut env) = vm.get_env() {
-                            if let Ok(j_text) = env.new_string(text) {
-                                let _ = env.call_method(
-                                    obj.as_obj(),
-                                    "onCopyTextToClipboard",
-                                    "(Ljava/lang/String;)V",
-                                    &[JValue::Object(&j_text.into())],
-                                );
-                            }
-                        }
-                    }
+                if let Ok(mut pending) = self.pending_events.lock() {
+                    pending.push(crate::engine::events::TerminalEvent::CopytoClipboard(text));
                 }
             }
         }

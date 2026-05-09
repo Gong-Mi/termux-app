@@ -493,6 +493,27 @@ fn flush_events_to_java(
     }
 }
 
+/// 【优化】直接处理 TerminalResponse，避免 JNI 环路
+fn optimized_flush_events(
+    env: &mut JNIEnv,
+    context: &TerminalContext,
+    events: Vec<TerminalEvent>,
+    cb: &Option<jni::objects::GlobalRef>,
+) {
+    let pty_fd = context.pty_fd.load(std::sync::atomic::Ordering::SeqCst);
+    let mut java_events = Vec::with_capacity(events.len());
+    for event in events {
+        match event {
+            TerminalEvent::TerminalResponse(resp) if pty_fd >= 0 => {
+                let _ = crate::pty::write_to_fd(pty_fd, resp.as_bytes());
+            }
+            other => java_events.push(other),
+        }
+    }
+    flush_events_to_java(env, cb, java_events);
+}
+
+
 /// 创建引擎实例
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_createEngine(
@@ -545,7 +566,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatch(
             }
             (engine.take_events(), engine.state.java_callback_obj.clone())
         };
-        flush_events_to_java(&mut env, &cb, events);
+        optimized_flush_events(&mut env, &context, events, &cb);
         render_thread::request_render();
         let dt = t0.elapsed().as_micros() as f64 / 1000.0;
         if dt > 5.0 {
@@ -592,7 +613,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatchDirect(
 
             (engine.take_events(), engine.state.java_callback_obj.clone())
         };
-        flush_events_to_java(&mut env, &cb, events);
+        optimized_flush_events(&mut env, &context, events, &cb);
         render_thread::request_render();
         let dt = t0.elapsed().as_micros() as f64 / 1000.0;
         if dt > 5.0 {
@@ -623,7 +644,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processCodePoint(
             engine.process_code_point(code_point as u32);
             (engine.take_events(), engine.state.java_callback_obj.clone())
         };
-        flush_events_to_java(&mut env, &cb, events);
+        optimized_flush_events(&mut env, &context, events, &cb);
         render_thread::request_render();
     }));
     let _ = Arc::into_raw(context);
@@ -803,24 +824,12 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_startIoThread(
                                 let mut engine = context.lock.write().unwrap();
                                 engine.process_bytes(&read_buf);
                                 (engine.take_events(), engine.state.java_callback_obj.clone())
-                            };
-                            render_thread::request_render();
-                            // 【优化】直接处理 TerminalResponse，避免 JNI 环路
-                            let mut java_events = Vec::with_capacity(events.len());
-                            for event in events {
-                                match event {
-                                    TerminalEvent::TerminalResponse(resp) => {
-                                        // 直接写回 PTY，避免 Rust → Java → Rust 环路
-                                        let _ = crate::pty::write_to_fd(pty_fd, resp.as_bytes());
-                                    }
-                                    other => java_events.push(other),
+                                };
+                                render_thread::request_render();
+                                optimized_flush_events(env, &context, events, &cb);
                                 }
-                            }
-                            flush_events_to_java(env, &cb, java_events);
-                        }
-                        Ok(())
-                    });
-                }
+                                Ok(())
+                                });                }
             } else {
                 android_log(LogPriority::ERROR, " IO Thread: Failed to attach to JVM");
             }
@@ -1443,6 +1452,8 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_toggleAutoScrollDis
         if mask != 0 {
             engine.events.push(TerminalEvent::StateChanged { mask, values: curr });
         }
+        // Also push ScreenUpdated so TerminalView refreshes
+        engine.events.push(TerminalEvent::ScreenUpdated);
         (engine.take_events(), engine.state.java_callback_obj.clone(), new_value)
     };
     flush_events_to_java(&mut env, &cb, events);

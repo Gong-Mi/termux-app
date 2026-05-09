@@ -40,6 +40,13 @@ impl TerminalEngine {
         // 【性能优化】仅同步一次，而不是在 parser 内部多次同步
         self.state.sync_screen_to_flat_buffer();
 
+        // 收集待发送的事件
+        if let Ok(mut pending) = self.state.pending_events.lock() {
+            for event in pending.drain(..) {
+                self.events.push(event);
+            }
+        }
+
         let curr = self.state.snapshot();
         let mut mask = 0u32;
         for i in 0..16 {

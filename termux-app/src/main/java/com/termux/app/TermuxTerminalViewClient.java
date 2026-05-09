@@ -101,13 +101,10 @@ public final class TermuxTerminalViewClient implements TerminalViewClient {
             return true;
         }
 
-        if (e.getAction() == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
-            onToggleSoftKeyboardRequest();
-            return true;
-        } else if (keyCode == KeyEvent.KEYCODE_ENTER && !currentSession.isRunning()) {
+        if (keyCode == KeyEvent.KEYCODE_ENTER && !currentSession.isRunning()) {
             mTermuxTerminalSessionActivityClient.removeFinishedSession(currentSession);
             return true;
-        } else if (e.isCtrlPressed() && e.isAltPressed()) {
+        } else if (!mActivity.mProperties.areHardwareKeyboardShortcutsDisabled() && e.isCtrlPressed() && e.isAltPressed()) {
             // Get the unmodified code point:
             int unicodeChar = e.getUnicodeChar(0);
 
@@ -233,7 +230,7 @@ public final class TermuxTerminalViewClient implements TerminalViewClient {
 
     @Override
     public boolean onCodePoint(final int codePoint, boolean ctrlDown, TerminalSession session) {
-        if (mVirtualFnKeyDown) {
+        if (mVirtualFnKeyDown || readFnKey()) {
             int resultingKeyCode = -1;
             int resultingCodePoint = -1;
             boolean altDown = false;
