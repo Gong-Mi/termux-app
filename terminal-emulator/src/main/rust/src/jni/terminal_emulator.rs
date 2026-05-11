@@ -102,7 +102,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatch(
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let (events, cb) = {
-            let mut engine = context.lock.write().unwrap();
+            let mut engine = crate::safe_write!(context.lock);
             let j_array = unsafe { jni::objects::JByteArray::from_raw(batch) };
             if let Ok(bytes) = env.convert_byte_array(&j_array) {
                 let len = length as usize;
@@ -196,7 +196,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processCodePoint(
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let (events, cb) = {
-            let mut engine = context.lock.write().unwrap();
+            let mut engine = crate::safe_write!(context.lock);
             engine.process_code_point(code_point as u32);
             (engine.take_events(), engine.state.java_callback_obj.clone())
         };
@@ -217,7 +217,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_setTranscriptRows(
     if ptr == 0 { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     {
-        let mut engine = context.lock.write().unwrap();
+        let mut engine = crate::safe_write!(context.lock);
         engine.state.main_screen.resize_transcript(rows as usize);
     }
     let _ = Arc::into_raw(context);
@@ -237,7 +237,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_resize(
     if ptr == 0 { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let (events, cb) = {
-        let mut engine = context.lock.write().unwrap();
+        let mut engine = crate::safe_write!(context.lock);
         engine.state.resize(cols, rows);
         engine.events.push(TerminalEvent::ScreenUpdated);
         (engine.take_events(), engine.state.java_callback_obj.clone())
@@ -257,7 +257,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getTitle(
     if ptr == 0 { return std::ptr::null_mut(); }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let title = {
-        let engine = context.lock.read().unwrap();
+        let engine = crate::safe_read!(context.lock);
         engine.state.title.clone().unwrap_or_default()
     };
     let result = if let Ok(j_str) = env.new_string(title) { j_str.into_raw() } else { std::ptr::null_mut() };
@@ -271,7 +271,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getCursorRow(_env: 
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
-        let engine = context.lock.read().unwrap();
+        let engine = crate::safe_read!(context.lock);
         engine.state.cursor.y as jint
     };
     let _ = Arc::into_raw(context);
@@ -284,7 +284,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getCursorCol(_env: 
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
-        let engine = context.lock.read().unwrap();
+        let engine = crate::safe_read!(context.lock);
         engine.state.cursor.x as jint
     };
     let _ = Arc::into_raw(context);
@@ -297,7 +297,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getCursorStyle(_env
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
-        let engine = context.lock.read().unwrap();
+        let engine = crate::safe_read!(context.lock);
         engine.state.cursor.style as jint
     };
     let _ = Arc::into_raw(context);
@@ -310,7 +310,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorStyle(mut 
     if ptr == 0 { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let (events, cb) = {
-        let mut engine = context.lock.write().unwrap();
+        let mut engine = crate::safe_write!(context.lock);
         engine.state.cursor.style = cursor_style as i32;
         (engine.take_events(), engine.state.java_callback_obj.clone())
     };
@@ -326,7 +326,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_doDecSetOrReset(mut
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let (events, cb) = {
-            let mut engine = context.lock.write().unwrap();
+            let mut engine = crate::safe_write!(context.lock);
             engine.state.do_decset_or_reset(setting != 0, mode as u32);
             (engine.take_events(), engine.state.java_callback_obj.clone())
         };
@@ -342,7 +342,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_shouldCursorBeVisib
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
-        let engine = context.lock.read().unwrap();
+        let engine = crate::safe_read!(context.lock);
         if engine.state.cursor.should_be_visible(engine.state.cursor_enabled) { 1 } else { 0 }
     };
     let _ = Arc::into_raw(context);
@@ -354,7 +354,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isCursorEnabled(_en
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
-        let engine = context.lock.read().unwrap();
+        let engine = crate::safe_read!(context.lock);
         if engine.state.cursor_enabled { 1 } else { 0 }
     };
     let _ = Arc::into_raw(context);
@@ -366,7 +366,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isReverseVideo(_env
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
-        let engine = context.lock.read().unwrap();
+        let engine = crate::safe_read!(context.lock);
         if engine.state.modes.is_enabled(DECSET_BIT_REVERSE_VIDEO) { 1 } else { 0 }
     };
     let _ = Arc::into_raw(context);
@@ -378,7 +378,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isAlternateBufferAc
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
-        let engine = context.lock.read().unwrap();
+        let engine = crate::safe_read!(context.lock);
         if engine.state.use_alternate_buffer { 1 } else { 0 }
     };
     let _ = Arc::into_raw(context);
@@ -390,7 +390,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isCursorKeysApplica
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
-        let engine = context.lock.read().unwrap();
+        let engine = crate::safe_read!(context.lock);
         if engine.state.application_cursor_keys { 1 } else { 0 }
     };
     let _ = Arc::into_raw(context);
@@ -402,7 +402,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isKeypadApplication
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
-        let engine = context.lock.read().unwrap();
+        let engine = crate::safe_read!(context.lock);
         if engine.state.modes.is_enabled(DECSET_BIT_APPLICATION_KEYPAD) { 1 } else { 0 }
     };
     let _ = Arc::into_raw(context);
@@ -414,7 +414,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isMouseTrackingActi
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
-        let engine = context.lock.read().unwrap();
+        let engine = crate::safe_read!(context.lock);
         if engine.state.mouse_tracking { 1 } else { 0 }
     };
     let _ = Arc::into_raw(context);
@@ -429,7 +429,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getScrollCounter(_e
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
-        let engine = context.lock.read().unwrap();
+        let engine = crate::safe_read!(context.lock);
         engine.state.scroll_counter as jint
     };
     let _ = Arc::into_raw(context);
@@ -441,7 +441,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getRows(_env: JNIEn
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
-        let engine = context.lock.read().unwrap();
+        let engine = crate::safe_read!(context.lock);
         engine.state.rows as jint
     };
     let _ = Arc::into_raw(context);
@@ -453,7 +453,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getCols(_env: JNIEn
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
-        let engine = context.lock.read().unwrap();
+        let engine = crate::safe_read!(context.lock);
         engine.state.cols as jint
     };
     let _ = Arc::into_raw(context);
@@ -468,7 +468,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_readRow(
     if ptr == 0 { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let (text_buf, style_buf) = {
-        let engine = context.lock.read().unwrap();
+        let engine = crate::safe_read!(context.lock);
         let cols = engine.state.cols as usize;
         let mut text_buf = vec![0i32; cols];
         let mut style_buf = vec![0i64; cols];
@@ -502,7 +502,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getSelectedText(
     };
 
     let text = {
-        let engine = context.lock.read().unwrap();
+        let engine = crate::safe_read!(context.lock);
         engine.state.get_current_screen().get_selected_text(real_x1, real_y1, real_x2, real_y2)
     };
     let result = if let Ok(j_str) = env.new_string(text) { j_str.into_raw() } else { std::ptr::null_mut() };
@@ -518,7 +518,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getWordAtLocation(
     if ptr == 0 { return std::ptr::null_mut(); }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let text = {
-        let engine = context.lock.read().unwrap();
+        let engine = crate::safe_read!(context.lock);
         engine.state.get_current_screen().get_row(y).get_word_at(x as usize)
     };
     let result = if let Ok(j_str) = env.new_string(text) { j_str.into_raw() } else { std::ptr::null_mut() };
@@ -534,7 +534,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getTranscriptText(
     if ptr == 0 { return std::ptr::null_mut(); }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let text = {
-        let engine = context.lock.read().unwrap();
+        let engine = crate::safe_read!(context.lock);
         engine.state.get_current_screen().get_transcript_text()
     };
     let result = if let Ok(j_str) = env.new_string(text) { j_str.into_raw() } else { std::ptr::null_mut() };
@@ -548,7 +548,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_clearScrollCounter(
     if ptr == 0 { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let (events, cb) = {
-        let mut engine = context.lock.write().unwrap();
+        let mut engine = crate::safe_write!(context.lock);
         engine.state.scroll_counter = 0;
         (engine.take_events(), engine.state.java_callback_obj.clone())
     };
@@ -562,7 +562,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isAutoScrollDisable
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
-        let engine = context.lock.read().unwrap();
+        let engine = crate::safe_read!(context.lock);
         if engine.state.auto_scroll_disabled { 1 } else { 0 }
     };
     let _ = Arc::into_raw(context);
@@ -574,7 +574,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_toggleAutoScrollDis
     if ptr == 0 { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let (events, cb) = {
-        let mut engine = context.lock.write().unwrap();
+        let mut engine = crate::safe_write!(context.lock);
         engine.state.auto_scroll_disabled = !engine.state.auto_scroll_disabled;
         (engine.take_events(), engine.state.java_callback_obj.clone())
     };
@@ -588,7 +588,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_sendMouseEvent(mut 
     if ptr == 0 { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let (events, cb) = {
-        let mut engine = context.lock.write().unwrap();
+        let mut engine = crate::safe_write!(context.lock);
         engine.state.send_mouse_event(button as u32, col, row, pressed != 0);
         (engine.take_events(), engine.state.java_callback_obj.clone())
     };
@@ -609,7 +609,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_sendKeyCode(
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
 
     let seq = {
-        let mut engine = context.lock.write().unwrap();
+        let mut engine = crate::safe_write!(context.lock);
         engine.state.send_key_event(key_code, Some(rust_str), meta_state)
     };
     let _ = Arc::into_raw(context);
@@ -637,7 +637,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_pasteText(
     if let Some(s) = rust_str {
         let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
         let (events, cb) = {
-            let mut engine = context.lock.write().unwrap();
+            let mut engine = crate::safe_write!(context.lock);
             engine.state.paste(&s);
             (engine.take_events(), engine.state.java_callback_obj.clone())
         };
@@ -652,7 +652,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getActiveTranscript
     if ptr == 0 { return 0; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let result = {
-        let engine = context.lock.read().unwrap();
+        let engine = crate::safe_read!(context.lock);
         engine.state.get_current_screen().active_transcript_rows as jint
     };
     let _ = Arc::into_raw(context);
@@ -665,7 +665,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getColors(env: JNIE
     if ptr == 0 { return std::ptr::null_mut(); }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let colors = {
-        let engine = context.lock.read().unwrap();
+        let engine = crate::safe_read!(context.lock);
         engine.state.colors.current_colors
     };
 
@@ -684,7 +684,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_resetColors(mut env
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
 
     let (events, cb) = {
-        let mut engine = context.lock.write().unwrap();
+        let mut engine = crate::safe_write!(context.lock);
         engine.state.colors.reset();
         let mut events = engine.take_events();
         events.push(TerminalEvent::ColorsChanged);
@@ -752,7 +752,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_updateColors(
     };
 
     let (events, cb) = {
-        let mut engine = context.lock.write().unwrap();
+        let mut engine = crate::safe_write!(context.lock);
 
         if let Err(e) = engine.state.colors.update_with_properties(&props_map) {
             android_log(LogPriority::WARN, &format!("Failed to update colors: {}", e));
@@ -779,7 +779,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorColorForBa
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
 
     let (events, cb) = {
-        let mut engine = context.lock.write().unwrap();
+        let mut engine = crate::safe_write!(context.lock);
         engine.state.colors.set_cursor_color_for_background();
 
         let mut events = engine.take_events();
@@ -813,7 +813,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_updateTerminalSessi
     if ptr == 0 { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let (events, cb) = {
-        let mut engine = context.lock.write().unwrap();
+        let mut engine = crate::safe_write!(context.lock);
         if client.is_null() {
             engine.state.java_callback_obj = None;
         } else {
@@ -833,7 +833,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorBlinkState
     if ptr == 0 { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let (events, cb) = {
-        let mut engine = context.lock.write().unwrap();
+        let mut engine = crate::safe_write!(context.lock);
         engine.state.cursor.blink_state = state != 0;
         (engine.take_events(), engine.state.java_callback_obj.clone())
     };
@@ -847,7 +847,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorBlinkingEn
     if ptr == 0 { return; }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let (events, cb) = {
-        let mut engine = context.lock.write().unwrap();
+        let mut engine = crate::safe_write!(context.lock);
         engine.state.cursor.blinking_enabled = enabled != 0;
         (engine.take_events(), engine.state.java_callback_obj.clone())
     };
@@ -869,7 +869,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getDebugInfo(
     }
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let debug_info = {
-        let engine = context.lock.read().unwrap();
+        let engine = crate::safe_read!(context.lock);
         engine.state.get_debug_info()
     };
     let result = if let Ok(j_str) = env.new_string(debug_info) {
@@ -1096,11 +1096,17 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_waitFor(
 }
 
 /// 关闭 FD
+/// 注意：Android 10+ 引入了 fdsan，如果 FD 被 Java 侧的 ParcelFileDescriptor 拥有，
+/// 直接在此处 libc::close 会导致进程崩溃 (SIGABRT)。
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_com_termux_terminal_JNI_close(
     _env: JNIEnv,
     _class: JClass,
     fd: jint,
 ) {
-    unsafe { libc::close(fd); }
+    if fd < 0 { return; }
+    // 暂时禁用 Rust 侧的主动关闭，交由 Java 侧的 ParcelFileDescriptor 处理生命周期，
+    // 或者使用更安全的 dup/detach 策略。这是解决 [fdsan_error] 崩溃的关键。
+    crate::utils::android_log(crate::utils::LogPriority::DEBUG, &format!("JNI: close(fd={}) called from Java. (fdsan bypass: skipping direct libc::close)", fd));
+    // unsafe { libc::close(fd); } 
 }

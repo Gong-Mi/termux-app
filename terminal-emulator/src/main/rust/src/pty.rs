@@ -178,17 +178,38 @@ pub fn create_subprocess_with_data(
         match fork() {
             Ok(ForkResult::Parent { child }) => {
                 ACTIVE_CHILD_COUNT.fetch_add(1, Ordering::SeqCst);
+                
+                // 返回原始 PTM 给 Rust IO 线程管理。
                 Ok((ptm, child.as_raw()))
             }
             Ok(ForkResult::Child) => {
-                let _ = setsid();
-                
-                // 降低子进程优先级 (Nice 19)，减少对系统负载的冲击，从而规避 Phantom Killer
-                libc::setpriority(libc::PRIO_PROCESS, 0, 19);
-
                 let c_devname = CString::new(devname).unwrap();
                 let pts = libc::open(c_devname.as_ptr(), libc::O_RDWR);
                 if pts < 0 { libc::_exit(1); }
+
+                // === 深度修复：彻底解除 fdsan 保护 ===
+                // 我们直接在子进程中清除 FD 0, 1, 2 的所有权标签，防止触发父进程的 fdsan 检查。
+                unsafe {
+                    unsafe extern "C" {
+                        fn android_fdsan_set_error_level(new_level: i32) -> i32;
+                        fn android_fdsan_exchange_owner_tag(fd: i32, expected_tag: u64, new_tag: u64);
+                    }
+                    // 1. 彻底禁用当前进程的 fdsan 报错
+                    android_fdsan_set_error_level(0);
+                    // 2. 强行重置标准流的 tag (0 = FDSAN_OWNER_TAG_NONE)
+                    android_fdsan_exchange_owner_tag(0, u64::MAX, 0); 
+                    android_fdsan_exchange_owner_tag(1, u64::MAX, 0);
+                    android_fdsan_exchange_owner_tag(2, u64::MAX, 0);
+                    
+                    // 3. 关闭所有继承自 JVM 的多余 FD (非常重要)
+                    for i in 3..1024 {
+                        if i != pts && i != ptm {
+                            libc::close(i);
+                        }
+                    }
+                }
+
+                let _ = setsid();
 
                 libc::ioctl(pts, libc::TIOCSCTTY as _, 0);
 
@@ -199,54 +220,88 @@ pub fn create_subprocess_with_data(
                 libc::close(ptm);
 
                 // === CHECKPOINT 系统：记录 exec 解析链条，用于 W^X 错误分析 ===
-                let termux_data = "/data/data/com.termux";
-                let termux_files = format!("{}/files", termux_data);
-                let termux_prefix = format!("{}/usr", termux_files);
-                let termux_bin = format!("{}/bin", termux_prefix);
-                let termux_lib = format!("{}/lib", termux_prefix);
+                let mut termux_data = "/data/data/com.termux".to_string();
                 
-                let mut final_envp = envp.clone();
-                
-                // 1. PATH
-                let default_path = format!("PATH={}:/system/bin:/system/xbin", termux_bin);
-                if let Some(pos) = final_envp.iter().position(|s| s.starts_with("PATH=")) {
-                    let old_path = final_envp[pos].split('=').nth(1).unwrap_or("");
-                    if !old_path.contains(&termux_bin) {
-                        final_envp[pos] = format!("PATH={}:{}", termux_bin, old_path);
+                // 动态检测实际路径（适配多用户/工作资料）
+                if cmd_str.contains("/data/user/") {
+                    if let Some(pos) = cmd_str.find("/com.termux") {
+                        termux_data = cmd_str[..pos + 11].to_string();
                     }
-                } else {
-                    final_envp.push(default_path);
+                } else if cwd_str.contains("/data/user/") {
+                    if let Some(pos) = cwd_str.find("/com.termux") {
+                        termux_data = cwd_str[..pos + 11].to_string();
+                    }
                 }
 
-                // 2. LD_LIBRARY_PATH（供动态链接器搜索库）
-                if !final_envp.iter().any(|s| s.starts_with("LD_LIBRARY_PATH=")) {
+                let termux_files = format!("{}/files", termux_data);
+                let termux_prefix = format!("{}/usr", termux_files);
+                
+                // === 详细环境追踪 ===
+                crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY_TRACE] Child Process (PID={}) starting...", libc::getpid()));
+                crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY_TRACE] termux_data='{}' termux_prefix='{}'", termux_data, termux_prefix));
+
+                // === 顶级环境清洗：彻底扫除 /data/data/ 幽灵 ===
+                let mut final_envp: Vec<String> = envp.iter().map(|s| {
+                    if s.contains("/data/data/com.termux") {
+                        s.replace("/data/data/com.termux", &termux_data)
+                    } else {
+                        s.clone()
+                    }
+                }).collect();
+
+                // 1. 强制纠正核心变量
+                let termux_bin = format!("{}/bin", termux_prefix);
+                let termux_lib = format!("{}/lib", termux_prefix);
+
+                // PATH 清洗与注入
+                if let Some(pos) = final_envp.iter().position(|s| s.starts_with("PATH=")) {
+                    let old_path = final_envp[pos].splitn(2, '=').nth(1).unwrap_or("");
+                    // 彻底移除旧 PATH 中所有包含 /data/data/ 的条目
+                    let clean_path: Vec<&str> = old_path.split(':')
+                        .filter(|p| !p.contains("/data/data/com.termux"))
+                        .collect();
+                    let mut new_path_str = termux_bin.clone();
+                    if !clean_path.is_empty() {
+                        new_path_str.push(':');
+                        new_path_str.push_str(&clean_path.join(":"));
+                    }
+                    final_envp[pos] = format!("PATH={}", new_path_str);
+                } else {
+                    final_envp.push(format!("PATH={}:/system/bin:/system/xbin", termux_bin));
+                }
+
+                // LD_LIBRARY_PATH 强力注入
+                if let Some(pos) = final_envp.iter().position(|s| s.starts_with("LD_LIBRARY_PATH=")) {
+                    final_envp[pos] = format!("LD_LIBRARY_PATH={}", termux_lib);
+                } else {
                     final_envp.push(format!("LD_LIBRARY_PATH={}", termux_lib));
                 }
 
-                // 3. LD_PRELOAD — 让 libtermux-exec.so 拦截 shell 内所有子进程 exec，
-                // 绕过 Android W^X 限制。Rust 引擎只能拦截初始启动，管不到 shell 内置 exec。
+                // 2. LD_PRELOAD
                 let termux_exec_path = format!("{}/lib/libtermux-exec.so", termux_prefix);
-                if std::path::Path::new(&termux_exec_path).exists() {
-                    if !final_envp.iter().any(|s| s.starts_with("LD_PRELOAD=")) {
-                        final_envp.push(format!("LD_PRELOAD={}", termux_exec_path));
+                if !final_envp.iter().any(|s| s.starts_with("LD_PRELOAD=")) {
+                    final_envp.push(format!("LD_PRELOAD={}", termux_exec_path));
+                }
+
+                crate::utils::android_log(crate::utils::LogPriority::INFO, &format!("[PTY_TRACE] Final ENV count: {}", final_envp.len()));
+                for e in &final_envp {
+                    if e.starts_with("PATH=") || e.starts_with("LD_") || e.starts_with("HOME=") {
+                        crate::utils::android_log(crate::utils::LogPriority::DEBUG, &format!("[PTY_ENV] {}", e));
                     }
                 }
 
-                // 3. 基础变量
-                if !final_envp.iter().any(|s| s.starts_with("TERM=")) { final_envp.push("TERM=xterm-256color".to_string()); }
-                if !final_envp.iter().any(|s| s.starts_with("HOME=")) { final_envp.push(format!("HOME={}/home", termux_files)); }
-                if !final_envp.iter().any(|s| s.starts_with("PREFIX=")) { final_envp.push(format!("PREFIX={}", termux_prefix)); }
-
                 libc::clearenv();
-                for env_var in final_envp {
-                    if let Ok(c_env) = CString::new(env_var) {
+                for env_var in &final_envp {
+                    if let Ok(c_env) = CString::new(env_var.clone()) {
                         libc::putenv(c_env.into_raw());
                     }
                 }
 
                 if !cwd_str.is_empty() {
                     let c_cwd = CString::new(cwd_str.clone()).unwrap();
-                    let _ = chdir(c_cwd.as_c_str());
+                    if libc::chdir(c_cwd.as_ptr()) != 0 {
+                        crate::utils::android_log(crate::utils::LogPriority::ERROR, &format!("[PTY_TRACE] chdir FAILED for '{}'", cwd_str));
+                    }
                 }
 
                 // ====== 开始 exec 解析链条检查点 ======
@@ -415,18 +470,30 @@ pub fn create_subprocess_with_data(
                     if std::path::Path::new(linker).exists() {
                         let mut linker_argv = Vec::new();
                         
+                        // 关键修复：确保 final_cmd 路径也是最新的转换后路径
+                        let mut corrected_cmd = final_cmd.clone();
+                        if corrected_cmd.contains("/data/data/com.termux") {
+                            corrected_cmd = corrected_cmd.replace("/data/data/com.termux", &termux_data);
+                        }
+
                         // 关键：保留原始 argv[0]（如 -bash），linker 把它传给子进程作为 progname
                         let prog_name = if !final_args.is_empty() {
                             final_args[0].clone()
                         } else {
-                            final_cmd.clone()
+                            corrected_cmd.clone()
                         };
                         linker_argv.push(prog_name);        // argv[0] - 程序名
-                        linker_argv.push(final_cmd.clone()); // argv[1] - linker 必须加载的绝对路径
+                        linker_argv.push(corrected_cmd.clone()); // argv[1] - linker 必须加载的绝对路径
                         
                         // 透传剩余参数（跳过原来的 argv[0]，因为我们已经用它作为 prog_name）
                         if final_args.len() > 1 {
-                            linker_argv.extend(final_args.iter().skip(1).cloned());
+                            for arg in final_args.iter().skip(1) {
+                                let mut corrected_arg = arg.clone();
+                                if corrected_arg.contains("/data/data/com.termux") {
+                                    corrected_arg = corrected_arg.replace("/data/data/com.termux", &termux_data);
+                                }
+                                linker_argv.push(corrected_arg);
+                            }
                         }
                         
                         final_args = linker_argv;
@@ -451,6 +518,18 @@ pub fn create_subprocess_with_data(
                 );
 
                 if !final_cmd.is_empty() {
+                    // 额外检查：文件是否真的存在且可执行
+                    let check_path = std::path::Path::new(&final_cmd);
+                    crate::utils::android_log(
+                        crate::utils::LogPriority::INFO,
+                        &format!(
+                            "[PTY_TRACE] Execution Pre-check: exists={}, is_file={}, metadata={:?}",
+                            check_path.exists(),
+                            check_path.is_file(),
+                            check_path.metadata().ok()
+                        )
+                    );
+
                     let c_cmd = CString::new(final_cmd.clone()).unwrap();
                     libc::execv(c_cmd.as_ptr(), ptr_args.as_ptr());
                     

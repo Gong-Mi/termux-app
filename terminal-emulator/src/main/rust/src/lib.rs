@@ -9,6 +9,32 @@
 
 use once_cell::sync::OnceCell;
 
+#[macro_export]
+macro_rules! safe_write {
+    ($lock:expr) => {
+        match $lock.write() {
+            Ok(g) => g,
+            Err(p) => {
+                $crate::utils::android_log($crate::utils::LogPriority::ERROR, "RwLock poisoned! Recovering...");
+                p.into_inner()
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! safe_read {
+    ($lock:expr) => {
+        match $lock.read() {
+            Ok(g) => g,
+            Err(p) => {
+                $crate::utils::android_log($crate::utils::LogPriority::ERROR, "RwLock poisoned! Recovering...");
+                p.into_inner()
+            }
+        }
+    };
+}
+
 // 声明子模块
 pub mod wcwidth;
 pub mod terminal;

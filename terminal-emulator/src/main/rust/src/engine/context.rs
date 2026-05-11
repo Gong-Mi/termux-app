@@ -125,7 +125,13 @@ impl TerminalContext {
                     },
                     Ok(n) => {
                         let (events, pending_responses, callback_obj) = {
-                            let mut engine = context.lock.write().unwrap();
+                            let mut engine = match context.lock.write() {
+                                Ok(g) => g,
+                                Err(poisoned) => {
+                                    crate::utils::android_log(crate::utils::LogPriority::ERROR, "IO Thread: TerminalEngine lock poisoned! Recovering...");
+                                    poisoned.into_inner()
+                                }
+                            };
                             engine.process_bytes(&buffer[..n]);
                             let resps = std::mem::replace(&mut engine.state.pending_responses, Vec::new());
                             let cb = engine.state.java_callback_obj.clone();
