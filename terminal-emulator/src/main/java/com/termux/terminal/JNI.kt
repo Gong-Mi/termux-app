@@ -86,6 +86,7 @@ internal object JNI {
 
     // --- Termux 元数据 ---
     @JvmStatic external fun setTermuxVersion(version: String)
+    @JvmStatic external fun setTermuxPrefix(prefix: String)
     @JvmStatic external fun setExtendedEnvironment(keys: Array<String>, values: Array<String>)
 
     // --- KeyHandler (Rust) ---

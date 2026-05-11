@@ -190,6 +190,11 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         // Ensure Rust engine knows our version for environment variable injection
         com.termux.terminal.JNI.setTermuxVersion(BuildConfig.VERSION_NAME);
 
+        // 动态传递 Prefix 路径给 Rust 引擎，修复多用户/硬编码路径问题
+        String filesDir = getFilesDir().getAbsolutePath();
+        String prefixPath = filesDir + "/usr";
+        com.termux.terminal.JNI.setTermuxPrefix(prefixPath);
+
         setContentView(R.layout.activity_termux);
 
         mTermuxTerminalViewClient = new TermuxTerminalViewClient(this, mTermuxTerminalSessionActivityClient);

@@ -51,7 +51,7 @@ import java.util.zip.ZipInputStream;
  */
 final class TermuxInstaller {
 
-    private static final String TERMUX_STAGING_PREFIX_DIR_PATH = TermuxConstants.FILES_PATH + "/usr-staging"; // Default: "/data/data/com.termux/files/usr-staging"
+    private static final String TERMUX_STAGING_PREFIX_DIR_PATH = TermuxConstants.FILES_PATH + "/usr-staging"; // Default: "/data/user/0/com.termux/files/usr-staging"
 
     /**
      * Performs bootstrap setup if necessary.

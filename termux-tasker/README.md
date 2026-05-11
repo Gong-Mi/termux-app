@@ -60,7 +60,7 @@ The APKs for both of these are [`debuggable`](https://developer.android.com/stud
 ### Setup Instructions
 
 #### Install `Termux` app (Mandatory)
-The `Termux:Tasker` plugin requires [Termux] app to run the actual commands. You need to install it and start it at least once and have it install the bootstrap files for the plugin to start working. The Termux prefix directory `/data/data/com.termux/files/usr/` and Termux home directory `/data/data/com.termux/files/home/` must also exist and must have read, write and execute permissions `(0700)` for the plugin to work. The `$PREFIX/` is shortcut for the Termux [prefix directory](https://github.com/termux/termux-packages/wiki/Termux-file-system-layout) and can also be referred by the `$PREFIX` shell environment variable. The `~/` is a shortcut for the Termux home directory and can also be referred by the `$HOME` shell environment variable. Note that `~/` will not expand inside single or double quotes when running commands. Permissions and ownerships can be checked with the `stat <path>` command.
+The `Termux:Tasker` plugin requires [Termux] app to run the actual commands. You need to install it and start it at least once and have it install the bootstrap files for the plugin to start working. The Termux prefix directory `/data/user/0/com.termux/files/usr/` and Termux home directory `/data/user/0/com.termux/files/home/` must also exist and must have read, write and execute permissions `(0700)` for the plugin to work. The `$PREFIX/` is shortcut for the Termux [prefix directory](https://github.com/termux/termux-packages/wiki/Termux-file-system-layout) and can also be referred by the `$PREFIX` shell environment variable. The `~/` is a shortcut for the Termux home directory and can also be referred by the `$HOME` shell environment variable. Note that `~/` will not expand inside single or double quotes when running commands. Permissions and ownerships can be checked with the `stat <path>` command.
 
 
 #### `com.termux.permission.RUN_COMMAND` permission (Mandatory)
@@ -76,8 +76,8 @@ If you do not grant the permission, you will likely get errors like `receiver co
 The `~/.termux/tasker/` directory stores the scripts that can be run with the plugin without setting `allow-external-apps` property to `true` if you do not want to use absolute paths. Open a non-root termux session and run the below command to create it and give it read, write and executable permissions `(0700)`. The `tasker` directory must have read permission, otherwise the plugin will not be able to read the script files and give errors like `No regular file found at path` for any script name entered in the `Executable` field of plugin configuration. The `tasker` directory of the script must also have executable permissions for the script to be allowed to execute.
 
 ```
-mkdir -p /data/data/com.termux/files/home/.termux/tasker
-chmod 700 -R /data/data/com.termux/files/home/.termux
+mkdir -p /data/user/0/com.termux/files/home/.termux/tasker
+chmod 700 -R /data/user/0/com.termux/files/home/.termux
 ```
 
 
@@ -91,20 +91,20 @@ chmod 700 -R /data/data/com.termux/files/home/.termux
     To set `allow-external-apps` property to `true`.  
 
     ```
-    value="true"; key="allow-external-apps"; file="/data/data/com.termux/files/home/.termux/termux.properties"; mkdir -p "$(dirname "$file")"; chmod 700 "$(dirname "$file")"; if ! grep -E '^'"$key"'=.*' $file &>/dev/null; then [[ -s "$file" && ! -z "$(tail -c 1 "$file")" ]] && newline=$'\n' || newline=""; echo "$newline$key=$value" >> "$file"; else sed -i'' -E 's/^'"$key"'=.*/'"$key=$value"'/' $file; fi
+    value="true"; key="allow-external-apps"; file="/data/user/0/com.termux/files/home/.termux/termux.properties"; mkdir -p "$(dirname "$file")"; chmod 700 "$(dirname "$file")"; if ! grep -E '^'"$key"'=.*' $file &>/dev/null; then [[ -s "$file" && ! -z "$(tail -c 1 "$file")" ]] && newline=$'\n' || newline=""; echo "$newline$key=$value" >> "$file"; else sed -i'' -E 's/^'"$key"'=.*/'"$key=$value"'/' $file; fi
     ```
 
     To set `allow-external-apps` property to `false`.  
 
     ```
-    value="false"; key="allow-external-apps"; file="/data/data/com.termux/files/home/.termux/termux.properties"; mkdir -p "$(dirname "$file")"; chmod 700 "$(dirname "$file")"; if ! grep -E '^'"$key"'=.*' $file &>/dev/null; then [[ -s "$file" && ! -z "$(tail -c 1 "$file")" ]] && newline=$'\n' || newline=""; echo "$newline$key=$value" >> "$file"; else sed -i'' -E 's/^'"$key"'=.*/'"$key=$value"'/' $file; fi
+    value="false"; key="allow-external-apps"; file="/data/user/0/com.termux/files/home/.termux/termux.properties"; mkdir -p "$(dirname "$file")"; chmod 700 "$(dirname "$file")"; if ! grep -E '^'"$key"'=.*' $file &>/dev/null; then [[ -s "$file" && ! -z "$(tail -c 1 "$file")" ]] && newline=$'\n' || newline=""; echo "$newline$key=$value" >> "$file"; else sed -i'' -E 's/^'"$key"'=.*/'"$key=$value"'/' $file; fi
     ```
 
 - Manual
     You can do it manually by running the below commands to open the `nano` text editor in the terminal. Then add/update a line `allow-external-apps=true` to set the property to `true`, and press `Ctrl+o` and then `Enter` to save and `Ctrl+x` to exit.  
 
 ```
-    file="/data/data/com.termux/files/home/.termux/termux.properties";
+    file="/data/user/0/com.termux/files/home/.termux/termux.properties";
     mkdir -p "$(dirname "$file")";
     nano "$file"
 ```
@@ -137,7 +137,7 @@ The text fields support plugin host app local variables (all lowercase) like `%e
 
 #### `Executable`
 
-The `Executable` text field defines the executable that needs to be run. It can either be set to a file in `~/.termux/tasker/` directory or to an absolute path if `allow-external-apps` property is set to `true` (check [Setup Instructions](#Setup-Instructions)). Absolute paths can be like `/data/data/com.termux/files/usr/bin/bash`. The `$PREFIX/` and `~/` prefixes are also supported, like `$PREFIX/bin/bash` or `~/some-script`.
+The `Executable` text field defines the executable that needs to be run. It can either be set to a file in `~/.termux/tasker/` directory or to an absolute path if `allow-external-apps` property is set to `true` (check [Setup Instructions](#Setup-Instructions)). Absolute paths can be like `/data/user/0/com.termux/files/usr/bin/bash`. The `$PREFIX/` and `~/` prefixes are also supported, like `$PREFIX/bin/bash` or `~/some-script`.
 
 Execute permissions will automatically be set for the executable file if it exists inside the `~/.termux/tasker/` directory when the plugin action is run. It is the user's responsibility to set read and execute permissions for the executable file if it exists outside the `~/.termux/tasker/` directory. That can be done by running the command `chmod 700 "/path/to/executable"` from a terminal session before running the plugin action.
 
@@ -155,7 +155,7 @@ For `Tasker`, you can use the `Variable Search Replace` action on an `%argument`
 
 #### `Working directory path`
 
-The `Working directory path` text field for `Termux:Tasker` version `>= 0.5` defines the working directory that should be used while running the command. The directory must be readable by the termux app. It is the user's responsibility to create the directory if its outside the `~/` directory for version `< 0.6.0` and `/data/data/com.termux/files` directory for version `>= 0.6.0`. That can be done by running the command `mkdir -p "/path/to/workdir"` from a terminal session before running the plugin action. The `$PREFIX/` and `~/` prefixes are also supported, like `$PREFIX/some-directory` or `~/some-directory`.
+The `Working directory path` text field for `Termux:Tasker` version `>= 0.5` defines the working directory that should be used while running the command. The directory must be readable by the termux app. It is the user's responsibility to create the directory if its outside the `~/` directory for version `< 0.6.0` and `/data/user/0/com.termux/files` directory for version `>= 0.6.0`. That can be done by running the command `mkdir -p "/path/to/workdir"` from a terminal session before running the plugin action. The `$PREFIX/` and `~/` prefixes are also supported, like `$PREFIX/some-directory` or `~/some-directory`.
 
 
 #### `Stdin`
@@ -281,27 +281,27 @@ The templates were written for version `< 0.6.0` and currently have not been upd
 
         - Download to `~/.termux/tasker/` directly from github using `curl` using a non-root termux shell.  
 
-            `curl -L 'https://github.com/termux/termux-tasker/raw/master/templates/scripts/termux_tasker_basic_bash_test' -o "/data/data/com.termux/files/home/.termux/tasker/termux_tasker_basic_bash_test"`  
+            `curl -L 'https://github.com/termux/termux-tasker/raw/master/templates/scripts/termux_tasker_basic_bash_test' -o "/data/user/0/com.termux/files/home/.termux/tasker/termux_tasker_basic_bash_test"`  
 
-            `curl -L 'https://github.com/termux/termux-tasker/raw/master/templates/scripts/termux_tasker_basic_python_test' -o "/data/data/com.termux/files/home/.termux/tasker/termux_tasker_basic_python_test"`  
+            `curl -L 'https://github.com/termux/termux-tasker/raw/master/templates/scripts/termux_tasker_basic_python_test' -o "/data/user/0/com.termux/files/home/.termux/tasker/termux_tasker_basic_python_test"`  
 
         - Download them manually to android download directory and then use `cat` to copy them to `~/.termux/tasker/` or manually do it with a [SAF file browser](#Creating-And-Modifying-Scripts).  
 
-            `cat "/storage/emulated/0/Download/termux_tasker_basic_bash_test" > "/data/data/com.termux/files/home/.termux/tasker/termux_tasker_basic_bash_test"`  
+            `cat "/storage/emulated/0/Download/termux_tasker_basic_bash_test" > "/data/user/0/com.termux/files/home/.termux/tasker/termux_tasker_basic_bash_test"`  
 
-            `cat "/storage/emulated/0/Download/termux_tasker_basic_python_test" > "/data/data/com.termux/files/home/.termux/tasker/termux_tasker_basic_python_test"`  
+            `cat "/storage/emulated/0/Download/termux_tasker_basic_python_test" > "/data/user/0/com.termux/files/home/.termux/tasker/termux_tasker_basic_python_test"`  
 
     2. Set executable permissions.  
 
-        `chmod 700 "/data/data/com.termux/files/home/.termux/tasker/termux_tasker_basic_bash_test"`  
+        `chmod 700 "/data/user/0/com.termux/files/home/.termux/tasker/termux_tasker_basic_bash_test"`  
 
-        `chmod 700 "/data/data/com.termux/files/home/.termux/tasker/termux_tasker_basic_python_test"`  
+        `chmod 700 "/data/user/0/com.termux/files/home/.termux/tasker/termux_tasker_basic_python_test"`  
 
 
     To modify the scripts you can use `nano`.  
 
-    `nano "/data/data/com.termux/files/home/.termux/tasker/termux_tasker_basic_bash_test"`  
-    `nano "/data/data/com.termux/files/home/.termux/tasker/termux_tasker_basic_python_test"`  
+    `nano "/data/user/0/com.termux/files/home/.termux/tasker/termux_tasker_basic_bash_test"`  
+    `nano "/data/user/0/com.termux/files/home/.termux/tasker/termux_tasker_basic_python_test"`  
 
 
 Termux needs to be granted `Storage` permission to allow it to access `/storage/emulated/0/Download` directory, otherwise you will get permission denied errors while running commands.
@@ -319,7 +319,7 @@ You can use `shell` based text editors like `nano`, `vim` or `emacs` to create a
 
 You can also use `GUI` based text editor android apps that support `SAF`. Termux provides a [Storage Access Framework (SAF)](https://wiki.termux.com/wiki/Internal_and_external_storage) file provider to allow other apps to access its `~/` home directory. However, the `$PREFIX/` directory is not accessible to other apps. The [QuickEdit] or [QuickEdit Pro] app does support `SAF` and can handle large files without crashing, however, it is closed source and its pro version without ads is paid. You can also use [Acode editor] or [Turbo Editor] if you want an open source app.
 
-Note that the android default `SAF` `Document` file picker may not support hidden file or directories like `~/.termux` which start with a dot `.`, so if you try to use it to open files for a text editor app, then that directory will not show. You can instead create a symlink for  `~/.termux` at `~/termux_sym` so that it is shown. Use `ln -s "/data/data/com.termux/files/home/.termux" "/data/data/com.termux/files/home/termux_sym"` to create it.
+Note that the android default `SAF` `Document` file picker may not support hidden file or directories like `~/.termux` which start with a dot `.`, so if you try to use it to open files for a text editor app, then that directory will not show. You can instead create a symlink for  `~/.termux` at `~/termux_sym` so that it is shown. Use `ln -s "/data/user/0/com.termux/files/home/.termux" "/data/user/0/com.termux/files/home/termux_sym"` to create it.
 ##
 
 
@@ -357,7 +357,7 @@ The argument data limits also apply for the [RUN_COMMAND Intent].
 
 ##### Termux Environment
 
-Termux does not load the environment fully for external plugins or [RUN_COMMAND Intent] commands, like setting `LD_PRELOAD`, so any *external* scripts which do not have shebangs to full path to termux bin directory will not work if called from inside your *plugin* scripts, since `libtermux-exec.so` is not called since `LD_PRELOAD` isn't set and you will get `bad interpreter: No such file or directory` errors. Simply setting `LD_PRELOAD` will not work either without starting a new shell. So make sure to set the shebangs correctly for any *external* scripts you want to run from inside your *plugin* script. The correct shebangs for termux scripts are like `#!/data/data/com.termux/files/usr/bin/bash` for bash scripts instead of `#!/usr/bin/bash` used in common linux distros. You can also use [termux-fix-shebang](https://wiki.termux.com/wiki/Termux-fix-shebang) command on the *external* scripts before running them with the plugin to fix the shebangs automatically or use `tudo`/`sudo` mentioned below.
+Termux does not load the environment fully for external plugins or [RUN_COMMAND Intent] commands, like setting `LD_PRELOAD`, so any *external* scripts which do not have shebangs to full path to termux bin directory will not work if called from inside your *plugin* scripts, since `libtermux-exec.so` is not called since `LD_PRELOAD` isn't set and you will get `bad interpreter: No such file or directory` errors. Simply setting `LD_PRELOAD` will not work either without starting a new shell. So make sure to set the shebangs correctly for any *external* scripts you want to run from inside your *plugin* script. The correct shebangs for termux scripts are like `#!/data/user/0/com.termux/files/usr/bin/bash` for bash scripts instead of `#!/usr/bin/bash` used in common linux distros. You can also use [termux-fix-shebang](https://wiki.termux.com/wiki/Termux-fix-shebang) command on the *external* scripts before running them with the plugin to fix the shebangs automatically or use `tudo`/`sudo` mentioned below.
 
 
 ##### Defining Scripts In Plugin Host App

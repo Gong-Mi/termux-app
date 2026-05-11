@@ -150,6 +150,7 @@ public final class ExtraKeysConstants {
         put("SHFT", "SHIFT");
         put("RETURN", "ENTER"); // Technically different keys, but most applications won't see the difference
         put("FUNCTION", "FN");
+        put("SCROLLBACK", "SCROLL");
         // no alias for ALT
 
         // Directions are sometimes written as first and last letter for brevety
@@ -177,6 +178,10 @@ public final class ExtraKeysConstants {
         put("BACKSLASH", "\\");
         put("QUOTE", "\"");
         put("APOSTROPHE", "'");
+
+        put("⇳", "SCROLL");
+        put("↕", "SCROLL");
+        put("⇕", "SCROLL");
     }};
 
 }

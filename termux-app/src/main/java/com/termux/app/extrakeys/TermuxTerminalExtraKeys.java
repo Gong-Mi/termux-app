@@ -124,8 +124,13 @@ public final class TermuxTerminalExtraKeys {
                 mTermuxTerminalSessionActivityClient.onPasteTextFromClipboard(null);
         }  else if ("SCROLL".equals(key)) {
             TerminalView terminalView = mTermuxTerminalViewClient.getActivity().getTerminalView();
-            if (terminalView != null && terminalView.mEmulator != null)
+            if (terminalView != null && terminalView.mEmulator != null) {
                 terminalView.mEmulator.toggleAutoScrollDisabled();
+            }
+        } else if (SpecialButton.valueOf(key) != null) {
+            // It's a special button (CTRL, ALT, etc.) that is handled by ExtraKeysView
+            // for state toggling. We don't send its name as text.
+            return;
         } else {
             if (PRIMARY_KEY_CODES_FOR_STRINGS.containsKey(key)) {
                 Integer keyCode = PRIMARY_KEY_CODES_FOR_STRINGS.get(key);

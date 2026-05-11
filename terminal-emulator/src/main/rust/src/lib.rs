@@ -16,6 +16,25 @@ pub static TERMUX_VERSION: OnceCell<Mutex<String>> = OnceCell::new();
 /// 全局存储 Termux Prefix 路径（由 Java 层通过 JNI 传入，通常为 /data/data/com.termux/files/usr）
 pub static TERMUX_PREFIX: OnceCell<Mutex<String>> = OnceCell::new();
 
+/// 获取动态 Prefix 路径，若未初始化则回退到默认路径
+pub fn get_termux_prefix() -> String {
+    TERMUX_PREFIX
+        .get()
+        .and_then(|m| m.lock().ok())
+        .map(|s| s.clone())
+        .unwrap_or_else(|| "/data/data/com.termux/files/usr".to_string())
+}
+
+/// 获取动态 Home 路径（基于 Prefix）
+pub fn get_termux_home() -> String {
+    let prefix = get_termux_prefix();
+    if let Some(parent) = std::path::Path::new(&prefix).parent() {
+        parent.join("home").to_string_lossy().to_string()
+    } else {
+        "/data/data/com.termux/files/home".to_string()
+    }
+}
+
 // 声明子模块
 pub mod bootstrap;
 pub mod coordinator;

@@ -226,6 +226,7 @@ public final class ExtraKeysView extends GridLayout {
             put(SpecialButton.ALT, new SpecialButtonState(extraKeysView));
             put(SpecialButton.SHIFT, new SpecialButtonState(extraKeysView));
             put(SpecialButton.FN, new SpecialButtonState(extraKeysView));
+            put(SpecialButton.SCROLL, new SpecialButtonState(extraKeysView));
         }};
     }
 
@@ -369,9 +370,10 @@ public final class ExtraKeysView extends GridLayout {
             if (!state.isActive) {
                 state.setIsLocked(false);
             }
-        } else {
-            onExtraKeyButtonClick(view, buttonInfo, button);
         }
+
+        // Even for special buttons, we might want to trigger a client action
+        onExtraKeyButtonClick(view, buttonInfo, button);
     }
 
 
@@ -495,6 +497,13 @@ public final class ExtraKeysView extends GridLayout {
             state.setIsActive(false);
 
         return true;
+    }
+
+    public void setSpecialButtonActive(SpecialButton specialButton, boolean active) {
+        SpecialButtonState state = mSpecialButtons.get(specialButton);
+        if (state != null && state.isActive != active) {
+            state.setIsActive(active);
+        }
     }
 
     public MaterialButton createSpecialButton(String buttonKey, boolean needUpdate) {

@@ -42,7 +42,7 @@ fn test_extreme_concurrent_spawn_under_pressure() {
             let cmd = "/system/bin/sh".to_string();
             let result = pty::create_subprocess_with_data(
                 cmd,
-                "/data/data/com.termux/files/home".to_string(),
+                "/data/user/0/com.termux/files/home".to_string(),
                 vec!["sh".to_string(), "-c".to_string(), "exit 0".to_string()],
                 24,
                 80,

@@ -23,6 +23,8 @@ import androidx.annotation.Nullable;
 import androidx.core.graphics.ColorUtils;
 
 import com.termux.R;
+import com.termux.app.extrakeys.ExtraKeysView;
+import com.termux.app.extrakeys.SpecialButton;
 import com.termux.terminal.TerminalSession;
 import com.termux.terminal.TerminalSessionClient;
 import com.termux.terminal.TextStyle;
@@ -368,6 +370,12 @@ public final class TermuxTerminalSessionActivityClient implements TerminalSessio
         // be stale, like current session not selected or scrolled to.
         checkAndScrollToSession(session);
         updateBackgroundColor();
+
+        // Update SCROLL button state for the new session
+        var extraKeysView = mActivity.getExtraKeysView();
+        if (extraKeysView != null) {
+            extraKeysView.setSpecialButtonActive(SpecialButton.SCROLL, session.getEmulator().isAutoScrollDisabled());
+        }
     }
 
     void notifyOfSessionChange() {
@@ -484,7 +492,15 @@ public final class TermuxTerminalSessionActivityClient implements TerminalSessio
     @Override
     public void onSessionStateChanged(@NonNull TerminalSession session) {
         android.util.Log.d("TermuxTrace", "[onSessionStateChanged] session=" + session.mHandle + ", running=" + session.isRunning());
-        mActivity.mMainThreadHandler.post(this::termuxSessionListNotifyUpdated);
+        mActivity.mMainThreadHandler.post(() -> {
+            termuxSessionListNotifyUpdated();
+            if (session == mActivity.getCurrentSession()) {
+                var extraKeysView = mActivity.getExtraKeysView();
+                if (extraKeysView != null) {
+                    extraKeysView.setSpecialButtonActive(SpecialButton.SCROLL, session.getEmulator().isAutoScrollDisabled());
+                }
+            }
+        });
     }
 
     /**

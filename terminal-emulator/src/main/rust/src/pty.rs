@@ -112,11 +112,12 @@ pub fn parse_shebang(buffer: &[u8]) -> Option<(String, Option<String>)> {
 
 /// Map an interpreter path to the Termux prefix, matching upstream logic.
 pub fn map_interpreter(interp: &str, normalize: &dyn Fn(String) -> String) -> String {
+    let termux_prefix = crate::get_termux_prefix();
     if interp.starts_with("/usr/bin/env") {
-        "/data/data/com.termux/files/usr/bin/env".to_string()
+        format!("{}/bin/env", termux_prefix)
     } else if interp.starts_with("/bin/") || interp.starts_with("/usr/bin/") {
         let binary = interp.rsplit('/').next().unwrap_or("sh");
-        format!("/data/data/com.termux/files/usr/bin/{}", binary)
+        format!("{}/bin/{}", termux_prefix, binary)
     } else if interp.starts_with("/data/data/com.termux/")
         || interp.starts_with("/data/user/0/com.termux/")
     {
@@ -165,9 +166,27 @@ pub fn create_subprocess_with_data(
     }
     let _guard = SpawnGuard;
 
+    let termux_prefix = crate::get_termux_prefix();
+    let termux_files_dir = if let Some(parent) = std::path::Path::new(&termux_prefix).parent() {
+        parent.to_string_lossy().to_string()
+    } else {
+        "/data/data/com.termux/files".to_string()
+    };
+    let termux_data_dir = if let Some(parent) = std::path::Path::new(&termux_files_dir).parent() {
+        parent.to_string_lossy().to_string()
+    } else {
+        "/data/data/com.termux".to_string()
+    };
+
     let normalize_path = |path: String| -> String {
-        if path.starts_with("/data/user/0/com.termux") {
-            path.replace("/data/user/0/com.termux", "/data/data/com.termux")
+        // 动态适配：如果路径包含 /data/user/0/com.termux 或类似的硬编码 Android 路径，
+        // 且它不匹配当前实际的 termux_data_dir，则进行替换。
+        if (path.starts_with("/data/user/0/com.termux") || path.starts_with("/data/data/com.termux"))
+            && !path.starts_with(&termux_data_dir)
+        {
+            // 简单处理：将所有已知的硬编码前缀替换为动态探测的前缀
+            let p = path.replace("/data/user/0/com.termux", &termux_data_dir);
+            p.replace("/data/data/com.termux", &termux_data_dir)
         } else {
             path
         }
@@ -192,11 +211,11 @@ pub fn create_subprocess_with_data(
         // Prefer ELF binaries over shebang scripts for faster startup
         // and to reduce linker-wrapper surface area.
         let default_shells = [
-            "/data/data/com.termux/files/usr/bin/bash",
-            "/data/data/com.termux/files/usr/bin/dash",
-            "/data/data/com.termux/files/usr/bin/sh",
-            "/system/bin/sh",
-            "/data/data/com.termux/files/usr/bin/login",
+            format!("{}/bin/bash", termux_prefix),
+            format!("{}/bin/dash", termux_prefix),
+            format!("{}/bin/sh", termux_prefix),
+            "/system/bin/sh".to_string(),
+            format!("{}/bin/login", termux_prefix),
         ];
 
         for shell in &default_shells {
@@ -309,7 +328,7 @@ pub fn create_subprocess_with_data(
             Ok(buf[0] == 0x7F && buf[1] == b'E' && buf[2] == b'L' && buf[3] == b'F')
         })
         .unwrap_or(false);
-    let use_linker_wrapper = is_elf && final_cmd.starts_with("/data/data/com.termux/");
+    let use_linker_wrapper = is_elf && final_cmd.starts_with(&termux_files_dir);
     let linker_path = if std::path::Path::new("/system/bin/linker64").exists() {
         "/system/bin/linker64"
     } else {
@@ -780,36 +799,40 @@ mod tests {
 
     #[test]
     fn map_interpreter_env() {
+        let prefix = crate::get_termux_prefix();
         assert_eq!(
             map_interpreter("/usr/bin/env", &noop_normalize),
-            "/data/data/com.termux/files/usr/bin/env"
+            format!("{}/bin/env", prefix)
         );
     }
 
     #[test]
     fn map_interpreter_bin_sh() {
+        let prefix = crate::get_termux_prefix();
         assert_eq!(
             map_interpreter("/bin/sh", &noop_normalize),
-            "/data/data/com.termux/files/usr/bin/sh"
+            format!("{}/bin/sh", prefix)
         );
     }
 
     #[test]
     fn map_interpreter_usr_bin_awk() {
+        let prefix = crate::get_termux_prefix();
         assert_eq!(
             map_interpreter("/usr/bin/awk", &noop_normalize),
-            "/data/data/com.termux/files/usr/bin/awk"
+            format!("{}/bin/awk", prefix)
         );
     }
 
     #[test]
     fn map_interpreter_termux_path() {
+        let prefix = crate::get_termux_prefix();
         assert_eq!(
             map_interpreter(
-                "/data/data/com.termux/files/usr/bin/python",
+                &format!("{}/bin/python", prefix),
                 &noop_normalize
             ),
-            "/data/data/com.termux/files/usr/bin/python"
+            format!("{}/bin/python", prefix)
         );
     }
 
@@ -834,11 +857,14 @@ mod tests {
 
     #[test]
     fn map_interpreter_absolute_termux() {
+        let prefix = crate::get_termux_prefix();
         let normalize =
-            |s: String| -> String { s.replace("/data/user/0/com.termux", "/data/data/com.termux") };
+            |s: String| -> String { s.replace("/data/user/0/com.termux", &prefix.replace("/files/usr", "")) };
+        // This test's expectation depends on how normalize is defined.
+        // If we want to test that it is PASSED to normalize:
         assert_eq!(
             map_interpreter("/data/user/0/com.termux/files/usr/bin/perl", &normalize),
-            "/data/data/com.termux/files/usr/bin/perl"
+            normalize("/data/user/0/com.termux/files/usr/bin/perl".to_string())
         );
     }
 }
