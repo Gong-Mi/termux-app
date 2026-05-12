@@ -2129,7 +2129,7 @@ pub extern "system" fn Java_com_termux_terminal_JNI_setTermuxVersion(
 
 /// 设置 Termux Prefix 路径（由 Java Application 初始化时传入）
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_RustTerminal_setTermuxPrefix(
+pub extern "system" fn Java_com_termux_terminal_JNI_setTermuxPrefix(
     mut env: JNIEnv,
     _class: JClass,
     prefix: JString,
