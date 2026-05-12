@@ -92,11 +92,25 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
 
         env.insert("TMPDIR".to_string(), termux_tmp.to_string());
 
-        // LD_PRELOAD 用于 termux-exec 的 shebang修复。upstream C 代码未设置，
-        // 但 Termux 运行时需要。Rust 层自主决定是否注入，避免与 Java 层冲突。
-        let ld_preload_path = format!("{}/lib/libtermux-exec-ld-preload.so", termux_prefix);
-        if std::path::Path::new(&ld_preload_path).exists() {
-            env.insert("LD_PRELOAD".to_string(), ld_preload_path.to_string());
+        // LD_PRELOAD 用于 termux-exec 的 shebang 修复和 W^X 绕过。
+        // 优先尝试 linker 版本（API 29+ 必需），其次尝试 legacy 或 direct 版本。
+        let ld_preload_variants = [
+            "libtermux-exec-linker-ld-preload.so",
+            "libtermux-exec-ld-preload.so",
+            "libtermux-exec.so",
+            "libtermux-exec-direct-ld-preload.so",
+        ];
+
+        for variant in &ld_preload_variants {
+            let ld_preload_path = format!("{}/lib/{}", termux_prefix, variant);
+            if std::path::Path::new(&ld_preload_path).exists() {
+                env.insert("LD_PRELOAD".to_string(), ld_preload_path.to_string());
+                android_log(
+                    LogPriority::INFO,
+                    &format!("[env_builder] Using LD_PRELOAD: {}", ld_preload_path),
+                );
+                break;
+            }
         }
     }
 
