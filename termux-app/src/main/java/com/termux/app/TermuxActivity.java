@@ -190,9 +190,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         // Ensure Rust engine knows our version for environment variable injection
         com.termux.terminal.JNI.setTermuxVersion(BuildConfig.VERSION_NAME);
 
-        // 动态传递 Prefix 路径给 Rust 引擎，修复多用户/硬编码路径问题
-        String filesDir = getFilesDir().getAbsolutePath();
-        String prefixPath = filesDir + "/usr";
+        // 修复：Termux 生态系统（包含 termux-exec 和 apt 包）硬编码了 /data/data/com.termux。
+        // 使用 /data/user/0/ 会导致 termux-exec 的 W^X bypass 路径匹配失败，从而导致执行脚本时 Permission denied。
+        // 因此必须向 Rust 引擎传递标准的 /data/data/com.termux/files/usr 路径。
+        String prefixPath = "/data/data/com.termux/files/usr";
         com.termux.terminal.JNI.setTermuxPrefix(prefixPath);
 
         setContentView(R.layout.activity_termux);
