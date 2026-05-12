@@ -8,6 +8,7 @@ pub fn handle_osc(
     events: &mut Vec<TerminalEvent>,
     opcode: &str,
     params: &[&[u8]],
+    bell_terminated: bool,
 ) {
     // 将除 opcode 外的所有参数拼接成字符串
     let param_text = params[1..]
@@ -26,13 +27,13 @@ pub fn handle_osc(
             }
         }
         "4" => {
-            handle_osc4(state, &param_text);
+            handle_osc4(state, &param_text, bell_terminated);
         }
         "10" => {
-            handle_osc10(state, &param_text);
+            handle_osc10(state, &param_text, bell_terminated);
         }
         "11" => {
-            handle_osc11(state, &param_text);
+            handle_osc11(state, &param_text, bell_terminated);
         }
         "12" => {
             if let Some(color) = TerminalColors::parse_color(&param_text) {
@@ -84,7 +85,7 @@ pub fn handle_osc(
     }
 }
 
-fn handle_osc4(state: &mut ScreenState, param_text: &str) {
+fn handle_osc4(state: &mut ScreenState, param_text: &str, bell_terminated: bool) {
     let parts: Vec<&str> = param_text.split(';').collect();
     let mut i = 0;
     while i + 1 < parts.len() {
@@ -92,7 +93,7 @@ fn handle_osc4(state: &mut ScreenState, param_text: &str) {
             let color_spec = parts[i + 1];
             if color_spec == "?" {
                 let report = state.colors.generate_color_report(color_index);
-                state.report_color_response(&format!("4;{}", report));
+                state.report_color_response(&format!("4;{}", report), bell_terminated);
             } else {
                 if state.colors.try_parse_color(color_index, color_spec) {
                     state.report_colors_changed();
@@ -103,12 +104,12 @@ fn handle_osc4(state: &mut ScreenState, param_text: &str) {
     }
 }
 
-fn handle_osc10(state: &mut ScreenState, param_text: &str) {
+fn handle_osc10(state: &mut ScreenState, param_text: &str, bell_terminated: bool) {
     if param_text == "?" {
         let report = state
             .colors
             .generate_color_report(COLOR_INDEX_FOREGROUND as usize);
-        state.report_color_response(&format!("10;{}", report));
+        state.report_color_response(&format!("10;{}", report), bell_terminated);
     } else {
         if let Some(color) = TerminalColors::parse_color(param_text) {
             state.colors.current_colors[COLOR_INDEX_FOREGROUND as usize] = color;
@@ -117,12 +118,12 @@ fn handle_osc10(state: &mut ScreenState, param_text: &str) {
     }
 }
 
-fn handle_osc11(state: &mut ScreenState, param_text: &str) {
+fn handle_osc11(state: &mut ScreenState, param_text: &str, bell_terminated: bool) {
     if param_text == "?" {
         let report = state
             .colors
             .generate_color_report(COLOR_INDEX_BACKGROUND as usize);
-        state.report_color_response(&format!("11;{}", report));
+        state.report_color_response(&format!("11;{}", report), bell_terminated);
     } else {
         if let Some(color) = TerminalColors::parse_color(param_text) {
             state.colors.current_colors[COLOR_INDEX_BACKGROUND as usize] = color;

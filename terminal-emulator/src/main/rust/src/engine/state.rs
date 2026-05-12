@@ -702,8 +702,9 @@ impl ScreenState {
         }
     }
 
-    pub fn report_color_response(&self, response: &str) {
-        self.report_terminal_response(&format!("\x1b]{}\x07", response));
+    pub fn report_color_response(&self, response: &str, bell_terminated: bool) {
+        let terminator = if bell_terminated { "\x07" } else { "\x1b\\" };
+        self.report_terminal_response(&format!("\x1b]{}{}", response, terminator));
     }
 
     pub fn handle_osc13(&mut self) {}
