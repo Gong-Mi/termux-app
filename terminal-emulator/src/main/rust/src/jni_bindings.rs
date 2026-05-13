@@ -2351,7 +2351,6 @@ pub extern "system" fn Java_com_termux_terminal_JNI_getKeyCodeFromTermcap(
 // JNI_OnLoad
 // ============================================================================
 
-#[unsafe(no_mangle)]
 /// 在 JNI_OnLoad 中自动获取 Android 应用的 cache 目录，
 /// 无需 Java 层显式传入。路径格式：/data/data/<package>/cache/vulkan_pipeline_cache.bin
 fn init_android_cache_dir(vm: &jni::JavaVM) {
@@ -2419,6 +2418,7 @@ fn init_android_cache_dir(vm: &jni::JavaVM) {
     );
 }
 
+#[unsafe(no_mangle)]
 pub extern "system" fn JNI_OnLoad(vm: jni::JavaVM, _reserved: std::ffi::c_void) -> jint {
     android_log(LogPriority::DEBUG, "JNI_OnLoad started");
 
