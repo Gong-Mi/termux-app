@@ -116,8 +116,11 @@ struct FontCache {
     font_mgr: Arc<FontMgr>,
 }
 
+// SAFETY: `FontCache` 包含的 `skia_safe::Font`/`FontMgr` 在 C++ 层面是引用计数的堆对象，
+// 可以安全地转移所有权到另一个线程。实际使用中 `FontCache` 被 `TerminalRenderer`
+// 独占持有，而 `TerminalRenderer` 始终被 `Mutex` 包裹，禁止并发访问。
+// 因此只实现 `Send`，不实现 `Sync`。
 unsafe impl Send for FontCache {}
-unsafe impl Sync for FontCache {}
 
 impl FontCache {
     fn new(font_size: f32, custom_font_path: Option<&str>) -> Option<Self> {
@@ -406,8 +409,11 @@ pub struct TerminalRenderer {
     pub hdr_manager: HdrOverlayManager,
 }
 
+// SAFETY: `TerminalRenderer` 包含的 Skia `Paint`/`Font` 在 C++ 层面可跨线程移动。
+// 其可变字段 `run_buf` 仅在 `&mut self` 方法中被访问，而 `TerminalRenderer`
+// 始终被 `Mutex` 包裹，确保任意时刻只有一个线程拥有可变访问权。
+// 因此只实现 `Send`（所有权转移），不实现 `Sync`（禁止共享引用）。
 unsafe impl Send for TerminalRenderer {}
-unsafe impl Sync for TerminalRenderer {}
 
 impl TerminalRenderer {
     pub fn new(_font_data: &[u8], font_size: f32, custom_font_path: Option<&str>) -> Option<Self> {
@@ -1869,5 +1875,19 @@ mod tests {
         manager.set_overlay(overlay_with_img);
         
         manager.draw_overlays(canvas);
+    }
+
+    /// 编译时验证：`FontCache` 和 `TerminalRenderer` 正确实现 `Send` 但未实现 `Sync`。
+    ///
+    /// `Mutex<T>` 实现 `Sync` 的条件是 `T: Send`。因此
+    /// `static TERMINAL_RENDERER: OnceCell<Mutex<Option<TerminalRenderer>>>`
+    /// 可以安全编译，同时编译器会禁止通过 `&TerminalRenderer` 的并发访问。
+    #[test]
+    fn test_renderer_send_mutex_sync() {
+        fn assert_send<T: Send>() {}
+        fn assert_sync<T: Sync>() {}
+        assert_send::<FontCache>();
+        assert_send::<TerminalRenderer>();
+        assert_sync::<std::sync::Mutex<Option<TerminalRenderer>>>();
     }
 }

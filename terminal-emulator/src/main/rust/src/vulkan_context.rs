@@ -155,8 +155,13 @@ pub struct VulkanContext {
     vk_color_space: ash_vk::ColorSpaceKHR,
 }
 
+// SAFETY: VulkanContext 包含的 `ash::Device`、`ash::Instance`、`vk::Queue` 等
+// 本质上是不透明的 handle + vtable，在 C API 层面允许跨线程转移所有权。
+// `DirectContext` 和 `SkSurface` 在 skia-safe 中未标记 `Send` 是出于保守设计，
+// 但 Skia C++ 的 `GrDirectContext`/`SkSurface` 对象指针可以安全地在线程间移动。
+// 实际使用中 `VulkanContext` 始终被 `Mutex` 包裹，确保任意时刻只有一个线程访问。
+// 因此只实现 `Send`（所有权转移），不实现 `Sync`（禁止共享引用）。
 unsafe impl Send for VulkanContext {}
-unsafe impl Sync for VulkanContext {}
 
 impl VulkanContext {
     pub unsafe fn new(window: *mut std::ffi::c_void) -> Option<Self> {
@@ -1126,5 +1131,18 @@ mod tests {
             should_skip,
             "Logic should detect zero extent and skip recreation"
         );
+    }
+
+    /// 编译时验证：`VulkanContext` 正确实现 `Send` 但未实现 `Sync`。
+    ///
+    /// `Mutex<T>` 实现 `Sync` 的条件是 `T: Send`（不需要 `T: Sync`）。
+    /// 因此 `static VULKAN_CONTEXT: OnceCell<Mutex<Option<VulkanContext>>>`
+    /// 可以安全编译，同时编译器会禁止通过 `&VulkanContext` 的并发访问。
+    #[test]
+    fn test_vulkan_context_send_mutex_sync() {
+        fn assert_send<T: Send>() {}
+        fn assert_sync<T: Sync>() {}
+        assert_send::<super::VulkanContext>();
+        assert_sync::<std::sync::Mutex<Option<super::VulkanContext>>>();
     }
 }

@@ -1,9 +1,8 @@
 /// 共享屏幕缓冲区
-
-#[derive(Clone, Copy)]
-pub struct SharedBufferPtr(pub *mut SharedScreenBuffer);
-unsafe impl Send for SharedBufferPtr {}
-unsafe impl Sync for SharedBufferPtr {}
+///
+/// `SharedBufferPtr` 使用 `AtomicPtr` 包装裸指针，天然实现 `Send + Sync`，
+/// 无需 `unsafe impl`。所有对指向内存的实际读写仍由 `ScreenState` 的锁保护。
+pub type SharedBufferPtr = std::sync::atomic::AtomicPtr<SharedScreenBuffer>;
 
 #[repr(C)]
 pub struct SharedScreenBuffer {
@@ -49,7 +48,7 @@ impl FlatScreenBuffer {
         }
     }
 
-    pub fn create_shared_buffer(&self) -> *mut SharedScreenBuffer {
+    pub fn create_shared_buffer(&self) -> SharedBufferPtr {
         let size = SharedScreenBuffer::required_size(self.cols, self.rows);
         unsafe {
             let layout = std::alloc::Layout::from_size_align(size, 8).unwrap();
@@ -59,7 +58,7 @@ impl FlatScreenBuffer {
                 (*ptr).cols = self.cols as u32;
                 (*ptr).rows = self.rows as u32;
             }
-            ptr
+            SharedBufferPtr::new(ptr)
         }
     }
 
@@ -102,5 +101,21 @@ impl FlatScreenBuffer {
             let old_version = std::ptr::read(version_ptr);
             std::ptr::write(version_ptr, old_version.wrapping_add(1));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 编译时验证：`AtomicPtr<SharedScreenBuffer>` 自动实现 `Send + Sync`，
+    /// 无需 `unsafe impl`。如果此测试编译通过，说明 `SharedBufferPtr`
+    /// 可以安全地出现在多线程共享的 `ScreenState` 中。
+    #[test]
+    fn test_shared_buffer_ptr_is_send_sync() {
+        fn assert_send<T: Send>() {}
+        fn assert_sync<T: Sync>() {}
+        assert_send::<SharedBufferPtr>();
+        assert_sync::<SharedBufferPtr>();
     }
 }

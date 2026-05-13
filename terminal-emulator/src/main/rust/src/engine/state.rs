@@ -93,7 +93,7 @@ impl Drop for ScreenState {
             );
         }
 
-        let ptr = self.shared_buffer_ptr.0;
+        let ptr = self.shared_buffer_ptr.load(std::sync::atomic::Ordering::Relaxed);
         if !ptr.is_null() {
             unsafe {
                 let total_allocated_rows = self.main_screen.buffer.len();
@@ -102,7 +102,7 @@ impl Drop for ScreenState {
                 let layout = std::alloc::Layout::from_size_align(size, 8).unwrap();
                 std::alloc::dealloc(ptr as *mut u8, layout);
             }
-            self.shared_buffer_ptr = SharedBufferPtr(std::ptr::null_mut());
+            self.shared_buffer_ptr.store(std::ptr::null_mut(), std::sync::atomic::Ordering::Relaxed);
             crate::utils::android_log(
                 crate::utils::LogPriority::DEBUG,
                 "ScreenState: Deallocated shared_buffer_ptr",
@@ -135,7 +135,7 @@ impl ScreenState {
                 cols as usize,
                 max(rows, total_rows) as usize,
             )),
-            shared_buffer_ptr: SharedBufferPtr(std::ptr::null_mut()),
+            shared_buffer_ptr: SharedBufferPtr::new(std::ptr::null_mut()),
             top_margin: 0,
             bottom_margin: rows,
             left_margin: 0,
@@ -809,9 +809,10 @@ impl ScreenState {
         }
 
         // 同步到共享内存指针（如果存在）
-        if !self.shared_buffer_ptr.0.is_null() {
+        let ptr = self.shared_buffer_ptr.load(std::sync::atomic::Ordering::Relaxed);
+        if !ptr.is_null() {
             unsafe {
-                flat.sync_to_shared(self.shared_buffer_ptr.0);
+                flat.sync_to_shared(ptr);
             }
         }
     }
