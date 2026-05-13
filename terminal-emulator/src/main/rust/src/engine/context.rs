@@ -41,10 +41,17 @@ impl TerminalEngine {
         self.state.sync_screen_to_flat_buffer();
 
         // 收集待发送的事件
-        if let Ok(mut pending) = self.state.pending_events.lock() {
-            for event in pending.drain(..) {
+        if self
+            .state
+            .has_pending
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            for event in self.state.pending_events.lock().drain(..) {
                 self.events.push(event);
             }
+            self.state
+                .has_pending
+                .store(false, std::sync::atomic::Ordering::Relaxed);
         }
 
         let curr = self.state.snapshot();
@@ -125,5 +132,129 @@ impl TerminalContext {
             blink: BlinkControl::new(),
             pty_fd: AtomicI32::new(-1),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 辅助函数：从事件列表中提取 TerminalResponse 的字符串内容
+    fn extract_responses(events: &[TerminalEvent]) -> Vec<String> {
+        events
+            .iter()
+            .filter_map(|e| {
+                if let TerminalEvent::TerminalResponse(resp) = e {
+                    Some(resp.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// 回归测试：批量处理 OSC 11 + CSI 6n 时，响应顺序必须严格保持。
+    ///
+    /// 背景：Rust 版本使用区块串行模型（批量读取 PTY -> process_bytes ->
+    /// 批量 flush）。如果 pending_events 的 drain 顺序或 VTE 解析器的
+    /// 回调顺序有误，OSC 11 响应和 CSI 6n 响应可能乱序，导致 termenv
+    /// 的 "双查询读取" 逻辑读到错误的结果，最终引发命令行泄漏。
+    #[test]
+    fn test_osc11_csi6n_response_order_bel() {
+        let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+
+        // 模拟 gh/termenv 发送的两个查询，用 BEL 终止 OSC
+        let input = b"\x1b]11;?\x07\x1b[6n";
+        engine.process_bytes(input);
+        let events = engine.take_events();
+        let responses = extract_responses(&events);
+
+        // 必须产生恰好两个响应
+        assert_eq!(
+            responses.len(),
+            2,
+            "Expected exactly 2 TerminalResponse events, got {}: {:?}",
+            responses.len(),
+            responses
+        );
+
+        // 第一个必须是 OSC 11 背景色响应（黑色 = 0000/0000/0000）
+        assert_eq!(
+            responses[0], "\x1b]11;rgb:0000/0000/0000\x07",
+            "First response must be OSC 11 with matching BEL terminator"
+        );
+
+        // 第二个必须是 CSI 6n 光标位置响应（默认 1;1R）
+        assert_eq!(
+            responses[1], "\x1b[1;1R",
+            "Second response must be CSI cursor position report"
+        );
+    }
+
+    /// 同上，但 OSC 查询使用 ST（\x1b\\）终止。
+    /// 验证终端响应复用与查询相同的 terminator（commit 7f46a5e2 修复的内容）。
+    #[test]
+    fn test_osc11_csi6n_response_order_st() {
+        let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+
+        // 模拟 gh/termenv 发送的两个查询，用 ST 终止 OSC
+        let input = b"\x1b]11;?\x1b\\\x1b[6n";
+        engine.process_bytes(input);
+        let events = engine.take_events();
+        let responses = extract_responses(&events);
+
+        assert_eq!(
+            responses.len(),
+            2,
+            "Expected exactly 2 TerminalResponse events, got {}: {:?}",
+            responses.len(),
+            responses
+        );
+
+        // 第一个必须是 OSC 11 响应，且 terminator 必须是 ST（\x1b\\），
+        // 不能错误地回退到 BEL。
+        assert_eq!(
+            responses[0], "\x1b]11;rgb:0000/0000/0000\x1b\\",
+            "First response must be OSC 11 with matching ST terminator"
+        );
+
+        assert_eq!(
+            responses[1], "\x1b[1;1R",
+            "Second response must be CSI cursor position report"
+        );
+    }
+
+    /// 验证大区块混合输入下，多个查询的响应顺序仍然正确。
+    /// 这模拟 IO 线程 FIONREAD 批量排空后的真实场景。
+    #[test]
+    fn test_bulk_mixed_queries_response_order() {
+        let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
+
+        // 构造一个包含普通文本 + OSC 10 + OSC 11 + CSI 6n + 更多文本的批量输入
+        let mut input = Vec::new();
+        input.extend_from_slice(b"hello ");
+        input.extend_from_slice(b"\x1b]10;?\x07"); // 查询前景色
+        input.extend_from_slice(b" world ");
+        input.extend_from_slice(b"\x1b]11;?\x1b\\"); // 查询背景色（ST）
+        input.extend_from_slice(b"\x1b[6n"); // 查询光标位置
+        input.extend_from_slice(b" end");
+
+        engine.process_bytes(&input);
+        let events = engine.take_events();
+        let responses = extract_responses(&events);
+
+        assert_eq!(
+            responses.len(),
+            3,
+            "Expected 3 TerminalResponse events, got {}: {:?}",
+            responses.len(),
+            responses
+        );
+
+        // 顺序必须严格对应输入顺序
+        assert_eq!(responses[0], "\x1b]10;rgb:ffff/ffff/ffff\x07", "OSC 10 foreground");
+        assert_eq!(responses[1], "\x1b]11;rgb:0000/0000/0000\x1b\\", "OSC 11 background");
+        // 光标位置："hello "(6) + " world "(7) = 13（0-based），回复 1-based 即 1;14R
+        assert_eq!(responses[2], "\x1b[1;14R", "CSI 6n cursor");
     }
 }

@@ -2135,7 +2135,8 @@ pub extern "system" fn Java_com_termux_terminal_JNI_setTermuxPrefix(
     prefix: JString,
 ) {
     if let Ok(v) = env.get_string(&prefix) {
-        let prefix_str: String = v.into();
+        let raw_prefix: String = v.into();
+        let prefix_str = crate::validate_termux_prefix(&raw_prefix);
         let _ = crate::TERMUX_PREFIX.get_or_init(|| Mutex::new(prefix_str.clone()));
         android_log(
             LogPriority::INFO,

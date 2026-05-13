@@ -8,6 +8,25 @@ pub struct PerformHandler<'a> {
     pub events: &'a mut Vec<TerminalEvent>,
 }
 
+impl<'a> PerformHandler<'a> {
+    /// 将 state.pending_events 中缓冲的事件立即转移到 self.events，
+    /// 确保 VTE 解析器内部的状态机串行顺序被正确保留到输出事件流。
+    fn drain_pending_events(&mut self) {
+        if self
+            .state
+            .has_pending
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            for event in self.state.pending_events.lock().drain(..) {
+                self.events.push(event);
+            }
+            self.state
+                .has_pending
+                .store(false, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+}
+
 impl<'a> Perform for PerformHandler<'a> {
     fn print(&mut self, c: char) {
         self.state.last_printed_char = Some(c);
@@ -24,6 +43,7 @@ impl<'a> Perform for PerformHandler<'a> {
 
     fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], _ignore: bool, action: char) {
         crate::terminal::handlers::csi::handle_csi(self.state, self.events, params, intermediates, action);
+        self.drain_pending_events();
     }
 
     fn osc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
@@ -32,6 +52,7 @@ impl<'a> Perform for PerformHandler<'a> {
                 crate::terminal::handlers::osc::handle_osc(self.state, self.events, opcode, params, bell_terminated);
             }
         }
+        self.drain_pending_events();
     }
 
     fn esc_dispatch(&mut self, intermediates: &[u8], _ignore: bool, byte: u8) {

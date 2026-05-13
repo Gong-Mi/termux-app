@@ -477,18 +477,14 @@ impl Parser {
                     self.escape_state = ESC;
                     return;
                 }
-                if self.escape_state != ESC_OSC {
-                    self.params.reset();
-                    self.intermediates.clear();
-                    self.escape_state = ESC;
-                } else {
+                if self.escape_state == ESC_OSC {
                     // OSC 序列中的 ESC - ST (String Terminator) 的可能开始
-                    let osc_data = self.osc_buffer.as_bytes().to_vec();
-                    let params: Vec<&[u8]> = osc_data.split(|&b| b == b';').collect();
-                    handler.osc_dispatch(&params, true);
-                    self.osc_buffer.clear();
-                    self.escape_state = ESC; // 消费接下来的 '\'
+                    self.escape_state = ESC_OSC_ESC;
+                    return;
                 }
+                self.params.reset();
+                self.intermediates.clear();
+                self.escape_state = ESC;
                 return;
             }
             0x00..=0x1F => {
@@ -573,6 +569,14 @@ impl Parser {
             }
             ESC_OSC => {
                 self.do_osc(handler, byte);
+            }
+            ESC_OSC_ESC => {
+                if byte == b'\\' {
+                    self.osc_dispatch_and_reset(handler, false);
+                } else {
+                    // 非标准 ST，忽略并恢复
+                    self.escape_state = ESC_NONE;
+                }
             }
             ESC_P => {
                 self.do_dcs(handler, byte);
@@ -893,7 +897,7 @@ impl Parser {
         match byte {
             0x07 => {
                 // BEL 终止
-                self.osc_dispatch_and_reset(handler);
+                self.osc_dispatch_and_reset(handler, true);
             }
             0x1B => {
                 // ESC - 可能是 ST (ESC \)
@@ -915,10 +919,10 @@ impl Parser {
     }
 
     /// OSC 调度和重置
-    fn osc_dispatch_and_reset<P: Perform>(&mut self, handler: &mut P) {
+    fn osc_dispatch_and_reset<P: Perform>(&mut self, handler: &mut P, bell_terminated: bool) {
         let osc_data = self.osc_buffer.as_bytes().to_vec();
         let params: Vec<&[u8]> = osc_data.split(|&b| b == b';').collect();
-        handler.osc_dispatch(&params, true);
+        handler.osc_dispatch(&params, bell_terminated);
         self.osc_buffer.clear();
         self.escape_state = ESC_NONE;
     }

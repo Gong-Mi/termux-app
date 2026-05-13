@@ -249,9 +249,10 @@ impl TerminalColors {
             return String::new();
         }
         let color = self.current_colors[index];
-        let r = (((color >> 16) & 0xff) as u16 * 65535) / 255;
-        let g = (((color >> 8) & 0xff) as u16 * 65535) / 255;
-        let b = ((color & 0xff) as u16 * 65535) / 255;
+        // 使用 u32 中间计算避免 u16 溢出：255 * 65535 = 16_711_425 > u16::MAX
+        let r = ((((color >> 16) & 0xff) as u32 * 65535) / 255) as u16;
+        let g = ((((color >> 8) & 0xff) as u32 * 65535) / 255) as u16;
+        let b = (((color & 0xff) as u32 * 65535) / 255) as u16;
         format!("rgb:{:04x}/{:04x}/{:04x}", r, g, b)
     }
 }

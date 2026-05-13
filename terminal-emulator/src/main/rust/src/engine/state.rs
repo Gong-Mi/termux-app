@@ -78,7 +78,10 @@ pub struct ScreenState {
     pub underline_color: u64,
     pub selection: Option<Selection>,
     /// 待发送回 Java 的事件（由 TerminalEngine 收集并发送）
-    pub pending_events: std::sync::Mutex<Vec<crate::engine::events::TerminalEvent>>,
+    /// 使用 parking_lot::Mutex 替代 std::sync::Mutex，无竞争时性能接近无锁。
+    pub pending_events: parking_lot::Mutex<Vec<crate::engine::events::TerminalEvent>>,
+    /// 无锁标志：pending_events 是否非空。用于避免高频空锁 drain。
+    pub has_pending: std::sync::atomic::AtomicBool,
 }
 
 impl Drop for ScreenState {
@@ -160,7 +163,8 @@ impl ScreenState {
             auto_scroll_disabled: false,
             underline_color: COLOR_INDEX_FOREGROUND as u64,
             selection: None,
-            pending_events: std::sync::Mutex::new(Vec::with_capacity(4)),
+            pending_events: parking_lot::Mutex::new(Vec::with_capacity(4)),
+            has_pending: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -285,17 +289,19 @@ impl ScreenState {
     }
 
     pub fn report_clear_screen(&self) {
-        if let Ok(mut pending) = self.pending_events.lock() {
-            pending.push(crate::engine::events::TerminalEvent::ScreenUpdated);
-        }
+        self.has_pending.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.pending_events
+            .lock()
+            .push(crate::engine::events::TerminalEvent::ScreenUpdated);
     }
 
     pub fn report_terminal_response(&self, response: &str) {
-        if let Ok(mut pending) = self.pending_events.lock() {
-            pending.push(crate::engine::events::TerminalEvent::TerminalResponse(
+        self.has_pending.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.pending_events
+            .lock()
+            .push(crate::engine::events::TerminalEvent::TerminalResponse(
                 response.to_string(),
             ));
-        }
     }
 
     pub fn send_mouse_event(&mut self, button: u32, column: i64, row: i64, pressed: bool) {
@@ -691,15 +697,17 @@ impl ScreenState {
     }
 
     pub fn report_bell(&self) {
-        if let Ok(mut pending) = self.pending_events.lock() {
-            pending.push(crate::engine::events::TerminalEvent::Bell);
-        }
+        self.has_pending.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.pending_events
+            .lock()
+            .push(crate::engine::events::TerminalEvent::Bell);
     }
 
     pub fn report_colors_changed(&self) {
-        if let Ok(mut pending) = self.pending_events.lock() {
-            pending.push(crate::engine::events::TerminalEvent::ColorsChanged);
-        }
+        self.has_pending.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.pending_events
+            .lock()
+            .push(crate::engine::events::TerminalEvent::ColorsChanged);
     }
 
     pub fn report_color_response(&self, response: &str, bell_terminated: bool) {
@@ -714,9 +722,10 @@ impl ScreenState {
         use base64::{engine::general_purpose, Engine as _};
         if let Ok(decoded) = general_purpose::STANDARD.decode(base64_data) {
             if let Ok(text) = String::from_utf8(decoded) {
-                if let Ok(mut pending) = self.pending_events.lock() {
-                    pending.push(crate::engine::events::TerminalEvent::CopytoClipboard(text));
-                }
+                self.has_pending.store(true, std::sync::atomic::Ordering::Relaxed);
+                self.pending_events
+                    .lock()
+                    .push(crate::engine::events::TerminalEvent::CopytoClipboard(text));
             }
         }
     }

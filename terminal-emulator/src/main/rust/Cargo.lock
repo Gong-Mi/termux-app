@@ -1559,6 +1559,7 @@ dependencies = [
  "ndk-sys",
  "nix",
  "once_cell",
+ "parking_lot",
  "raw-window-handle",
  "rayon",
  "rusqlite",
