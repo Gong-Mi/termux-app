@@ -62,23 +62,6 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetFontSize(
     render_thread::request_render();
 }
 
-/// 设置缓存目录
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetCacheDir(
-    mut env: JNIEnv,
-    _obj: JObject,
-    path: JString,
-) {
-    if let Ok(path_str) = env.get_string(&path) {
-        let path_str: String = path_str.into();
-        render_thread::set_render_cache_dir(&path_str);
-        android_log(
-            LogPriority::DEBUG,
-            &format!("nativeSetCacheDir: {}", path_str),
-        );
-    }
-}
-
 /// 设置自定义字体文件路径
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetFontPath(
@@ -2369,6 +2352,73 @@ pub extern "system" fn Java_com_termux_terminal_JNI_getKeyCodeFromTermcap(
 // ============================================================================
 
 #[unsafe(no_mangle)]
+/// 在 JNI_OnLoad 中自动获取 Android 应用的 cache 目录，
+/// 无需 Java 层显式传入。路径格式：/data/data/<package>/cache/vulkan_pipeline_cache.bin
+fn init_android_cache_dir(vm: &jni::JavaVM) {
+    let mut env = match vm.attach_current_thread_as_daemon() {
+        Ok(e) => e,
+        Err(e) => {
+            android_log(
+                LogPriority::WARN,
+                &format!("Failed to attach thread for cache dir: {:?}", e),
+            );
+            return;
+        }
+    };
+
+    let activity_thread = match env.find_class("android/app/ActivityThread") {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+
+    let app = match env
+        .call_static_method(
+            &activity_thread,
+            "currentApplication",
+            "()Landroid/app/Application;",
+            &[],
+        )
+        .and_then(|v| v.l())
+    {
+        Ok(o) => o,
+        Err(_) => return,
+    };
+
+    let cache_dir = match env
+        .call_method(&app, "getCacheDir", "()Ljava/io/File;", &[])
+        .and_then(|v| v.l())
+    {
+        Ok(o) => o,
+        Err(_) => return,
+    };
+
+    let path_str = match env
+        .call_method(
+            &cache_dir,
+            "getAbsolutePath",
+            "()Ljava/lang/String;",
+            &[],
+        )
+        .and_then(|v| v.l())
+    {
+        Ok(o) => {
+            let jstr = jni::objects::JString::from(o);
+            match env.get_string(&jstr) {
+                Ok(s) => String::from(s),
+                Err(_) => return,
+            }
+        }
+        Err(_) => return,
+    };
+
+    let cache_file = format!("{}/vulkan_pipeline_cache.bin", path_str);
+    crate::vulkan_context::set_pipeline_cache_file_path(&cache_file);
+    android_log(
+        LogPriority::INFO,
+        &format!("Auto-detected pipeline cache path: {}", cache_file),
+    );
+}
+
 pub extern "system" fn JNI_OnLoad(vm: jni::JavaVM, _reserved: std::ffi::c_void) -> jint {
     android_log(LogPriority::DEBUG, "JNI_OnLoad started");
 
@@ -2386,6 +2436,9 @@ pub extern "system" fn JNI_OnLoad(vm: jni::JavaVM, _reserved: std::ffi::c_void) 
             crate::utils::android_log(crate::utils::LogPriority::FATAL, &loc_msg);
         }
     }));
+
+    // 自动探测 cache 目录，完全无需 Java 层配合
+    init_android_cache_dir(&vm);
 
     let result = crate::JAVA_VM.set(vm);
     match result {

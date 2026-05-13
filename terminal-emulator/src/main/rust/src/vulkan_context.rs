@@ -53,13 +53,62 @@ unsafe extern "C" fn hooked_vk_destroy_pipeline_cache(
     // Ignore: lifetime managed by VulkanContext::drop
 }
 
-fn load_pipeline_cache_data() -> Vec<u8> {
+fn load_pipeline_cache_file() -> Vec<u8> {
     if let Ok(guard) = PIPELINE_CACHE_FILE_PATH.lock() {
         if let Some(path) = guard.as_ref() {
             return std::fs::read(path).unwrap_or_default();
         }
     }
     Vec::new()
+}
+
+/// 校验 pipeline cache 头部是否与当前 GPU 匹配。
+/// Vulkan pipeline cache 是驱动私有格式，vendorID/deviceID 不匹配时
+/// 必须丢弃，否则可能导致渲染异常或 GPU crash。
+fn validate_pipeline_cache(data: &[u8], vendor_id: u32, device_id: u32) -> Option<Vec<u8>> {
+    const MIN_HEADER_SIZE: usize = 4 + 4 + 4 + 4 + 16; // 32 bytes
+
+    if data.len() < MIN_HEADER_SIZE {
+        if !data.is_empty() {
+            android_log(LogPriority::DEBUG, "Pipeline cache file too small, using empty cache");
+        }
+        return None;
+    }
+
+    let header_size = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize;
+    let header_version = u32::from_le_bytes(data[4..8].try_into().unwrap());
+
+    if header_version != 1 || header_size < MIN_HEADER_SIZE || data.len() < header_size {
+        android_log(
+            LogPriority::WARN,
+            "Pipeline cache: invalid header version or size, discarding",
+        );
+        return None;
+    }
+
+    let cache_vendor = u32::from_le_bytes(data[8..12].try_into().unwrap());
+    let cache_device = u32::from_le_bytes(data[12..16].try_into().unwrap());
+
+    if cache_vendor != vendor_id || cache_device != device_id {
+        android_log(
+            LogPriority::INFO,
+            &format!(
+                "Pipeline cache: vendor/device mismatch (cache: {:#x}/{:#x}, current: {:#x}/{:#x}), discarding",
+                cache_vendor, cache_device, vendor_id, device_id
+            ),
+        );
+        return None;
+    }
+
+    android_log(
+        LogPriority::INFO,
+        &format!(
+            "Pipeline cache: validated {} bytes (vendor={:#x}, device={:#x})",
+            data.len(), cache_vendor, cache_device
+        ),
+    );
+
+    Some(data.to_vec())
 }
 
 fn save_pipeline_cache_data(device: &Device, cache: ash_vk::PipelineCache) {
@@ -456,7 +505,10 @@ impl VulkanContext {
         let device_raw = device.handle().as_raw();
 
         // === Pipeline Cache: load previous data and create cache before Skia initializes ===
-        let pipeline_cache_data = load_pipeline_cache_data();
+        let raw_cache_data = load_pipeline_cache_file();
+        let props = unsafe { instance.get_physical_device_properties(pdevice) };
+        let pipeline_cache_data = validate_pipeline_cache(&raw_cache_data, props.vendor_id, props.device_id)
+            .unwrap_or_default();
         let cache_create_info = ash_vk::PipelineCacheCreateInfo {
             flags: ash_vk::PipelineCacheCreateFlags::empty(),
             initial_data_size: pipeline_cache_data.len(),
@@ -1008,6 +1060,14 @@ impl VulkanContext {
             None,
         )
     }
+
+    /// 定期保存 pipeline cache 到文件。
+    /// 由渲染线程每 N 帧调用一次，减少进程被系统杀死时的缓存损失。
+    pub fn save_pipeline_cache_periodic(&self) {
+        if self.pipeline_cache != ash_vk::PipelineCache::null() {
+            save_pipeline_cache_data(&self.device, self.pipeline_cache);
+        }
+    }
 }
 
 impl Drop for VulkanContext {
@@ -1144,5 +1204,57 @@ mod tests {
         fn assert_sync<T: Sync>() {}
         assert_send::<super::VulkanContext>();
         assert_sync::<std::sync::Mutex<Option<super::VulkanContext>>>();
+    }
+
+    /// 验证 pipeline cache 头部校验逻辑：vendorID/deviceID 不匹配时必须丢弃。
+    #[test]
+    fn test_pipeline_cache_validation() {
+        // 构造一个合法的 Vulkan pipeline cache header
+        // headerSize=32, headerVersion=1, vendorID=0x13B5, deviceID=0x12345678
+        let mut data = vec![0u8; 64];
+        data[0..4].copy_from_slice(&32u32.to_le_bytes());    // headerSize
+        data[4..8].copy_from_slice(&1u32.to_le_bytes());      // headerVersion
+        data[8..12].copy_from_slice(&0x13B5u32.to_le_bytes()); // vendorID
+        data[12..16].copy_from_slice(&0x1234_5678u32.to_le_bytes()); // deviceID
+        // UUID = 16 bytes of zeros (offset 16..32)
+        // payload = 32 bytes (offset 32..64)
+
+        // 1. 匹配 vendor/device → 通过
+        assert!(
+            super::validate_pipeline_cache(&data, 0x13B5, 0x1234_5678).is_some(),
+            "Matching vendor/device should be accepted"
+        );
+
+        // 2. vendor 不匹配 → 丢弃
+        assert!(
+            super::validate_pipeline_cache(&data, 0x5143, 0x1234_5678).is_none(),
+            "Mismatched vendor should be rejected"
+        );
+
+        // 3. device 不匹配 → 丢弃
+        assert!(
+            super::validate_pipeline_cache(&data, 0x13B5, 0xDEAD_BEEF).is_none(),
+            "Mismatched device should be rejected"
+        );
+
+        // 4. 数据太短 → 丢弃
+        assert!(
+            super::validate_pipeline_cache(&data[..16], 0x13B5, 0x1234_5678).is_none(),
+            "Short data should be rejected"
+        );
+
+        // 5. 错误的 header version → 丢弃
+        let mut bad_ver = data.clone();
+        bad_ver[4..8].copy_from_slice(&2u32.to_le_bytes());
+        assert!(
+            super::validate_pipeline_cache(&bad_ver, 0x13B5, 0x1234_5678).is_none(),
+            "Bad header version should be rejected"
+        );
+
+        // 6. 空数据 → 丢弃（静默）
+        assert!(
+            super::validate_pipeline_cache(&[], 0x13B5, 0x1234_5678).is_none(),
+            "Empty data should be rejected"
+        );
     }
 }

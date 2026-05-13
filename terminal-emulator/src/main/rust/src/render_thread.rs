@@ -70,10 +70,6 @@ pub fn get_render_font_path() -> Option<String> {
     RENDER_FONT_PATH.lock().unwrap().clone()
 }
 
-pub fn set_render_cache_dir(path: &str) {
-    let cache_file = format!("{}/vulkan_pipeline_cache.bin", path);
-    crate::vulkan_context::set_pipeline_cache_file_path(&cache_file);
-}
 
 pub fn set_render_font_path(path: &str) {
     *RENDER_FONT_PATH.lock().unwrap() = Some(path.to_string());
@@ -432,11 +428,13 @@ fn spawn_render_thread(engine_ptr: jlong) {
                     Ok(Ok(_)) => {
                         frame_count += 1;
                         // 每 300 帧（约 5 秒）清理一次未锁定的 GPU 资源，防止内存泄漏
+                        // 同时保存 pipeline cache，减少后台被杀时的缓存损失
                         if frame_count % 300 == 0 {
                             if let Ok(mut ctx_guard) = ctx_mutex.try_lock() {
                                 if let Some(ctx) = ctx_guard.as_mut() {
                                     use skia_safe::gpu::ganesh::PurgeResourceOptions;
                                     ctx.context.as_mut().unwrap().purge_unlocked_resources(PurgeResourceOptions::AllResources);
+                                    ctx.save_pipeline_cache_periodic();
                                 }
                             }
                         }
