@@ -93,7 +93,9 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
         env.insert("TMPDIR".to_string(), termux_tmp.to_string());
 
         // LD_PRELOAD 用于 termux-exec 的 shebang 修复和 W^X 绕过。
-        // 优先尝试 linker 版本（API 29+ 必需），其次尝试 legacy 或 direct 版本。
+        // 优先尝试 applib 目录（API 29+ 必需，因为系统链接器禁止从数据目录加载 .so），
+        // 其次尝试传统的 prefix/lib 目录。
+        let termux_app_lib = format!("{}/applib", crate::get_termux_files_dir());
         let ld_preload_variants = [
             "libtermux-exec-linker-ld-preload.so",
             "libtermux-exec-ld-preload.so",
@@ -101,15 +103,34 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
             "libtermux-exec-direct-ld-preload.so",
         ];
 
+        let mut found_ld_preload = false;
+        
+        // 1. 优先检查 applib (APK 原生库目录)
         for variant in &ld_preload_variants {
-            let ld_preload_path = format!("{}/lib/{}", termux_prefix, variant);
+            let ld_preload_path = format!("{}/{}", termux_app_lib, variant);
             if std::path::Path::new(&ld_preload_path).exists() {
                 env.insert("LD_PRELOAD".to_string(), ld_preload_path.to_string());
                 android_log(
                     LogPriority::INFO,
-                    &format!("[env_builder] Using LD_PRELOAD: {}", ld_preload_path),
+                    &format!("[env_builder] Using LD_PRELOAD from applib: {}", ld_preload_path),
                 );
+                found_ld_preload = true;
                 break;
+            }
+        }
+
+        // 2. Fallback 到传统的 prefix/lib
+        if !found_ld_preload {
+            for variant in &ld_preload_variants {
+                let ld_preload_path = format!("{}/lib/{}", termux_prefix, variant);
+                if std::path::Path::new(&ld_preload_path).exists() {
+                    env.insert("LD_PRELOAD".to_string(), ld_preload_path.to_string());
+                    android_log(
+                        LogPriority::INFO,
+                        &format!("[env_builder] Using LD_PRELOAD from prefix: {}", ld_preload_path),
+                    );
+                    break;
+                }
             }
         }
     }

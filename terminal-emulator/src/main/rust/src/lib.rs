@@ -25,27 +25,45 @@ pub fn get_termux_prefix() -> String {
         .unwrap_or_else(|| "/data/data/com.termux/files/usr".to_string())
 }
 
+/// 获取 Termux files 目录路径 (Prefix 的父目录)
+pub fn get_termux_files_dir() -> String {
+    let prefix = get_termux_prefix();
+    if let Some(parent) = std::path::Path::new(&prefix).parent() {
+        parent.to_string_lossy().to_string()
+    } else {
+        "/data/data/com.termux/files".to_string()
+    }
+}
+
+/// 获取 Termux data 目录路径 (files 的父目录)
+pub fn get_termux_data_dir() -> String {
+    let files_dir = get_termux_files_dir();
+    if let Some(parent) = std::path::Path::new(&files_dir).parent() {
+        parent.to_string_lossy().to_string()
+    } else {
+        "/data/data/com.termux".to_string()
+    }
+}
+
 /// 验证并校正 Termux Prefix 路径。
 ///
-/// termux-exec、apt 等 Termux 生态组件在底层硬编码了 `/data/data/com.termux`
-/// 进行 W^X bypass 路径匹配。若传入 `/data/user/0/...` 等动态路径，
-/// 会导致所有 ELF 执行返回 Permission denied（Android 10+）。
+/// termux-exec、apt 等 Termux 生态组件在底层历史上硬编码了 `/data/data/com.termux`。
+/// 但现代 Android（尤其是多用户模式）会使用 `/data/user/0/com.termux`。
 ///
-/// 此函数作为 Rust 侧的防火墙：接受唯一合法路径，其余一律回退到默认值。
+/// 此函数允许动态路径，但确保它们符合 Termux 的基本结构。
 pub fn validate_termux_prefix(input: &str) -> String {
-    const REQUIRED_PREFIX: &str = "/data/data/com.termux/files/usr";
-    if input == REQUIRED_PREFIX {
+    if input.contains("com.termux") && input.ends_with("/files/usr") {
         input.to_string()
     } else {
+        const FALLBACK_PREFIX: &str = "/data/data/com.termux/files/usr";
         crate::utils::android_log(
             crate::utils::LogPriority::ERROR,
             &format!(
-                "[PREFIX] Rejected invalid prefix '{}': termux-exec hardcodes /data/data/com.termux. \
-                 Using fallback '{}'.",
-                input, REQUIRED_PREFIX
+                "[PREFIX] Rejected invalid prefix '{}'. Using fallback '{}'.",
+                input, FALLBACK_PREFIX
             ),
         );
-        REQUIRED_PREFIX.to_string()
+        FALLBACK_PREFIX.to_string()
     }
 }
 
@@ -103,15 +121,12 @@ mod prefix_validation_tests {
         );
     }
 
-    /// 动态 /data/user/0/ 前缀必须被拒绝并回退到硬编码路径。
-    /// 这是回归测试：防止有人再次把 Java 层的 setTermuxPrefix 改成
-    /// getFilesDir().getAbsolutePath() 导致 termux-exec W^X bypass 失效，
-    /// 从而引发全站 Permission denied（见 commit 5121e9e0）。
+    /// 动态 /data/user/0/ 前缀现在应该被接受。
     #[test]
-    fn test_user_0_prefix_rejected() {
+    fn test_user_0_prefix_accepted() {
         assert_eq!(
             validate_termux_prefix("/data/user/0/com.termux/files/usr"),
-            "/data/data/com.termux/files/usr"
+            "/data/user/0/com.termux/files/usr"
         );
     }
 

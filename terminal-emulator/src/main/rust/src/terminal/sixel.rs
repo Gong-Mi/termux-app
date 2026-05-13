@@ -19,6 +19,8 @@ pub enum SixelState {
     RepeatChar,
     /// 颜色参数解析状态 (#)
     ColorParam,
+    /// 栅格参数解析状态 (")
+    RasterParam,
 }
 
 /// Sixel 图形解码器
@@ -129,6 +131,11 @@ impl SixelDecoder {
                             self.current_param = -1;
                             self.state = SixelState::ColorParam;
                         }
+                        b'"' => {
+                            self.params.clear();
+                            self.current_param = -1;
+                            self.state = SixelState::RasterParam;
+                        }
                         b'!' => {
                             self.repeat_count = 0;
                             self.state = SixelState::RepeatCount;
@@ -210,6 +217,56 @@ impl SixelDecoder {
                             self.current_row += 6;
                             self.current_col = 0;
                             self.ensure_height(self.current_row + 6);
+                        } else if byte == b'!' {
+                            self.repeat_count = 0;
+                            self.state = SixelState::RepeatCount;
+                        } else if byte == b'"' {
+                            self.params.clear();
+                            self.current_param = -1;
+                            self.state = SixelState::RasterParam;
+                        }
+                    }
+                }
+                SixelState::RasterParam => {
+                    if byte.is_ascii_digit() {
+                        if self.current_param < 0 {
+                            self.current_param = 0;
+                        }
+                        self.current_param = self.current_param * 10 + (byte - b'0') as i32;
+                    } else if byte == b';' {
+                        self.params.push(if self.current_param < 0 {
+                            0
+                        } else {
+                            self.current_param
+                        });
+                        self.current_param = -1;
+                    } else {
+                        // 栅格参数结束
+                        if self.current_param >= 0 {
+                            self.params.push(self.current_param);
+                        }
+
+                        self.apply_raster_params();
+                        self.params.clear();
+                        self.current_param = -1;
+                        self.state = SixelState::Data;
+
+                        // 重新处理导致退出的字节
+                        if (63..=126).contains(&byte) {
+                            self.render_sixel(byte - 63, 1);
+                        } else if byte == b'$' {
+                            self.current_col = 0;
+                        } else if byte == b'-' {
+                            self.current_row += 6;
+                            self.current_col = 0;
+                            self.ensure_height(self.current_row + 6);
+                        } else if byte == b'!' {
+                            self.repeat_count = 0;
+                            self.state = SixelState::RepeatCount;
+                        } else if byte == b'#' {
+                            self.params.clear();
+                            self.current_param = -1;
+                            self.state = SixelState::ColorParam;
                         }
                     }
                 }
@@ -294,6 +351,25 @@ impl SixelDecoder {
         self.current_color = color_index;
     }
 
+    /// 应用栅格参数 (")
+    /// [Pan; Pad; Ph; Pv]
+    fn apply_raster_params(&mut self) {
+        if self.params.len() < 4 {
+            return;
+        }
+
+        let ph = self.params[2] as usize;
+        let pv = self.params[3] as usize;
+
+        if ph > 0 {
+            self.width = self.width.max(ph);
+        }
+        if pv > 0 {
+            self.height = self.height.max(pv);
+            self.ensure_height(self.height);
+        }
+    }
+
     pub fn finish(&mut self) {
         // 如果处于颜色参数解析状态，收尾最后一次选择
         if self.state == SixelState::ColorParam {
@@ -301,6 +377,13 @@ impl SixelDecoder {
                 self.params.push(self.current_param);
             }
             self.apply_color_select();
+            self.params.clear();
+            self.current_param = -1;
+        } else if self.state == SixelState::RasterParam {
+            if self.current_param >= 0 {
+                self.params.push(self.current_param);
+            }
+            self.apply_raster_params();
             self.params.clear();
             self.current_param = -1;
         }
@@ -981,6 +1064,27 @@ mod tests {
         let (r, g, b) = hls_to_rgb(0, 50, 0);
         assert_eq!(r, g);
         assert_eq!(g, b);
+    }
+
+    #[test]
+    fn test_sixel_raster_parameters() {
+        let mut decoder = SixelDecoder::new();
+        // "1;1;100;100 -> Ph=100, Pv=100
+        decoder.process_data(b"\"1;1;100;100");
+        assert_eq!(decoder.width, 100);
+        assert_eq!(decoder.height, 100);
+        assert_eq!(decoder.pixel_data.len(), 100);
+    }
+
+    #[test]
+    fn test_sixel_raster_parameters_mixed_with_data() {
+        let mut decoder = SixelDecoder::new();
+        // "1;1;10;10 followed by ~ (one column of 6 pixels)
+        decoder.process_data(b"\"1;1;10;10~");
+        assert_eq!(decoder.width, 10);
+        assert_eq!(decoder.height, 10);
+        // Column 0 should have the ~ data
+        assert_eq!(decoder.pixel_data[0][0], 1);
     }
 
     #[test]

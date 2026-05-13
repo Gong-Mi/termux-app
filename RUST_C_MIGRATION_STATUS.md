@@ -98,8 +98,9 @@ TermuxInstaller.java: System.loadLibrary("termux_rust") → getZip()
 | 问题 | 状态 | 说明 |
 |---|---|---|
 | IME 切换闪烁 | 🟡 Debounce 已实现 | 150ms 延迟重建，需实机验证 |
-| Sixel 解析器 Bug | 🟡 `test_sixel_extended_parsing` 失败 | width 期望 100 实际 6 |
-| 硬编码路径 | 🟡 29 处 `/data/user/0/com.termux` | 多用户设备会崩溃 |
+| Sixel 解析器 Bug | ✅ 已修复 | 实现了 `"` (Raster) 指令解析，宽度计算正确 |
+| 硬编码路径 | ✅ 已优化 | 灵活校验，支持 `/data/user/N/` 路径 |
+| API 37 执行限制 | ✅ 已解决 | `LD_PRELOAD` 已重定向至 `applib/` |
 | Skia armv7 预编译 404 | 🟡 首次构建从源码编译（~10 分钟）| cargo-ndk 构建时自动处理 |
 
 ---
