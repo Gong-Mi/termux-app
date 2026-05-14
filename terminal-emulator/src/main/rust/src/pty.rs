@@ -180,13 +180,13 @@ pub fn create_subprocess_with_data(
 
     let normalize_path = |path: String| -> String {
         // 动态适配：如果路径包含 /data/user/0/com.termux 或类似的硬编码 Android 路径，
-        // 且它不匹配当前实际的 termux_data_dir，则进行替换。
-        if (path.starts_with("/data/user/0/com.termux") || path.starts_with("/data/data/com.termux"))
-            && !path.starts_with(&termux_data_dir)
+        // 且它不匹配当前实际的 termux_data_dir，则进行全量替换。
+        if (path.contains("/data/user/0/com.termux") || path.contains("/data/data/com.termux"))
+            && !path.contains(&termux_data_dir)
         {
-            // 简单处理：将所有已知的硬编码前缀替换为动态探测的前缀
-            let p = path.replace("/data/user/0/com.termux", &termux_data_dir);
-            p.replace("/data/data/com.termux", &termux_data_dir)
+            // 将所有已知的硬编码前缀替换为动态探测的前缀
+            path.replace("/data/user/0/com.termux", &termux_data_dir)
+                .replace("/data/data/com.termux", &termux_data_dir)
         } else {
             path
         }
@@ -200,7 +200,15 @@ pub fn create_subprocess_with_data(
     // 环境变量由 Rust 层完全自主构建，不再接收/修补 Java 层传递的 envp。
     // 这消除了 Java ↔ Native 之间的“中间状态”不一致。
     // ------------------------------------------------------------------
-    let c_envs = crate::env_builder::build_termux_environment(&cwd_str, is_failsafe);
+    let env_list = crate::env_builder::build_termux_environment(&cwd_str, is_failsafe);
+
+    // 二次清洗环境变量：确保即使 env_builder 漏掉某些系统变量，这里也会进行路径归一化
+    let c_envs: Vec<CString> = env_list.into_iter().map(|cs| {
+        let s = cs.to_string_lossy().to_string();
+        let normalized = s.replace("/data/user/0/com.termux", &termux_data_dir)
+                          .replace("/data/data/com.termux", &termux_data_dir);
+        CString::new(normalized).unwrap_or_else(|_| cs)
+    }).collect();
 
     let mut real_cmd = cmd_str.clone();
     let mut real_argv = argv.clone();

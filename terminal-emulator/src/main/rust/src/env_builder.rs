@@ -93,8 +93,7 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
         env.insert("TMPDIR".to_string(), termux_tmp.to_string());
 
         // LD_PRELOAD 用于 termux-exec 的 shebang 修复和 W^X 绕过。
-        // 优先尝试 applib 目录（API 29+ 必需，因为系统链接器禁止从数据目录加载 .so），
-        // 其次尝试传统的 prefix/lib 目录。
+        // 我们强制确保 LD_PRELOAD 指向有效的 libtermux-exec.so
         let termux_app_lib = format!("{}/applib", crate::get_termux_files_dir());
         let ld_preload_variants = [
             "libtermux-exec-linker-ld-preload.so",
@@ -105,7 +104,7 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
 
         let mut found_ld_preload = false;
         
-        // 1. 优先检查 applib (APK 原生库目录)
+        // 1. 优先检查 applib (APK 原生库目录，API 29+ 必需)
         for variant in &ld_preload_variants {
             let ld_preload_path = format!("{}/{}", termux_app_lib, variant);
             if std::path::Path::new(&ld_preload_path).exists() {
@@ -129,9 +128,20 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
                         LogPriority::INFO,
                         &format!("[env_builder] Using LD_PRELOAD from prefix: {}", ld_preload_path),
                     );
+                    found_ld_preload = true;
                     break;
                 }
             }
+        }
+
+        // 3. 强制兜底：如果都没找到，尝试使用标准 symlink 路径
+        if !found_ld_preload {
+            let ld_preload_path = format!("{}/lib/libtermux-exec.so", termux_prefix);
+            env.insert("LD_PRELOAD".to_string(), ld_preload_path.to_string());
+            android_log(
+                LogPriority::WARN,
+                &format!("[env_builder] Forced LD_PRELOAD fallback to: {}", ld_preload_path),
+            );
         }
     }
 

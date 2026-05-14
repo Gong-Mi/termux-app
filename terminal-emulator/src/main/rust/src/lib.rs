@@ -10,6 +10,26 @@
 use once_cell::sync::OnceCell;
 use std::sync::Mutex;
 
+#[macro_export]
+macro_rules! safe_write {
+    ($lock:expr) => {
+        match $lock.write() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! safe_read {
+    ($lock:expr) => {
+        match $lock.read() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    };
+}
+
 /// 全局存储 Termux 应用版本号（由 Java 层通过 JNI 传入）
 pub static TERMUX_VERSION: OnceCell<Mutex<String>> = OnceCell::new();
 

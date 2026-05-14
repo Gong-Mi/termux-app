@@ -1,0 +1,5 @@
+
+Report issues at https://termux.dev/issues
+~ $ gh repo clone Gong-Mi/termux-app
+failed to run git: fork/exec /data/data/com.termux/files/usr/bin/git: permission denied
+~ $

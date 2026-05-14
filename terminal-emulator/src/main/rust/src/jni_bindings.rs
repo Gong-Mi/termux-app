@@ -451,13 +451,11 @@ fn flush_events_to_java(
                 start_y,
             } => {
                 if let Ok(j_data) = env.new_byte_array(rgba_data.len() as i32) {
-                    unsafe {
-                        let _ = env.set_byte_array_region(
-                            &j_data,
-                            0,
-                            std::mem::transmute::<&[u8], &[i8]>(&rgba_data),
-                        );
-                    }
+                    let _ = env.set_byte_array_region(
+                        &j_data,
+                        0,
+                        bytemuck::cast_slice(&rgba_data),
+                    );
                     let _ = env.call_method(
                         obj,
                         "onSixelImage",
@@ -540,7 +538,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatch(
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let t0 = std::time::Instant::now();
         let (events, cb) = {
-            let mut engine = context.lock.write().unwrap();
+            let mut engine = crate::safe_write!(context.lock);
             let j_array = unsafe { jni::objects::JByteArray::from_raw(batch) };
             if let Ok(bytes) = env.convert_byte_array(&j_array) {
                 let len = length as usize;
@@ -579,7 +577,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatchDirect(
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let t0 = std::time::Instant::now();
         let (events, cb) = {
-            let mut engine = context.lock.write().unwrap();
+            let mut engine = crate::safe_write!(context.lock);
 
             // 获取 DirectBuffer 地址
             let address = env.get_direct_buffer_address(&buffer);
@@ -1577,13 +1575,11 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getColors(
     };
 
     let result = if let Ok(j_array) = env.new_int_array(colors.len() as jint) {
-        unsafe {
-            let _ = env.set_int_array_region(
-                &j_array,
-                0,
-                std::mem::transmute::<&[u32], &[i32]>(&colors),
-            );
-        }
+        let _ = env.set_int_array_region(
+            &j_array,
+            0,
+            bytemuck::cast_slice(&colors),
+        );
         j_array.into_raw()
     } else {
         std::ptr::null_mut()

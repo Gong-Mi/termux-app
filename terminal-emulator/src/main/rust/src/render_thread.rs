@@ -385,9 +385,13 @@ fn spawn_render_thread(engine_ptr: jlong) {
                         }
                     }
 
-                    // 提交绘制（不强制 CPU 等待 GPU，让 CPU/GPU 并行工作）
-                    // 三重缓冲 + MAILBOX present mode 本身已防止撕裂
-                    ctx.context.as_mut().unwrap().flush_and_submit();
+                    // 提交绘制并同步 GPU
+                    // 使用 SyncCpu::Yes 确保在 Present 之前 GPU 已完成绘制，防止画面撕裂
+                    {
+                        let d_ctx = ctx.context.as_mut().unwrap();
+                        d_ctx.flush(&skia_safe::gpu::ganesh::FlushInfo::default());
+                        d_ctx.submit(skia_safe::gpu::SyncCpu::Yes);
+                    }
 
                     // 4. 呈现图像
                     let present_info = ash::vk::PresentInfoKHR {
