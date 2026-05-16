@@ -1,7 +1,7 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int};
 use std::ptr;
-use std::io::Read;
+use std::io::{Read, Write};
 
 use std::sync::atomic::{AtomicPtr, Ordering};
 
@@ -11,6 +11,19 @@ const RTLD_NEXT: *mut libc::c_void = -1i64 as *mut libc::c_void;
 
 unsafe extern "C" {
     static environ: *const *const c_char;
+}
+
+// Simple logging to home directory
+fn debug_log(msg: &str) {
+    let mut file = match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/data/data/com.termux/files/home/termux_exec_debug.log") 
+    {
+        Ok(f) => f,
+        Err(_) => return,
+    };
+    let _ = writeln!(file, "{}", msg);
 }
 
 #[unsafe(no_mangle)]
@@ -36,13 +49,14 @@ pub unsafe extern "C" fn execve(
         }
 
         let path_str = CStr::from_ptr(path).to_string_lossy().to_string();
+        debug_log(&format!("[EXECVE] Intercepted: {}", path_str));
         
         // 1. W^X Bypass / Script Interception
-        // On Android 10+, we cannot execute files in the data directory directly.
         if (path_str.starts_with("/data/data/com.termux/") || path_str.starts_with("/data/user/0/com.termux/"))
            && !path_str.contains("/applib/") 
         {
              if let Some((final_cmd, new_argv_vec)) = transform_exec(&path_str, argv) {
+                 debug_log(&format!("[EXECVE] Transformed to: {} with argv: {:?}", final_cmd, new_argv_vec));
                  let c_cmd = CString::new(final_cmd).unwrap();
                  let c_ptrs: Vec<*const c_char> = new_argv_vec.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
                  return real_execve(c_cmd.as_ptr(), c_ptrs.as_ptr(), envp);
@@ -58,27 +72,24 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
     let mut buffer = [0u8; 256];
     let n = file.read(&mut buffer).ok()?;
 
+    let linker = if std::path::Path::new("/system/bin/linker64").exists() {
+        "/system/bin/linker64"
+    } else {
+        "/system/bin/linker"
+    };
+
     if n > 4 && buffer[0] == 0x7F && buffer[1] == b'E' && buffer[2] == b'L' && buffer[3] == b'F' {
-        // ELF File - Needs Linker Wrapper on Android 10+
-        let linker = if std::path::Path::new("/system/bin/linker64").exists() {
-            "/system/bin/linker64"
-        } else {
-            "/system/bin/linker"
-        };
-        
+        // --- ELF File ---
         let mut new_argv = Vec::new();
-        // argv[0]: The process name (usually original argv[0])
+        // Linker needs target as argv[1]. argv[0] is process name.
         let arg0 = if unsafe { !orig_argv.is_null() && !(*orig_argv).is_null() } {
             unsafe { CStr::from_ptr(*orig_argv).to_owned() }
         } else {
             CString::new(path).unwrap()
         };
         new_argv.push(arg0);
-        
-        // argv[1]: THE TARGET BINARY for linker64
         new_argv.push(CString::new(path).unwrap());
         
-        // argv[2...]: Remaining original arguments
         let mut i = 1;
         unsafe {
             while !orig_argv.is_null() && !(*orig_argv.offset(i)).is_null() {
@@ -88,44 +99,54 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
         }
         return Some((linker.to_string(), new_argv));
     } else if let Some((interpreter, shebang_args)) = parse_shebang_internal(&buffer[..n]) {
-        // Shebang Script
+        // --- Shebang Script ---
         let mut new_argv = Vec::new();
         
-        // argv[0]: The process name (usually original argv[0])
-        let arg0 = if unsafe { !orig_argv.is_null() && !(*orig_argv).is_null() } {
-            unsafe { CStr::from_ptr(*orig_argv).to_owned() }
+        // IMPORTANT: The interpreter itself might need a linker wrapper if it's in the data dir!
+        if interpreter.starts_with("/data/data/com.termux/") || interpreter.starts_with("/data/user/0/com.termux/") {
+             // Wrap interpreter in linker64
+             new_argv.push(CString::new(interpreter.clone()).unwrap()); // argv[0] for interpreter
+             new_argv.push(CString::new(interpreter.clone()).unwrap()); // argv[1] for linker (target)
+             
+             if let Some(args) = shebang_args {
+                 for arg in args.split_whitespace() {
+                     new_argv.push(CString::new(arg).unwrap());
+                 }
+             }
+             new_argv.push(CString::new(path).unwrap());
+             
+             let mut i = 1;
+             unsafe {
+                 while !orig_argv.is_null() && !(*orig_argv.offset(i)).is_null() {
+                     new_argv.push(CStr::from_ptr(*orig_argv.offset(i)).to_owned());
+                     i += 1;
+                 }
+             }
+             return Some((linker.to_string(), new_argv));
         } else {
-            CString::new(path).unwrap()
-        };
-        new_argv.push(arg0);
-        
-        if let Some(args) = shebang_args {
-            for arg in args.split_whitespace() {
-                new_argv.push(CString::new(arg).unwrap());
-            }
+             // System interpreter - no wrapper needed
+             new_argv.push(CString::new(interpreter.clone()).unwrap());
+             if let Some(args) = shebang_args {
+                 for arg in args.split_whitespace() {
+                     new_argv.push(CString::new(arg).unwrap());
+                 }
+             }
+             new_argv.push(CString::new(path).unwrap());
+             let mut i = 1;
+             unsafe {
+                 while !orig_argv.is_null() && !(*orig_argv.offset(i)).is_null() {
+                     new_argv.push(CStr::from_ptr(*orig_argv.offset(i)).to_owned());
+                     i += 1;
+                 }
+             }
+             return Some((interpreter, new_argv));
         }
-        // Then the script path
-        new_argv.push(CString::new(path).unwrap());
-        
-        // Then the original user arguments (skipping original argv[0])
-        let mut i = 1;
-        unsafe {
-            while !orig_argv.is_null() && !(*orig_argv.offset(i)).is_null() {
-                new_argv.push(CStr::from_ptr(*orig_argv.offset(i)).to_owned());
-                i += 1;
-            }
-        }
-        return Some((interpreter, new_argv));
     } else {
-        // Neither ELF nor Shebang - Treat as shell script if it's in Termux dir
-        let interpreter = "/data/data/com.termux/files/usr/bin/sh".to_string();
+        // --- Neither ELF nor Shebang - Treat as plain script via /system/bin/sh ---
+        let interpreter = "/data/data/com.termux/files/usr/bin/sh";
         let mut new_argv = Vec::new();
-        let arg0 = if unsafe { !orig_argv.is_null() && !(*orig_argv).is_null() } {
-            unsafe { CStr::from_ptr(*orig_argv).to_owned() }
-        } else {
-            CString::new(path).unwrap()
-        };
-        new_argv.push(arg0);
+        new_argv.push(CString::new("sh").unwrap());
+        new_argv.push(CString::new(interpreter).unwrap()); // Wrap sh in linker64
         new_argv.push(CString::new(path).unwrap());
         
         let mut i = 1;
@@ -135,7 +156,7 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
                 i += 1;
             }
         }
-        return Some((interpreter, new_argv));
+        return Some((linker.to_string(), new_argv));
     }
 }
 
