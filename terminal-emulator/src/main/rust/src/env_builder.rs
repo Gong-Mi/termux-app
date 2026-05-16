@@ -110,12 +110,24 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
         let mut real_app_lib = None;
         if let Ok(maps) = std::fs::read_to_string("/proc/self/maps") {
             for line in maps.lines() {
-                if line.contains("libtermux_rust.so") {
+                if line.contains("libtermux_rust.so") || line.contains("base.apk") {
                     if let Some(path_start) = line.find('/') {
                         let path = &line[path_start..];
-                        if let Some(parent) = std::path::Path::new(path).parent() {
-                            real_app_lib = Some(parent.to_path_buf());
-                            break;
+                        if path.ends_with(".so") {
+                            if let Some(parent) = std::path::Path::new(path).parent() {
+                                real_app_lib = Some(parent.to_path_buf());
+                                break;
+                            }
+                        } else if path.ends_with(".apk") {
+                            // 如果是直接从 APK 映射，尝试猜测对应的 lib 目录（通常在同一个父目录下）
+                            // /data/app/.../base.apk -> /data/app/.../lib/arm64
+                            if let Some(parent) = std::path::Path::new(path).parent() {
+                                let lib_dir = parent.join("lib/arm64");
+                                if lib_dir.exists() {
+                                    real_app_lib = Some(lib_dir);
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
