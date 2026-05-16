@@ -105,13 +105,18 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
         let mut found_ld_preload = false;
         
         // 1. 优先检查 applib (APK 原生库目录，API 29+ 必需)
+        // 注意：必须使用真实路径而非 /data/data/ 下的软链接，否则 Android Linker 会因为安全策略拒绝加载
+        let real_app_lib = std::fs::read_link(&termux_app_lib)
+            .unwrap_or_else(|_| std::path::PathBuf::from(&termux_app_lib));
+            
         for variant in &ld_preload_variants {
-            let ld_preload_path = format!("{}/{}", termux_app_lib, variant);
-            if std::path::Path::new(&ld_preload_path).exists() {
-                env.insert("LD_PRELOAD".to_string(), ld_preload_path.to_string());
+            let ld_preload_path = real_app_lib.join(variant);
+            if ld_preload_path.exists() {
+                let path_str = ld_preload_path.to_string_lossy().to_string();
+                env.insert("LD_PRELOAD".to_string(), path_str.clone());
                 android_log(
                     LogPriority::INFO,
-                    &format!("[env_builder] Using LD_PRELOAD from applib: {}", ld_preload_path),
+                    &format!("[env_builder] Using LD_PRELOAD from real applib path: {}", path_str),
                 );
                 found_ld_preload = true;
                 break;
