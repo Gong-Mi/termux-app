@@ -45,21 +45,11 @@ class RustAndroidPlugin : Plugin<Project> {
                             group = "rust"
                             description = "Build Rust $libName for $abi"
 
-                            inputs.file(project.file("$rustSrc/Cargo.toml"))
-                            inputs.dir(project.file("$rustSrc/src"))
-
-                            val cargoLock = project.file("$rustSrc/Cargo.lock")
-                            if (cargoLock.exists()) {
-                                inputs.file(cargoLock)
-                            }
-
-                            outputs.file(
-                                project.file("$rustSrc/target/$rustArch/release/lib$libName.so")
-                            )
+                            inputs.dir(project.file(rustSrc))
+                            outputs.file(project.file("$rustSrc/target/$rustArch/release/lib$libName.so"))
 
                             workingDir = project.file(rustSrc)
 
-                            // Export ANDROID_NDK for skia-bindings and cargo-ndk
                             if (!ndkPath.isNullOrBlank()) {
                                 environment("ANDROID_NDK", ndkPath)
                             }
@@ -71,22 +61,60 @@ class RustAndroidPlugin : Plugin<Project> {
                                 "build", "--release"
                             )
                         }
+
+                        // Also build termux-exec-rs if it exists
+                        val execSrc = "src/main/rust-exec"
+                        val execTaskName = "cargoNdkBuildExec_${safeAbi}"
+                        if (project.file(execSrc).exists()) {
+                            project.tasks.register<Exec>(execTaskName) {
+                                group = "rust"
+                                description = "Build Rust termux-exec for $abi"
+
+                                inputs.dir(project.file(execSrc))
+                                outputs.file(project.file("$execSrc/target/$rustArch/release/libtermux_exec.so"))
+
+                                workingDir = project.file(execSrc)
+
+                                if (!ndkPath.isNullOrBlank()) {
+                                    environment("ANDROID_NDK", ndkPath)
+                                }
+
+                                commandLine(
+                                    "cargo", "ndk",
+                                    "-t", abi,
+                                    "-p", minSdk.toString(),
+                                    "build", "--release"
+                                )
+                            }
+                        }
                     }
 
                     val copyTasks = abiList.map { abi ->
                         val rustArch = abiToRustTarget(abi)
                         val safeAbi = abi.replace("-", "_")
                         val buildTaskName = "cargoNdkBuild_${safeAbi}"
+                        val execBuildTaskName = "cargoNdkBuildExec_${safeAbi}"
                         val copyTaskName = "copyRust_${safeAbi}"
 
                         project.tasks.register<Copy>(copyTaskName) {
                             group = "rust"
                             dependsOn(buildTaskName)
+                            if (project.tasks.findByName(execBuildTaskName) != null) {
+                                dependsOn(execBuildTaskName)
+                            }
 
                             from(project.file("$rustSrc/target/$rustArch/release/lib$libName.so"))
                             into(project.file("$jniDest/$abi"))
 
-                            // Also copy libc++_shared.so from NDK if available (required by Skia/Rust builds)
+                            // Copy termux-exec if built
+                            val execSrc = "src/main/rust-exec"
+                            if (project.file(execSrc).exists()) {
+                                from(project.file("$execSrc/target/$rustArch/release/libtermux_exec.so")) {
+                                    rename { "libtermux-exec.so" }
+                                }
+                            }
+
+                            // Also copy libc++_shared.so from NDK if available
                             if (!ndkPath.isNullOrBlank()) {
                                 val triple = when (abi) {
                                     "arm64-v8a" -> "aarch64-linux-android"
