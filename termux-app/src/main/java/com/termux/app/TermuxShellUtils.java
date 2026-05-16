@@ -128,7 +128,7 @@ public class TermuxShellUtils {
             environment.put("LANG", "en_US.UTF-8");
             environment.put("TMP", tmpDir);
             environment.put("TMPDIR", tmpDir);
-            environment.put("LD_PRELOAD", TermuxConstants.PREFIX_PATH + "/lib/libtermux-exec.so");
+            // environment.put("LD_PRELOAD", TermuxConstants.PREFIX_PATH + "/lib/libtermux-exec.so"); // Removed: Rust engine handles this correctly now
             environment.put("PATH", TermuxConstants.PREFIX_PATH + "/bin:" + System.getenv("PATH"));
         }
 

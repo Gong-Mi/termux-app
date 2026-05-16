@@ -106,9 +106,24 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
         
         // 1. 优先检查 applib (APK 原生库目录，API 29+ 必需)
         // 注意：必须使用真实路径而非 /data/data/ 下的软链接，否则 Android Linker 会因为安全策略拒绝加载
-        let real_app_lib = std::fs::read_link(&termux_app_lib)
-            .unwrap_or_else(|_| std::path::PathBuf::from(&termux_app_lib));
-            
+        let termux_files_dir = crate::get_termux_files_dir();
+        let termux_app_lib = format!("{}/applib", termux_files_dir);
+        let app_lib_path = std::path::Path::new(&termux_app_lib);
+        
+        let real_app_lib = if app_lib_path.is_symlink() {
+            std::fs::read_link(app_lib_path).unwrap_or_else(|_| app_lib_path.to_path_buf())
+        } else {
+            app_lib_path.to_path_buf()
+        };
+        
+        // Ensure absolute path
+        let real_app_lib = if real_app_lib.is_absolute() {
+            real_app_lib
+        } else {
+            // If it's a relative symlink (unlikely for applib but safe to handle), make it absolute
+            std::path::Path::new(&termux_files_dir).join(real_app_lib)
+        };
+
         for variant in &ld_preload_variants {
             let ld_preload_path = real_app_lib.join(variant);
             if ld_preload_path.exists() {
