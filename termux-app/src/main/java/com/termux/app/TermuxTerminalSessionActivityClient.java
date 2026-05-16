@@ -374,7 +374,13 @@ public final class TermuxTerminalSessionActivityClient implements TerminalSessio
         // Update SCROLL button state for the new session
         var extraKeysView = mActivity.getExtraKeysView();
         if (extraKeysView != null) {
-            extraKeysView.setSpecialButtonActive(SpecialButton.SCROLL, session.getEmulator().isAutoScrollDisabled());
+            var emulator = session.getEmulator();
+            if (emulator != null) {
+                extraKeysView.setSpecialButtonActive(SpecialButton.SCROLL, emulator.isAutoScrollDisabled());
+            } else {
+                // If emulator not ready yet, set to false or some default
+                extraKeysView.setSpecialButtonActive(SpecialButton.SCROLL, false);
+            }
         }
     }
 

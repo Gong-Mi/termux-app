@@ -66,9 +66,16 @@ public final class TermuxTerminalViewClient implements TerminalViewClient {
     public void onSingleTapUp(MotionEvent e) {
         TerminalSession session = mActivity.getCurrentSession();
         if (session != null) {
-            TerminalEmulator term = mActivity.getCurrentSession().getEmulator();
-            if (!term.isMouseTrackingActive() && !e.isFromSource(InputDevice.SOURCE_MOUSE)) {
-                mActivity.getSystemService(InputMethodManager.class).showSoftInput(mActivity.getTerminalView(), 0);
+            TerminalEmulator term = session.getEmulator();
+            if (term != null) {
+                if (!term.isMouseTrackingActive() && !e.isFromSource(InputDevice.SOURCE_MOUSE)) {
+                    mActivity.getSystemService(InputMethodManager.class).showSoftInput(mActivity.getTerminalView(), 0);
+                }
+            } else {
+                // Fallback: always show keyboard on tap if emulator is not yet initialized
+                if (!e.isFromSource(InputDevice.SOURCE_MOUSE)) {
+                    mActivity.getSystemService(InputMethodManager.class).showSoftInput(mActivity.getTerminalView(), 0);
+                }
             }
         }
     }
