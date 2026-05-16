@@ -31,6 +31,10 @@ pub unsafe extern "C" fn execve(
         }
         let real_execve: unsafe extern "C" fn(*const c_char, *const *const c_char, *const *const c_char) -> c_int = std::mem::transmute(real_ptr);
 
+        if path.is_null() {
+             return real_execve(path, argv, envp);
+        }
+
         let path_str = CStr::from_ptr(path).to_string_lossy().to_string();
         
         // 1. W^X Bypass / Script Interception
@@ -38,7 +42,6 @@ pub unsafe extern "C" fn execve(
         if (path_str.starts_with("/data/data/com.termux/") || path_str.starts_with("/data/user/0/com.termux/"))
            && !path_str.contains("/applib/") 
         {
-             // Check if it's a script or ELF
              if let Some((final_cmd, new_argv_vec)) = transform_exec(&path_str, argv) {
                  let c_cmd = CString::new(final_cmd).unwrap();
                  let c_ptrs: Vec<*const c_char> = new_argv_vec.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
@@ -64,15 +67,13 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
         };
         
         let mut new_argv = Vec::new();
-        let arg0 = if unsafe { !orig_argv.is_null() && !(*orig_argv).is_null() } {
-            unsafe { CStr::from_ptr(*orig_argv).to_owned() }
-        } else {
-            CString::new(path).unwrap()
-        };
-        new_argv.push(arg0);
-        new_argv.push(CString::new(path).unwrap()); // argv[1] is the target for linker
+        // The linker loads the binary specified in argv[0] (or argv[1] depending on version/impl, 
+        // but typically it loads the FIRST argument if it's the entry point).
+        // On Android, execve("/system/bin/linker64", ["/path/to/exe", "args..."], ...)
+        // result in process with argv[0] = "/path/to/exe".
+        new_argv.push(CString::new(path).unwrap());
         
-        // Append remaining
+        // Append remaining original arguments (skipping the original argv[0])
         let mut i = 1;
         unsafe {
             while !orig_argv.is_null() && !(*orig_argv.offset(i)).is_null() {
@@ -84,18 +85,20 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
     } else if let Some((interpreter, shebang_args)) = parse_shebang_internal(&buffer[..n]) {
         // Shebang Script
         let mut new_argv = Vec::new();
-        let arg0 = if unsafe { !orig_argv.is_null() && !(*orig_argv).is_null() } {
-            unsafe { CStr::from_ptr(*orig_argv).to_owned() }
-        } else {
-            CString::new(path).unwrap()
-        };
-        new_argv.push(arg0);
+        
+        // Use interpreter path as argv[0] for the new process
+        new_argv.push(CString::new(interpreter.clone()).unwrap());
         
         if let Some(args) = shebang_args {
-            new_argv.push(CString::new(args).unwrap());
+            // Split multiple shebang arguments
+            for arg in args.split_whitespace() {
+                new_argv.push(CString::new(arg).unwrap());
+            }
         }
+        // Then the script path
         new_argv.push(CString::new(path).unwrap());
         
+        // Then the original user arguments (skipping original argv[0])
         let mut i = 1;
         unsafe {
             while !orig_argv.is_null() && !(*orig_argv.offset(i)).is_null() {
@@ -141,6 +144,27 @@ pub unsafe extern "C" fn execv(path: *const c_char, argv: *const *const c_char) 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn execvp(file: *const c_char, argv: *const *const c_char) -> c_int {
     unsafe {
+        // For absolute/relative paths, just use execv
+        if !file.is_null() && *file == b'/' as c_char {
+            return execv(file, argv);
+        }
+        
+        // Simple PATH search implementation
+        let file_str = CStr::from_ptr(file).to_string_lossy();
+        if file_str.contains('/') {
+            return execv(file, argv);
+        }
+
+        if let Ok(path_env) = std::env::var("PATH") {
+            for dir in path_env.split(':') {
+                let full_path = format!("{}/{}", dir, file_str);
+                if std::path::Path::new(&full_path).exists() {
+                    let c_full_path = CString::new(full_path).unwrap();
+                    return execv(c_full_path.as_ptr(), argv);
+                }
+            }
+        }
+        
         execv(file, argv)
     }
 }
