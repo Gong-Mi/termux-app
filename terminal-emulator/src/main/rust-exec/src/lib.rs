@@ -65,15 +65,20 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
         } else {
             "/system/bin/linker"
         };
-        
+
         let mut new_argv = Vec::new();
-        // The linker loads the binary specified in argv[0] (or argv[1] depending on version/impl, 
-        // but typically it loads the FIRST argument if it's the entry point).
-        // On Android, execve("/system/bin/linker64", ["/path/to/exe", "args..."], ...)
-        // result in process with argv[0] = "/path/to/exe".
+        // argv[0]: Process name (original argv[0])
+        let arg0 = if unsafe { !orig_argv.is_null() && !(*orig_argv).is_null() } {
+            unsafe { CStr::from_ptr(*orig_argv).to_owned() }
+        } else {
+            CString::new(path).unwrap()
+        };
+        new_argv.push(arg0);
+
+        // argv[1]: The absolute path to the binary (this is what linker64 loads)
         new_argv.push(CString::new(path).unwrap());
-        
-        // Append remaining original arguments (skipping the original argv[0])
+
+        // argv[2..]: Remaining original arguments
         let mut i = 1;
         unsafe {
             while !orig_argv.is_null() && !(*orig_argv.offset(i)).is_null() {
@@ -82,7 +87,8 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
             }
         }
         return Some((linker.to_string(), new_argv));
-    } else if let Some((interpreter, shebang_args)) = parse_shebang_internal(&buffer[..n]) {
+    }
+ else if let Some((interpreter, shebang_args)) = parse_shebang_internal(&buffer[..n]) {
         // Shebang Script
         let mut new_argv = Vec::new();
         

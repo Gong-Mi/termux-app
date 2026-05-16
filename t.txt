@@ -1,22 +1,5 @@
-               |                                                    |          .      |                                                    |         o       |
-|        o++      |                                                    |       .SB.. . . |
-|       .* o o.E .|                                                    |  ...  +.= .o. o+|                                                    | o=.o++.O.. .o..+|                                                    |o+oB*+o+.=. ...o |
-+----[SHA256]-----+                                                    
-If you plan to use the 'ssh-agent'                                     it is recommended to run it as a service.                              Run 'pkg i termux-services'                                            to install the ('runit') service manager                                                                                                      You can enable the ssh-agent service
-using 'sv-enable ssh-agent'                                            You can also enable sshd to autostart
-using 'sv-enable sshd'                                                 Setting up npm (11.14.1) ...                                           Earlier versions of npm bundled with nodejs and nodejs-lts used to set npm config foreground-scripts to true.
-This is no longer the case. If you had set this config, you might want to unset it now.
-You can do this by running: npm config delete foreground-scripts       Setting up lld (21.1.8-2) ...
-Setting up pkg-config (0.29.2-3) ...                                   Setting up llvm (21.1.8-2) ...
-Setting up clang (21.1.8-2) ...                                        Setting up rust (1.95.0) ...
-~ $  gh auth login                                                     ? Where do you use GitHub? GitHub.com                                  ? What is your preferred protocol for Git operations on this host? HTTPS
-? Authenticate Git with your GitHub credentials? Yes
-? How would you like to authenticate GitHub CLI? Login with a web browser
+Detected error from screenshot:
+Error: Failed to start child process: expected absolute path: "--max-old-space-size=7501"
 
-! First copy your one-time code: E79E-7B39
-Press Enter to open https://github.com/login/device in your browser...
-! Failed opening a web browser at https://github.com/login/device
-  fork/exec /data/data/com.termux/files/usr/bin/xdg-open: permission denied
-  Please try entering the URL in your browser manually
-
-
+Analysis:
+The Node.js relaunch logic fails because the argument "--max-old-space-size=7501" is being interpreted as a path. This happens when the execve interception shifts or incorrectly formats the argument vector when wrapping the 'node' binary with the system linker.
