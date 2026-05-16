@@ -2,10 +2,11 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int};
 use std::ptr;
 use std::io::{Read, Write};
-
 use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::OnceLock;
 
 static REAL_EXECVE: AtomicPtr<libc::c_void> = AtomicPtr::new(ptr::null_mut());
+static CURRENT_PREFIX: OnceLock<String> = OnceLock::new();
 
 const RTLD_NEXT: *mut libc::c_void = -1i64 as *mut libc::c_void;
 
@@ -15,15 +16,34 @@ unsafe extern "C" {
 
 // Simple logging to home directory
 fn debug_log(msg: &str) {
+    let prefix = get_current_prefix();
+    let log_path = format!("{}/files/home/termux_exec_debug.log", prefix);
     let mut file = match std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open("/data/data/com.termux/files/home/termux_exec_debug.log") 
+        .open(&log_path) 
     {
         Ok(f) => f,
         Err(_) => return,
     };
     let _ = writeln!(file, "{}", msg);
+}
+
+fn get_current_prefix() -> &'static str {
+    CURRENT_PREFIX.get_or_init(|| {
+        // Detect current data directory dynamically
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let cwd_str = cwd.to_string_lossy();
+        
+        if cwd_str.contains("/data/user/0/com.termux") {
+            "/data/user/0/com.termux".to_string()
+        } else if cwd_str.contains("/data/data/com.termux") {
+            "/data/data/com.termux".to_string()
+        } else {
+            // Fallback to most likely candidate if unknown
+            "/data/user/0/com.termux".to_string()
+        }
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -49,13 +69,12 @@ pub unsafe extern "C" fn execve(
         }
 
         let path_str = CStr::from_ptr(path).to_string_lossy().to_string();
-        debug_log(&format!("[EXECVE] Intercepted: {}", path_str));
         
         // 1. W^X Bypass / Script Interception
-        if (path_str.starts_with("/data/data/com.termux/") || path_str.starts_with("/data/user/0/com.termux/"))
-           && !path_str.contains("/applib/") 
-        {
+        // Check for ANY com.termux path
+        if path_str.contains("com.termux") && !path_str.contains("/applib/") {
              if let Some((final_cmd, new_argv_vec)) = transform_exec(&path_str, argv) {
+                 debug_log(&format!("[EXECVE] Intercepted: {}", path_str));
                  debug_log(&format!("[EXECVE] Transformed to: {} with argv: {:?}", final_cmd, new_argv_vec));
                  let c_cmd = CString::new(final_cmd).unwrap();
                  let c_ptrs: Vec<*const c_char> = new_argv_vec.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
@@ -72,6 +91,8 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
     let mut buffer = [0u8; 256];
     let n = file.read(&mut buffer).ok()?;
 
+    let current_prefix = get_current_prefix();
+
     let linker = if std::path::Path::new("/system/bin/linker64").exists() {
         "/system/bin/linker64"
     } else {
@@ -81,14 +102,13 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
     if n > 4 && buffer[0] == 0x7F && buffer[1] == b'E' && buffer[2] == b'L' && buffer[3] == b'F' {
         // --- ELF File ---
         let mut new_argv = Vec::new();
-        // Linker needs target as argv[1]. argv[0] is process name.
         let arg0 = if unsafe { !orig_argv.is_null() && !(*orig_argv).is_null() } {
             unsafe { CStr::from_ptr(*orig_argv).to_owned() }
         } else {
             CString::new(path).unwrap()
         };
         new_argv.push(arg0);
-        new_argv.push(CString::new(path).unwrap());
+        new_argv.push(CString::new(path).unwrap()); // argv[1] is the target binary for linker64
         
         let mut i = 1;
         unsafe {
@@ -98,15 +118,14 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
             }
         }
         return Some((linker.to_string(), new_argv));
-    } else if let Some((interpreter, shebang_args)) = parse_shebang_internal(&buffer[..n]) {
+    } else if let Some((interpreter, shebang_args)) = parse_shebang_internal(&buffer[..n], current_prefix) {
         // --- Shebang Script ---
         let mut new_argv = Vec::new();
         
-        // IMPORTANT: The interpreter itself might need a linker wrapper if it's in the data dir!
-        if interpreter.starts_with("/data/data/com.termux/") || interpreter.starts_with("/data/user/0/com.termux/") {
-             // Wrap interpreter in linker64
-             new_argv.push(CString::new(interpreter.clone()).unwrap()); // argv[0] for interpreter
-             new_argv.push(CString::new(interpreter.clone()).unwrap()); // argv[1] for linker (target)
+        // If the interpreter is in Termux dir, it's an ELF that needs wrapping
+        if interpreter.contains("com.termux") {
+             new_argv.push(CString::new(interpreter.clone()).unwrap()); // process name
+             new_argv.push(CString::new(interpreter.clone()).unwrap()); // linker target
              
              if let Some(args) = shebang_args {
                  for arg in args.split_whitespace() {
@@ -124,7 +143,7 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
              }
              return Some((linker.to_string(), new_argv));
         } else {
-             // System interpreter - no wrapper needed
+             // System interpreter (e.g. /system/bin/sh)
              new_argv.push(CString::new(interpreter.clone()).unwrap());
              if let Some(args) = shebang_args {
                  for arg in args.split_whitespace() {
@@ -142,11 +161,11 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
              return Some((interpreter, new_argv));
         }
     } else {
-        // --- Neither ELF nor Shebang - Treat as plain script via /system/bin/sh ---
-        let interpreter = "/data/data/com.termux/files/usr/bin/sh";
+        // --- Neither ELF nor Shebang ---
+        let interpreter = format!("{}/files/usr/bin/sh", current_prefix);
         let mut new_argv = Vec::new();
         new_argv.push(CString::new("sh").unwrap());
-        new_argv.push(CString::new(interpreter).unwrap()); // Wrap sh in linker64
+        new_argv.push(CString::new(interpreter.clone()).unwrap()); 
         new_argv.push(CString::new(path).unwrap());
         
         let mut i = 1;
@@ -160,7 +179,7 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
     }
 }
 
-fn parse_shebang_internal(buffer: &[u8]) -> Option<(String, Option<String>)> {
+fn parse_shebang_internal(buffer: &[u8], current_prefix: &str) -> Option<(String, Option<String>)> {
     if buffer.len() < 2 || buffer[0] != b'#' || buffer[1] != b'!' {
         return None;
     }
@@ -172,10 +191,10 @@ fn parse_shebang_internal(buffer: &[u8]) -> Option<(String, Option<String>)> {
     
     let mut interpreter = tokens[0].to_string();
     if interpreter.starts_with("/usr/bin/env") {
-        interpreter = "/data/data/com.termux/files/usr/bin/env".to_string();
+        interpreter = format!("{}/files/usr/bin/env", current_prefix);
     } else if interpreter.starts_with("/bin/") || interpreter.starts_with("/usr/bin/") {
         let binary = interpreter.rsplit('/').next().unwrap_or("sh");
-        interpreter = format!("/data/data/com.termux/files/usr/bin/{}", binary);
+        interpreter = format!("{}/files/usr/bin/{}", current_prefix, binary);
     }
     
     let args = if tokens.len() > 1 { Some(tokens[1..].join(" ")) } else { None };
@@ -197,7 +216,7 @@ pub unsafe extern "C" fn execvp(file: *const c_char, argv: *const *const c_char)
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn execvpe(file: *const c_char, argv: *const *const c_char, envp: *const *const c_char) -> c_int {
+pub unsafe extern "C" fn execvpe(file: *const c_char, argv: *const *const c_char, envp: *const *const c_char, ) -> c_int {
     unsafe {
         if !file.is_null() && *file == b'/' as c_char {
             return execve(file, argv, envp);
