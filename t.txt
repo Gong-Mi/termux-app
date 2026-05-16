@@ -1,5 +1,1 @@
-Detected error from screenshot:
-Error: Failed to start child process: expected absolute path: "--max-old-space-size=7501"
-
-Analysis:
-The Node.js relaunch logic fails because the argument "--max-old-space-size=7501" is being interpreted as a path. This happens when the execve interception shifts or incorrectly formats the argument vector when wrapping the 'node' binary with the system linker.
+error:"/data/data/com.termux/files/usr/etc/motd" has bad ELF magic: 57656c63 error: expected absolute path:"--compare-versions" error: expected absolute path:"-I"
