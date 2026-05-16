@@ -105,36 +105,59 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
         let mut found_ld_preload = false;
         
         // 1. 优先检查 applib (APK 原生库目录，API 29+ 必需)
-        // 注意：必须使用真实路径而非 /data/data/ 下的软链接，否则 Android Linker 会因为安全策略拒绝加载
-        let termux_files_dir = crate::get_termux_files_dir();
-        let termux_app_lib = format!("{}/applib", termux_files_dir);
-        let app_lib_path = std::path::Path::new(&termux_app_lib);
-        
-        let real_app_lib = if app_lib_path.is_symlink() {
-            std::fs::read_link(app_lib_path).unwrap_or_else(|_| app_lib_path.to_path_buf())
-        } else {
-            app_lib_path.to_path_buf()
-        };
-        
-        // Ensure absolute path
-        let real_app_lib = if real_app_lib.is_absolute() {
-            real_app_lib
-        } else {
-            // If it's a relative symlink (unlikely for applib but safe to handle), make it absolute
-            std::path::Path::new(&termux_files_dir).join(real_app_lib)
-        };
+        // 注意：必须使用真实物理路径而非 /data/data/ 下的软链接，否则 Android Linker 会拒绝加载。
+        // 我们通过读取 /proc/self/maps 找到当前正在运行的 libtermux_rust.so 所在的真实目录。
+        let mut real_app_lib = None;
+        if let Ok(maps) = std::fs::read_to_string("/proc/self/maps") {
+            for line in maps.lines() {
+                if line.contains("libtermux_rust.so") {
+                    if let Some(path_start) = line.find('/') {
+                        let path = &line[path_start..];
+                        if let Some(parent) = std::path::Path::new(path).parent() {
+                            real_app_lib = Some(parent.to_path_buf());
+                            break;
+                        }
+                    }
+                }
+            }
+        }
 
-        for variant in &ld_preload_variants {
-            let ld_preload_path = real_app_lib.join(variant);
-            if ld_preload_path.exists() {
-                let path_str = ld_preload_path.to_string_lossy().to_string();
-                env.insert("LD_PRELOAD".to_string(), path_str.clone());
-                android_log(
-                    LogPriority::INFO,
-                    &format!("[env_builder] Using LD_PRELOAD from real applib path: {}", path_str),
-                );
-                found_ld_preload = true;
-                break;
+        if let Some(lib_dir) = real_app_lib {
+            for variant in &ld_preload_variants {
+                let ld_preload_path = lib_dir.join(variant);
+                if ld_preload_path.exists() {
+                    let path_str = ld_preload_path.to_string_lossy().to_string();
+                    env.insert("LD_PRELOAD".to_string(), path_str.clone());
+                    android_log(
+                        LogPriority::INFO,
+                        &format!("[env_builder] Using LD_PRELOAD from memory-mapped applib: {}", path_str),
+                    );
+                    found_ld_preload = true;
+                    break;
+                }
+            }
+        }
+        
+        // 2. 如果内存映射没找到（理论上不应该），回退到尝试解析软链接
+        if !found_ld_preload {
+            let termux_files_dir = crate::get_termux_files_dir();
+            let termux_app_lib_link = format!("{}/applib", termux_files_dir);
+            let app_lib_path = std::path::Path::new(&termux_app_lib_link);
+            
+            let resolved_lib = if app_lib_path.is_symlink() {
+                std::fs::read_link(app_lib_path).unwrap_or_else(|_| app_lib_path.to_path_buf())
+            } else {
+                app_lib_path.to_path_buf()
+            };
+
+            for variant in &ld_preload_variants {
+                let ld_preload_path = resolved_lib.join(variant);
+                if ld_preload_path.exists() {
+                    let path_str = ld_preload_path.to_string_lossy().to_string();
+                    env.insert("LD_PRELOAD".to_string(), path_str.clone());
+                    found_ld_preload = true;
+                    break;
+                }
             }
         }
 

@@ -14,7 +14,6 @@ unsafe extern "C" {
     static environ: *const *const c_char;
 }
 
-// Simple logging to home directory
 fn debug_log(msg: &str) {
     let prefix = get_current_prefix();
     let log_path = format!("{}/files/home/termux_exec_debug.log", prefix);
@@ -25,6 +24,19 @@ fn debug_log(msg: &str) {
 
 fn get_current_prefix() -> &'static str {
     CURRENT_PREFIX.get_or_init(|| {
+        // Find our real prefix by looking at /proc/self/maps or current_dir
+        if let Ok(maps) = std::fs::read_to_string("/proc/self/maps") {
+            for line in maps.lines() {
+                if line.contains("com.termux") && line.contains("/lib/") {
+                    if let Some(start) = line.find("/data/") {
+                        if let Some(end) = line[start..].find("/files/") {
+                            return line[start..start+end].to_string();
+                        }
+                    }
+                }
+            }
+        }
+        // Fallback
         let cwd = std::env::current_dir().unwrap_or_default();
         let cwd_str = cwd.to_string_lossy();
         if cwd_str.contains("/data/user/0/com.termux") {
@@ -54,13 +66,13 @@ pub unsafe extern "C" fn execve(
 
     if path.is_null() { return real_execve(path, argv, envp); }
     let path_str = unsafe { CStr::from_ptr(path).to_string_lossy().to_string() };
-    debug_log(&format!("TRY_EXECVE: {}", path_str));
     
-    if (path_str.contains("com.termux") || path_str.starts_with("/bin/") || path_str.starts_with("/usr/bin/")) 
+    // Robust check: Is this in a Termux directory?
+    if (path_str.contains("com.termux/files/usr/") || path_str.starts_with("/bin/") || path_str.starts_with("/usr/bin/")) 
        && !path_str.contains("/applib/") 
     {
          if let Some((final_cmd, new_argv_vec)) = transform_exec(&path_str, argv) {
-             debug_log(&format!("TRANSFORM: {} -> {}", path_str, final_cmd));
+             debug_log(&format!("EXECVE: {} -> {}", path_str, final_cmd));
              let c_cmd = CString::new(final_cmd).unwrap();
              let c_ptrs: Vec<*const c_char> = new_argv_vec.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
              return real_execve(c_cmd.as_ptr(), c_ptrs.as_ptr(), envp);
@@ -101,7 +113,6 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
             i += 1;
         } }
         if interpreter.contains("com.termux") {
-             // Interpreter itself needs wrapping!
              let mut wrapped_argv = Vec::new();
              wrapped_argv.push(new_argv[0].clone());
              wrapped_argv.push(CString::new(interpreter.clone()).unwrap());
@@ -162,7 +173,6 @@ pub unsafe extern "C" fn execvpe(file: *const c_char, argv: *const *const c_char
     execve(file, argv, envp)
 }
 
-// Intercept posix_spawn for Go/Node child processes
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn posix_spawn(
     pid: *mut libc::pid_t,
@@ -174,20 +184,17 @@ pub unsafe extern "C" fn posix_spawn(
 ) -> c_int {
     if path.is_null() { return libc::EFAULT; }
     let path_str = unsafe { CStr::from_ptr(path).to_string_lossy().to_string() };
-    debug_log(&format!("TRY_SPAWN: {}", path_str));
     
-    if (path_str.contains("com.termux") || path_str.starts_with("/bin/") || path_str.starts_with("/usr/bin/")) 
+    if (path_str.contains("com.termux/files/usr/") || path_str.starts_with("/bin/") || path_str.starts_with("/usr/bin/")) 
        && !path_str.contains("/applib/") 
     {
          if let Some((final_cmd, new_argv_vec)) = transform_exec(&path_str, argv) {
-             debug_log(&format!("TRANSFORM_SPAWN: {} -> {}", path_str, final_cmd));
+             debug_log(&format!("SPAWN: {} -> {}", path_str, final_cmd));
              let c_cmd = CString::new(final_cmd).unwrap();
              let c_ptrs: Vec<*const c_char> = new_argv_vec.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
-             
              let name = CStr::from_bytes_with_nul(b"posix_spawn\0").unwrap();
              let real_spawn: unsafe extern "C" fn(*mut libc::pid_t, *const c_char, *const libc::c_void, *const libc::c_void, *const *const c_char, *const *const c_char) -> c_int = 
                 std::mem::transmute(libc::dlsym(RTLD_NEXT, name.as_ptr()));
-             
              return real_spawn(pid, c_cmd.as_ptr(), file_actions, attrp, c_ptrs.as_ptr(), envp);
          }
     }
