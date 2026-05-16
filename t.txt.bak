@@ -1,22 +1,5 @@
-~ $ id
-bash: /data/user/0/com.termux/files/usr/bin/id: Permission denied
-~ $ /data/data/com.termux/files/usr/bin/dash
-bash: /data/data/com.termux/files/usr/bin/dash: Permission denied
-~ $ /data/data/com.termux/files/usr/bin/sh
-bash: /data/data/com.termux/files/usr/bin/sh: Permission denied
-~ $ pkg
-bash: /data/user/0/com.termux/files/usr/bin/pkg: /data/data/com.termux/files/usr/bin/bash: bad interpreter: Permission denied
-~ $ /data/user/0/com.termux/files/usr/bin/dash
-bash: /data/user/0/com.termux/files/usr/bin/dash: Permission denied
-~ $ pkg
-bash: /data/user/0/com.termux/files/usr/bin/pkg: /data/data/com.termux/files/usr/bin/bash: bad interpreter: Permission denied
-~ $
-~ $
-~ $
-~ $ pkg
-bash: /data/user/0/com.termux/files/usr/bin/pkg: /data/data/com.termux/files/usr/bin/bash: bad interpreter: Permission denied
-~ $ /system/bin/id
-uid=10675(u0_a675) gid=10675(u0_a675) groups=10675(u0_a675),3003(inet),9997(everybody),20675(u0_a675_cache),50675(all_a675) context=u:r:untrusted_app_30:s0:c163,c258,c512,c768
-~ $
-~ $
+
+Report issues at https://termux.dev/issues
+~ $ gh repo clone Gong-Mi/termux-app
+failed to run git: fork/exec /data/data/com.termux/files/usr/bin/git: permission denied
 ~ $

@@ -374,30 +374,43 @@ impl Screen {
     }
 
     pub fn scroll_up(&mut self, top: i64, bottom: i64, style: u64) {
-        if top == 0 && bottom == self.rows {
-            // Full screen scroll - use ring buffer pointer adjustment (O(1))
-            self.first_row = (self.first_row + 1) % self.buffer.len() as u64;
-            let max_transcript_rows = self.buffer.len() as u64 - self.rows as u64;
-            if self.active_transcript_rows < max_transcript_rows {
-                self.active_transcript_rows += 1;
-            }
-            self.get_row_mut(self.rows - 1).clear_all(style);
-        } else {
-            // Partial scroll - move data up by 1 line
-            // We want to move rows [top+1 .. bottom] to [top .. bottom-1]
-            // We can do this by swapping adjacent rows downwards
-            for i in top..(bottom - 1) {
-                let d = self.internal_row(i);
-                let s = self.internal_row(i + 1);
+        let total_rows = self.buffer.len();
 
-                // Safe swap using split_at_mut
+        let block_copy_lines_down = |buf: &mut Vec<TerminalRow>, src_internal: usize, len: usize| {
+            if len == 0 {
+                return;
+            }
+            let start = len - 1;
+            for i in (0..=start).rev() {
+                let d = (src_internal + i + 1) % total_rows;
+                let s = (src_internal + i) % total_rows;
+                if s == d { continue; }
                 let (low, high) = if s < d { (s, d) } else { (d, s) };
-                let (left, right) = self.buffer.split_at_mut(high);
+                let (left, right) = buf.split_at_mut(high);
                 std::mem::swap(&mut left[low], &mut right[0]);
             }
-            // Clear the newly exposed bottom row
-            self.get_row_mut(bottom - 1).clear_all(style);
+        };
+
+        // Copy the fixed top margin lines one line down
+        let top_margin_len = top as usize;
+        block_copy_lines_down(&mut self.buffer, self.first_row as usize, top_margin_len);
+
+        // Copy the fixed bottom margin lines one line down
+        let bottom_margin_len = (self.rows - bottom) as usize;
+        let bottom_src = self.internal_row(bottom);
+        block_copy_lines_down(&mut self.buffer, bottom_src, bottom_margin_len);
+
+        // Update the screen location in the ring buffer
+        self.first_row = (self.first_row + 1) % (total_rows as u64);
+
+        // Note that the history has grown if not already full
+        let max_transcript_rows = total_rows as u64 - self.rows as u64;
+        if self.active_transcript_rows < max_transcript_rows {
+            self.active_transcript_rows += 1;
         }
+
+        // Blank the newly revealed line above the bottom margin
+        self.get_row_mut(bottom - 1).clear_all(style);
     }
 
     pub fn scroll_down(&mut self, top: i64, bottom: i64, style: u64) {
