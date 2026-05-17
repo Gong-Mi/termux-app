@@ -305,7 +305,7 @@ pub fn create_subprocess_with_data(
                 (interpreter, new_argv)
             } else {
                 // No shebang and no ELF - default to $PREFIX/bin/sh.
-                let interpreter = "/data/data/com.termux/files/usr/bin/sh".to_string();
+                let interpreter = format!("{}/bin/sh", termux_prefix);
                 let mut new_argv = Vec::new();
                 if !real_argv.is_empty() {
                     new_argv.push(real_argv[0].clone()); // process name
@@ -327,32 +327,73 @@ pub fn create_subprocess_with_data(
         (real_cmd, real_argv)
     };
 
-    // Linker Wrapper Bypass for Android 10+ (W^X)
-    // Only wrap actual ELF binaries with the system linker; skip shebang scripts
-    let is_elf = std::fs::File::open(&final_cmd)
-        .and_then(|mut f| {
-            let mut buf = [0u8; 4];
-            f.read_exact(&mut buf)?;
-            Ok(buf[0] == 0x7F && buf[1] == b'E' && buf[2] == b'L' && buf[3] == b'F')
-        })
-        .unwrap_or(false);
-    let use_linker_wrapper = is_elf && final_cmd.starts_with(&termux_files_dir);
+    // ------------------------------------------------------------------
+    // Android 10+ (API 29+) W^X / exec() 限制绕过：linker64 间接执行
+    // ------------------------------------------------------------------
+    // 当 targetSdk >= 29 时，SELinux neverallow 禁止直接执行 app_data_file。
+    // 但对于 $PREFIX 下的 ELF，我们可以通过系统链接器间接加载：
+    //   /system/bin/linker64 <argv0> <target_elf> [args...]
+    // linker64 作为系统域程序不受此限制，它加载目标 ELF 到内存后移交控制权。
+    //
+    // 注意：此 wrapper 只保护通过 PTY 直接启动的程序。
+    // 子进程自己再 exec 的程序（如 Go 静态链接二进制内部的 exec）
+    // 需要 LD_PRELOAD + libtermux-exec.so 来覆盖。
+    // ------------------------------------------------------------------
+
+    /// 判断文件是否为 ELF（跟随符号链接）
+    fn is_elf_file(path: &str) -> bool {
+        std::fs::File::open(path)
+            .and_then(|mut f| {
+                let mut buf = [0u8; 4];
+                f.read_exact(&mut buf)?;
+                Ok(buf[0] == 0x7F && buf[1] == b'E' && buf[2] == b'L' && buf[3] == b'F')
+            })
+            .unwrap_or(false)
+    }
+
+    /// 判断目标路径是否需要 linker64 wrapper
+    fn needs_linker_wrapper(path: &str, termux_files_dir: &str) -> bool {
+        if !path.starts_with(termux_files_dir) {
+            return false;
+        }
+        // 符号链接需要解析后判断
+        let real_path = std::fs::canonicalize(path)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| path.to_string());
+        is_elf_file(&real_path)
+    }
+
     let linker_path = if std::path::Path::new("/system/bin/linker64").exists() {
         "/system/bin/linker64"
     } else {
         "/system/bin/linker"
     };
 
+    // 对 final_cmd（已解析 shebang 后的真实可执行文件，如 /data/data/.../sh）
+    // 检查是否需要 linker64 wrapper。
+    let use_linker_wrapper = needs_linker_wrapper(&final_cmd, &termux_files_dir);
+
     let (exec_cmd, exec_argv) = if use_linker_wrapper {
-        // linker64 loads argv[1] as the ELF target, NOT argv[0].
-        // Correct argv layout: [process_name, target_elf, ...remaining_args]
+        // Android linker64 的 argv 约定：
+        //   linker64 <target_elf_path> [args...]
+        // 目标 ELF 的 argv[0] 会被 linker 自动设为 target_elf_path，
+        // 因此我们需要把期望的 process name 放在更前面的位置，
+        // 但 linker64 的标准行为是 argv[0]=linker64, argv[1]=target_elf, argv[2..]=args
+        // 目标程序看到的 argv[0] 实际上是 target_elf_path。
+        //
+        // 为了保持与 upstream Java 的 TermuxShellUtils 行为一致：
+        //   [process_name, target_elf, original_args...]
+        // 其中 target_elf 会被 linker 当作要加载的 ELF，original_args 会透传。
         let mut wrapped_argv = vec![];
         if !final_argv.is_empty() {
-            wrapped_argv.push(final_argv[0].clone()); // process name (e.g. "-login")
+            // process name (e.g. "-login" or "bash")
+            // 注意：linker64 会把 argv[1] 作为 ELF 加载，argv[0] 通常被忽略。
+            // 我们把 process_name 放在 argv[0]，让 linker64 能看到它（某些场景有用）。
+            wrapped_argv.push(final_argv[0].clone());
         } else {
-            wrapped_argv.push(final_cmd.clone()); // fallback process name
+            wrapped_argv.push(final_cmd.clone());
         }
-        wrapped_argv.push(final_cmd.clone()); // target ELF as argv[1] for linker64
+        wrapped_argv.push(final_cmd.clone()); // target ELF path for linker64
         if final_argv.len() > 1 {
             wrapped_argv.extend(final_argv[1..].iter().cloned());
         }

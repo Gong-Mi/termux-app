@@ -94,7 +94,9 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
 
         // LD_PRELOAD 用于 termux-exec 的 shebang 修复和 W^X 绕过。
         // 我们强制确保 LD_PRELOAD 指向有效的 libtermux-exec.so
-        let termux_app_lib = format!("{}/applib", crate::get_termux_files_dir());
+        // 注意：libtermux-exec.so 必须位于 APK 原生库目录（applib/）
+        // 才能被 linker64 正确加载，因为 $PREFIX/lib/ 下的 so 在 API 29+ 受限。
+        let _termux_app_lib = format!("{}/applib", crate::get_termux_files_dir());
         let ld_preload_variants = [
             "libtermux-exec-linker-ld-preload.so",
             "libtermux-exec-ld-preload.so",
