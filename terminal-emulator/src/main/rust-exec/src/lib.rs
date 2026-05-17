@@ -27,12 +27,10 @@ pub static LOAD_HOOK: unsafe extern "C" fn() = {
 
 fn debug_log(msg: &str) {
     let pid = std::process::id();
-    for p in ["/data/user/0/com.termux", "/data/data/com.termux"] {
-        let log_path = format!("{}/files/home/termux_exec_debug.log", p);
-        if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&log_path) {
-            let _ = writeln!(file, "[{}] {}", pid, msg);
-            break;
-        }
+    let prefix = get_current_prefix();
+    let log_path = format!("{}/files/home/termux_exec_debug.log", prefix);
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&log_path) {
+        let _ = writeln!(file, "[{}] {}", pid, msg);
     }
 }
 
@@ -69,6 +67,25 @@ fn get_current_prefix() -> &'static str {
     })
 }
 
+unsafe fn resolve_path(file: &str) -> Option<String> {
+    if file.contains('/') {
+        if std::path::Path::new(file).exists() {
+            return Some(file.to_string());
+        }
+        return None;
+    }
+
+    if let Ok(path_env) = std::env::var("PATH") {
+        for dir in path_env.split(':') {
+            let full = format!("{}/{}", dir, file);
+            if std::path::Path::new(&full).exists() {
+                return Some(full);
+            }
+        }
+    }
+    None
+}
+
 unsafe fn fix_envp(envp: *const *const c_char) -> Vec<CString> {
     let mut new_env = Vec::new();
     let my_path = get_my_physical_path();
@@ -99,64 +116,57 @@ pub unsafe extern "C" fn execve(
     argv: *const *const c_char,
     envp: *const *const c_char,
 ) -> c_int {
-    let name = CStr::from_bytes_with_nul(b"execve\0").unwrap();
-    let real_execve: unsafe extern "C" fn(*const c_char, *const *const c_char, *const *const c_char) -> c_int = 
-        unsafe { std::mem::transmute(libc::dlsym(RTLD_NEXT, name.as_ptr())) };
+    let mut ptr = REAL_EXECVE.load(Ordering::Relaxed);
+    if ptr.is_null() {
+        let name = CStr::from_bytes_with_nul(b"execve\0").unwrap();
+        ptr = libc::dlsym(RTLD_NEXT, name.as_ptr());
+        REAL_EXECVE.store(ptr, Ordering::Relaxed);
+    }
+    let real_execve: unsafe extern "C" fn(*const c_char, *const *const c_char, *const *const c_char) -> c_int = std::mem::transmute(ptr);
 
-    if path.is_null() { return unsafe { real_execve(path, argv, envp) }; }
-    let path_str = unsafe { CStr::from_ptr(path).to_string_lossy().to_string() };
+    if path.is_null() { return real_execve(path, argv, envp); }
+    let path_str = CStr::from_ptr(path).to_string_lossy().to_string();
     
-    // EXEMPT SYSTEM PATHS to avoid recursion and linker errors
     if path_str.starts_with("/system/") || path_str.starts_with("/vendor/") || path_str.contains("/linker") {
-        return unsafe { real_execve(path, argv, envp) };
+        return real_execve(path, argv, envp);
     }
 
     debug_log(&format!("TRY_EXECVE: {}", path_str));
     
-    let new_env = unsafe { fix_envp(envp) };
+    let new_env = fix_envp(envp);
     let env_ptrs: Vec<*const c_char> = new_env.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
 
-    // INTERCEPT TERMUX PATHS
-    if path_str.contains("com.termux") || !path_str.starts_with('/') {
-         if let Some((final_cmd, new_argv_vec)) = transform_exec(&path_str, argv) {
-             debug_log(&format!("TRANSFORM: {} -> {}", path_str, final_cmd));
-             let c_cmd = CString::new(final_cmd).unwrap();
-             let c_ptrs: Vec<*const c_char> = new_argv_vec.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
-             return unsafe { real_execve(c_cmd.as_ptr(), c_ptrs.as_ptr(), env_ptrs.as_ptr()) };
-         }
-    }
-
-    unsafe { real_execve(path, argv, env_ptrs.as_ptr()) }
-}
-
-fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String, Vec<CString>)> {
-    let mut real_path = path.to_string();
-    if !path.starts_with('/') {
-        if let Ok(path_env) = std::env::var("PATH") {
-            for dir in path_env.split(':') {
-                let p = format!("{}/{}", dir, path);
-                if std::path::Path::new(&p).exists() {
-                    real_path = p;
-                    break;
-                }
-            }
+    let resolved = resolve_path(&path_str);
+    if let Some(full_path) = resolved {
+        if full_path.contains("com.termux") && !full_path.contains("/applib/") {
+             if let Some((final_cmd, new_argv_vec)) = transform_exec(&full_path, argv) {
+                 debug_log(&format!("TRANSFORM: {} -> {}", full_path, final_cmd));
+                 let c_cmd = CString::new(final_cmd).unwrap();
+                 let c_ptrs: Vec<*const c_char> = new_argv_vec.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
+                 return real_execve(c_cmd.as_ptr(), c_ptrs.as_ptr(), env_ptrs.as_ptr());
+             }
         }
     }
 
-    let mut file = std::fs::File::open(&real_path).ok()?;
+    real_execve(path, argv, env_ptrs.as_ptr())
+}
+
+fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String, Vec<CString>)> {
+    let mut file = std::fs::File::open(path).ok()?;
     let mut buffer = [0u8; 256];
     let n = file.read(&mut buffer).ok()?;
     let current_prefix = get_current_prefix();
     let linker = if std::path::Path::new("/system/bin/linker64").exists() { "/system/bin/linker64" } else { "/system/bin/linker" };
 
     if n > 4 && buffer[0] == 0x7F && buffer[1] == b'E' && buffer[2] == b'L' && buffer[3] == b'F' {
-        // --- ELF ---
         let mut new_argv = Vec::new();
         let arg0 = if unsafe { !orig_argv.is_null() && !(*orig_argv).is_null() } {
             unsafe { CStr::from_ptr(*orig_argv).to_owned() }
         } else { CString::new(path).unwrap() };
+        
         new_argv.push(arg0);
-        new_argv.push(CString::new(real_path).unwrap());
+        new_argv.push(CString::new(path).unwrap());
+        
         let mut i = 1;
         unsafe { while !orig_argv.is_null() && !(*orig_argv.offset(i)).is_null() {
             new_argv.push(CStr::from_ptr(*orig_argv.offset(i)).to_owned());
@@ -164,30 +174,34 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
         } }
         return Some((linker.to_string(), new_argv));
     } else if let Some((interpreter, shebang_args)) = parse_shebang_internal(&buffer[..n], current_prefix) {
-        // --- SCRIPT ---
         let mut new_argv = Vec::new();
+        // Use interpreter name as argv[0]
+        let interp_name = interpreter.rsplit('/').next().unwrap_or("sh");
+        new_argv.push(CString::new(interp_name).unwrap());
+        
+        // Target for linker64
         new_argv.push(CString::new(interpreter.clone()).unwrap());
-        if let Some(args) = shebang_args { for arg in args.split_whitespace() { new_argv.push(CString::new(arg).unwrap()); } }
-        new_argv.push(CString::new(real_path.clone()).unwrap());
+
+        if let Some(args) = shebang_args {
+            for arg in args.split_whitespace() {
+                new_argv.push(CString::new(arg).unwrap());
+            }
+        }
+        new_argv.push(CString::new(path).unwrap());
+        
         let mut i = 1;
         unsafe { while !orig_argv.is_null() && !(*orig_argv.offset(i)).is_null() {
             new_argv.push(CStr::from_ptr(*orig_argv.offset(i)).to_owned());
             i += 1;
         } }
-        if interpreter.contains("com.termux") {
-             let mut wrapped_argv = Vec::new();
-             wrapped_argv.push(new_argv[0].clone());
-             wrapped_argv.push(CString::new(interpreter.clone()).unwrap());
-             wrapped_argv.extend(new_argv[1..].iter().cloned());
-             return Some((linker.to_string(), wrapped_argv));
-        }
-        return Some((interpreter, new_argv));
-    } else if real_path.contains("com.termux") {
+        return Some((linker.to_string(), new_argv));
+    } else if path.contains("com.termux") {
         let interpreter = format!("{}/files/usr/bin/sh", current_prefix);
         let mut new_argv = Vec::new();
         new_argv.push(CString::new("sh").unwrap());
-        new_argv.push(CString::new(interpreter.clone()).unwrap()); 
-        new_argv.push(CString::new(real_path).unwrap());
+        new_argv.push(CString::new(interpreter).unwrap()); 
+        new_argv.push(CString::new(path).unwrap());
+        
         let mut i = 1;
         unsafe { while !orig_argv.is_null() && !(*orig_argv.offset(i)).is_null() {
             new_argv.push(CStr::from_ptr(*orig_argv.offset(i)).to_owned());
@@ -216,12 +230,12 @@ fn parse_shebang_internal(buffer: &[u8], current_prefix: &str) -> Option<(String
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn execv(path: *const c_char, argv: *const *const c_char) -> c_int { unsafe { execve(path, argv, environ) } }
+pub unsafe extern "C" fn execv(path: *const c_char, argv: *const *const c_char) -> c_int { execve(path, argv, environ) }
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn execvp(file: *const c_char, argv: *const *const c_char) -> c_int { unsafe { execvpe(file, argv, environ) } }
+pub unsafe extern "C" fn execvp(file: *const c_char, argv: *const *const c_char) -> c_int { execvpe(file, argv, environ) }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn execvpe(file: *const c_char, argv: *const *const c_char, envp: *const *const c_char) -> c_int {
-    unsafe { execve(file, argv, envp) }
+    execve(file, argv, envp)
 }
 
 #[unsafe(no_mangle)]
@@ -233,31 +247,37 @@ pub unsafe extern "C" fn posix_spawn(
     argv: *const *const c_char,
     envp: *const *const c_char,
 ) -> c_int {
-    let name = CStr::from_bytes_with_nul(b"posix_spawn\0").unwrap();
-    let real_spawn: unsafe extern "C" fn(*mut libc::pid_t, *const c_char, *const libc::c_void, *const libc::c_void, *const *const c_char, *const *const c_char) -> c_int = 
-        unsafe { std::mem::transmute(libc::dlsym(RTLD_NEXT, name.as_ptr())) };
+    let mut ptr = REAL_POSIX_SPAWN.load(Ordering::Relaxed);
+    if ptr.is_null() {
+        let name = CStr::from_bytes_with_nul(b"posix_spawn\0").unwrap();
+        ptr = libc::dlsym(RTLD_NEXT, name.as_ptr());
+        REAL_POSIX_SPAWN.store(ptr, Ordering::Relaxed);
+    }
+    let real_spawn: unsafe extern "C" fn(*mut libc::pid_t, *const c_char, *const libc::c_void, *const libc::c_void, *const *const c_char, *const *const c_char) -> c_int = std::mem::transmute(ptr);
 
-    if path.is_null() { return unsafe { real_spawn(pid, path, file_actions, attrp, argv, envp) }; }
-    let path_str = unsafe { CStr::from_ptr(path).to_string_lossy().to_string() };
+    if path.is_null() { return real_spawn(pid, path, file_actions, attrp, argv, envp); }
+    let path_str = CStr::from_ptr(path).to_string_lossy().to_string();
     
     if path_str.starts_with("/system/") || path_str.starts_with("/vendor/") || path_str.contains("/linker") {
-        return unsafe { real_spawn(pid, path, file_actions, attrp, argv, envp) };
+        return real_spawn(pid, path, file_actions, attrp, argv, envp);
     }
 
     debug_log(&format!("TRY_SPAWN: {}", path_str));
     
-    let new_env = unsafe { fix_envp(envp) };
+    let new_env = fix_envp(envp);
     let env_ptrs: Vec<*const c_char> = new_env.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
 
-    if (path_str.contains("com.termux") || !path_str.starts_with('/')) && !path_str.contains("/applib/") 
-    {
-         if let Some((final_cmd, new_argv_vec)) = transform_exec(&path_str, argv) {
-             debug_log(&format!("SPAWN: {} -> {}", path_str, final_cmd));
-             let c_cmd = CString::new(final_cmd).unwrap();
-             let c_ptrs: Vec<*const c_char> = new_argv_vec.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
-             return unsafe { real_spawn(pid, c_cmd.as_ptr(), file_actions, attrp, c_ptrs.as_ptr(), env_ptrs.as_ptr()) };
-         }
+    let resolved = resolve_path(&path_str);
+    if let Some(full_path) = resolved {
+        if full_path.contains("com.termux") && !full_path.contains("/applib/") {
+             if let Some((final_cmd, new_argv_vec)) = transform_exec(&full_path, argv) {
+                 debug_log(&format!("SPAWN: {} -> {}", full_path, final_cmd));
+                 let c_cmd = CString::new(final_cmd).unwrap();
+                 let c_ptrs: Vec<*const c_char> = new_argv_vec.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
+                 return real_spawn(pid, c_cmd.as_ptr(), file_actions, attrp, c_ptrs.as_ptr(), env_ptrs.as_ptr());
+             }
+        }
     }
 
-    unsafe { real_spawn(pid, path, file_actions, attrp, argv, env_ptrs.as_ptr()) }
+    real_spawn(pid, path, file_actions, attrp, argv, env_ptrs.as_ptr())
 }
