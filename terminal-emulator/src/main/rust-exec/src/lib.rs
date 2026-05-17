@@ -160,9 +160,11 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
     let current_prefix = get_current_prefix();
     let linker = if std::path::Path::new("/system/bin/linker64").exists() { "/system/bin/linker64" } else { "/system/bin/linker" };
     if n > 4 && buffer[0] == 0x7F && buffer[1] == b'E' && buffer[2] == b'L' && buffer[3] == b'F' {
+        // --- ELF ---
         let mut new_argv = Vec::new();
-        let arg0 = if unsafe { !orig_argv.is_null() && !(*orig_argv).is_null() } { unsafe { CStr::from_ptr(*orig_argv).to_owned() } } else { CString::new(path).unwrap() };
-        new_argv.push(arg0);
+        // Correct layout for Linker Wrapper per Termux docs:
+        // /system/bin/linker64 /data/data/com.foo/executable [args]
+        // This means argv[0] of the call must be the target binary path!
         new_argv.push(CString::new(path).unwrap());
         let mut i = 1;
         unsafe { while !orig_argv.is_null() && !(*orig_argv.offset(i)).is_null() {
@@ -171,10 +173,11 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
         } }
         return Some((linker.to_string(), new_argv));
     } else if let Some((interpreter, shebang_args)) = parse_shebang_internal(&buffer[..n], current_prefix) {
+        // --- SCRIPT ---
         let mut new_argv = Vec::new();
-        let interp_name = interpreter.rsplit('/').next().unwrap_or("sh");
-        new_argv.push(CString::new(interp_name).unwrap());
-        new_argv.push(CString::new(interpreter.clone()).unwrap());
+        // For scripts: /system/bin/linker64 /path/to/interpreter /data/data/com.foo/script.sh [args]
+        // This makes it transparent to the kernel.
+        new_argv.push(CString::new(interpreter.clone()).unwrap()); // argv[0] = interpreter path
         if let Some(args) = shebang_args { for arg in args.split_whitespace() { new_argv.push(CString::new(arg).unwrap()); } }
         new_argv.push(CString::new(path).unwrap());
         let mut i = 1;
@@ -182,11 +185,13 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
             new_argv.push(CStr::from_ptr(*orig_argv.offset(i)).to_owned());
             i += 1;
         } }
-        return Some((linker.to_string(), new_argv));
+        if interpreter.contains("com.termux") {
+             return Some((linker.to_string(), new_argv));
+        }
+        return Some((interpreter, new_argv));
     } else if path.contains("com.termux") {
         let interpreter = format!("{}/files/usr/bin/sh", current_prefix);
         let mut new_argv = Vec::new();
-        new_argv.push(CString::new("sh").unwrap());
         new_argv.push(CString::new(interpreter.clone()).unwrap()); 
         new_argv.push(CString::new(path).unwrap());
         let mut i = 1;
@@ -242,7 +247,7 @@ pub unsafe extern "C" fn posix_spawn(pid: *mut libc::pid_t, path: *const c_char,
     if let Some(full_path) = resolve_path(&path_str) {
         if full_path.contains("com.termux") && !full_path.contains("/applib/") {
              if let Some((final_cmd, new_argv_vec)) = transform_exec(&full_path, argv) {
-                 debug_log(&format!("SPAWN: {} -> {}", full_path, final_cmd));
+                 debug_log(&format!("SPAWN: {} -> {}", path_str, final_cmd));
                  let c_cmd = CString::new(final_cmd).unwrap();
                  let c_ptrs: Vec<*const c_char> = new_argv_vec.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
                  return real_spawn(pid, c_cmd.as_ptr(), file_actions, attrp, c_ptrs.as_ptr(), env_ptrs.as_ptr());
