@@ -8,6 +8,7 @@ use std::sync::OnceLock;
 static REAL_EXECVE: AtomicPtr<libc::c_void> = AtomicPtr::new(ptr::null_mut());
 static REAL_POSIX_SPAWN: AtomicPtr<libc::c_void> = AtomicPtr::new(ptr::null_mut());
 static CURRENT_PREFIX: OnceLock<String> = OnceLock::new();
+static MY_PHYSICAL_PATH: OnceLock<String> = OnceLock::new();
 
 const RTLD_NEXT: *mut libc::c_void = -1i64 as *mut libc::c_void;
 
@@ -15,7 +16,6 @@ unsafe extern "C" {
     static environ: *const *const c_char;
 }
 
-// Constructor to log when the library is loaded
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".init_array")]
 pub static LOAD_HOOK: unsafe extern "C" fn() = {
@@ -36,6 +36,21 @@ fn debug_log(msg: &str) {
     }
 }
 
+fn get_my_physical_path() -> &'static str {
+    MY_PHYSICAL_PATH.get_or_init(|| {
+        if let Ok(maps) = std::fs::read_to_string("/proc/self/maps") {
+            for line in maps.lines() {
+                if line.contains("libtermux-exec.so") {
+                    if let Some(start) = line.find('/') {
+                        return line[start..].to_string();
+                    }
+                }
+            }
+        }
+        String::new()
+    })
+}
+
 fn get_current_prefix() -> &'static str {
     CURRENT_PREFIX.get_or_init(|| {
         if let Ok(maps) = std::fs::read_to_string("/proc/self/maps") {
@@ -53,6 +68,46 @@ fn get_current_prefix() -> &'static str {
     })
 }
 
+unsafe fn fix_envp(envp: *const *const c_char) -> Vec<CString> {
+    let mut new_env = Vec::new();
+    let my_path = get_my_physical_path();
+    if my_path.is_empty() {
+        // Fallback: just return copy of original
+        let mut i = 0;
+        while !envp.is_null() && !(*envp.offset(i)).is_null() {
+            new_env.push(CStr::from_ptr(*envp.offset(i)).to_owned());
+            i += 1;
+        }
+        return new_env;
+    }
+
+    let mut i = 0;
+    let mut ld_preload_found = false;
+    while !envp.is_null() && !(*envp.offset(i)).is_null() {
+        let s = CStr::from_ptr(*envp.offset(i)).to_string_lossy();
+        if s.starts_with("LD_PRELOAD=") {
+            // Self-heal: If LD_PRELOAD is pointing to a data directory path, 
+            // force it to our current physical path.
+            if s.contains("/data/data/") || s.contains("/data/user/0/") {
+                new_env.push(CString::new(format!("LD_PRELOAD={}", my_path)).unwrap());
+                ld_preload_found = true;
+            } else {
+                new_env.push(CStr::from_ptr(*envp.offset(i)).to_owned());
+                ld_preload_found = true;
+            }
+        } else {
+            new_env.push(CStr::from_ptr(*envp.offset(i)).to_owned());
+        }
+        i += 1;
+    }
+    
+    if !ld_preload_found {
+        new_env.push(CString::new(format!("LD_PRELOAD={}", my_path)).unwrap());
+    }
+    
+    new_env
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn execve(
     path: *const c_char,
@@ -60,15 +115,17 @@ pub unsafe extern "C" fn execve(
     envp: *const *const c_char,
 ) -> c_int {
     let name = CStr::from_bytes_with_nul(b"execve\0").unwrap();
-    let real_execve: unsafe extern "C" fn(*const c_char, *const *const c_char, *const *const c_char) -> c_int;
-    unsafe {
-        real_execve = std::mem::transmute(libc::dlsym(RTLD_NEXT, name.as_ptr()));
-    }
+    let real_execve: unsafe extern "C" fn(*const c_char, *const *const c_char, *const *const c_char) -> c_int = 
+        std::mem::transmute(libc::dlsym(RTLD_NEXT, name.as_ptr()));
 
     if path.is_null() { return unsafe { real_execve(path, argv, envp) }; }
     let path_str = unsafe { CStr::from_ptr(path).to_string_lossy().to_string() };
     debug_log(&format!("TRY_EXECVE: {}", path_str));
     
+    // Always fix environment to prevent sabotaging by login/bashrc
+    let new_env = unsafe { fix_envp(envp) };
+    let env_ptrs: Vec<*const c_char> = new_env.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
+
     if (path_str.contains("com.termux") || path_str.starts_with("/bin/") || path_str.starts_with("/usr/bin/")) 
        && !path_str.contains("/applib/") 
     {
@@ -76,11 +133,11 @@ pub unsafe extern "C" fn execve(
              debug_log(&format!("TRANSFORM: {} -> {}", path_str, final_cmd));
              let c_cmd = CString::new(final_cmd).unwrap();
              let c_ptrs: Vec<*const c_char> = new_argv_vec.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
-             return unsafe { real_execve(c_cmd.as_ptr(), c_ptrs.as_ptr(), envp) };
+             return unsafe { real_execve(c_cmd.as_ptr(), c_ptrs.as_ptr(), env_ptrs.as_ptr()) };
          }
     }
 
-    unsafe { real_execve(path, argv, envp) }
+    unsafe { real_execve(path, argv, env_ptrs.as_ptr()) }
 }
 
 fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String, Vec<CString>)> {
@@ -193,6 +250,10 @@ pub unsafe extern "C" fn posix_spawn(
     let path_str = unsafe { CStr::from_ptr(path).to_string_lossy().to_string() };
     debug_log(&format!("TRY_SPAWN: {}", path_str));
     
+    // Always fix environment
+    let new_env = unsafe { fix_envp(envp) };
+    let env_ptrs: Vec<*const c_char> = new_env.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
+
     if (path_str.contains("com.termux/files/usr/") || path_str.starts_with("/bin/") || path_str.starts_with("/usr/bin/")) 
        && !path_str.contains("/applib/") 
     {
@@ -200,9 +261,9 @@ pub unsafe extern "C" fn posix_spawn(
              debug_log(&format!("SPAWN: {} -> {}", path_str, final_cmd));
              let c_cmd = CString::new(final_cmd).unwrap();
              let c_ptrs: Vec<*const c_char> = new_argv_vec.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
-             return unsafe { real_spawn(pid, c_cmd.as_ptr(), file_actions, attrp, c_ptrs.as_ptr(), envp) };
+             return unsafe { real_spawn(pid, c_cmd.as_ptr(), file_actions, attrp, c_ptrs.as_ptr(), env_ptrs.as_ptr()) };
          }
     }
 
-    unsafe { real_spawn(pid, path, file_actions, attrp, argv, envp) }
+    unsafe { real_spawn(pid, path, file_actions, attrp, argv, env_ptrs.as_ptr()) }
 }
