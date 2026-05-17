@@ -102,27 +102,35 @@ fn test_insert_mode_change() {
     // 发送 CSI 4 h (SM - Set Mode: Insert)
     engine.process_bytes(b"\x1b[4h");
     let events = engine.take_events();
-    let (mask, values) = events.iter()
+    let (mask, values) = events
+        .iter()
         .find_map(|e| match e {
             TerminalEvent::StateChanged { mask, values } => Some((*mask, *values)),
             _ => None,
         })
         .expect("Insert mode change should trigger StateChanged");
 
-    assert!(mask & 0x8000 != 0, "Mask bit 15 (Insert Mode) should be set");
+    assert!(
+        mask & 0x8000 != 0,
+        "Mask bit 15 (Insert Mode) should be set"
+    );
     assert_eq!(values[15], 1, "Insert mode value should be 1");
 
     // 发送 CSI 4 l (RM - Reset Mode: Replace)
     engine.process_bytes(b"\x1b[4l");
     let events2 = engine.take_events();
-    let (mask2, values2) = events2.iter()
+    let (mask2, values2) = events2
+        .iter()
         .find_map(|e| match e {
             TerminalEvent::StateChanged { mask, values } => Some((*mask, *values)),
             _ => None,
         })
         .expect("Insert mode reset should trigger StateChanged");
 
-    assert!(mask2 & 0x8000 != 0, "Mask bit 15 (Insert Mode) should be set for reset");
+    assert!(
+        mask2 & 0x8000 != 0,
+        "Mask bit 15 (Insert Mode) should be set for reset"
+    );
     assert_eq!(values2[15], 0, "Insert mode value should be 0 after reset");
 
     println!("✅ 插入模式变化捕捉通过 (Mask bit 15)");
@@ -132,19 +140,23 @@ fn test_insert_mode_change() {
 #[test]
 fn test_screen_updated_event_always_present() {
     let mut engine = TerminalEngine::new(80, 24, 1000, 10, 20);
-    
+
     // 即使空输入也应该产生 ScreenUpdated (作为 Java 侧的心跳信号)
     engine.process_bytes(b"");
     let events = engine.take_events();
     assert!(
-        events.iter().any(|e| matches!(e, TerminalEvent::ScreenUpdated)),
+        events
+            .iter()
+            .any(|e| matches!(e, TerminalEvent::ScreenUpdated)),
         "ScreenUpdated event should be present even for empty input"
     );
 
     engine.process_bytes(b"A");
     let events2 = engine.take_events();
     assert!(
-        events2.iter().any(|e| matches!(e, TerminalEvent::ScreenUpdated)),
+        events2
+            .iter()
+            .any(|e| matches!(e, TerminalEvent::ScreenUpdated)),
         "ScreenUpdated event should be present after text input"
     );
 

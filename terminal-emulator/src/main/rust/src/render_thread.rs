@@ -70,7 +70,6 @@ pub fn get_render_font_path() -> Option<String> {
     RENDER_FONT_PATH.lock().unwrap().clone()
 }
 
-
 pub fn set_render_font_path(path: &str) {
     *RENDER_FONT_PATH.lock().unwrap() = Some(path.to_string());
 }

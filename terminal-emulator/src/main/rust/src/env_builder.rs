@@ -104,7 +104,7 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
         ];
 
         let mut found_ld_preload_path = None;
-        
+
         // 1. 优先检查 applib (APK 原生库目录，API 29+ 必需)
         // 注意：必须使用真实物理路径而非 /data/data/ 下的软链接，否则 Android Linker 会拒绝加载。
         // 我们通过读取 /proc/self/maps 找到当前正在运行的 libtermux_rust.so 所在的真实目录。
@@ -142,7 +142,7 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
                 }
             }
         }
-        
+
         // 2. 如果没找到，尝试回退到解析 prefix/applib
         if found_ld_preload_path.is_none() {
             let termux_app_lib_link = format!("{}/applib", crate::get_termux_files_dir());
@@ -177,7 +177,10 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
             env.insert("LD_PRELOAD".to_string(), ld_preload_path.clone());
             android_log(
                 LogPriority::WARN,
-                &format!("[env_builder] Failed to find physical lib, fallback to legacy: {}", ld_preload_path),
+                &format!(
+                    "[env_builder] Failed to find physical lib, fallback to legacy: {}",
+                    ld_preload_path
+                ),
             );
         }
     }

@@ -93,7 +93,9 @@ impl Drop for ScreenState {
             );
         }
 
-        let ptr = self.shared_buffer_ptr.load(std::sync::atomic::Ordering::Relaxed);
+        let ptr = self
+            .shared_buffer_ptr
+            .load(std::sync::atomic::Ordering::Relaxed);
         if !ptr.is_null() {
             unsafe {
                 let total_allocated_rows = self.main_screen.buffer.len();
@@ -102,7 +104,8 @@ impl Drop for ScreenState {
                 let layout = std::alloc::Layout::from_size_align(size, 8).unwrap();
                 std::alloc::dealloc(ptr as *mut u8, layout);
             }
-            self.shared_buffer_ptr.store(std::ptr::null_mut(), std::sync::atomic::Ordering::Relaxed);
+            self.shared_buffer_ptr
+                .store(std::ptr::null_mut(), std::sync::atomic::Ordering::Relaxed);
             crate::utils::android_log(
                 crate::utils::LogPriority::DEBUG,
                 "ScreenState: Deallocated shared_buffer_ptr",
@@ -213,10 +216,7 @@ impl ScreenState {
         let bottom = self.bottom_margin;
         let style = self.current_style;
         self.get_current_screen_mut().scroll_up(top, bottom, style);
-        if !self.use_alternate_buffer
-            && top == 0
-            && bottom == self.rows
-        {
+        if !self.use_alternate_buffer && top == 0 && bottom == self.rows {
             self.scroll_counter += 1;
             // 全屏滚动时，选择区域 Y 坐标跟随内容上移
             if let Some(ref mut sel) = self.selection {
@@ -289,14 +289,16 @@ impl ScreenState {
     }
 
     pub fn report_clear_screen(&self) {
-        self.has_pending.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.has_pending
+            .store(true, std::sync::atomic::Ordering::Relaxed);
         self.pending_events
             .lock()
             .push(crate::engine::events::TerminalEvent::ScreenUpdated);
     }
 
     pub fn report_terminal_response(&self, response: &str) {
-        self.has_pending.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.has_pending
+            .store(true, std::sync::atomic::Ordering::Relaxed);
         self.pending_events
             .lock()
             .push(crate::engine::events::TerminalEvent::TerminalResponse(
@@ -697,14 +699,16 @@ impl ScreenState {
     }
 
     pub fn report_bell(&self) {
-        self.has_pending.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.has_pending
+            .store(true, std::sync::atomic::Ordering::Relaxed);
         self.pending_events
             .lock()
             .push(crate::engine::events::TerminalEvent::Bell);
     }
 
     pub fn report_colors_changed(&self) {
-        self.has_pending.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.has_pending
+            .store(true, std::sync::atomic::Ordering::Relaxed);
         self.pending_events
             .lock()
             .push(crate::engine::events::TerminalEvent::ColorsChanged);
@@ -719,10 +723,11 @@ impl ScreenState {
     pub fn handle_osc14(&mut self) {}
     pub fn handle_osc19(&mut self) {}
     pub fn handle_osc52(&mut self, _events: &mut Vec<TerminalEvent>, base64_data: &str) {
-        use base64::{engine::general_purpose, Engine as _};
+        use base64::{Engine as _, engine::general_purpose};
         if let Ok(decoded) = general_purpose::STANDARD.decode(base64_data) {
             if let Ok(text) = String::from_utf8(decoded) {
-                self.has_pending.store(true, std::sync::atomic::Ordering::Relaxed);
+                self.has_pending
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
                 self.pending_events
                     .lock()
                     .push(crate::engine::events::TerminalEvent::CopytoClipboard(text));
@@ -809,7 +814,9 @@ impl ScreenState {
         }
 
         // 同步到共享内存指针（如果存在）
-        let ptr = self.shared_buffer_ptr.load(std::sync::atomic::Ordering::Relaxed);
+        let ptr = self
+            .shared_buffer_ptr
+            .load(std::sync::atomic::Ordering::Relaxed);
         if !ptr.is_null() {
             unsafe {
                 flat.sync_to_shared(ptr);
@@ -870,10 +877,10 @@ impl ScreenState {
                 0
             }, // 9: Mouse
             if self.auto_scroll_disabled { 1 } else { 0 }, // 10: Auto Scroll Disabled
-            self.rows as i32,                              // 11: Rows
-            self.cols as i32,                              // 12: Cols
+            self.rows as i32,                        // 11: Rows
+            self.cols as i32,                        // 12: Cols
             self.main_screen.get_active_transcript_rows() as i32, // 13: Active Transcript Rows
-            self.scroll_counter as i32,                    // 14: Scroll Counter
+            self.scroll_counter as i32,              // 14: Scroll Counter
             if self.modes.is_enabled(crate::terminal::modes::MODE_INSERT) {
                 1
             } else {
@@ -1138,7 +1145,10 @@ mod tests {
         let mut state = ScreenState::new(80, 24, 100, 8, 16);
         state.auto_scroll_disabled = true;
         state.scroll_up();
-        assert_eq!(state.scroll_counter, 1, "scroll_counter should increment even if auto_scroll_disabled is true");
+        assert_eq!(
+            state.scroll_counter, 1,
+            "scroll_counter should increment even if auto_scroll_disabled is true"
+        );
     }
 
     #[test]

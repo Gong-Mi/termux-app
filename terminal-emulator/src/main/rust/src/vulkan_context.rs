@@ -70,7 +70,10 @@ fn validate_pipeline_cache(data: &[u8], vendor_id: u32, device_id: u32) -> Optio
 
     if data.len() < MIN_HEADER_SIZE {
         if !data.is_empty() {
-            android_log(LogPriority::DEBUG, "Pipeline cache file too small, using empty cache");
+            android_log(
+                LogPriority::DEBUG,
+                "Pipeline cache file too small, using empty cache",
+            );
         }
         return None;
     }
@@ -104,7 +107,9 @@ fn validate_pipeline_cache(data: &[u8], vendor_id: u32, device_id: u32) -> Optio
         LogPriority::INFO,
         &format!(
             "Pipeline cache: validated {} bytes (vendor={:#x}, device={:#x})",
-            data.len(), cache_vendor, cache_device
+            data.len(),
+            cache_vendor,
+            cache_device
         ),
     );
 
@@ -507,8 +512,9 @@ impl VulkanContext {
         // === Pipeline Cache: load previous data and create cache before Skia initializes ===
         let raw_cache_data = load_pipeline_cache_file();
         let props = unsafe { instance.get_physical_device_properties(pdevice) };
-        let pipeline_cache_data = validate_pipeline_cache(&raw_cache_data, props.vendor_id, props.device_id)
-            .unwrap_or_default();
+        let pipeline_cache_data =
+            validate_pipeline_cache(&raw_cache_data, props.vendor_id, props.device_id)
+                .unwrap_or_default();
         let cache_create_info = ash_vk::PipelineCacheCreateInfo {
             flags: ash_vk::PipelineCacheCreateFlags::empty(),
             initial_data_size: pipeline_cache_data.len(),
@@ -742,10 +748,13 @@ impl VulkanContext {
             // 同步 Skia ImageInfo format 与实际 Swapchain Image format
             self.skia_format = ash_format_to_skia_format(format.format);
             self.vk_color_space = format.color_space;
-            android_log(LogPriority::INFO, &format!(
-                "Vulkan: Selected swapchain format {:?} (mapped to Skia format {:?}) in color space {:?}",
-                format.format, self.skia_format, self.vk_color_space
-            ));
+            android_log(
+                LogPriority::INFO,
+                &format!(
+                    "Vulkan: Selected swapchain format {:?} (mapped to Skia format {:?}) in color space {:?}",
+                    format.format, self.skia_format, self.vk_color_space
+                ),
+            );
 
             let caps = self
                 .surface_loader
@@ -1212,8 +1221,8 @@ mod tests {
         // 构造一个合法的 Vulkan pipeline cache header
         // headerSize=32, headerVersion=1, vendorID=0x13B5, deviceID=0x12345678
         let mut data = vec![0u8; 64];
-        data[0..4].copy_from_slice(&32u32.to_le_bytes());    // headerSize
-        data[4..8].copy_from_slice(&1u32.to_le_bytes());      // headerVersion
+        data[0..4].copy_from_slice(&32u32.to_le_bytes()); // headerSize
+        data[4..8].copy_from_slice(&1u32.to_le_bytes()); // headerVersion
         data[8..12].copy_from_slice(&0x13B5u32.to_le_bytes()); // vendorID
         data[12..16].copy_from_slice(&0x1234_5678u32.to_le_bytes()); // deviceID
         // UUID = 16 bytes of zeros (offset 16..32)

@@ -451,11 +451,7 @@ fn flush_events_to_java(
                 start_y,
             } => {
                 if let Ok(j_data) = env.new_byte_array(rgba_data.len() as i32) {
-                    let _ = env.set_byte_array_region(
-                        &j_data,
-                        0,
-                        bytemuck::cast_slice(&rgba_data),
-                    );
+                    let _ = env.set_byte_array_region(&j_data, 0, bytemuck::cast_slice(&rgba_data));
                     let _ = env.call_method(
                         obj,
                         "onSixelImage",
@@ -493,7 +489,6 @@ fn optimized_flush_events(
     }
     flush_events_to_java(env, cb, java_events);
 }
-
 
 /// 创建引擎实例
 #[unsafe(no_mangle)]
@@ -745,7 +740,11 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_startIoThread(
             let mut temp = [0u8; 16384];
 
             // 【性能优化】在循环外 attach 一次，避免高频系统调用
-            if let Ok(mut env) = crate::JAVA_VM.get().unwrap().attach_current_thread_as_daemon() {
+            if let Ok(mut env) = crate::JAVA_VM
+                .get()
+                .unwrap()
+                .attach_current_thread_as_daemon()
+            {
                 while context.running.load(std::sync::atomic::Ordering::SeqCst) {
                     let _ = env.with_local_frame::<_, _, jni::errors::Error>(16, |env| {
                         read_buf.clear();
@@ -805,12 +804,13 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_startIoThread(
                                 let mut engine = context.lock.write().unwrap();
                                 engine.process_bytes(&read_buf);
                                 (engine.take_events(), engine.state.java_callback_obj.clone())
-                                };
-                                render_thread::request_render();
-                                optimized_flush_events(env, &context, events, &cb);
-                                }
-                                Ok(())
-                                });                }
+                            };
+                            render_thread::request_render();
+                            optimized_flush_events(env, &context, events, &cb);
+                        }
+                        Ok(())
+                    });
+                }
             } else {
                 android_log(LogPriority::ERROR, " IO Thread: Failed to attach to JVM");
             }
@@ -1426,16 +1426,23 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_toggleAutoScrollDis
         let curr = engine.state.snapshot();
         let mut mask = 0u32;
         for i in 0..16 {
-            if i == 10 { // auto_scroll_disabled is index 10
+            if i == 10 {
+                // auto_scroll_disabled is index 10
                 mask |= 1 << i;
             }
         }
         if mask != 0 {
-            engine.events.push(TerminalEvent::StateChanged { mask, values: curr });
+            engine
+                .events
+                .push(TerminalEvent::StateChanged { mask, values: curr });
         }
         // Also push ScreenUpdated so TerminalView refreshes
         engine.events.push(TerminalEvent::ScreenUpdated);
-        (engine.take_events(), engine.state.java_callback_obj.clone(), new_value)
+        (
+            engine.take_events(),
+            engine.state.java_callback_obj.clone(),
+            new_value,
+        )
     };
     flush_events_to_java(&mut env, &cb, events);
     let _ = Arc::into_raw(context);
@@ -1575,11 +1582,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getColors(
     };
 
     let result = if let Ok(j_array) = env.new_int_array(colors.len() as jint) {
-        let _ = env.set_int_array_region(
-            &j_array,
-            0,
-            bytemuck::cast_slice(&colors),
-        );
+        let _ = env.set_int_array_region(&j_array, 0, bytemuck::cast_slice(&colors));
         j_array.into_raw()
     } else {
         std::ptr::null_mut()
@@ -2388,12 +2391,7 @@ fn init_android_cache_dir(vm: &jni::JavaVM) {
     };
 
     let path_str = match env
-        .call_method(
-            &cache_dir,
-            "getAbsolutePath",
-            "()Ljava/lang/String;",
-            &[],
-        )
+        .call_method(&cache_dir, "getAbsolutePath", "()Ljava/lang/String;", &[])
         .and_then(|v| v.l())
     {
         Ok(o) => {

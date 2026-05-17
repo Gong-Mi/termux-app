@@ -1563,14 +1563,9 @@ impl HdrOverlayManager {
             if let Some(image) = &overlay.image {
                 let mut paint = skia_safe::Paint::default();
                 paint.set_blend_mode(overlay.blend_mode);
-                
+
                 // 绘制到指定区域
-                canvas.draw_image_rect(
-                    image,
-                    None,
-                    &overlay.rect,
-                    &paint,
-                );
+                canvas.draw_image_rect(image, None, &overlay.rect, &paint);
             }
         }
     }
@@ -1809,63 +1804,64 @@ mod tests {
     #[test]
     fn test_hdr_colorspace_mapping() {
         use super::super::HdrColorSpace;
-        
+
         assert!(HdrColorSpace::SdrSrgb.to_skia_colorspace().is_some());
         assert!(HdrColorSpace::Rec2020Hlg.to_skia_colorspace().is_some());
         assert!(HdrColorSpace::Rec2020Pq.to_skia_colorspace().is_some());
         assert!(HdrColorSpace::DisplayP3Pq.to_skia_colorspace().is_some());
         assert!(HdrColorSpace::ScRgbLinear.to_skia_colorspace().is_some());
-        
+
         assert!(!HdrColorSpace::SdrSrgb.is_hdr());
         assert!(HdrColorSpace::Rec2020Pq.is_hdr());
     }
 
     #[test]
     fn test_hdr_overlay_manager_logic() {
-        use super::super::{HdrOverlayManager, HdrImageOverlay};
-        
+        use super::super::{HdrImageOverlay, HdrOverlayManager};
+
         let mut manager = HdrOverlayManager::new();
         assert_eq!(manager.visible_count(), 0);
-        
+
         let mut overlay1 = HdrImageOverlay::default();
         overlay1.id = 100;
         overlay1.visible = true;
         manager.set_overlay(overlay1);
-        
+
         let mut overlay2 = HdrImageOverlay::default();
         overlay2.id = 200;
         overlay2.visible = false;
         manager.set_overlay(overlay2);
-        
+
         assert_eq!(manager.visible_count(), 1);
         assert!(manager.get_overlay(100).is_some());
-        
+
         manager.remove_overlay(100);
         assert_eq!(manager.visible_count(), 0);
-        
+
         manager.clear();
         assert!(manager.get_overlay(200).is_none());
     }
 
     #[test]
     fn test_hdr_draw_overlays_no_panic() {
-        use super::super::{HdrOverlayManager, HdrImageOverlay};
+        use super::super::{HdrImageOverlay, HdrOverlayManager};
         use skia_safe::surfaces;
-        
+
         let mut manager = HdrOverlayManager::new();
-        let mut surface = surfaces::raster_n32_premul((100, 100)).expect("Failed to create surface");
+        let mut surface =
+            surfaces::raster_n32_premul((100, 100)).expect("Failed to create surface");
         let canvas = surface.canvas();
-        
+
         // 测试 1: 空管理器绘制
         manager.draw_overlays(canvas);
-        
+
         // 测试 2: 有覆盖层但没有图片绘制
         let mut overlay = HdrImageOverlay::default();
         overlay.id = 1;
         overlay.visible = true;
         manager.set_overlay(overlay);
         manager.draw_overlays(canvas);
-        
+
         // 测试 3: 有图片绘制
         let mut overlay_with_img = HdrImageOverlay::default();
         overlay_with_img.id = 2;
@@ -1873,7 +1869,7 @@ mod tests {
         let mut img_surface = surfaces::raster_n32_premul((10, 10)).unwrap();
         overlay_with_img.image = Some(img_surface.image_snapshot());
         manager.set_overlay(overlay_with_img);
-        
+
         manager.draw_overlays(canvas);
     }
 

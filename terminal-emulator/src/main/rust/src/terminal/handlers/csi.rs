@@ -1,5 +1,5 @@
-use crate::engine::events::TerminalEvent;
 use crate::engine::ScreenState;
+use crate::engine::events::TerminalEvent;
 use crate::vte_parser::Params;
 use std::cmp::{max, min};
 
@@ -196,7 +196,11 @@ pub fn handle_csi(
                     if state.origin_mode() {
                         r -= state.top_margin;
                     }
-                    events.push(TerminalEvent::TerminalResponse(format!("\x1b[{};{}R", r + 1, c)));
+                    events.push(TerminalEvent::TerminalResponse(format!(
+                        "\x1b[{};{}R",
+                        r + 1,
+                        c
+                    )));
                 }
                 _ => {}
             }
@@ -486,7 +490,9 @@ mod tests {
     fn test_csi_cursor_position_report_origin_mode() {
         let mut state = setup_state();
         state.top_margin = 2;
-        state.modes.set(crate::terminal::modes::DECSET_BIT_ORIGIN_MODE);
+        state
+            .modes
+            .set(crate::terminal::modes::DECSET_BIT_ORIGIN_MODE);
         state.cursor.x = 7;
         state.cursor.y = 3; // Absolute row 3, which is row 1 relative to top_margin 2
         let mut events = Vec::new();
@@ -526,4 +532,3 @@ mod tests {
         assert_eq!(row.text[2], 'X');
     }
 }
-

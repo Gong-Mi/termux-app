@@ -252,8 +252,14 @@ mod tests {
         );
 
         // 顺序必须严格对应输入顺序
-        assert_eq!(responses[0], "\x1b]10;rgb:ffff/ffff/ffff\x07", "OSC 10 foreground");
-        assert_eq!(responses[1], "\x1b]11;rgb:0000/0000/0000\x1b\\", "OSC 11 background");
+        assert_eq!(
+            responses[0], "\x1b]10;rgb:ffff/ffff/ffff\x07",
+            "OSC 10 foreground"
+        );
+        assert_eq!(
+            responses[1], "\x1b]11;rgb:0000/0000/0000\x1b\\",
+            "OSC 11 background"
+        );
         // 光标位置："hello "(6) + " world "(7) = 13（0-based），回复 1-based 即 1;14R
         assert_eq!(responses[2], "\x1b[1;14R", "CSI 6n cursor");
     }

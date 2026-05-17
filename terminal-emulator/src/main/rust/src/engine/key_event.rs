@@ -1,7 +1,7 @@
 /// 按键事件处理 - 生成转义序列
 use crate::engine::state::ScreenState;
-use crate::terminal::modes::*;
 use crate::terminal::key_handler;
+use crate::terminal::modes::*;
 
 impl ScreenState {
     /// 处理按键事件 - 实现 KeyHandler.getCode() 的逻辑
@@ -16,12 +16,8 @@ impl ScreenState {
         let keypad_application = self.modes.is_enabled(DECSET_BIT_APPLICATION_KEYPAD);
 
         // 优先使用 key_handler 处理特殊功能键
-        let code = key_handler::get_code(
-            key_code,
-            meta_state as u32,
-            cursor_app,
-            keypad_application
-        );
+        let code =
+            key_handler::get_code(key_code, meta_state as u32, cursor_app, keypad_application);
 
         if code.is_some() {
             return code;

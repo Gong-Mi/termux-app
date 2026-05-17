@@ -376,20 +376,23 @@ impl Screen {
     pub fn scroll_up(&mut self, top: i64, bottom: i64, style: u64) {
         let total_rows = self.buffer.len();
 
-        let block_copy_lines_down = |buf: &mut Vec<TerminalRow>, src_internal: usize, len: usize| {
-            if len == 0 {
-                return;
-            }
-            let start = len - 1;
-            for i in (0..=start).rev() {
-                let d = (src_internal + i + 1) % total_rows;
-                let s = (src_internal + i) % total_rows;
-                if s == d { continue; }
-                let (low, high) = if s < d { (s, d) } else { (d, s) };
-                let (left, right) = buf.split_at_mut(high);
-                std::mem::swap(&mut left[low], &mut right[0]);
-            }
-        };
+        let block_copy_lines_down =
+            |buf: &mut Vec<TerminalRow>, src_internal: usize, len: usize| {
+                if len == 0 {
+                    return;
+                }
+                let start = len - 1;
+                for i in (0..=start).rev() {
+                    let d = (src_internal + i + 1) % total_rows;
+                    let s = (src_internal + i) % total_rows;
+                    if s == d {
+                        continue;
+                    }
+                    let (low, high) = if s < d { (s, d) } else { (d, s) };
+                    let (left, right) = buf.split_at_mut(high);
+                    std::mem::swap(&mut left[low], &mut right[0]);
+                }
+            };
 
         // Copy the fixed top margin lines one line down
         let top_margin_len = top as usize;

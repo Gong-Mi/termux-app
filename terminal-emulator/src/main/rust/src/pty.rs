@@ -203,12 +203,16 @@ pub fn create_subprocess_with_data(
     let env_list = crate::env_builder::build_termux_environment(&cwd_str, is_failsafe);
 
     // 二次清洗环境变量：确保即使 env_builder 漏掉某些系统变量，这里也会进行路径归一化
-    let c_envs: Vec<CString> = env_list.into_iter().map(|cs| {
-        let s = cs.to_string_lossy().to_string();
-        let normalized = s.replace("/data/user/0/com.termux", &termux_data_dir)
-                          .replace("/data/data/com.termux", &termux_data_dir);
-        CString::new(normalized).unwrap_or_else(|_| cs)
-    }).collect();
+    let c_envs: Vec<CString> = env_list
+        .into_iter()
+        .map(|cs| {
+            let s = cs.to_string_lossy().to_string();
+            let normalized = s
+                .replace("/data/user/0/com.termux", &termux_data_dir)
+                .replace("/data/data/com.termux", &termux_data_dir);
+            CString::new(normalized).unwrap_or_else(|_| cs)
+        })
+        .collect();
 
     let mut real_cmd = cmd_str.clone();
     let mut real_argv = argv.clone();
@@ -877,10 +881,7 @@ mod tests {
     fn map_interpreter_termux_path() {
         let prefix = crate::get_termux_prefix();
         assert_eq!(
-            map_interpreter(
-                &format!("{}/bin/python", prefix),
-                &noop_normalize
-            ),
+            map_interpreter(&format!("{}/bin/python", prefix), &noop_normalize),
             format!("{}/bin/python", prefix)
         );
     }
@@ -907,8 +908,9 @@ mod tests {
     #[test]
     fn map_interpreter_absolute_termux() {
         let prefix = crate::get_termux_prefix();
-        let normalize =
-            |s: String| -> String { s.replace("/data/user/0/com.termux", &prefix.replace("/files/usr", "")) };
+        let normalize = |s: String| -> String {
+            s.replace("/data/user/0/com.termux", &prefix.replace("/files/usr", ""))
+        };
         // This test's expectation depends on how normalize is defined.
         // If we want to test that it is PASSED to normalize:
         assert_eq!(

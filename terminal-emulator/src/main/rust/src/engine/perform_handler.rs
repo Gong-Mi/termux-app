@@ -42,14 +42,26 @@ impl<'a> Perform for PerformHandler<'a> {
     }
 
     fn csi_dispatch(&mut self, params: &Params, intermediates: &[u8], _ignore: bool, action: char) {
-        crate::terminal::handlers::csi::handle_csi(self.state, self.events, params, intermediates, action);
+        crate::terminal::handlers::csi::handle_csi(
+            self.state,
+            self.events,
+            params,
+            intermediates,
+            action,
+        );
         self.drain_pending_events();
     }
 
     fn osc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
         if params.len() > 0 {
             if let Ok(opcode) = std::str::from_utf8(params[0]) {
-                crate::terminal::handlers::osc::handle_osc(self.state, self.events, opcode, params, bell_terminated);
+                crate::terminal::handlers::osc::handle_osc(
+                    self.state,
+                    self.events,
+                    opcode,
+                    params,
+                    bell_terminated,
+                );
             }
         }
         self.drain_pending_events();

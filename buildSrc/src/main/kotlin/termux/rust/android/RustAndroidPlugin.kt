@@ -45,10 +45,13 @@ class RustAndroidPlugin : Plugin<Project> {
                             group = "rust"
                             description = "Build Rust $libName for $abi"
 
+                            val targetDir = project.file("$rustSrc/target/$safeAbi")
                             inputs.dir(project.file(rustSrc))
-                            outputs.file(project.file("$rustSrc/target/$rustArch/release/lib$libName.so"))
+                            outputs.file(project.file("${targetDir.path}/$rustArch/release/lib$libName.so"))
 
                             workingDir = project.file(rustSrc)
+                            
+                            environment("CARGO_TARGET_DIR", targetDir.path)
 
                             if (!ndkPath.isNullOrBlank()) {
                                 environment("ANDROID_NDK", ndkPath)
@@ -70,10 +73,12 @@ class RustAndroidPlugin : Plugin<Project> {
                                 group = "rust"
                                 description = "Build Rust termux-exec for $abi"
 
+                                val targetDir = project.file("$execSrc/target/$safeAbi")
                                 inputs.dir(project.file(execSrc))
-                                outputs.file(project.file("$execSrc/target/$rustArch/release/libtermux_exec.so"))
+                                outputs.file(project.file("${targetDir.path}/$rustArch/release/libtermux_exec.so"))
 
                                 workingDir = project.file(execSrc)
+                                environment("CARGO_TARGET_DIR", targetDir.path)
 
                                 if (!ndkPath.isNullOrBlank()) {
                                     environment("ANDROID_NDK", ndkPath)
@@ -98,18 +103,20 @@ class RustAndroidPlugin : Plugin<Project> {
 
                         project.tasks.register<Copy>(copyTaskName) {
                             group = "rust"
+                            val mainTargetDir = project.file("$rustSrc/target/$safeAbi")
+                            val execTargetDir = project.file("src/main/rust-exec/target/$safeAbi")
+                            
                             dependsOn(buildTaskName)
                             if (project.tasks.findByName(execBuildTaskName) != null) {
                                 dependsOn(execBuildTaskName)
                             }
 
-                            from(project.file("$rustSrc/target/$rustArch/release/lib$libName.so"))
+                            from(project.file("${mainTargetDir.path}/$rustArch/release/lib$libName.so"))
                             into(project.file("$jniDest/$abi"))
 
                             // Copy termux-exec if built
-                            val execSrc = "src/main/rust-exec"
-                            if (project.file(execSrc).exists()) {
-                                from(project.file("$execSrc/target/$rustArch/release/libtermux_exec.so")) {
+                            if (project.file("src/main/rust-exec").exists()) {
+                                from(project.file("${execTargetDir.path}/$rustArch/release/libtermux_exec.so")) {
                                     rename { "libtermux-exec.so" }
                                 }
                             }

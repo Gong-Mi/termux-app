@@ -391,9 +391,15 @@ fn test_alt_char_combination() {
     let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
     let meta_state = 0x80000000u32 as i32; // KEYMOD_ALT
-    let result = engine.state.send_key_event(0, Some("b".to_string()), meta_state);
+    let result = engine
+        .state
+        .send_key_event(0, Some("b".to_string()), meta_state);
 
-    assert_eq!(result, Some("\x1bb".to_string()), "Alt+b should generate ESC+b sequence");
+    assert_eq!(
+        result,
+        Some("\x1bb".to_string()),
+        "Alt+b should generate ESC+b sequence"
+    );
     println!("✅ Alt+Char test passed");
 }
 
