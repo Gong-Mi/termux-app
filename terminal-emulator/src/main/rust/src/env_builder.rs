@@ -104,7 +104,7 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
             "libtermux-exec-direct-ld-preload.so",
         ];
 
-        let mut found_ld_preload = false;
+        let mut found_ld_preload_path = None;
         
         // 1. 优先检查 applib (APK 原生库目录，API 29+ 必需)
         // 注意：必须使用真实物理路径而非 /data/data/ 下的软链接，否则 Android Linker 会拒绝加载。
@@ -121,8 +121,6 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
                                 break;
                             }
                         } else if path.ends_with(".apk") {
-                            // 如果是直接从 APK 映射，尝试猜测对应的 lib 目录（通常在同一个父目录下）
-                            // /data/app/.../base.apk -> /data/app/.../lib/arm64
                             if let Some(parent) = std::path::Path::new(path).parent() {
                                 let lib_dir = parent.join("lib/arm64");
                                 if lib_dir.exists() {
@@ -140,24 +138,16 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
             for variant in &ld_preload_variants {
                 let ld_preload_path = lib_dir.join(variant);
                 if ld_preload_path.exists() {
-                    let path_str = ld_preload_path.to_string_lossy().to_string();
-                    env.insert("LD_PRELOAD".to_string(), path_str.clone());
-                    android_log(
-                        LogPriority::INFO,
-                        &format!("[env_builder] Using LD_PRELOAD from memory-mapped applib: {}", path_str),
-                    );
-                    found_ld_preload = true;
+                    found_ld_preload_path = Some(ld_preload_path.to_string_lossy().to_string());
                     break;
                 }
             }
         }
         
-        // 2. 如果内存映射没找到（理论上不应该），回退到尝试解析软链接
-        if !found_ld_preload {
-            let termux_files_dir = crate::get_termux_files_dir();
-            let termux_app_lib_link = format!("{}/applib", termux_files_dir);
+        // 2. 如果没找到，尝试回退到解析 prefix/applib
+        if found_ld_preload_path.is_none() {
+            let termux_app_lib_link = format!("{}/applib", crate::get_termux_files_dir());
             let app_lib_path = std::path::Path::new(&termux_app_lib_link);
-            
             let resolved_lib = if app_lib_path.is_symlink() {
                 std::fs::read_link(app_lib_path).unwrap_or_else(|_| app_lib_path.to_path_buf())
             } else {
@@ -167,12 +157,29 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
             for variant in &ld_preload_variants {
                 let ld_preload_path = resolved_lib.join(variant);
                 if ld_preload_path.exists() {
-                    let path_str = ld_preload_path.to_string_lossy().to_string();
-                    env.insert("LD_PRELOAD".to_string(), path_str.clone());
-                    found_ld_preload = true;
+                    found_ld_preload_path = Some(ld_preload_path.to_string_lossy().to_string());
                     break;
                 }
             }
+        }
+
+        // 强行覆盖：不论之前环境里有没有 LD_PRELOAD，
+        // 在 Android 10+ 上，如果我们找到了正确的物理路径库，必须强行使用它！
+        // 这样可以纠正 .bashrc 中可能存在的错误 legacy 路径。
+        if let Some(final_path) = found_ld_preload_path {
+            env.insert("LD_PRELOAD".to_string(), final_path.clone());
+            android_log(
+                LogPriority::INFO,
+                &format!("[env_builder] FORCE setting LD_PRELOAD to: {}", final_path),
+            );
+        } else {
+            // 最后的兜底
+            let ld_preload_path = format!("{}/lib/libtermux-exec.so", termux_prefix);
+            env.insert("LD_PRELOAD".to_string(), ld_preload_path.clone());
+            android_log(
+                LogPriority::WARN,
+                &format!("[env_builder] Failed to find physical lib, fallback to legacy: {}", ld_preload_path),
+            );
         }
 
         // 2. Fallback 到传统的 prefix/lib

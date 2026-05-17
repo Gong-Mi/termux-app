@@ -24,26 +24,33 @@ fn debug_log(msg: &str) {
 
 fn get_current_prefix() -> &'static str {
     CURRENT_PREFIX.get_or_init(|| {
-        // Find our real prefix by looking at /proc/self/maps or current_dir
+        // Log environment on first call
+        unsafe {
+            let mut i = 0;
+            while !(*environ.offset(i)).is_null() {
+                let env_str = CStr::from_ptr(*environ.offset(i)).to_string_lossy();
+                if env_str.starts_with("LD_PRELOAD") || env_str.starts_with("PATH") || env_str.starts_with("PWD") {
+                    debug_log(&format!("ENV_AT_START: {}", env_str));
+                }
+                i += 1;
+            }
+        }
+
+        // Find our real prefix by looking at /proc/self/maps
         if let Ok(maps) = std::fs::read_to_string("/proc/self/maps") {
             for line in maps.lines() {
-                if line.contains("com.termux") && line.contains("/lib/") {
+                if line.contains("com.termux") && (line.contains("/lib/") || line.contains("/files/")) {
                     if let Some(start) = line.find("/data/") {
                         if let Some(end) = line[start..].find("/files/") {
-                            return line[start..start+end].to_string();
+                            let p = line[start..start+end].to_string();
+                            debug_log(&format!("DETECTED_PREFIX: {}", p));
+                            return p;
                         }
                     }
                 }
             }
         }
-        // Fallback
-        let cwd = std::env::current_dir().unwrap_or_default();
-        let cwd_str = cwd.to_string_lossy();
-        if cwd_str.contains("/data/user/0/com.termux") {
-            "/data/user/0/com.termux".to_string()
-        } else {
-            "/data/data/com.termux".to_string()
-        }
+        "/data/data/com.termux".to_string()
     })
 }
 
@@ -67,10 +74,8 @@ pub unsafe extern "C" fn execve(
     if path.is_null() { return real_execve(path, argv, envp); }
     let path_str = unsafe { CStr::from_ptr(path).to_string_lossy().to_string() };
     
-    // Robust check: Is this in a Termux directory?
-    if (path_str.contains("com.termux/files/usr/") || path_str.starts_with("/bin/") || path_str.starts_with("/usr/bin/")) 
-       && !path_str.contains("/applib/") 
-    {
+    // Check for ANY com.termux path
+    if path_str.contains("com.termux/files/usr/") && !path_str.contains("/applib/") {
          if let Some((final_cmd, new_argv_vec)) = transform_exec(&path_str, argv) {
              debug_log(&format!("EXECVE: {} -> {}", path_str, final_cmd));
              let c_cmd = CString::new(final_cmd).unwrap();
@@ -185,8 +190,7 @@ pub unsafe extern "C" fn posix_spawn(
     if path.is_null() { return libc::EFAULT; }
     let path_str = unsafe { CStr::from_ptr(path).to_string_lossy().to_string() };
     
-    if (path_str.contains("com.termux/files/usr/") || path_str.starts_with("/bin/") || path_str.starts_with("/usr/bin/")) 
-       && !path_str.contains("/applib/") 
+    if path_str.contains("com.termux/files/usr/") && !path_str.contains("/applib/") 
     {
          if let Some((final_cmd, new_argv_vec)) = transform_exec(&path_str, argv) {
              debug_log(&format!("SPAWN: {} -> {}", path_str, final_cmd));
