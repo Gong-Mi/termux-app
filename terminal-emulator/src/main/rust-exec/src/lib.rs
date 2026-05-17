@@ -72,9 +72,24 @@ fn get_current_prefix() -> &'static str {
     })
 }
 
+fn map_termux_path(path: &str) -> String {
+    let prefix = get_current_prefix();
+    if path.starts_with("/usr/bin/") {
+        format!("{}/files/usr/bin/{}", prefix, &path[9..])
+    } else if path.starts_with("/bin/") {
+        format!("{}/files/usr/bin/{}", prefix, &path[5..])
+    } else if path.starts_with("/usr/lib/") {
+        format!("{}/files/usr/lib/{}", prefix, &path[9..])
+    } else {
+        path.to_string()
+    }
+}
+
 unsafe fn resolve_path(file: &str) -> Option<String> {
-    if file.contains('/') {
-        if std::path::Path::new(file).exists() { return Some(file.to_string()); }
+    let mapped = map_termux_path(file);
+    if mapped.contains('/') {
+        if std::path::Path::new(&mapped).exists() { return Some(mapped); }
+        if file != mapped && std::path::Path::new(file).exists() { return Some(file.to_string()); }
         return None;
     }
     if let Ok(path_env) = std::env::var("PATH") {
@@ -133,7 +148,6 @@ pub unsafe extern "C" fn execve(path: *const c_char, argv: *const *const c_char,
     if path.is_null() { return real_execve(path, argv, envp); }
     let path_str = CStr::from_ptr(path).to_string_lossy().to_string();
     
-    // Whitelist system binaries AND binaries already wrapped in linker
     if path_str.starts_with("/system/") || path_str.starts_with("/vendor/") || path_str.contains("/linker") {
         return real_execve(path, argv, envp);
     }
@@ -171,7 +185,7 @@ pub unsafe extern "C" fn execveat(dirfd: c_int, path: *const c_char, argv: *cons
     let path_str = CStr::from_ptr(path).to_string_lossy().to_string();
     debug_log(&format!("TRY_EXECVEAT: {}", path_str));
 
-    if (path_str.contains("com.termux") || !path_str.starts_with('/')) && dirfd == libc::AT_FDCWD {
+    if (path_str.contains("com.termux") || path_str.starts_with("/usr/") || path_str.starts_with("/bin/") || !path_str.starts_with('/')) && dirfd == libc::AT_FDCWD {
         return execve(path, argv, envp);
     }
 
@@ -186,15 +200,9 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
     let linker = if std::path::Path::new("/system/bin/linker64").exists() { "/system/bin/linker64" } else { "/system/bin/linker" };
 
     if n > 4 && buffer[0] == 0x7F && buffer[1] == b'E' && buffer[2] == b'L' && buffer[3] == b'F' {
-        // --- ELF ---
         let mut new_argv = Vec::new();
-        // SYMMETRY FIX:
-        // argv[0] = path
-        // argv[1] = path (target binary)
-        // argv[2...] = original arguments starting from index 1
         new_argv.push(CString::new(path).unwrap());
         new_argv.push(CString::new(path).unwrap());
-        
         let mut i = 1;
         unsafe { while !orig_argv.is_null() && !(*orig_argv.offset(i)).is_null() {
             new_argv.push(CStr::from_ptr(*orig_argv.offset(i)).to_owned());
@@ -202,14 +210,7 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
         } }
         return Some((linker.to_string(), new_argv));
     } else if let Some((interpreter, shebang_args)) = parse_shebang_internal(&buffer[..n], current_prefix) {
-        // --- SCRIPT ---
         let mut new_argv = Vec::new();
-        // SYMMETRY FIX FOR INTERPRETER:
-        // argv[0] = interpreter_path
-        // argv[1] = interpreter_path
-        // argv[2] = script_path
-        // argv[3...] = original arguments
-        
         new_argv.push(CString::new(interpreter.clone()).unwrap());
         new_argv.push(CString::new(interpreter.clone()).unwrap());
 
@@ -231,7 +232,6 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
         }
         return Some((interpreter, new_argv));
     } else if path.contains("com.termux") {
-        // --- PLAIN TEXT ---
         let sh_path = format!("{}/files/usr/bin/sh", current_prefix);
         let mut new_argv = Vec::new();
         new_argv.push(CString::new(sh_path.clone()).unwrap());
