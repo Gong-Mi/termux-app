@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::OnceLock;
 
 static REAL_EXECVE: AtomicPtr<libc::c_void> = AtomicPtr::new(ptr::null_mut());
+static REAL_EXECVEAT: AtomicPtr<libc::c_void> = AtomicPtr::new(ptr::null_mut());
 static REAL_POSIX_SPAWN: AtomicPtr<libc::c_void> = AtomicPtr::new(ptr::null_mut());
 static CURRENT_PREFIX: OnceLock<String> = OnceLock::new();
 static MY_PHYSICAL_PATH: OnceLock<String> = OnceLock::new();
@@ -153,6 +154,35 @@ pub unsafe extern "C" fn execve(
     real_execve(path, argv, env_ptrs.as_ptr())
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn execveat(
+    dirfd: c_int,
+    path: *const c_char,
+    argv: *const *const c_char,
+    envp: *const *const c_char,
+    flags: c_int,
+) -> c_int {
+    let mut ptr = REAL_EXECVEAT.load(Ordering::Relaxed);
+    if ptr.is_null() {
+        let name = CStr::from_bytes_with_nul(b"execveat\0").unwrap();
+        ptr = libc::dlsym(RTLD_NEXT, name.as_ptr());
+        REAL_EXECVEAT.store(ptr, Ordering::Relaxed);
+    }
+    let real_execveat: unsafe extern "C" fn(c_int, *const c_char, *const *const c_char, *const *const c_char, c_int) -> c_int = std::mem::transmute(ptr);
+
+    if path.is_null() { return real_execveat(dirfd, path, argv, envp, flags); }
+    let path_str = CStr::from_ptr(path).to_string_lossy().to_string();
+
+    debug_log(&format!("TRY_EXECVEAT: {}", path_str));
+
+    // For simplicity, if we detect a termux path, we try to use execve hook logic by resolving path
+    if (path_str.contains("com.termux") || !path_str.starts_with('/')) && dirfd == libc::AT_FDCWD {
+        return execve(path, argv, envp);
+    }
+
+    real_execveat(dirfd, path, argv, envp, flags)
+}
+
 fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String, Vec<CString>)> {
     let mut file = std::fs::File::open(path).ok()?;
     let mut buffer = [0u8; 256];
@@ -163,12 +193,18 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
     if n > 4 && buffer[0] == 0x7F && buffer[1] == b'E' && buffer[2] == b'L' && buffer[3] == b'F' {
         // --- ELF ---
         let mut new_argv = Vec::new();
-        // Standard Linker Wrapper invocation:
-        // execve("/system/bin/linker64", ["/path/to/exe", "arg1", ...], envp)
-        // This ensures the linker loads the absolute path and original args remain correctly positioned.
-        new_argv.push(CString::new(path).unwrap()); // argv[0] = absolute path of binary
         
-        // Append original arguments starting from index 1
+        // Correct layout for Linker Wrapper:
+        // argv[0] = original argv[0] (or path)
+        // argv[1] = target binary path
+        // argv[2...] = remaining arguments
+        let arg0 = if unsafe { !orig_argv.is_null() && !(*orig_argv).is_null() } {
+            unsafe { CStr::from_ptr(*orig_argv).to_owned() }
+        } else { CString::new(path).unwrap() };
+        
+        new_argv.push(arg0);
+        new_argv.push(CString::new(path).unwrap());
+        
         let mut i = 1;
         unsafe { while !orig_argv.is_null() && !(*orig_argv.offset(i)).is_null() {
             new_argv.push(CStr::from_ptr(*orig_argv.offset(i)).to_owned());
@@ -178,15 +214,16 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
     } else if let Some((interpreter, shebang_args)) = parse_shebang_internal(&buffer[..n], current_prefix) {
         // --- SCRIPT ---
         let mut new_argv = Vec::new();
-        // Linker loads the interpreter. argv[0] of interpreter is its own path.
-        new_argv.push(CString::new(interpreter.clone()).unwrap()); // argv[0] for interpreter
+        
+        // Use interpreter path as argv[0]
+        new_argv.push(CString::new(interpreter.clone()).unwrap());
         
         if let Some(args) = shebang_args {
             for arg in args.split_whitespace() {
                 new_argv.push(CString::new(arg).unwrap());
             }
         }
-        new_argv.push(CString::new(path).unwrap()); // script path as argument
+        new_argv.push(CString::new(path).unwrap());
         
         let mut i = 1;
         unsafe { while !orig_argv.is_null() && !(*orig_argv.offset(i)).is_null() {
@@ -195,15 +232,20 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
         } }
 
         if interpreter.contains("com.termux") {
-             // Interpreter itself needs wrapping
-             return Some((linker.to_string(), new_argv));
+             // Interpreter itself is an ELF in data dir, needs wrapper!
+             let mut wrapped_argv = Vec::new();
+             wrapped_argv.push(new_argv[0].clone()); // process name
+             wrapped_argv.push(CString::new(interpreter).unwrap()); // linker target
+             wrapped_argv.extend(new_argv[1..].iter().cloned());
+             return Some((linker.to_string(), wrapped_argv));
         }
         return Some((interpreter, new_argv));
     } else if path.contains("com.termux") {
-        // --- PLAIN TEXT (default to sh) ---
+        // --- PLAIN TEXT ---
         let interpreter = format!("{}/files/usr/bin/sh", current_prefix);
         let mut new_argv = Vec::new();
-        new_argv.push(CString::new(interpreter.clone()).unwrap()); 
+        new_argv.push(CString::new(interpreter.clone()).unwrap());
+        new_argv.push(CString::new(interpreter).unwrap()); // Wrap in linker64
         new_argv.push(CString::new(path).unwrap());
         
         let mut i = 1;
