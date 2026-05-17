@@ -133,6 +133,7 @@ pub unsafe extern "C" fn execve(path: *const c_char, argv: *const *const c_char,
     if path.is_null() { return real_execve(path, argv, envp); }
     let path_str = CStr::from_ptr(path).to_string_lossy().to_string();
     
+    // Whitelist system binaries AND binaries already wrapped in linker
     if path_str.starts_with("/system/") || path_str.starts_with("/vendor/") || path_str.contains("/linker") {
         return real_execve(path, argv, envp);
     }
@@ -187,15 +188,11 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
     if n > 4 && buffer[0] == 0x7F && buffer[1] == b'E' && buffer[2] == b'L' && buffer[3] == b'F' {
         // --- ELF ---
         let mut new_argv = Vec::new();
-        // OFFICIAL PIXEL-PERFECT LOGIC:
-        // argv[0] = original argv[0] (the process name)
-        // argv[1] = physical path to binary (the linker target)
-        // argv[2...] = original argv[1...] (the arguments)
-        let arg0 = if unsafe { !orig_argv.is_null() && !(*orig_argv).is_null() } {
-            unsafe { CStr::from_ptr(*orig_argv).to_owned() }
-        } else { CString::new(path).unwrap() };
-        
-        new_argv.push(arg0);
+        // SYMMETRY FIX:
+        // argv[0] = path
+        // argv[1] = path (target binary)
+        // argv[2...] = original arguments starting from index 1
+        new_argv.push(CString::new(path).unwrap());
         new_argv.push(CString::new(path).unwrap());
         
         let mut i = 1;
@@ -207,19 +204,14 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
     } else if let Some((interpreter, shebang_args)) = parse_shebang_internal(&buffer[..n], current_prefix) {
         // --- SCRIPT ---
         let mut new_argv = Vec::new();
-        // OFFICIAL PIXEL-PERFECT SCRIPT LOGIC:
-        // argv[0] = original interpreter path (from shebang)
-        // [argv[1] = interpreter physical path (if interpreter in Termux)]
-        // [argv[x] = interpreter arg]
-        // argv[last-1] = script path
-        // argv[last] = original arguments
+        // SYMMETRY FIX FOR INTERPRETER:
+        // argv[0] = interpreter_path
+        // argv[1] = interpreter_path
+        // argv[2] = script_path
+        // argv[3...] = original arguments
         
         new_argv.push(CString::new(interpreter.clone()).unwrap());
-        
-        // If interpreter is in Termux, we wrap IT with linker
-        if interpreter.contains("com.termux") {
-             new_argv.push(CString::new(interpreter.clone()).unwrap());
-        }
+        new_argv.push(CString::new(interpreter.clone()).unwrap());
 
         if let Some(args) = shebang_args {
             for arg in args.split_whitespace() {
@@ -243,7 +235,7 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
         let sh_path = format!("{}/files/usr/bin/sh", current_prefix);
         let mut new_argv = Vec::new();
         new_argv.push(CString::new(sh_path.clone()).unwrap());
-        new_argv.push(CString::new(sh_path.clone()).unwrap()); // wrapper
+        new_argv.push(CString::new(sh_path.clone()).unwrap());
         new_argv.push(CString::new(path).unwrap());
         
         let mut i = 1;
