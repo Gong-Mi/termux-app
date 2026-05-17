@@ -1,1 +1,14 @@
-error:"/data/data/com.termux/files/usr/etc/motd" has bad ELF magic: 57656c63 error: expected absolute path:"--compare-versions" error: expected absolute path:"-I"
+gh auth login
+? Where do you use GitHub? GitHub.com               ? What is your preferred protocol for Git operations on this host? HTTPS
+? Authenticate Git with your GitHub credentials? Yes? How would you like to authenticate GitHub CLI? Login with a web browser
+
+! First copy your one-time code: 8613-AD6D
+Press Enter to open https://github.com/login/device in your browser...
+! Failed opening a web browser at https://github.com/login/device
+  fork/exec /data/data/com.termux/files/usr/bin/xdg-open: permission denied
+  Please try entering the URL in your browser manually
+
+
+
+
+

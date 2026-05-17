@@ -1,14 +1,196 @@
-gh auth login
-? Where do you use GitHub? GitHub.com               ? What is your preferred protocol for Git operations on this host? HTTPS
-? Authenticate Git with your GitHub credentials? Yes? How would you like to authenticate GitHub CLI? Login with a web browser
+'termux-change-repo' command.
 
-! First copy your one-time code: 8613-AD6D
-Press Enter to open https://github.com/login/device in your browser...
-! Failed opening a web browser at https://github.com/login/device
+Report issues at https://termux.dev/issues
+~ $  gh auth login
+? Where do you use GitHub? GitHub.com                ? What is your preferred protocol for Git operations on this host? HTTPS
+? Authenticate Git with your GitHub credentials? Yes ? How would you like to authenticate GitHub CLI? Login with a web browser
+
+
+! First copy your one-time code: C133-2E62
+Press Enter to open https://github.com/login/device in your browser... ! Failed opening a web browser at https://github.com/login/device
   fork/exec /data/data/com.termux/files/usr/bin/xdg-open: permission denied
   Please try entering the URL in your browser manually
 
-
-
-
-
+^C
+~ $ gemini
+env: ‘node’: No such file or directory
+~ $ env | grep LD_PRELOAD
+LD_PRELOAD=/data/app/~~t4Hplz4_rI3OCha6mqvo6Q==/com.termux-Ma2y9dnTS-IT0cuePinRxQ==/lib/arm64/libtermux-exec.so
+~ $ pkg update && pkg upgrade -y
+g install ca-certificates -y
+No mirror or mirror group selected. You might want to select one by running 'termux-change-repo'
+Checking availability of current mirror:
+[*] https://mirrors.middlendian.com/termux/termux-main: bad
+Testing the available mirrors:
+[*] (10) https://packages-cf.termux.dev/apt/termux-main: bad
+[*] (1) https://mirrors.ravidwivedi.in/termux/termux-main: bad
+[*] (1) https://mirror.rinarin.dev/termux/termux-main: bad
+[*] (1) https://mirror.albony.in/termux/termux-main: bad
+[*] (1) https://mirror.meowsmp.net/termux/termux-main: bad
+[*] (1) https://termux.niranjan.co/termux-main: bad
+[*] (1) https://mirror.freedif.org/termux/termux-main: bad
+[*] (1) https://mirrors.cbrx.io/apt/termux/termux-main: bad
+[*] (1) https://mirror.twds.com.tw/termux/termux-main: bad
+[*] (1) https://mirror.bardia.tech/termux/termux-main: bad
+[*] (1) https://mirrors.nguyenhoang.cloud/termux/termux-main: bad
+[*] (1) https://mirrors.in.sahilister.net/termux/termux-main/: bad
+[*] (1) https://mirrors.saswata.cc/termux/termux-main: bad
+[*] (1) https://mirrors.krnk.org/apt/termux/termux-main: bad
+[*] (1) https://tmx.xvx.my.id/apt/termux-main: bad
+[*] (1) https://mirror.jeonnam.school/termux/termux-main: bad
+[*] (1) https://mirror.textcord.xyz/termux/termux-main: bad
+[*] (1) https://linux.domainesia.com/applications/termux/termux-main: bad
+[*] (1) https://mirror.nevacloud.com/applications/termux/termux-main: bad
+[*] (1) https://mirrors.ustc.edu.cn/termux/termux-main: bad
+[*] (1) https://mirror.nyist.edu.cn/termux/apt/termux-main: bad
+[*] (1) https://mirrors.cernet.edu.cn/termux/apt/termux-main: bad
+[*] (1) https://mirrors.sdu.edu.cn/termux/termux-main: bad
+[*] (1) https://mirrors.pku.edu.cn/termux/termux-main/: bad
+[*] (1) https://mirror.sjtu.edu.cn/termux/termux-main/: bad
+[*] (1) https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main: bad
+[*] (1) https://mirrors.hust.edu.cn/termux/apt/termux-main: bad
+[*] (1) https://mirrors.sau.edu.cn/termux/apt/termux-main: bad
+[*] (1) https://mirrors.zju.edu.cn/termux/apt/termux-main: bad
+[*] (1) https://mirror.iscas.ac.cn/termux/apt/termux-main: bad
+[*] (1) https://mirrors.cqupt.edu.cn/termux/termux-main: bad
+[*] (1) https://mirrors.bfsu.edu.cn/termux/apt/termux-main: bad
+[*] (1) https://mirrors.nju.edu.cn/termux/apt/termux-main: bad
+[*] (1) https://mirrors.sustech.edu.cn/termux/apt/termux-main: bad
+[*] (1) https://mirrors.aliyun.com/termux/termux-main: bad
+[*] (1) https://mirror.bouwhuis.network/termux/termux-main: bad
+[*] (1) https://ro.mirror.flokinet.net/termux/termux-main: bad
+[*] (1) https://termux.librehat.com/apt/termux-main: bad
+[*] (1) https://termux.cdn.lumito.net/termux-main: bad
+[*] (1) https://mirror.accum.se/mirror/termux.dev/termux-main: bad
+[*] (1) https://packages.termux.dev/apt/termux-main: bad
+[*] (1) https://mirror.autkin.net/termux/termux-main: bad
+[*] (1) https://ftp.fau.de/termux/termux-main: bad
+[*] (1) https://mirror.polido.pt/termux/termux-main: bad
+[*] (1) https://mirrors.de.sahilister.net/termux/termux-main: bad
+[*] (1) https://mirrors.medzik.dev/termux/termux-main: bad
+[*] (1) https://mirror.termux.dev/termux-main: bad
+[*] (1) https://mirrors.cfe.re/termux/termux-main: bad
+[*] (1) https://termux.mentality.rip/termux-main: bad
+[*] (1) https://mirror.leitecastro.com/termux/termux-main: bad
+[*] (1) https://mirror.mwt.me/termux/main: bad
+[*] (4) https://grimler.se/termux/termux-main: bad
+[*] (1) https://termux.3san.dev/termux/termux-main: bad
+[*] (1) https://ftp.agdsn.de/termux/termux-main: bad
+[*] (1) https://mirror.sunred.org/termux/termux-main: bad
+[*] (1) https://md.mirrors.hacktegic.com/termux/termux-main: bad
+[*] (1) https://is.mirror.flokinet.net/termux/termux-main: bad
+[*] (1) https://nl.mirror.flokinet.net/termux/termux-main: bad
+[*] (1) https://plug-mirror.rcac.purdue.edu/termux/termux-main: bad
+[*] (1) https://termux.danyael.xyz/termux/termux-main: bad
+[*] (1) https://mirror.vern.cc/termux/termux-main: bad
+[*] (1) https://gnlug.org/pub/termux/termux-main: bad
+[*] (1) https://mirrors.utermux.dev/termux/termux-main: bad
+[*] (1) https://mirror.csclub.uwaterloo.ca/termux/termux-main: bad
+[*] (1) https://dl.kcubeterm.com/termux-main: bad
+[*] (1) https://mirror.mwt.me/termux/main: bad
+[*] (1) https://mirror.fcix.net/termux/termux-main: bad
+[*] (1) https://mirror.quantum5.ca/termux/termux-main: bad
+[*] (1) https://mirrors.middlendian.com/termux/termux-main: bad
+[*] (1) http://mirror.mephi.ru/termux/termux-main: bad
+[*] (1) https://repository.su/termux/termux-main/: bad
+Error: None of the mirrors are accessible
+~ $ pkg install ca-certificates -y
+No mirror or mirror group selected. You might want to select one by running 'termux-change-repo'
+Checking availability of current mirror:
+[*] https://mirrors.middlendian.com/termux/termux-main: bad
+Testing the available mirrors:
+[*] (10) https://packages-cf.termux.dev/apt/termux-main: bad
+[*] (1) https://mirrors.ravidwivedi.in/termux/termux-main: bad
+[*] (1) https://mirror.rinarin.dev/termux/termux-main: bad
+[*] (1) https://mirror.albony.in/termux/termux-main: bad
+[*] (1) https://mirror.meowsmp.net/termux/termux-main: bad
+[*] (1) https://termux.niranjan.co/termux-main: bad
+[*] (1) https://mirror.freedif.org/termux/termux-main: bad
+[*] (1) https://mirrors.cbrx.io/apt/termux/termux-main: bad
+[*] (1) https://mirror.twds.com.tw/termux/termux-main: bad
+[*] (1) https://mirror.bardia.tech/termux/termux-main: bad
+[*] (1) https://mirrors.nguyenhoang.cloud/termux/termux-main: bad
+[*] (1) https://mirrors.in.sahilister.net/termux/termux-main/: bad
+[*] (1) https://mirrors.saswata.cc/termux/termux-main: bad
+[*] (1) https://mirrors.krnk.org/apt/termux/termux-main: bad
+[*] (1) https://tmx.xvx.my.id/apt/termux-main: bad
+[*] (1) https://mirror.jeonnam.school/termux/termux-main: bad
+[*] (1) https://mirror.textcord.xyz/termux/termux-main: bad
+[*] (1) https://linux.domainesia.com/applications/termux/termux-main: bad
+[*] (1) https://mirror.nevacloud.com/applications/termux/termux-main: bad
+[*] (1) https://mirrors.ustc.edu.cn/termux/termux-main: bad
+[*] (1) https://mirror.nyist.edu.cn/termux/apt/termux-main: bad
+[*] (1) https://mirrors.cernet.edu.cn/termux/apt/termux-main: bad
+[*] (1) https://mirrors.sdu.edu.cn/termux/termux-main: bad
+[*] (1) https://mirrors.pku.edu.cn/termux/termux-main/: bad
+[*] (1) https://mirror.sjtu.edu.cn/termux/termux-main/: bad
+[*] (1) https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main: bad
+[*] (1) https://mirrors.hust.edu.cn/termux/apt/termux-main: bad
+[*] (1) https://mirrors.sau.edu.cn/termux/apt/termux-main: bad
+[*] (1) https://mirrors.zju.edu.cn/termux/apt/termux-main: bad
+[*] (1) https://mirror.iscas.ac.cn/termux/apt/termux-main: bad
+[*] (1) https://mirrors.cqupt.edu.cn/termux/termux-main: bad
+[*] (1) https://mirrors.bfsu.edu.cn/termux/apt/termux-main: bad
+[*] (1) https://mirrors.nju.edu.cn/termux/apt/termux-main: bad
+[*] (1) https://mirrors.sustech.edu.cn/termux/apt/termux-main: bad
+[*] (1) https://mirrors.aliyun.com/termux/termux-main: bad
+[*] (1) https://mirror.bouwhuis.network/termux/termux-main: bad
+[*] (1) https://ro.mirror.flokinet.net/termux/termux-main: bad
+[*] (1) https://termux.librehat.com/apt/termux-main: bad
+[*] (1) https://termux.cdn.lumito.net/termux-main: bad
+[*] (1) https://mirror.accum.se/mirror/termux.dev/termux-main: bad
+[*] (1) https://packages.termux.dev/apt/termux-main: bad
+[*] (1) https://mirror.autkin.net/termux/termux-main: bad
+[*] (1) https://ftp.fau.de/termux/termux-main: bad
+[*] (1) https://mirror.polido.pt/termux/termux-main: bad
+[*] (1) https://mirrors.de.sahilister.net/termux/termux-main: bad
+[*] (1) https://mirrors.medzik.dev/termux/termux-main: bad
+[*] (1) https://mirror.termux.dev/termux-main: bad
+[*] (1) https://mirrors.cfe.re/termux/termux-main: bad
+[*] (1) https://termux.mentality.rip/termux-main: bad
+[*] (1) https://mirror.leitecastro.com/termux/termux-main: bad
+[*] (1) https://mirror.mwt.me/termux/main: bad
+[*] (4) https://grimler.se/termux/termux-main: bad
+[*] (1) https://termux.3san.dev/termux/termux-main: bad
+[*] (1) https://ftp.agdsn.de/termux/termux-main: bad
+[*] (1) https://mirror.sunred.org/termux/termux-main: bad
+[*] (1) https://md.mirrors.hacktegic.com/termux/termux-main: bad
+[*] (1) https://is.mirror.flokinet.net/termux/termux-main: bad
+[*] (1) https://nl.mirror.flokinet.net/termux/termux-main: bad
+[*] (1) https://plug-mirror.rcac.purdue.edu/termux/termux-main: bad
+[*] (1) https://termux.danyael.xyz/termux/termux-main: bad
+[*] (1) https://mirror.vern.cc/termux/termux-main: bad
+[*] (1) https://gnlug.org/pub/termux/termux-main: bad
+[*] (1) https://mirrors.utermux.dev/termux/termux-main: bad
+[*] (1) https://mirror.csclub.uwaterloo.ca/termux/termux-main: bad
+[*] (1) https://dl.kcubeterm.com/termux-main: bad
+[*] (1) https://mirror.mwt.me/termux/main: bad
+[*] (1) https://mirror.fcix.net/termux/termux-main: bad
+[*] (1) https://mirror.quantum5.ca/termux/termux-main: bad
+[*] (1) https://mirrors.middlendian.com/termux/termux-main: bad
+[*] (1) http://mirror.mephi.ru/termux/termux-main: bad
+[*] (1) https://repository.su/termux/termux-main/: bad
+Error: None of the mirrors are accessible
+~ $ npm install -g @google/gemini-cli@nightly
+env: ‘node’: No such file or directory
+~ $
+~ $
+~ $
+~ $
+~ $
+~ $
+~ $
+~ $
+~ $
+~ $
+~ $
+~ $
+~ $
+~ $
+~ $
+~ $
+~ $
+~ $
+~ $
+~ $
+~ $
