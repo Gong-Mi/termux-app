@@ -6,7 +6,6 @@ use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::OnceLock;
 
 static REAL_EXECVE: AtomicPtr<libc::c_void> = AtomicPtr::new(ptr::null_mut());
-static REAL_POSIX_SPAWN: AtomicPtr<libc::c_void> = AtomicPtr::new(ptr::null_mut());
 static CURRENT_PREFIX: OnceLock<String> = OnceLock::new();
 static MY_PHYSICAL_PATH: OnceLock<String> = OnceLock::new();
 
@@ -71,37 +70,21 @@ fn get_current_prefix() -> &'static str {
 unsafe fn fix_envp(envp: *const *const c_char) -> Vec<CString> {
     let mut new_env = Vec::new();
     let my_path = get_my_physical_path();
-    if my_path.is_empty() {
-        // Fallback: just return copy of original
-        let mut i = 0;
-        while !envp.is_null() && !(*envp.offset(i)).is_null() {
-            new_env.push(CStr::from_ptr(*envp.offset(i)).to_owned());
-            i += 1;
-        }
-        return new_env;
-    }
-
+    
     let mut i = 0;
     let mut ld_preload_found = false;
     while !envp.is_null() && !(*envp.offset(i)).is_null() {
         let s = CStr::from_ptr(*envp.offset(i)).to_string_lossy();
         if s.starts_with("LD_PRELOAD=") {
-            // Self-heal: If LD_PRELOAD is pointing to a data directory path, 
-            // force it to our current physical path.
-            if s.contains("/data/data/") || s.contains("/data/user/0/") {
-                new_env.push(CString::new(format!("LD_PRELOAD={}", my_path)).unwrap());
-                ld_preload_found = true;
-            } else {
-                new_env.push(CStr::from_ptr(*envp.offset(i)).to_owned());
-                ld_preload_found = true;
-            }
+            new_env.push(CString::new(format!("LD_PRELOAD={}", my_path)).unwrap());
+            ld_preload_found = true;
         } else {
             new_env.push(CStr::from_ptr(*envp.offset(i)).to_owned());
         }
         i += 1;
     }
     
-    if !ld_preload_found {
+    if !ld_preload_found && !my_path.is_empty() {
         new_env.push(CString::new(format!("LD_PRELOAD={}", my_path)).unwrap());
     }
     
@@ -122,13 +105,11 @@ pub unsafe extern "C" fn execve(
     let path_str = unsafe { CStr::from_ptr(path).to_string_lossy().to_string() };
     debug_log(&format!("TRY_EXECVE: {}", path_str));
     
-    // Always fix environment to prevent sabotaging by login/bashrc
     let new_env = unsafe { fix_envp(envp) };
     let env_ptrs: Vec<*const c_char> = new_env.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
 
-    if (path_str.contains("com.termux") || path_str.starts_with("/bin/") || path_str.starts_with("/usr/bin/")) 
-       && !path_str.contains("/applib/") 
-    {
+    // Aggressive match: any path that contains com.termux OR is in a bin dir
+    if (path_str.contains("com.termux") || path_str.contains("/bin/")) && !path_str.contains("/applib/") {
          if let Some((final_cmd, new_argv_vec)) = transform_exec(&path_str, argv) {
              debug_log(&format!("TRANSFORM: {} -> {}", path_str, final_cmd));
              let c_cmd = CString::new(final_cmd).unwrap();
@@ -141,7 +122,20 @@ pub unsafe extern "C" fn execve(
 }
 
 fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String, Vec<CString>)> {
-    let mut file = std::fs::File::open(path).ok()?;
+    let mut real_path = path.to_string();
+    if !path.starts_with('/') {
+        if let Ok(path_env) = std::env::var("PATH") {
+            for dir in path_env.split(':') {
+                let p = format!("{}/{}", dir, path);
+                if std::path::Path::new(&p).exists() {
+                    real_path = p;
+                    break;
+                }
+            }
+        }
+    }
+
+    let mut file = std::fs::File::open(&real_path).ok()?;
     let mut buffer = [0u8; 256];
     let n = file.read(&mut buffer).ok()?;
     let current_prefix = get_current_prefix();
@@ -153,7 +147,7 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
             unsafe { CStr::from_ptr(*orig_argv).to_owned() }
         } else { CString::new(path).unwrap() };
         new_argv.push(arg0);
-        new_argv.push(CString::new(path).unwrap());
+        new_argv.push(CString::new(real_path).unwrap());
         let mut i = 1;
         unsafe { while !orig_argv.is_null() && !(*orig_argv.offset(i)).is_null() {
             new_argv.push(CStr::from_ptr(*orig_argv.offset(i)).to_owned());
@@ -164,7 +158,7 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
         let mut new_argv = Vec::new();
         new_argv.push(CString::new(interpreter.clone()).unwrap());
         if let Some(args) = shebang_args { for arg in args.split_whitespace() { new_argv.push(CString::new(arg).unwrap()); } }
-        new_argv.push(CString::new(path).unwrap());
+        new_argv.push(CString::new(real_path.clone()).unwrap());
         let mut i = 1;
         unsafe { while !orig_argv.is_null() && !(*orig_argv.offset(i)).is_null() {
             new_argv.push(CStr::from_ptr(*orig_argv.offset(i)).to_owned());
@@ -178,12 +172,12 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
              return Some((linker.to_string(), wrapped_argv));
         }
         return Some((interpreter, new_argv));
-    } else {
+    } else if real_path.contains("com.termux") {
         let interpreter = format!("{}/files/usr/bin/sh", current_prefix);
         let mut new_argv = Vec::new();
         new_argv.push(CString::new("sh").unwrap());
-        new_argv.push(CString::new(interpreter.clone()).unwrap());
-        new_argv.push(CString::new(path).unwrap());
+        new_argv.push(CString::new(interpreter.clone()).unwrap()); 
+        new_argv.push(CString::new(real_path).unwrap());
         let mut i = 1;
         unsafe { while !orig_argv.is_null() && !(*orig_argv.offset(i)).is_null() {
             new_argv.push(CStr::from_ptr(*orig_argv.offset(i)).to_owned());
@@ -191,6 +185,7 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
         } }
         return Some((linker.to_string(), new_argv));
     }
+    None
 }
 
 fn parse_shebang_internal(buffer: &[u8], current_prefix: &str) -> Option<(String, Option<String>)> {
@@ -216,18 +211,6 @@ pub unsafe extern "C" fn execv(path: *const c_char, argv: *const *const c_char) 
 pub unsafe extern "C" fn execvp(file: *const c_char, argv: *const *const c_char) -> c_int { unsafe { execvpe(file, argv, environ) } }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn execvpe(file: *const c_char, argv: *const *const c_char, envp: *const *const c_char) -> c_int {
-    if file.is_null() { return -1; }
-    let file_str = unsafe { CStr::from_ptr(file).to_string_lossy() };
-    if file_str.contains('/') { return unsafe { execve(file, argv, envp) }; }
-    if let Ok(path_env) = std::env::var("PATH") {
-        for dir in path_env.split(':') {
-            let full_path = format!("{}/{}", dir, file_str);
-            if std::path::Path::new(&full_path).exists() {
-                let c_full_path = CString::new(full_path).unwrap();
-                return unsafe { execve(c_full_path.as_ptr(), argv, envp) };
-            }
-        }
-    }
     unsafe { execve(file, argv, envp) }
 }
 
@@ -241,21 +224,17 @@ pub unsafe extern "C" fn posix_spawn(
     envp: *const *const c_char,
 ) -> c_int {
     let name = CStr::from_bytes_with_nul(b"posix_spawn\0").unwrap();
-    let real_spawn: unsafe extern "C" fn(*mut libc::pid_t, *const c_char, *const libc::c_void, *const libc::c_void, *const *const c_char, *const *const c_char) -> c_int;
-    unsafe {
-        real_spawn = std::mem::transmute(libc::dlsym(RTLD_NEXT, name.as_ptr()));
-    }
+    let real_spawn: unsafe extern "C" fn(*mut libc::pid_t, *const c_char, *const libc::c_void, *const libc::c_void, *const *const c_char, *const *const c_char) -> c_int = 
+        std::mem::transmute(libc::dlsym(RTLD_NEXT, name.as_ptr()));
 
     if path.is_null() { return unsafe { real_spawn(pid, path, file_actions, attrp, argv, envp) }; }
     let path_str = unsafe { CStr::from_ptr(path).to_string_lossy().to_string() };
     debug_log(&format!("TRY_SPAWN: {}", path_str));
     
-    // Always fix environment
     let new_env = unsafe { fix_envp(envp) };
     let env_ptrs: Vec<*const c_char> = new_env.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
 
-    if (path_str.contains("com.termux/files/usr/") || path_str.starts_with("/bin/") || path_str.starts_with("/usr/bin/")) 
-       && !path_str.contains("/applib/") 
+    if (path_str.contains("com.termux") || path_str.contains("/bin/")) && !path_str.contains("/applib/") 
     {
          if let Some((final_cmd, new_argv_vec)) = transform_exec(&path_str, argv) {
              debug_log(&format!("SPAWN: {} -> {}", path_str, final_cmd));
