@@ -96,7 +96,6 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
         // 我们强制确保 LD_PRELOAD 指向有效的 libtermux-exec.so
         // 注意：libtermux-exec.so 必须位于 APK 原生库目录（applib/）
         // 才能被 linker64 正确加载，因为 $PREFIX/lib/ 下的 so 在 API 29+ 受限。
-        let _termux_app_lib = format!("{}/applib", crate::get_termux_files_dir());
         let ld_preload_variants = [
             "libtermux-exec-linker-ld-preload.so",
             "libtermux-exec-ld-preload.so",
@@ -179,32 +178,6 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
             android_log(
                 LogPriority::WARN,
                 &format!("[env_builder] Failed to find physical lib, fallback to legacy: {}", ld_preload_path),
-            );
-        }
-
-        // 2. Fallback 到传统的 prefix/lib
-        if !found_ld_preload {
-            for variant in &ld_preload_variants {
-                let ld_preload_path = format!("{}/lib/{}", termux_prefix, variant);
-                if std::path::Path::new(&ld_preload_path).exists() {
-                    env.insert("LD_PRELOAD".to_string(), ld_preload_path.to_string());
-                    android_log(
-                        LogPriority::INFO,
-                        &format!("[env_builder] Using LD_PRELOAD from prefix: {}", ld_preload_path),
-                    );
-                    found_ld_preload = true;
-                    break;
-                }
-            }
-        }
-
-        // 3. 强制兜底：如果都没找到，尝试使用标准 symlink 路径
-        if !found_ld_preload {
-            let ld_preload_path = format!("{}/lib/libtermux-exec.so", termux_prefix);
-            env.insert("LD_PRELOAD".to_string(), ld_preload_path.to_string());
-            android_log(
-                LogPriority::WARN,
-                &format!("[env_builder] Forced LD_PRELOAD fallback to: {}", ld_preload_path),
             );
         }
     }
