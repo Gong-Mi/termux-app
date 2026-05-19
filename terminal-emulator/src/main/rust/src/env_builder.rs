@@ -91,6 +91,13 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
         }
 
         env.insert("TMPDIR".to_string(), termux_tmp.to_string());
+        env.insert(
+            "BROWSER".to_string(),
+            format!(
+                "/system/bin/linker64 {}/bin/sh {}/bin/termux-open",
+                termux_prefix, termux_prefix
+            ),
+        );
 
         // LD_PRELOAD 用于 termux-exec 的 shebang 修复和 W^X 绕过。
         // 我们强制确保 LD_PRELOAD 指向有效的 libtermux-exec.so

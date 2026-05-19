@@ -13,6 +13,10 @@ class RustAndroidPlugin : Plugin<Project> {
     override fun apply(project: Project) {
         val extension = project.extensions.create<RustAndroidExtension>("rustAndroid")
 
+        fun rustInputs(srcDir: String) = project.fileTree(srcDir) {
+            exclude("target/**")
+        }
+
         // Read NDK path from local.properties (if available) to set ANDROID_NDK for cargo/skia builds
         var ndkPath = runCatching {
             val localProps = java.util.Properties()
@@ -46,7 +50,7 @@ class RustAndroidPlugin : Plugin<Project> {
                             description = "Build Rust $libName for $abi"
 
                             val targetDir = project.file("$rustSrc/target/$safeAbi")
-                            inputs.dir(project.file(rustSrc))
+                            inputs.files(rustInputs(rustSrc))
                             outputs.file(project.file("${targetDir.path}/$rustArch/release/lib$libName.so"))
 
                             workingDir = project.file(rustSrc)
@@ -74,7 +78,7 @@ class RustAndroidPlugin : Plugin<Project> {
                                 description = "Build Rust termux-exec for $abi"
 
                                 val targetDir = project.file("$execSrc/target/$safeAbi")
-                                inputs.dir(project.file(execSrc))
+                                inputs.files(rustInputs(execSrc))
                                 outputs.file(project.file("${targetDir.path}/$rustArch/release/libtermux_exec.so"))
 
                                 workingDir = project.file(execSrc)

@@ -274,6 +274,87 @@ pub unsafe extern "C" fn execvpe(file: *const c_char, argv: *const *const c_char
     execve(file, argv, envp)
 }
 
+unsafe fn fixed_variadic_argv(arg0: *const c_char, args: &[*const c_char]) -> Vec<*const c_char> {
+    let mut argv = Vec::with_capacity(args.len() + 2);
+    argv.push(arg0);
+    for &arg in args {
+        if arg.is_null() {
+            break;
+        }
+        argv.push(arg);
+    }
+    argv.push(ptr::null());
+    argv
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn execl(
+    path: *const c_char,
+    arg0: *const c_char,
+    arg1: *const c_char,
+    arg2: *const c_char,
+    arg3: *const c_char,
+    arg4: *const c_char,
+    arg5: *const c_char,
+    arg6: *const c_char,
+    arg7: *const c_char,
+) -> c_int {
+    let argv = fixed_variadic_argv(arg0, &[arg1, arg2, arg3, arg4, arg5, arg6, arg7]);
+    execve(path, argv.as_ptr(), environ)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn execlp(
+    file: *const c_char,
+    arg0: *const c_char,
+    arg1: *const c_char,
+    arg2: *const c_char,
+    arg3: *const c_char,
+    arg4: *const c_char,
+    arg5: *const c_char,
+    arg6: *const c_char,
+    arg7: *const c_char,
+) -> c_int {
+    let argv = fixed_variadic_argv(arg0, &[arg1, arg2, arg3, arg4, arg5, arg6, arg7]);
+    execvpe(file, argv.as_ptr(), environ)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn execle(
+    path: *const c_char,
+    arg0: *const c_char,
+    arg1: *const c_char,
+    arg2: *const c_char,
+    arg3: *const c_char,
+    arg4: *const c_char,
+    arg5: *const c_char,
+    arg6: *const c_char,
+    arg7: *const c_char,
+) -> c_int {
+    let args = [arg1, arg2, arg3, arg4, arg5, arg6, arg7];
+    let mut envp = environ;
+    for (index, &arg) in args.iter().enumerate() {
+        if arg.is_null() {
+            if let Some(next) = args.get(index + 1) {
+                envp = *next as *const *const c_char;
+            }
+            break;
+        }
+    }
+    let argv = fixed_variadic_argv(arg0, &args);
+    execve(path, argv.as_ptr(), envp)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termux_exec_rs_execve(path: *const c_char, argv: *const *const c_char, envp: *const *const c_char) -> c_int {
+    execve(path, argv, envp)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn termux_exec_rs_execvpe(file: *const c_char, argv: *const *const c_char, envp: *const *const c_char) -> c_int {
+    execvpe(file, argv, envp)
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn posix_spawn(
     pid: *mut libc::pid_t,
@@ -314,8 +395,5 @@ pub unsafe extern "C" fn posix_spawn(
 
     let new_env = fix_envp(envp, None);
     let env_ptrs: Vec<*const c_char> = new_env.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
-    real_spawn(pid, path, file_actions, attrp, argv, env_ptrs.as_ptr())
-}
-ct();
     real_spawn(pid, path, file_actions, attrp, argv, env_ptrs.as_ptr())
 }
