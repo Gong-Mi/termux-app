@@ -76,7 +76,12 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
         // 正常模式：注入 Termux 路径
         // Android 7+ 的 upstream 只放 TERMUX_BIN_PREFIX_DIR_PATH，不加 applets。
         // 但当前项目代码历史原因 hardcoded 了 applets，为兼容保留。
-        let termux_bin_path = format!("{}/bin:{}/bin/applets", termux_prefix, termux_prefix);
+        let exec_wrapper_path = ensure_exec_wrappers(&termux_prefix);
+        let termux_bin_path = if let Some(wrapper_path) = exec_wrapper_path {
+            format!("{}:{}/bin:{}/bin/applets", wrapper_path, termux_prefix, termux_prefix)
+        } else {
+            format!("{}/bin:{}/bin/applets", termux_prefix, termux_prefix)
+        };
         if let Ok(sys_path) = std::env::var("PATH") {
             // Prepend Termux 路径，保持系统路径作为 fallback
             env.insert(
@@ -262,6 +267,90 @@ fn inherit_system_var(map: &mut HashMap<String, String>, key: &str) {
             map.insert(key.to_string(), val);
         }
     }
+}
+
+fn ensure_exec_wrappers(termux_prefix: &str) -> Option<String> {
+    let wrapper_dir = format!("{}/libexec/termux-exec-wrappers", termux_prefix);
+    if std::fs::create_dir_all(&wrapper_dir).is_err() {
+        android_log(
+            LogPriority::WARN,
+            &format!("[env_builder] Failed to create exec wrapper dir: {}", wrapper_dir),
+        );
+        return None;
+    }
+
+    let bin_dir = format!("{}/bin", termux_prefix);
+    let entries = match std::fs::read_dir(&bin_dir) {
+        Ok(entries) => entries,
+        Err(_) => return Some(wrapper_dir),
+    };
+
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.is_empty() || name.contains('/') || name == "." || name == ".." {
+            continue;
+        }
+
+        let target = format!("{}/{}", bin_dir, name);
+        if !std::path::Path::new(&target).exists() {
+            continue;
+        }
+
+        let wrapper = format!("{}/{}", wrapper_dir, name);
+        let script = exec_wrapper_script(termux_prefix, &target);
+        if std::fs::write(&wrapper, script).is_err() {
+            android_log(
+                LogPriority::WARN,
+                &format!("[env_builder] Failed to write exec wrapper: {}", wrapper),
+            );
+            continue;
+        }
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(metadata) = std::fs::metadata(&wrapper) {
+                let mut permissions = metadata.permissions();
+                permissions.set_mode(0o700);
+                let _ = std::fs::set_permissions(&wrapper, permissions);
+            }
+        }
+    }
+
+    Some(wrapper_dir)
+}
+
+fn exec_wrapper_script(termux_prefix: &str, target: &str) -> String {
+    format!(
+        r#"#!/system/bin/sh
+PREFIX='{prefix}'
+target='{target}'
+IFS= read -r first < "$target" 2>/dev/null || first=
+case "$first" in
+  '#!'*)
+    shebang="${{first#\#!}}"
+    set -- $shebang "$target" "$@"
+    interp="$1"
+    shift
+    case "$interp" in
+      /usr/bin/env) interp="$PREFIX/bin/env" ;;
+      /bin/*|/usr/bin/*) interp="$PREFIX/bin/${{interp##*/}}" ;;
+    esac
+    case "$interp" in
+      "$PREFIX"/*|/data/data/com.termux/*|/data/user/0/com.termux/*)
+        exec /system/bin/linker64 "$interp" "$@"
+        ;;
+      *)
+        exec "$interp" "$@"
+        ;;
+    esac
+    ;;
+esac
+exec /system/bin/linker64 "$target" "$@"
+"#,
+        prefix = termux_prefix,
+        target = target
+    )
 }
 
 // ------------------------------------------------------------------

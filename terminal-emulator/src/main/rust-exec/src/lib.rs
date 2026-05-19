@@ -8,8 +8,10 @@ use std::sync::OnceLock;
 static REAL_EXECVE: AtomicPtr<libc::c_void> = AtomicPtr::new(ptr::null_mut());
 static REAL_EXECVEAT: AtomicPtr<libc::c_void> = AtomicPtr::new(ptr::null_mut());
 static REAL_POSIX_SPAWN: AtomicPtr<libc::c_void> = AtomicPtr::new(ptr::null_mut());
+static REAL_POSIX_SPAWNP: AtomicPtr<libc::c_void> = AtomicPtr::new(ptr::null_mut());
 static CURRENT_PREFIX: OnceLock<String> = OnceLock::new();
 static MY_PHYSICAL_PATH: OnceLock<String> = OnceLock::new();
+static EXEC_WRAPPER_PATH: OnceLock<Option<String>> = OnceLock::new();
 
 const RTLD_NEXT: *mut libc::c_void = -1i64 as *mut libc::c_void;
 
@@ -34,6 +36,117 @@ fn debug_log(msg: &str) {
             let _ = writeln!(file, "[{}] {}", pid, msg);
             break;
         }
+    }
+}
+
+unsafe fn argv_to_debug(argv: *const *const c_char) -> String {
+    let mut values = Vec::new();
+    let mut i = 0;
+    while !argv.is_null() && !(*argv.offset(i)).is_null() && i < 32 {
+        values.push(CStr::from_ptr(*argv.offset(i)).to_string_lossy().into_owned());
+        i += 1;
+    }
+    format!("{:?}", values)
+}
+
+fn canonical_or_original(path: String) -> String {
+    std::fs::canonicalize(&path)
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or(path)
+}
+
+fn last_errno() -> i32 {
+    std::io::Error::last_os_error().raw_os_error().unwrap_or(0)
+}
+
+fn ensure_exec_wrappers(prefix_base: &str) -> Option<String> {
+    let termux_prefix = format!("{}/files/usr", prefix_base);
+    let wrapper_dir = format!("{}/libexec/termux-exec-wrappers", termux_prefix);
+    if std::fs::create_dir_all(&wrapper_dir).is_err() {
+        debug_log(&format!("WRAPPER_DIR_FAILED: {}", wrapper_dir));
+        return None;
+    }
+
+    let bin_dir = format!("{}/bin", termux_prefix);
+    let Ok(entries) = std::fs::read_dir(&bin_dir) else {
+        return Some(wrapper_dir);
+    };
+
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.is_empty() || name.contains('/') || name == "." || name == ".." {
+            continue;
+        }
+
+        let target = format!("{}/{}", bin_dir, name);
+        if !std::path::Path::new(&target).exists() {
+            continue;
+        }
+
+        let wrapper = format!("{}/{}", wrapper_dir, name);
+        if std::fs::write(&wrapper, exec_wrapper_script(&termux_prefix, &target)).is_err() {
+            debug_log(&format!("WRAPPER_WRITE_FAILED: {}", wrapper));
+            continue;
+        }
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(metadata) = std::fs::metadata(&wrapper) {
+                let mut permissions = metadata.permissions();
+                permissions.set_mode(0o700);
+                let _ = std::fs::set_permissions(&wrapper, permissions);
+            }
+        }
+    }
+
+    Some(wrapper_dir)
+}
+
+fn exec_wrapper_script(termux_prefix: &str, target: &str) -> String {
+    format!(
+        r#"#!/system/bin/sh
+PREFIX='{prefix}'
+target='{target}'
+IFS= read -r first < "$target" 2>/dev/null || first=
+case "$first" in
+  '#!'*)
+    shebang="${{first#\#!}}"
+    set -- $shebang "$target" "$@"
+    interp="$1"
+    shift
+    case "$interp" in
+      /usr/bin/env) interp="$PREFIX/bin/env" ;;
+      /bin/*|/usr/bin/*) interp="$PREFIX/bin/${{interp##*/}}" ;;
+    esac
+    case "$interp" in
+      "$PREFIX"/*|/data/data/com.termux/*|/data/user/0/com.termux/*)
+        exec /system/bin/linker64 "$interp" "$@"
+        ;;
+      *)
+        exec "$interp" "$@"
+        ;;
+    esac
+    ;;
+esac
+exec /system/bin/linker64 "$target" "$@"
+"#,
+        prefix = termux_prefix,
+        target = target
+    )
+}
+
+fn path_with_exec_wrappers(path_value: &str) -> String {
+    let prefix_base = get_current_prefix();
+    let wrapper_path = EXEC_WRAPPER_PATH.get_or_init(|| ensure_exec_wrappers(prefix_base));
+    if let Some(wrapper_dir) = wrapper_path {
+        if path_value.split(':').any(|entry| entry == wrapper_dir) {
+            path_value.to_string()
+        } else {
+            format!("{}:{}", wrapper_dir, path_value)
+        }
+    } else {
+        path_value.to_string()
     }
 }
 
@@ -85,14 +198,14 @@ fn map_termux_path(path: &str) -> String {
 unsafe fn resolve_path(file: &str) -> Option<String> {
     let mapped = map_termux_path(file);
     if mapped.contains('/') {
-        if std::path::Path::new(&mapped).exists() { return Some(mapped); }
-        if file != mapped && std::path::Path::new(file).exists() { return Some(file.to_string()); }
+        if std::path::Path::new(&mapped).exists() { return Some(canonical_or_original(mapped)); }
+        if file != mapped && std::path::Path::new(file).exists() { return Some(canonical_or_original(file.to_string())); }
         return None;
     }
     if let Ok(path_env) = std::env::var("PATH") {
         for dir in path_env.split(':') {
             let full = format!("{}/{}", dir, file);
-            if std::path::Path::new(&full).exists() { return Some(full); }
+            if std::path::Path::new(&full).exists() { return Some(canonical_or_original(full)); }
         }
     }
     None
@@ -104,12 +217,16 @@ unsafe fn fix_envp(envp: *const *const c_char, proc_self_exe: Option<&str>) -> V
     let mut i = 0;
     let mut ld_preload_found = false;
     let mut proc_self_exe_found = false;
+    let mut path_found = false;
 
     while !envp.is_null() && !(*envp.offset(i)).is_null() {
         let s = CStr::from_ptr(*envp.offset(i)).to_string_lossy();
         if s.starts_with("LD_PRELOAD=") {
             new_env.push(CString::new(format!("LD_PRELOAD={}", my_path)).unwrap());
             ld_preload_found = true;
+        } else if let Some(path_value) = s.strip_prefix("PATH=") {
+            new_env.push(CString::new(format!("PATH={}", path_with_exec_wrappers(path_value))).unwrap());
+            path_found = true;
         } else if s.starts_with("TERMUX_EXEC__PROC_SELF_EXE=") {
             if let Some(path) = proc_self_exe {
                 new_env.push(CString::new(format!("TERMUX_EXEC__PROC_SELF_EXE={}", path)).unwrap());
@@ -125,6 +242,14 @@ unsafe fn fix_envp(envp: *const *const c_char, proc_self_exe: Option<&str>) -> V
     
     if !ld_preload_found && !my_path.is_empty() {
         new_env.push(CString::new(format!("LD_PRELOAD={}", my_path)).unwrap());
+    }
+    if !path_found {
+        let fallback_path = format!(
+            "{}/files/usr/bin:{}/files/usr/bin/applets:/system/bin",
+            get_current_prefix(),
+            get_current_prefix()
+        );
+        new_env.push(CString::new(format!("PATH={}", path_with_exec_wrappers(&fallback_path))).unwrap());
     }
     if !proc_self_exe_found && proc_self_exe.is_some() {
         new_env.push(CString::new(format!("TERMUX_EXEC__PROC_SELF_EXE={}", proc_self_exe.unwrap())).unwrap());
@@ -154,19 +279,23 @@ pub unsafe extern "C" fn execve(path: *const c_char, argv: *const *const c_char,
     if let Some(full_path) = resolve_path(&path_str) {
         if full_path.contains("com.termux") && !full_path.contains("/applib/") {
              if let Some((final_cmd, new_argv_vec)) = transform_exec(&full_path, argv) {
-                 debug_log(&format!("TRANSFORM: {} -> {}", full_path, final_cmd));
-                 let c_cmd = CString::new(final_cmd).unwrap();
+                 debug_log(&format!("TRANSFORM: {} -> {} argv={}", full_path, final_cmd, argv_to_debug(new_argv_vec.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect::<Vec<_>>().as_ptr())));
+                 let c_cmd = CString::new(final_cmd.clone()).unwrap();
                  let c_ptrs: Vec<*const c_char> = new_argv_vec.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
                  let new_env = fix_envp(envp, Some(&full_path));
                  let env_ptrs: Vec<*const c_char> = new_env.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
-                 return real_execve(c_cmd.as_ptr(), c_ptrs.as_ptr(), env_ptrs.as_ptr());
+                 let result = real_execve(c_cmd.as_ptr(), c_ptrs.as_ptr(), env_ptrs.as_ptr());
+                 debug_log(&format!("EXECVE_FAILED: {} errno={} argv={}", final_cmd, last_errno(), argv_to_debug(c_ptrs.as_ptr())));
+                 return result;
              }
         }
     }
 
     let new_env = fix_envp(envp, None);
     let env_ptrs: Vec<*const c_char> = new_env.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
-    real_execve(path, argv, env_ptrs.as_ptr())
+    let result = real_execve(path, argv, env_ptrs.as_ptr());
+    debug_log(&format!("EXECVE_PASSTHROUGH_FAILED: {} errno={} argv={}", path_str, last_errno(), argv_to_debug(argv)));
+    result
 }
 
 #[unsafe(no_mangle)]
@@ -186,7 +315,9 @@ pub unsafe extern "C" fn execveat(dirfd: c_int, path: *const c_char, argv: *cons
         return execve(path, argv, envp);
     }
 
-    real_execveat(dirfd, path, argv, envp, flags)
+    let result = real_execveat(dirfd, path, argv, envp, flags);
+    debug_log(&format!("EXECVEAT_FAILED: dirfd={} path={} flags={} errno={} argv={}", dirfd, path_str, flags, last_errno(), argv_to_debug(argv)));
+    result
 }
 
 fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String, Vec<CString>)> {
@@ -383,17 +514,76 @@ pub unsafe extern "C" fn posix_spawn(
     if let Some(full_path) = resolve_path(&path_str) {
         if full_path.contains("com.termux") && !full_path.contains("/applib/") {
              if let Some((final_cmd, new_argv_vec)) = transform_exec(&full_path, argv) {
-                 debug_log(&format!("SPAWN: {} -> {}", full_path, final_cmd));
-                 let c_cmd = CString::new(final_cmd).unwrap();
+                 debug_log(&format!("SPAWN: {} -> {} argv={}", full_path, final_cmd, argv_to_debug(new_argv_vec.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect::<Vec<_>>().as_ptr())));
+                 let c_cmd = CString::new(final_cmd.clone()).unwrap();
                  let c_ptrs: Vec<*const c_char> = new_argv_vec.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
                  let new_env = fix_envp(envp, Some(&full_path));
                  let env_ptrs: Vec<*const c_char> = new_env.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
-                 return real_spawn(pid, c_cmd.as_ptr(), file_actions, attrp, c_ptrs.as_ptr(), env_ptrs.as_ptr());
+                 let result = real_spawn(pid, c_cmd.as_ptr(), file_actions, attrp, c_ptrs.as_ptr(), env_ptrs.as_ptr());
+                 if result != 0 {
+                     debug_log(&format!("SPAWN_FAILED: {} result={} errno={} argv={}", final_cmd, result, last_errno(), argv_to_debug(c_ptrs.as_ptr())));
+                 }
+                 return result;
              }
         }
     }
 
     let new_env = fix_envp(envp, None);
     let env_ptrs: Vec<*const c_char> = new_env.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
-    real_spawn(pid, path, file_actions, attrp, argv, env_ptrs.as_ptr())
+    let result = real_spawn(pid, path, file_actions, attrp, argv, env_ptrs.as_ptr());
+    if result != 0 {
+        debug_log(&format!("SPAWN_PASSTHROUGH_FAILED: {} result={} errno={} argv={}", path_str, result, last_errno(), argv_to_debug(argv)));
+    }
+    result
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn posix_spawnp(
+    pid: *mut libc::pid_t,
+    file: *const c_char,
+    file_actions: *const libc::c_void,
+    attrp: *const libc::c_void,
+    argv: *const *const c_char,
+    envp: *const *const c_char,
+) -> c_int {
+    let mut ptr = REAL_POSIX_SPAWNP.load(Ordering::Relaxed);
+    if ptr.is_null() {
+        ptr = libc::dlsym(RTLD_NEXT, b"posix_spawnp\0".as_ptr() as *const c_char);
+        REAL_POSIX_SPAWNP.store(ptr, Ordering::Relaxed);
+    }
+    let real_spawnp: unsafe extern "C" fn(*mut libc::pid_t, *const c_char, *const libc::c_void, *const libc::c_void, *const *const c_char, *const *const c_char) -> c_int = std::mem::transmute(ptr);
+
+    if file.is_null() { return real_spawnp(pid, file, file_actions, attrp, argv, envp); }
+    let file_str = CStr::from_ptr(file).to_string_lossy().to_string();
+
+    if file_str.starts_with("/system/") || file_str.starts_with("/vendor/") || file_str.contains("/linker") {
+        return real_spawnp(pid, file, file_actions, attrp, argv, envp);
+    }
+
+    debug_log(&format!("TRY_SPAWNP: {}", file_str));
+
+    if let Some(full_path) = resolve_path(&file_str) {
+        if full_path.contains("com.termux") && !full_path.contains("/applib/") {
+            if let Some((final_cmd, new_argv_vec)) = transform_exec(&full_path, argv) {
+                debug_log(&format!("SPAWNP: {} -> {} argv={}", full_path, final_cmd, argv_to_debug(new_argv_vec.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect::<Vec<_>>().as_ptr())));
+                let c_cmd = CString::new(final_cmd.clone()).unwrap();
+                let c_ptrs: Vec<*const c_char> = new_argv_vec.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
+                let new_env = fix_envp(envp, Some(&full_path));
+                let env_ptrs: Vec<*const c_char> = new_env.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
+                let result = real_spawnp(pid, c_cmd.as_ptr(), file_actions, attrp, c_ptrs.as_ptr(), env_ptrs.as_ptr());
+                if result != 0 {
+                    debug_log(&format!("SPAWNP_FAILED: {} result={} errno={} argv={}", final_cmd, result, last_errno(), argv_to_debug(c_ptrs.as_ptr())));
+                }
+                return result;
+            }
+        }
+    }
+
+    let new_env = fix_envp(envp, None);
+    let env_ptrs: Vec<*const c_char> = new_env.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
+    let result = real_spawnp(pid, file, file_actions, attrp, argv, env_ptrs.as_ptr());
+    if result != 0 {
+        debug_log(&format!("SPAWNP_PASSTHROUGH_FAILED: {} result={} errno={} argv={}", file_str, result, last_errno(), argv_to_debug(argv)));
+    }
+    result
 }
