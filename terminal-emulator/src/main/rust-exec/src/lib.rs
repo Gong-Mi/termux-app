@@ -39,15 +39,12 @@ fn debug_log(msg: &str) {
 
 fn get_my_physical_path() -> &'static str {
     MY_PHYSICAL_PATH.get_or_init(|| {
-        if let Ok(maps) = std::fs::read_to_string("/proc/self/maps") {
-            for line in maps.lines() {
-                if line.contains("libtermux-exec.so") {
-                    if let Some(start) = line.find('/') {
-                        let path = &line[start..];
-                        if let Some(end) = path.find(".so") {
-                            return path[..end+3].to_string();
-                        }
-                    }
+        let mut info: libc::Dl_info = unsafe { std::mem::zeroed() };
+        if unsafe { libc::dladdr(execve as *const libc::c_void, &mut info) } != 0 {
+            if !info.dli_fname.is_null() {
+                let path = unsafe { CStr::from_ptr(info.dli_fname) }.to_string_lossy().into_owned();
+                if !path.is_empty() {
+                    return path;
                 }
             }
         }
@@ -317,5 +314,8 @@ pub unsafe extern "C" fn posix_spawn(
 
     let new_env = fix_envp(envp, None);
     let env_ptrs: Vec<*const c_char> = new_env.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
+    real_spawn(pid, path, file_actions, attrp, argv, env_ptrs.as_ptr())
+}
+ct();
     real_spawn(pid, path, file_actions, attrp, argv, env_ptrs.as_ptr())
 }

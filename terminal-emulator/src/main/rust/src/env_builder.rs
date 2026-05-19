@@ -100,6 +100,7 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
             "libtermux-exec-linker-ld-preload.so",
             "libtermux-exec-ld-preload.so",
             "libtermux-exec.so",
+            "libtermux_exec.so",
             "libtermux-exec-direct-ld-preload.so",
         ];
 

@@ -267,7 +267,7 @@ pub fn create_subprocess_with_data(
     // Read the first 256 bytes of the target file to determine ELF / shebang / plain script.
     let (final_cmd, final_argv) = if let Ok(mut file) = std::fs::File::open(&real_cmd) {
         use std::io::Read;
-        let mut buffer = [0u8; 256];
+        let mut buffer = [0u8; 4096];
         if let Ok(n) = file.read(&mut buffer) {
             if n > 4
                 && buffer[0] == 0x7F
