@@ -279,6 +279,31 @@ fn ensure_exec_wrappers(termux_prefix: &str) -> Option<String> {
         return None;
     }
 
+    let generic_wrapper = format!("{}/.wrapper", wrapper_dir);
+    let script = exec_wrapper_script();
+    let needs_write = match std::fs::read_to_string(&generic_wrapper) {
+        Ok(existing) if existing == script => false,
+        _ => true,
+    };
+    if needs_write {
+        if std::fs::write(&generic_wrapper, &script).is_err() {
+            android_log(
+                LogPriority::WARN,
+                &format!("[env_builder] Failed to write generic wrapper: {}", generic_wrapper),
+            );
+            return None;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(metadata) = std::fs::metadata(&generic_wrapper) {
+                let mut permissions = metadata.permissions();
+                permissions.set_mode(0o700);
+                let _ = std::fs::set_permissions(&generic_wrapper, permissions);
+            }
+        }
+    }
+
     let bin_dir = format!("{}/bin", termux_prefix);
     let entries = match std::fs::read_dir(&bin_dir) {
         Ok(entries) => entries,
@@ -287,7 +312,7 @@ fn ensure_exec_wrappers(termux_prefix: &str) -> Option<String> {
 
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        if name.is_empty() || name.contains('/') || name == "." || name == ".." {
+        if name.is_empty() || name.contains('/') || name == "." || name == ".." || name == ".wrapper" {
             continue;
         }
 
@@ -297,22 +322,20 @@ fn ensure_exec_wrappers(termux_prefix: &str) -> Option<String> {
         }
 
         let wrapper = format!("{}/{}", wrapper_dir, name);
-        let script = exec_wrapper_script(termux_prefix, &target);
-        if std::fs::write(&wrapper, script).is_err() {
-            android_log(
-                LogPriority::WARN,
-                &format!("[env_builder] Failed to write exec wrapper: {}", wrapper),
-            );
-            continue;
-        }
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            if let Ok(metadata) = std::fs::metadata(&wrapper) {
-                let mut permissions = metadata.permissions();
-                permissions.set_mode(0o700);
-                let _ = std::fs::set_permissions(&wrapper, permissions);
+        let link_ok = std::fs::read_link(&wrapper)
+            .map(|dest| dest.to_string_lossy() == ".wrapper")
+            .unwrap_or(false);
+        if !link_ok {
+            let _ = std::fs::remove_file(&wrapper);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::symlink;
+                if symlink(".wrapper", &wrapper).is_err() {
+                    android_log(
+                        LogPriority::WARN,
+                        &format!("[env_builder] Failed to symlink wrapper: {}", wrapper),
+                    );
+                }
             }
         }
     }
@@ -320,21 +343,22 @@ fn ensure_exec_wrappers(termux_prefix: &str) -> Option<String> {
     Some(wrapper_dir)
 }
 
-fn exec_wrapper_script(termux_prefix: &str, target: &str) -> String {
-    format!(
-        r#"#!/system/bin/sh
-PREFIX='{prefix}'
-target='{target}'
-IFS= read -r first < "$target" 2>/dev/null || first=
+fn exec_wrapper_script() -> String {
+    r#"#!/system/bin/sh
+WRAPPER_DIR=$(dirname "$0")
+WRAPPER_NAME=$(basename "$0")
+PREFIX=$(dirname "$(dirname "$WRAPPER_DIR")")
+TARGET="$PREFIX/bin/$WRAPPER_NAME"
+IFS= read -r first < "$TARGET" 2>/dev/null || first=
 case "$first" in
   '#!'*)
-    shebang="${{first#\#!}}"
-    set -- $shebang "$target" "$@"
+    shebang="${first#\#!}"
+    set -- $shebang "$TARGET" "$@"
     interp="$1"
     shift
     case "$interp" in
       /usr/bin/env) interp="$PREFIX/bin/env" ;;
-      /bin/*|/usr/bin/*) interp="$PREFIX/bin/${{interp##*/}}" ;;
+      /bin/*|/usr/bin/*) interp="$PREFIX/bin/${interp##*/}" ;;
     esac
     case "$interp" in
       "$PREFIX"/*|/data/data/com.termux/*|/data/user/0/com.termux/*)
@@ -346,11 +370,8 @@ case "$first" in
     esac
     ;;
 esac
-exec /system/bin/linker64 "$target" "$@"
-"#,
-        prefix = termux_prefix,
-        target = target
-    )
+exec /system/bin/linker64 "$TARGET" "$@"
+"#.to_string()
 }
 
 // ------------------------------------------------------------------
