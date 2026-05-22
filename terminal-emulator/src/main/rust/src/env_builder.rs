@@ -73,15 +73,9 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
             "[env_builder] Failsafe mode: using system PATH/TMPDIR, no Termux injection",
         );
     } else {
-        // 正常模式：注入 Termux 路径
-        // Android 7+ 的 upstream 只放 TERMUX_BIN_PREFIX_DIR_PATH，不加 applets。
-        // 但当前项目代码历史原因 hardcoded 了 applets，为兼容保留。
-        let exec_wrapper_path = ensure_exec_wrappers(&termux_prefix);
-        let termux_bin_path = if let Some(wrapper_path) = exec_wrapper_path {
-            format!("{}:{}/bin:{}/bin/applets", wrapper_path, termux_prefix, termux_prefix)
-        } else {
-            format!("{}/bin:{}/bin/applets", termux_prefix, termux_prefix)
-        };
+        // 正常模式：注入 Termux 路径。不要把 exec wrapper 目录放进 PATH，
+        // 否则 clang 等依赖自定位的工具会被 linker wrapper 破坏。
+        let termux_bin_path = format!("{}/bin:{}/bin/applets", termux_prefix, termux_prefix);
         if let Ok(sys_path) = std::env::var("PATH") {
             // Prepend Termux 路径，保持系统路径作为 fallback
             env.insert(
@@ -267,111 +261,6 @@ fn inherit_system_var(map: &mut HashMap<String, String>, key: &str) {
             map.insert(key.to_string(), val);
         }
     }
-}
-
-fn ensure_exec_wrappers(termux_prefix: &str) -> Option<String> {
-    let wrapper_dir = format!("{}/libexec/termux-exec-wrappers", termux_prefix);
-    if std::fs::create_dir_all(&wrapper_dir).is_err() {
-        android_log(
-            LogPriority::WARN,
-            &format!("[env_builder] Failed to create exec wrapper dir: {}", wrapper_dir),
-        );
-        return None;
-    }
-
-    let generic_wrapper = format!("{}/.wrapper", wrapper_dir);
-    let script = exec_wrapper_script();
-    let needs_write = match std::fs::read_to_string(&generic_wrapper) {
-        Ok(existing) if existing == script => false,
-        _ => true,
-    };
-    if needs_write {
-        if std::fs::write(&generic_wrapper, &script).is_err() {
-            android_log(
-                LogPriority::WARN,
-                &format!("[env_builder] Failed to write generic wrapper: {}", generic_wrapper),
-            );
-            return None;
-        }
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            if let Ok(metadata) = std::fs::metadata(&generic_wrapper) {
-                let mut permissions = metadata.permissions();
-                permissions.set_mode(0o700);
-                let _ = std::fs::set_permissions(&generic_wrapper, permissions);
-            }
-        }
-    }
-
-    let bin_dir = format!("{}/bin", termux_prefix);
-    let entries = match std::fs::read_dir(&bin_dir) {
-        Ok(entries) => entries,
-        Err(_) => return Some(wrapper_dir),
-    };
-
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if name.is_empty() || name.contains('/') || name == "." || name == ".." || name == ".wrapper" {
-            continue;
-        }
-
-        let target = format!("{}/{}", bin_dir, name);
-        if !std::path::Path::new(&target).exists() {
-            continue;
-        }
-
-        let wrapper = format!("{}/{}", wrapper_dir, name);
-        let link_ok = std::fs::read_link(&wrapper)
-            .map(|dest| dest.to_string_lossy() == ".wrapper")
-            .unwrap_or(false);
-        if !link_ok {
-            let _ = std::fs::remove_file(&wrapper);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::symlink;
-                if symlink(".wrapper", &wrapper).is_err() {
-                    android_log(
-                        LogPriority::WARN,
-                        &format!("[env_builder] Failed to symlink wrapper: {}", wrapper),
-                    );
-                }
-            }
-        }
-    }
-
-    Some(wrapper_dir)
-}
-
-fn exec_wrapper_script() -> String {
-    r#"#!/system/bin/sh
-WRAPPER_DIR=$(dirname "$0")
-WRAPPER_NAME=$(basename "$0")
-PREFIX=$(dirname "$(dirname "$WRAPPER_DIR")")
-TARGET="$PREFIX/bin/$WRAPPER_NAME"
-IFS= read -r first < "$TARGET" 2>/dev/null || first=
-case "$first" in
-  '#!'*)
-    shebang="${first#\#!}"
-    set -- $shebang "$TARGET" "$@"
-    interp="$1"
-    shift
-    case "$interp" in
-      /usr/bin/env) interp="$PREFIX/bin/env" ;;
-      /bin/*|/usr/bin/*) interp="$PREFIX/bin/${interp##*/}" ;;
-    esac
-    case "$interp" in
-      "$PREFIX"/*|/data/data/com.termux/*|/data/user/0/com.termux/*)
-        exec /system/bin/linker64 "$interp" "$@"
-        ;;
-      *)
-        exec "$interp" "$@"
-        ;;
-    esac
-    ;;
-esac
-exec /system/bin/linker64 "$TARGET" "$@"
-"#.to_string()
 }
 
 // ------------------------------------------------------------------
