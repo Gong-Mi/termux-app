@@ -52,12 +52,16 @@ import java.util.zip.ZipInputStream;
  */
 final class TermuxInstaller {
 
-    private static final String TERMUX_STAGING_PREFIX_DIR_PATH = TermuxConstants.FILES_PATH + "/usr-staging"; // Default: "/data/user/0/com.termux/files/usr-staging"
+    private static String getStagingPrefixPath() {
+        return TermuxConstants.FILES_PATH + "/usr-staging";
+    }
 
     /**
      * Performs bootstrap setup if necessary.
      */
     static void setupBootstrapIfNeeded(final Activity activity, final Runnable whenDone) {
+        TermuxConstants.init(activity); // Ensure constants are initialized
+
         // Ensure that termux files and home directory is created if it does not already exist:
         new File(activity.getFilesDir(), "home").mkdir();
 
@@ -91,13 +95,13 @@ final class TermuxInstaller {
         new Thread(() -> {
             try {
                 // Delete prefix staging directory or any file at its destination
-                File stagingPrefixFile = new File(TERMUX_STAGING_PREFIX_DIR_PATH);
+                File stagingPrefixFile = new File(getStagingPrefixPath());
                 if (stagingPrefixFile.exists() && !deleteDir(stagingPrefixFile)) {
                     showBootstrapErrorDialog(activity, whenDone, "Unable to delete old staging area.");
                     return;
                 }
 
-                File prefixFile = new File(TERMUX_STAGING_PREFIX_DIR_PATH);
+                File prefixFile = new File(getStagingPrefixPath());
                 if (prefixFile.exists() && !deleteDir(prefixFile)) {
                     showBootstrapErrorDialog(activity, whenDone, "Unable to delete old PREFIX.");
                     return;

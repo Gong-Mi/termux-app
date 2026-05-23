@@ -170,6 +170,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        TermuxConstants.init(this);
+
         // 启用广色域 (Wide Color Gamut) 模式。
         // 这允许 Hardware Composer (HWC) 接受 10-bit 格式（如 0x38），并利用 OLED 屏幕的 HDR 特性。
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -190,11 +192,9 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         // Ensure Rust engine knows our version for environment variable injection
         com.termux.terminal.JNI.setTermuxVersion(BuildConfig.VERSION_NAME);
 
-        // 修复：Termux 生态系统（包含 termux-exec 和 apt 包）硬编码了 /data/data/com.termux。
-        // 使用 /data/user/0/ 会导致 termux-exec 的 W^X bypass 路径匹配失败，从而导致执行脚本时 Permission denied。
-        // 因此必须向 Rust 引擎传递标准的 /data/data/com.termux/files/usr 路径。
-        String prefixPath = "/data/data/com.termux/files/usr";
-        com.termux.terminal.JNI.setTermuxPrefix(prefixPath);
+        // 使用动态 Prefix 路径。
+        // 之前的固定 /data/data 路径会导致多用户模式下 login 脚本失效。
+        com.termux.terminal.JNI.setTermuxPrefix(TermuxConstants.PREFIX_PATH);
 
         setContentView(R.layout.activity_termux);
 

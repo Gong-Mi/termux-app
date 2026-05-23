@@ -102,6 +102,7 @@ public final class TermuxService extends Service {
     public void onCreate() {
         super.onCreate();
 
+        TermuxConstants.init(this);
         TermuxInstaller.setupAppLibSymlink(this);
     }
 

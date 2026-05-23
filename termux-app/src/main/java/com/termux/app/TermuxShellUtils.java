@@ -85,9 +85,9 @@ public class TermuxShellUtils {
         actualArguments.add(processName);
 
         String actualFileToExecute;
-        if (elfFileToExecute.startsWith(TermuxConstants.FILES_PATH)) {
+        if (elfFileToExecute.contains("/com.termux/files/")) {
             actualFileToExecute = "/system/bin/linker" + (android.os.Process.is64Bit() ? "64" : "");
-            actualArguments.add(0, elfFileToExecute);
+            actualArguments.set(0, elfFileToExecute);
             actualArguments.add(0, actualFileToExecute);
         } else {
             actualFileToExecute = elfFileToExecute;

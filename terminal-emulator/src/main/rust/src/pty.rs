@@ -356,8 +356,9 @@ pub fn create_subprocess_with_data(
     }
 
     /// 判断目标路径是否需要 linker64 wrapper
-    fn needs_linker_wrapper(path: &str, termux_files_dir: &str) -> bool {
-        if !path.starts_with(termux_files_dir) {
+    fn needs_linker_wrapper(path: &str, _termux_files_dir: &str) -> bool {
+        // 允许各种 Termux 路径变体（/data/data, /data/user/N, /apex/等）
+        if !path.contains("/com.termux/files/") {
             return false;
         }
         // 符号链接需要解析后判断
@@ -390,7 +391,9 @@ pub fn create_subprocess_with_data(
         // 其中 target_elf 会被 linker 当作要加载的 ELF，original_args 会透传。
         let mut wrapped_argv = vec![linker_path.to_string()];
         wrapped_argv.push(final_cmd.clone()); // target ELF path for linker64
-        wrapped_argv.extend(final_argv.iter().cloned());
+        if !final_argv.is_empty() {
+            wrapped_argv.extend(final_argv[1..].iter().cloned());
+        }
         android_log(
             LogPriority::INFO,
             &format!(
