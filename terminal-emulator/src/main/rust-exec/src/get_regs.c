@@ -3,6 +3,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#if defined(__x86_64__) && !defined(REG_RDI)
+#define REG_RDI 8
+#define REG_RSI 9
+#define REG_RDX 12
+#endif
+
 // Use offsetof so the compiler always calculates the correct offset
 // for the current Android version / NDK headers, regardless of
 // struct layout changes (sigset_t size, padding, etc.).

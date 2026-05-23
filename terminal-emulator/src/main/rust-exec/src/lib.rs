@@ -15,6 +15,14 @@ struct sock_fprog { len: u16, _pad: [u16; 3], filter: *const sock_filter }
 const SECCOMP_RET_TRAP: u32 = 0x00030000;
 const SECCOMP_RET_ALLOW: u32 = 0x7fff0000;
 const RTLD_NEXT: *mut libc::c_void = -1i64 as *mut libc::c_void;
+const AUDIT_ARCH_AARCH64: u32 = 0xc00000b7;
+const AUDIT_ARCH_X86_64: u32 = 0xc000003e;
+
+unsafe extern "C" {
+    fn get_execve_path(ucontext: *mut c_void) -> usize;
+    fn get_execve_argv(ucontext: *mut c_void) -> usize;
+    fn get_execve_envp(ucontext: *mut c_void) -> usize;
+}
 
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".init_array")]
@@ -50,11 +58,25 @@ unsafe fn setup_universal_interceptor() {
         sa.sa_flags = libc::SA_SIGINFO;
         libc::sigaction(libc::SIGSYS, &sa, ptr::null_mut());
 
+        let expected_arch = if cfg!(target_arch = "aarch64") {
+            AUDIT_ARCH_AARCH64
+        } else if cfg!(target_arch = "x86_64") {
+            AUDIT_ARCH_X86_64
+        } else {
+            0
+        };
+        if expected_arch == 0 {
+            log::warn!("seccomp interceptor disabled on unsupported architecture");
+            return;
+        }
+
         let filter = [
-            sock_filter { code: 0x20, jt: 0, jf: 0, k: 0 }, // BPF_LD | BPF_W | BPF_ABS (load syscall nr)
-            sock_filter { code: 0x15, jt: 1, jf: 0, k: libc::SYS_execve as u32 }, // BPF_JMP | BPF_JEQ (if execve jump to TRAP)
-            sock_filter { code: 0x06, jt: 0, jf: 0, k: SECCOMP_RET_ALLOW }, // BPF_RET (ALLOW)
-            sock_filter { code: 0x06, jt: 0, jf: 0, k: SECCOMP_RET_TRAP }, // BPF_RET (TRAP)
+            sock_filter { code: 0x20, jt: 0, jf: 4, k: 4 }, // BPF_LD | BPF_W | BPF_ABS seccomp_data.arch
+            sock_filter { code: 0x15, jt: 0, jf: 3, k: expected_arch }, // if arch != expected, allow
+            sock_filter { code: 0x20, jt: 0, jf: 0, k: 0 }, // load seccomp_data.nr
+            sock_filter { code: 0x15, jt: 0, jf: 1, k: libc::SYS_execve as u32 }, // if execve, trap
+            sock_filter { code: 0x06, jt: 0, jf: 0, k: SECCOMP_RET_TRAP },
+            sock_filter { code: 0x06, jt: 0, jf: 0, k: SECCOMP_RET_ALLOW },
         ];
 
         let prog = sock_fprog { len: filter.len() as u16, _pad: [0; 3], filter: filter.as_ptr() };
@@ -63,24 +85,10 @@ unsafe fn setup_universal_interceptor() {
     }
 }
 
-// aarch64 ucontext register offsets (verified on-device via test_sigsys)
-// ucontext_t.uc_mcontext.regs[0] sits at u64 offset 23 from void_context.
-const UCONTEXT_X0_OFFSET: isize = 23;
-
-unsafe fn get_execve_path(ctx: *mut c_void) -> *const c_char {
-    *((ctx as *const u64).offset(UCONTEXT_X0_OFFSET) as *const *const c_char)
-}
-unsafe fn get_execve_argv(ctx: *mut c_void) -> *const *const c_char {
-    *((ctx as *const u64).offset(UCONTEXT_X0_OFFSET + 1) as *const *const *const c_char)
-}
-unsafe fn get_execve_envp(ctx: *mut c_void) -> *const *const c_char {
-    *((ctx as *const u64).offset(UCONTEXT_X0_OFFSET + 2) as *const *const *const c_char)
-}
-
 unsafe extern "C" fn sigsys_handler(_sig: c_int, _info: *mut libc::siginfo_t, void_context: *mut c_void) {
-    let path_ptr = get_execve_path(void_context);
-    let argv_ptr = get_execve_argv(void_context);
-    let envp_ptr = get_execve_envp(void_context);
+    let path_ptr = unsafe { get_execve_path(void_context) } as *const c_char;
+    let argv_ptr = unsafe { get_execve_argv(void_context) } as *const *const c_char;
+    let envp_ptr = unsafe { get_execve_envp(void_context) } as *const *const c_char;
 
     if path_ptr.is_null() {
         log::warn!("sigsys_handler: path_ptr is null, ignoring");
@@ -129,7 +137,8 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char, depth: u32) -> Op
         return None;
     }
 
-    let mut file = std::fs::File::open(path).ok()?;
+    let path = resolve_exec_path(path)?;
+    let mut file = std::fs::File::open(&path).ok()?;
     let mut buffer = [0u8; 256];
     let n = file.read(&mut buffer).ok()?;
     
@@ -141,15 +150,9 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char, depth: u32) -> Op
 
     if n > 4 && buffer[0] == 0x7F && buffer[1] == b'E' && buffer[2] == b'L' && buffer[3] == b'F' {
         log::debug!("transform_exec: \"{}\" is ELF, prepending linker", path);
-        // ELF: Prepend linker, but keep orig_argv[0] as the program name
-        // (critical for multi-call binaries like busybox/coreutils/toybox)
         let mut new_argv = Vec::new();
         new_argv.push(CString::new(linker).unwrap());
-        if !orig_argv.is_null() && unsafe { !(*orig_argv).is_null() } {
-            new_argv.push(unsafe { CStr::from_ptr(*orig_argv).to_owned() });
-        } else {
-            new_argv.push(CString::new(path).unwrap());
-        }
+        new_argv.push(CString::new(path.clone()).unwrap());
         let mut i = 1;
         unsafe {
             while !orig_argv.is_null() && !(*orig_argv.offset(i)).is_null() {
@@ -170,9 +173,9 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char, depth: u32) -> Op
             // real_argv layout: [linker, interp, ...orig_args...]
             // we need: [linker, interp, script_path, ...orig_args...]
             if real_argv.len() >= 2 {
-                real_argv.insert(2, CString::new(path).unwrap());
+                real_argv.insert(2, CString::new(path.clone()).unwrap());
             } else {
-                real_argv.push(CString::new(path).unwrap());
+                real_argv.push(CString::new(path.clone()).unwrap());
             }
             return Some((real_linker, real_argv));
         }
@@ -187,7 +190,7 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char, depth: u32) -> Op
                 new_argv.push(CString::new(arg).unwrap());
             }
         }
-        new_argv.push(CString::new(path).unwrap());
+        new_argv.push(CString::new(path.clone()).unwrap());
         let mut i = 1;
         unsafe {
             while !orig_argv.is_null() && !(*orig_argv.offset(i)).is_null() {
@@ -198,6 +201,31 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char, depth: u32) -> Op
         return Some((linker.to_string(), new_argv));
     }
     
+    None
+}
+
+fn resolve_exec_path(path: &str) -> Option<String> {
+    if path.contains('/') {
+        return Some(map_path(path));
+    }
+
+    if let Ok(path_env) = std::env::var("PATH") {
+        for dir in path_env.split(':') {
+            if dir.is_empty() {
+                continue;
+            }
+            let candidate = format!("{}/{}", dir, path);
+            if std::path::Path::new(&candidate).exists() {
+                return Some(map_path(&candidate));
+            }
+        }
+    }
+
+    let prefix_candidate = format!("{}/bin/{}", get_termux_prefix(), path);
+    if std::path::Path::new(&prefix_candidate).exists() {
+        return Some(prefix_candidate);
+    }
+
     None
 }
 
