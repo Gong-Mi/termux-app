@@ -13,32 +13,35 @@ struct sock_fprog { len: u16, _pad: [u16; 3], filter: *const sock_filter }
 
 const SECCOMP_RET_TRAP: u32 = 0x00030000;
 const SECCOMP_RET_ALLOW: u32 = 0x7fff0000;
+const RTLD_NEXT: *mut libc::c_void = -1i64 as *mut libc::c_void;
 
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".init_array")]
 pub static LOAD_HOOK: unsafe extern "C" fn() = {
     unsafe extern "C" fn init() {
-        setup_universal_interceptor();
+        unsafe { setup_universal_interceptor() };
     }
     init
 };
 
 unsafe fn setup_universal_interceptor() {
-    let mut sa: libc::sigaction = std::mem::zeroed();
-    sa.sa_sigaction = sigsys_handler as *const () as usize;
-    sa.sa_flags = libc::SA_SIGINFO;
-    libc::sigaction(libc::SIGSYS, &sa, ptr::null_mut());
+    unsafe {
+        let mut sa: libc::sigaction = std::mem::zeroed();
+        sa.sa_sigaction = sigsys_handler as *const () as usize;
+        sa.sa_flags = libc::SA_SIGINFO;
+        libc::sigaction(libc::SIGSYS, &sa, ptr::null_mut());
 
-    let filter = [
-        sock_filter { code: 0x20, jt: 0, jf: 0, k: 0 }, // BPF_LD | BPF_W | BPF_ABS (load syscall nr)
-        sock_filter { code: 0x15, jt: 1, jf: 0, k: libc::SYS_execve as u32 }, // BPF_JMP | BPF_JEQ (if execve jump to TRAP)
-        sock_filter { code: 0x06, jt: 0, jf: 0, k: SECCOMP_RET_ALLOW }, // BPF_RET (ALLOW)
-        sock_filter { code: 0x06, jt: 0, jf: 0, k: SECCOMP_RET_TRAP }, // BPF_RET (TRAP)
-    ];
+        let filter = [
+            sock_filter { code: 0x20, jt: 0, jf: 0, k: 0 }, // BPF_LD | BPF_W | BPF_ABS (load syscall nr)
+            sock_filter { code: 0x15, jt: 1, jf: 0, k: libc::SYS_execve as u32 }, // BPF_JMP | BPF_JEQ (if execve jump to TRAP)
+            sock_filter { code: 0x06, jt: 0, jf: 0, k: SECCOMP_RET_ALLOW }, // BPF_RET (ALLOW)
+            sock_filter { code: 0x06, jt: 0, jf: 0, k: SECCOMP_RET_TRAP }, // BPF_RET (TRAP)
+        ];
 
-    let prog = sock_fprog { len: filter.len() as u16, _pad: [0; 3], filter: filter.as_ptr() };
-    libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
-    libc::prctl(libc::PR_SET_SECCOMP, libc::SECCOMP_MODE_FILTER, &prog as *const _);
+        let prog = sock_fprog { len: filter.len() as u16, _pad: [0; 3], filter: filter.as_ptr() };
+        libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
+        libc::prctl(libc::PR_SET_SECCOMP, libc::SECCOMP_MODE_FILTER, &prog as *const _);
+    }
 }
 
 unsafe extern "C" fn sigsys_handler(_sig: c_int, _info: *mut libc::siginfo_t, void_context: *mut c_void) {
@@ -46,14 +49,17 @@ unsafe extern "C" fn sigsys_handler(_sig: c_int, _info: *mut libc::siginfo_t, vo
     
     // aarch64 ucontext layout: x0 is at index 23, x1 at 24, x2 at 25, syscall nr at 31
     #[cfg(target_arch = "aarch64")]
-    let (path_ptr, argv_ptr, envp_ptr) = (
+    let (path_ptr, argv_ptr, envp_ptr) = unsafe { (
         *ctx_ptr.offset(23) as *const c_char,
         *ctx_ptr.offset(24) as *const *const c_char,
         *ctx_ptr.offset(25) as *const *const c_char,
-    );
+    ) };
+
+    #[cfg(not(target_arch = "aarch64"))]
+    return; // Not implemented for other archs in this snippet
 
     if path_ptr.is_null() { return; }
-    let path_str = CStr::from_ptr(path_ptr).to_string_lossy().to_string();
+    let path_str = unsafe { CStr::from_ptr(path_ptr) }.to_string_lossy().to_string();
 
     // Skip system binaries
     if path_str.starts_with("/system/") || path_str.starts_with("/vendor/") || path_str.contains("/linker") {
@@ -66,21 +72,21 @@ unsafe extern "C" fn sigsys_handler(_sig: c_int, _info: *mut libc::siginfo_t, vo
         let c_argv_ptrs: Vec<*const c_char> = new_argv.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
         
         // Execute using execveat to bypass our own SECCOMP filter (which only traps execve)
-        libc::syscall(
+        unsafe { libc::syscall(
             libc::SYS_execveat,
             libc::AT_FDCWD,
             c_path.as_ptr(),
             c_argv_ptrs.as_ptr(),
             envp_ptr,
             0
-        );
+        ) };
     } else {
         // Fallback for non-termux binaries if any
-        libc::syscall(libc::SYS_execveat, libc::AT_FDCWD, path_ptr, argv_ptr, envp_ptr, 0);
+        unsafe { libc::syscall(libc::SYS_execveat, libc::AT_FDCWD, path_ptr, argv_ptr, envp_ptr, 0) };
     }
 
     // If we reach here, execveat failed
-    libc::_exit(1);
+    unsafe { libc::_exit(1) };
 }
 
 fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String, Vec<CString>)> {
@@ -88,7 +94,6 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
     let mut buffer = [0u8; 256];
     let n = file.read(&mut buffer).ok()?;
     
-    let prefix = "/data/data/com.termux/files/usr"; // Default prefix
     let linker = if std::path::Path::new("/system/bin/linker64").exists() {
         "/system/bin/linker64"
     } else {
@@ -160,10 +165,47 @@ fn map_path(path: &str) -> String {
     }
 }
 
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn execve(path: *const c_char, argv: *const *const c_char, envp: *const *const c_char) -> c_int {
-    // Normal libc execve is also intercepted by SECCOMP, but we provide a symbol for it anyway
-    let real_execve: unsafe extern "C" fn(*const c_char, *const *const c_char, *const *const c_char) -> c_int = 
-        std::mem::transmute(libc::dlsym(libc::RTLD_NEXT, b"execve\0".as_ptr() as *const c_char));
-    real_execve(path, argv, envp)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_shebang_simple() {
+        let content = b"#!/usr/bin/python\nprint('hello')";
+        let (interp, args) = parse_shebang(content).unwrap();
+        assert_eq!(interp, "/usr/bin/python");
+        assert_eq!(args, None);
+    }
+
+    #[test]
+    fn test_parse_shebang_with_args() {
+        let content = b"#!/usr/bin/env python -u\n...";
+        let (interp, args) = parse_shebang(content).unwrap();
+        assert_eq!(interp, "/usr/bin/env");
+        assert_eq!(args, Some("python -u".to_string()));
+    }
+
+    #[test]
+    fn test_map_path_usr_bin() {
+        assert_eq!(
+            map_path("/usr/bin/ls"),
+            "/data/data/com.termux/files/usr/bin/ls"
+        );
+    }
+
+    #[test]
+    fn test_map_path_bin() {
+        assert_eq!(
+            map_path("/bin/sh"),
+            "/data/data/com.termux/files/usr/bin/sh"
+        );
+    }
+
+    #[test]
+    fn test_map_path_untouched() {
+        assert_eq!(
+            map_path("/system/bin/linker64"),
+            "/system/bin/linker64"
+        );
+    }
 }

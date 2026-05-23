@@ -67,7 +67,7 @@ fn test_buffer_sync_shared_memory() {
         (*ptr).rows = 24;
     }
 
-    engine.state.shared_buffer_ptr = SharedBufferPtr(ptr);
+    engine.state.shared_buffer_ptr = std::sync::atomic::AtomicPtr::new(ptr);
 
     // 写入数据
     engine.process_bytes(b"Shared Memory Test");

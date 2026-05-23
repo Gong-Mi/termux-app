@@ -1071,6 +1071,7 @@ mod tests {
         let mut decoder = SixelDecoder::new();
         // "1;1;100;100 -> Ph=100, Pv=100
         decoder.process_data(b"\"1;1;100;100");
+        decoder.finish();
         assert_eq!(decoder.width, 100);
         assert_eq!(decoder.height, 100);
         assert_eq!(decoder.pixel_data.len(), 100);
@@ -1081,6 +1082,7 @@ mod tests {
         let mut decoder = SixelDecoder::new();
         // "1;1;10;10 followed by ~ (one column of 6 pixels)
         decoder.process_data(b"\"1;1;10;10~");
+        decoder.finish();
         assert_eq!(decoder.width, 10);
         assert_eq!(decoder.height, 10);
         // Column 0 should have the ~ data

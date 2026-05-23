@@ -74,12 +74,12 @@ fn test_shared_buffer_size() {
         .create_shared_buffer();
 
     assert!(
-        !shared_ptr.is_null(),
+        !shared_ptr.load(std::sync::atomic::Ordering::Relaxed).is_null(),
         "shared_buffer_ptr should not be null"
     );
 
     unsafe {
-        let shared = &*shared_ptr;
+        let shared = &*shared_ptr.load(std::sync::atomic::Ordering::Relaxed);
         assert_eq!(shared.cols, cols as u32, "shared.cols should be {}", cols);
         assert_eq!(
             shared.rows, total_rows as u32,
@@ -113,11 +113,11 @@ fn test_sync_all_rows_to_shared_buffer() {
         .as_ref()
         .unwrap()
         .create_shared_buffer();
-    engine.state.shared_buffer_ptr = SharedBufferPtr(shared_ptr);
+    engine.state.shared_buffer_ptr = std::sync::atomic::AtomicPtr::new(shared_ptr.load(std::sync::atomic::Ordering::Relaxed));
 
     // 手动同步数据（模拟 syncToSharedBufferRust 的行为）
     if let Some(ref mut flat_buffer) = engine.state.flat_buffer {
-        if !engine.state.shared_buffer_ptr.0.is_null() {
+        if !engine.state.shared_buffer_ptr.load(std::sync::atomic::Ordering::Relaxed).is_null() {
             let buffer_len = engine.state.main_screen.buffer.len();
             for physical_row in 0..buffer_len {
                 if let Some(buffer_row) = engine.state.main_screen.buffer.get(physical_row) {

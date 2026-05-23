@@ -72,7 +72,10 @@ pub fn get_termux_data_dir() -> String {
 ///
 /// 此函数允许动态路径，但确保它们符合 Termux 的基本结构。
 pub fn validate_termux_prefix(input: &str) -> String {
-    if input.contains("com.termux") && input.ends_with("/files/usr") {
+    if (input.starts_with("/data/") || input.starts_with("/apex/"))
+        && input.contains("com.termux")
+        && input.ends_with("/files/usr")
+    {
         input.to_string()
     } else {
         const FALLBACK_PREFIX: &str = "/data/data/com.termux/files/usr";
