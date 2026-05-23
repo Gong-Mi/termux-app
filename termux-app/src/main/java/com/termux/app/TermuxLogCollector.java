@@ -16,6 +16,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Collects diagnostic information about Termux initialization state and environment.
@@ -27,6 +28,8 @@ public final class TermuxLogCollector {
     }
 
     public static String collect(Context context) {
+        ensureInitialized(context);
+
         StringBuilder sb = new StringBuilder();
         sb.append("===== Termux Debug Report =====\n");
         sb.append("Generated: ").append(java.text.DateFormat.getDateTimeInstance().format(new java.util.Date())).append("\n\n");
@@ -39,6 +42,14 @@ public final class TermuxLogCollector {
         sb.append("Device: ").append(Build.MANUFACTURER).append(" ").append(Build.MODEL).append("\n");
         sb.append("ABI: ").append(Build.SUPPORTED_ABIS != null ? Arrays.toString(Build.SUPPORTED_ABIS) : "unknown").append("\n");
         sb.append("User: ").append(android.os.Process.myUid()).append("\n\n");
+
+        sb.append("----- App UID Context -----\n");
+        sb.append("This report is collected from inside the Termux app process, not from adb shell uid 2000.\n");
+        sb.append("App PID: ").append(android.os.Process.myPid()).append("\n");
+        sb.append("App UID: ").append(android.os.Process.myUid()).append("\n");
+        sb.append(runCommand("/system/bin/id"));
+        sb.append(runCommand("/system/bin/sh", "-c", "cat /proc/self/status | grep -E '^(Name|Pid|PPid|Uid|Gid|Groups):'"));
+        sb.append("\n");
 
         // Termux Paths
         sb.append("----- Termux Paths -----\n");
@@ -65,8 +76,8 @@ public final class TermuxLogCollector {
         checkPath(sb, "sh", TermuxConstants.PREFIX_PATH + "/bin/sh");
         checkPath(sb, "bash", TermuxConstants.PREFIX_PATH + "/bin/bash");
         checkPath(sb, "env", TermuxConstants.PREFIX_PATH + "/bin/env");
-        checkPath(sb, "ld-preload", "/data/data/com.termux/files/usr/lib/libtermux-exec.so");
-        checkPath(sb, "ld-preload-alt", "/data/data/com.termux/files/usr/lib/libtermux-exec-ld-preload.so");
+        checkPath(sb, "ld-preload", TermuxConstants.PREFIX_PATH + "/lib/libtermux-exec.so");
+        checkPath(sb, "ld-preload-alt", TermuxConstants.PREFIX_PATH + "/lib/libtermux-exec-ld-preload.so");
         sb.append("\n");
 
         // libtermux_exec status
@@ -91,6 +102,11 @@ public final class TermuxLogCollector {
         sb.append(runCommand("ls", "-la", TermuxConstants.PREFIX_PATH + "/bin/sh"));
         sb.append(runCommand("file", TermuxConstants.PREFIX_PATH + "/bin/sh"));
         sb.append(runCommand("/system/bin/getprop", "ro.build.version.sdk"));
+        sb.append("\n");
+
+        sb.append("----- App Logcat Snapshot -----\n");
+        sb.append("Collected by the app process. On modern Android this may be limited to logs visible to the app UID.\n");
+        sb.append(runLogcatSnapshot());
         sb.append("\n");
 
         sb.append("===== End Report =====\n");
@@ -266,13 +282,18 @@ public final class TermuxLogCollector {
                 }
             }
             Process p = pb.start();
-            BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
             StringBuilder out = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                out.append(line).append("\n");
+            Thread readerThread = readOutputInBackground(p, out);
+            boolean finished = p.waitFor(15, TimeUnit.SECONDS);
+            if (!finished) {
+                p.destroyForcibly();
+                readerThread.join(1000);
+                sb.append("ERROR: Probe timed out after 15 seconds.\n");
+                sb.append("----- Partial Probe Output -----\n");
+                sb.append(out.toString()).append("\n");
+                return sb.toString();
             }
-            int exitCode = p.waitFor();
+            int exitCode = p.exitValue();
             sb.append("----- Probe Output -----\n");
             sb.append(out.toString());
             sb.append("\n");
@@ -407,21 +428,67 @@ public final class TermuxLogCollector {
         }
     }
 
+    private static String runLogcatSnapshot() {
+        String raw = runCommand(8, "/system/bin/logcat", "-d", "-t", "400", "-v", "time");
+        StringBuilder filtered = new StringBuilder();
+        filtered.append("$ /system/bin/logcat -d -t 400 -v time | filter Termux tags\n");
+
+        int kept = 0;
+        String[] lines = raw.split("\n");
+        for (String line : lines) {
+            if (line.contains(" termux ")
+                || line.contains(" termux:")
+                || line.contains(" Termux")
+                || line.contains("TermuxExec")
+                || line.contains("TermuxTrace")
+                || line.contains("bootstrap second-stage")) {
+                filtered.append(line).append("\n");
+                kept++;
+            }
+        }
+
+        if (kept == 0) {
+            filtered.append("[no visible Termux logcat lines in the most recent 400 entries]\n");
+        }
+        return filtered.toString();
+    }
+
     private static String runCommand(String... cmd) {
+        return runCommand(5, cmd);
+    }
+
+    private static String runCommand(int timeoutSeconds, String... cmd) {
         try {
             ProcessBuilder pb = new ProcessBuilder(cmd);
             pb.redirectErrorStream(true);
             Process p = pb.start();
-            BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
             StringBuilder out = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                out.append(line).append("\n");
+            Thread readerThread = readOutputInBackground(p, out);
+            boolean finished = p.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+            if (!finished) {
+                p.destroyForcibly();
+                readerThread.join(1000);
+                return "$ " + String.join(" ", cmd) + "\n" + out + "[timeout after " + timeoutSeconds + "s]\n\n";
             }
-            p.waitFor();
-            return "$ " + String.join(" ", cmd) + "\n" + out.toString() + "\n";
+            readerThread.join(1000);
+            return "$ " + String.join(" ", cmd) + "\n" + out + "[exit=" + p.exitValue() + "]\n\n";
         } catch (Exception e) {
             return "$ " + String.join(" ", cmd) + "\n[error: " + e.getMessage() + "]\n\n";
         }
+    }
+
+    private static Thread readOutputInBackground(Process process, StringBuilder out) {
+        Thread readerThread = new Thread(() -> {
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    out.append(line).append("\n");
+                }
+            } catch (IOException e) {
+                out.append("[output read error: ").append(e.getMessage()).append("]\n");
+            }
+        }, "TermuxLogCollector-output-reader");
+        readerThread.start();
+        return readerThread;
     }
 }
