@@ -86,6 +86,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     private static final int CONTEXT_MENU_STYLING_ID = 7;
     private static final int CONTEXT_MENU_TOGGLE_KEEP_SCREEN_ON = 8;
     private static final int CONTEXT_MENU_FULLSCREEN_ID = 9;
+    private static final int CONTEXT_MENU_EXPORT_LOGS_ID = 10;
 
     private static final String ARG_TERMINAL_TOOLBAR_TEXT_INPUT = "terminal_toolbar_text_input";
     private static final String ARG_ACTIVITY_RECREATED = "activity_recreated";
@@ -598,6 +599,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         menu.add(Menu.NONE, CONTEXT_MENU_STYLING_ID, Menu.NONE, R.string.action_style_terminal);
         menu.add(Menu.NONE, CONTEXT_MENU_TOGGLE_KEEP_SCREEN_ON, Menu.NONE, R.string.action_toggle_keep_screen_on).setCheckable(true).setChecked(mTerminalView.getKeepScreenOn());
         menu.add(Menu.NONE, CONTEXT_MENU_FULLSCREEN_ID, Menu.NONE, R.string.action_fullscreen).setCheckable(true).setChecked(mPreferences.isFullscreen());
+        menu.add(Menu.NONE, CONTEXT_MENU_EXPORT_LOGS_ID, Menu.NONE, R.string.action_export_logs);
     }
 
     /**
@@ -648,6 +650,9 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                 mPreferences.toggleFullscreen();
                 applyFullscreenSetting(mPreferences.isFullscreen());
                 return true;
+            case CONTEXT_MENU_EXPORT_LOGS_ID:
+                exportDebugLogs();
+                return true;
             default:
                 return super.onContextItemSelected(item);
         }
@@ -696,6 +701,20 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         boolean newValue = !mTerminalView.getKeepScreenOn();
         mTerminalView.setKeepScreenOn(newValue);
         mPreferences.setKeepScreenOn(newValue);
+    }
+
+    private void exportDebugLogs() {
+        try {
+            String logs = TermuxLogCollector.collect(this);
+            android.content.Intent shareIntent = new android.content.Intent(android.content.Intent.ACTION_SEND);
+            shareIntent.setType("text/plain");
+            shareIntent.putExtra(android.content.Intent.EXTRA_SUBJECT, getString(R.string.title_export_logs));
+            shareIntent.putExtra(android.content.Intent.EXTRA_TEXT, logs);
+            startActivity(android.content.Intent.createChooser(shareIntent, getString(R.string.title_export_logs)));
+        } catch (Exception e) {
+            TermuxLogger.e("App", "Failed to export logs", e);
+            showTransientMessage("Failed to export logs: " + e.getMessage(), true);
+        }
     }
 
     public void requestAutoFill() {
