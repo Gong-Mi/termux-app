@@ -142,15 +142,39 @@ class RustAndroidPlugin : Plugin<Project> {
                         }
                     }
 
+                    // Copy standalone Rust binaries (e.g., termux_exec_device_probe) into assets
+                    val binaryCopyTasks = abiList.map { abi ->
+                        val rustArch = abiToRustTarget(abi)
+                        val safeAbi = abi.replace("-", "_")
+                        val execBuildTaskName = "cargoNdkBuildExec_${safeAbi}"
+                        val binaryCopyTaskName = "copyRustBinary_${safeAbi}"
+                        val execTargetDir = project.file("src/main/rust-exec/target/$safeAbi")
+                        val assetsDest = project.file("src/main/assets/termux-probes/$abi")
+
+                        project.tasks.register<Copy>(binaryCopyTaskName) {
+                            group = "rust"
+                            description = "Copy Rust standalone binaries for $abi into assets"
+
+                            onlyIf {
+                                project.tasks.findByName(execBuildTaskName) != null
+                            }
+                            dependsOn(execBuildTaskName)
+
+                            from(project.file("${execTargetDir.path}/$rustArch/release/termux_exec_device_probe"))
+                            into(assetsDest)
+                        }
+                    }
+
                     project.tasks.register("buildAllRust") {
                         group = "rust"
                         description = "Build Rust $libName for all ABIs"
                         dependsOn(copyTasks)
+                        dependsOn(binaryCopyTasks)
                     }
 
-                    // Hook into merge*JniLibFolders
+                    // Hook into merge*JniLibFolders and merge*Assets
                     project.tasks.configureEach {
-                        if (name.startsWith("merge") && name.endsWith("JniLibFolders")) {
+                        if (name.startsWith("merge") && (name.endsWith("JniLibFolders") || name.endsWith("Assets"))) {
                             dependsOn("buildAllRust")
                         }
                     }

@@ -49,6 +49,10 @@
     <string name="action_fullscreen">Fullscreen</string>
     <string name="action_export_logs">Export debug logs</string>
     <string name="title_export_logs">Termux Debug Logs</string>
+    <string name="action_export_env_config">Export env config</string>
+    <string name="title_export_env_config">Termux Env Config</string>
+    <string name="action_export_cmd_availability">Export command availability</string>
+    <string name="title_export_cmd_availability">Termux Command Availability</string>
     <string name="error_styling_not_installed">The latest Termux:Style app version is not installed.</string>
     <string name="action_styling_install">Install</string>
 

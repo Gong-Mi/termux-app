@@ -87,6 +87,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     private static final int CONTEXT_MENU_TOGGLE_KEEP_SCREEN_ON = 8;
     private static final int CONTEXT_MENU_FULLSCREEN_ID = 9;
     private static final int CONTEXT_MENU_EXPORT_LOGS_ID = 10;
+    private static final int CONTEXT_MENU_EXPORT_ENV_CONFIG_ID = 11;
+    private static final int CONTEXT_MENU_EXPORT_CMD_AVAILABILITY_ID = 12;
 
     private static final String ARG_TERMINAL_TOOLBAR_TEXT_INPUT = "terminal_toolbar_text_input";
     private static final String ARG_ACTIVITY_RECREATED = "activity_recreated";
@@ -600,6 +602,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         menu.add(Menu.NONE, CONTEXT_MENU_TOGGLE_KEEP_SCREEN_ON, Menu.NONE, R.string.action_toggle_keep_screen_on).setCheckable(true).setChecked(mTerminalView.getKeepScreenOn());
         menu.add(Menu.NONE, CONTEXT_MENU_FULLSCREEN_ID, Menu.NONE, R.string.action_fullscreen).setCheckable(true).setChecked(mPreferences.isFullscreen());
         menu.add(Menu.NONE, CONTEXT_MENU_EXPORT_LOGS_ID, Menu.NONE, R.string.action_export_logs);
+        menu.add(Menu.NONE, CONTEXT_MENU_EXPORT_ENV_CONFIG_ID, Menu.NONE, R.string.action_export_env_config);
+        menu.add(Menu.NONE, CONTEXT_MENU_EXPORT_CMD_AVAILABILITY_ID, Menu.NONE, R.string.action_export_cmd_availability);
     }
 
     /**
@@ -652,6 +656,12 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                 return true;
             case CONTEXT_MENU_EXPORT_LOGS_ID:
                 exportDebugLogs();
+                return true;
+            case CONTEXT_MENU_EXPORT_ENV_CONFIG_ID:
+                exportEnvConfig();
+                return true;
+            case CONTEXT_MENU_EXPORT_CMD_AVAILABILITY_ID:
+                exportCommandAvailability();
                 return true;
             default:
                 return super.onContextItemSelected(item);
@@ -714,6 +724,34 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         } catch (Exception e) {
             TermuxLogger.e("App", "Failed to export logs", e);
             showTransientMessage("Failed to export logs: " + e.getMessage(), true);
+        }
+    }
+
+    private void exportEnvConfig() {
+        try {
+            String logs = TermuxLogCollector.collectEnvConfig(this);
+            android.content.Intent shareIntent = new android.content.Intent(android.content.Intent.ACTION_SEND);
+            shareIntent.setType("text/plain");
+            shareIntent.putExtra(android.content.Intent.EXTRA_SUBJECT, getString(R.string.title_export_env_config));
+            shareIntent.putExtra(android.content.Intent.EXTRA_TEXT, logs);
+            startActivity(android.content.Intent.createChooser(shareIntent, getString(R.string.title_export_env_config)));
+        } catch (Exception e) {
+            TermuxLogger.e("App", "Failed to export env config", e);
+            showTransientMessage("Failed to export env config: " + e.getMessage(), true);
+        }
+    }
+
+    private void exportCommandAvailability() {
+        try {
+            String logs = TermuxLogCollector.collectCommandAvailability(this);
+            android.content.Intent shareIntent = new android.content.Intent(android.content.Intent.ACTION_SEND);
+            shareIntent.setType("text/plain");
+            shareIntent.putExtra(android.content.Intent.EXTRA_SUBJECT, getString(R.string.title_export_cmd_availability));
+            shareIntent.putExtra(android.content.Intent.EXTRA_TEXT, logs);
+            startActivity(android.content.Intent.createChooser(shareIntent, getString(R.string.title_export_cmd_availability)));
+        } catch (Exception e) {
+            TermuxLogger.e("App", "Failed to export command availability", e);
+            showTransientMessage("Failed to export command availability: " + e.getMessage(), true);
         }
     }
 
