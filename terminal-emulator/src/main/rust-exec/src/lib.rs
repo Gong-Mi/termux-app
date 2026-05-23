@@ -64,7 +64,7 @@ unsafe extern "C" fn sigsys_handler(_sig: c_int, _info: *mut libc::siginfo_t, vo
     }
 
     // Map paths and handle shebangs
-    if let Some((final_path, new_argv)) = transform_exec(&path_str, argv_ptr) {
+    if let Some((final_path, new_argv)) = transform_exec(&path_str, argv_ptr, 0) {
         let c_path = CString::new(final_path).unwrap();
         let c_argv_ptrs: Vec<*const c_char> = new_argv.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
         
@@ -86,7 +86,12 @@ unsafe extern "C" fn sigsys_handler(_sig: c_int, _info: *mut libc::siginfo_t, vo
     unsafe { libc::_exit(1) };
 }
 
-fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String, Vec<CString>)> {
+fn transform_exec(path: &str, orig_argv: *const *const c_char, depth: u32) -> Option<(String, Vec<CString>)> {
+    if depth > 3 {
+        // Shebang chain too deep — let kernel handle it
+        return None;
+    }
+
     let mut file = std::fs::File::open(path).ok()?;
     let mut buffer = [0u8; 256];
     let n = file.read(&mut buffer).ok()?;
@@ -111,10 +116,16 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char) -> Option<(String
         }
         return Some((linker.to_string(), new_argv));
     } else if let Some((interpreter, shebang_args)) = parse_shebang(&buffer[..n]) {
-        // Shebang script
-        let mut new_argv = Vec::new();
+        // Shebang script — resolve interpreter path and check if it is ALSO a script
         let resolved_interp = map_path(&interpreter);
-        
+
+        // If the interpreter itself is a shebang script, recurse to find the real ELF loader
+        if let Some((real_linker, real_argv)) = transform_exec(&resolved_interp, orig_argv, depth + 1) {
+            return Some((real_linker, real_argv));
+        }
+
+        // Interpreter is ELF (or direct exec). Build argv for linker -> interp -> script
+        let mut new_argv = Vec::new();
         new_argv.push(CString::new(linker).unwrap());
         new_argv.push(CString::new(resolved_interp.clone()).unwrap());
         
@@ -152,11 +163,27 @@ fn parse_shebang(buffer: &[u8]) -> Option<(String, Option<String>)> {
     Some((interpreter, args))
 }
 
+fn get_termux_prefix() -> String {
+    // 1. Try PREFIX env var (set by Termux shell)
+    if let Ok(prefix) = std::env::var("PREFIX") {
+        return prefix;
+    }
+    // 2. Try infer from HOME env var (HOME=/data/.../files/home)
+    if let Ok(home) = std::env::var("HOME") {
+        if home.ends_with("/files/home") {
+            return format!("{}/usr", &home[..home.len() - 4]);
+        }
+    }
+    // 3. Fallback to standard single-user path
+    "/data/data/com.termux/files/usr".to_string()
+}
+
 fn map_path(path: &str) -> String {
+    let prefix = get_termux_prefix();
     if path.starts_with("/usr/bin/") {
-        format!("/data/data/com.termux/files/usr/bin/{}", &path[9..])
+        format!("{}/bin/{}", prefix, &path[9..])
     } else if path.starts_with("/bin/") {
-        format!("/data/data/com.termux/files/usr/bin/{}", &path[5..])
+        format!("{}/bin/{}", prefix, &path[5..])
     } else {
         path.to_string()
     }
