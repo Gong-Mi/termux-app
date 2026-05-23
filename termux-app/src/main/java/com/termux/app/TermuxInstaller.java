@@ -122,16 +122,16 @@ final class TermuxInstaller {
                                 if (parts.length != 2)
                                     throw new RuntimeException("Malformed symlink line: " + line);
                                 String oldPath = parts[0];
-                                String newPath = TERMUX_STAGING_PREFIX_DIR_PATH + "/" + parts[1];
+                                String newPath = getStagingPrefixPath() + "/" + parts[1];
                                 symlinks.add(Pair.create(oldPath, newPath));
                             }
                         } else {
                             String zipEntryName = zipEntry.getName();
-                            File targetFile = new File(TERMUX_STAGING_PREFIX_DIR_PATH, zipEntryName);
+                            File targetFile = new File(getStagingPrefixPath(), zipEntryName);
 
                             // Silence google play scanning flagging about this: https://support.google.com/faqs/answer/9294009
                             var canonicalPath = targetFile.getCanonicalPath();
-                            if (!canonicalPath.startsWith(TERMUX_STAGING_PREFIX_DIR_PATH)) {
+                            if (!canonicalPath.startsWith(getStagingPrefixPath())) {
                                 throw new RuntimeException("Invalid zip entry: " + zipEntryName);
                             }
 
@@ -167,13 +167,13 @@ final class TermuxInstaller {
                     Os.symlink(symlink.first, symlink.second);
                 }
 
-                Os.rename(TERMUX_STAGING_PREFIX_DIR_PATH, TermuxConstants.PREFIX_PATH);
+                Os.rename(getStagingPrefixPath(), TermuxConstants.PREFIX_PATH);
                 runBootstrapSecondStage();
 
                 activity.runOnUiThread(whenDone);
             } catch (final Exception e) {
                 Log.e(TermuxConstants.LOG_TAG, "Error in installation", e);
-                deleteDir(new File(TERMUX_STAGING_PREFIX_DIR_PATH));
+                deleteDir(new File(getStagingPrefixPath()));
                 deleteDir(new File(TermuxConstants.PREFIX_PATH));
                 showBootstrapErrorDialog(activity, whenDone, "Error in installation: " + e.getMessage());
             } finally {
