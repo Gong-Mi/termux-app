@@ -44,21 +44,16 @@ unsafe fn setup_universal_interceptor() {
     }
 }
 
-unsafe extern "C" fn sigsys_handler(_sig: c_int, _info: *mut libc::siginfo_t, void_context: *mut c_void) {
-    let ctx_ptr = void_context as *mut u64;
-    
-    // aarch64 bionic ucontext layout:
-    // uc_flags(0) + uc_link(1) + uc_stack(2..4) + fault_address(5)
-    // regs[0] (x0) = offset 6, regs[1] (x1) = offset 7, regs[2] (x2) = offset 8
-    #[cfg(target_arch = "aarch64")]
-    let (path_ptr, argv_ptr, envp_ptr) = unsafe { (
-        *ctx_ptr.offset(6) as *const c_char,
-        *ctx_ptr.offset(7) as *const *const c_char,
-        *ctx_ptr.offset(8) as *const *const c_char,
-    ) };
+unsafe extern "C" {
+    fn get_execve_path(ucontext: *mut c_void) -> libc::c_ulong;
+    fn get_execve_argv(ucontext: *mut c_void) -> libc::c_ulong;
+    fn get_execve_envp(ucontext: *mut c_void) -> libc::c_ulong;
+}
 
-    #[cfg(not(target_arch = "aarch64"))]
-    return; // Not implemented for other archs in this snippet
+unsafe extern "C" fn sigsys_handler(_sig: c_int, _info: *mut libc::siginfo_t, void_context: *mut c_void) {
+    let path_ptr = unsafe { get_execve_path(void_context) as *const c_char };
+    let argv_ptr = unsafe { get_execve_argv(void_context) as *const *const c_char };
+    let envp_ptr = unsafe { get_execve_envp(void_context) as *const *const c_char };
 
     if path_ptr.is_null() { return; }
     let path_str = unsafe { CStr::from_ptr(path_ptr) }.to_string_lossy().to_string();

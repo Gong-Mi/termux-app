@@ -2,6 +2,7 @@
 name = "termux-exec-rs"
 version = "0.1.0"
 edition = "2024"
+build = "build.rs"
 
 [lib]
 name = "termux_exec"
@@ -14,3 +15,6 @@ path = "src/bin/termux_exec_device_probe.rs"
 [dependencies]
 libc = "0.2"
 nix = { version = "0.31.2", features = ["fs"] }
+
+[build-dependencies]
+cc = "1.0"
