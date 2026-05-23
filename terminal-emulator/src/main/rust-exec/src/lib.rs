@@ -2,9 +2,10 @@ use std::ffi::{CStr, CString};
 use std::io::Read;
 use std::os::raw::{c_char, c_int, c_void};
 use std::ptr;
-use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 
 static REAL_DLSYM: AtomicPtr<libc::c_void> = AtomicPtr::new(ptr::null_mut());
+static LOGGER_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 #[repr(C)]
 struct sock_filter { code: u16, jt: u8, jf: u8, k: u32 }
@@ -19,10 +20,28 @@ const RTLD_NEXT: *mut libc::c_void = -1i64 as *mut libc::c_void;
 #[unsafe(link_section = ".init_array")]
 pub static LOAD_HOOK: unsafe extern "C" fn() = {
     unsafe extern "C" fn init() {
+        unsafe { init_logging() };
         unsafe { setup_universal_interceptor() };
     }
     init
 };
+
+#[cfg(target_os = "android")]
+unsafe fn init_logging() {
+    if LOGGER_INITIALIZED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    android_logger::init_once(
+        android_logger::Config::default()
+            .with_max_level(log::LevelFilter::Debug)
+            .with_tag("TermuxExec"),
+    );
+}
+
+#[cfg(not(target_os = "android"))]
+unsafe fn init_logging() {
+    // noop on non-Android targets
+}
 
 unsafe fn setup_universal_interceptor() {
     unsafe {
@@ -63,17 +82,25 @@ unsafe extern "C" fn sigsys_handler(_sig: c_int, _info: *mut libc::siginfo_t, vo
     let argv_ptr = get_execve_argv(void_context);
     let envp_ptr = get_execve_envp(void_context);
 
-    if path_ptr.is_null() { return; }
+    if path_ptr.is_null() {
+        log::warn!("sigsys_handler: path_ptr is null, ignoring");
+        return;
+    }
     let path_str = unsafe { CStr::from_ptr(path_ptr) }.to_string_lossy().to_string();
+    log::debug!("sigsys: execve(\"{}\")", path_str);
 
     // For system binaries: bypass our own SECCOMP filter by using execveat
     if path_str.starts_with("/system/") || path_str.starts_with("/vendor/") || path_str.contains("/linker") {
+        log::debug!("sigsys: passing through system binary \"{}\"", path_str);
         unsafe { libc::syscall(libc::SYS_execveat, libc::AT_FDCWD, path_ptr, argv_ptr, envp_ptr, 0) };
         unsafe { libc::_exit(1) };
     }
 
     // Map paths and handle shebangs
     if let Some((final_path, new_argv)) = transform_exec(&path_str, argv_ptr, 0) {
+        let argv_display: Vec<String> = new_argv.iter().map(|s| s.to_string_lossy().to_string()).collect();
+        log::info!("sigsys: transformed \"{}\" -> \"{}\" with argv {:?}", path_str, final_path, argv_display);
+
         let c_path = CString::new(final_path).unwrap();
         let c_argv_ptrs: Vec<*const c_char> = new_argv.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
         
@@ -87,17 +114,18 @@ unsafe extern "C" fn sigsys_handler(_sig: c_int, _info: *mut libc::siginfo_t, vo
             0
         ) };
     } else {
-        // Fallback for non-termux binaries if any
+        log::debug!("sigsys: no transform for \"{}\", falling back to execveat", path_str);
         unsafe { libc::syscall(libc::SYS_execveat, libc::AT_FDCWD, path_ptr, argv_ptr, envp_ptr, 0) };
     }
 
     // If we reach here, execveat failed
+    log::error!("sigsys: execveat failed for \"{}\", exiting", path_str);
     unsafe { libc::_exit(1) };
 }
 
 fn transform_exec(path: &str, orig_argv: *const *const c_char, depth: u32) -> Option<(String, Vec<CString>)> {
     if depth > 3 {
-        // Shebang chain too deep — let kernel handle it
+        log::warn!("transform_exec: shebang chain too deep for \"{}\", giving up", path);
         return None;
     }
 
@@ -112,6 +140,7 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char, depth: u32) -> Op
     };
 
     if n > 4 && buffer[0] == 0x7F && buffer[1] == b'E' && buffer[2] == b'L' && buffer[3] == b'F' {
+        log::debug!("transform_exec: \"{}\" is ELF, prepending linker", path);
         // ELF: Prepend linker, but keep orig_argv[0] as the program name
         // (critical for multi-call binaries like busybox/coreutils/toybox)
         let mut new_argv = Vec::new();
@@ -130,8 +159,10 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char, depth: u32) -> Op
         }
         return Some((linker.to_string(), new_argv));
     } else if let Some((interpreter, shebang_args)) = parse_shebang(&buffer[..n]) {
+        log::debug!("transform_exec: \"{}\" has shebang interpreter=\"{}\" args={:?}", path, interpreter, shebang_args);
         // Shebang script — resolve interpreter path and check if it is ALSO a script
         let resolved_interp = map_path(&interpreter);
+        log::debug!("transform_exec: mapped interpreter \"{}\" -> \"{}\"", interpreter, resolved_interp);
 
         // If the interpreter itself is a shebang script, recurse to find the real ELF loader
         if let Some((real_linker, mut real_argv)) = transform_exec(&resolved_interp, orig_argv, depth + 1) {
@@ -202,13 +233,17 @@ fn get_termux_prefix() -> String {
 
 fn map_path(path: &str) -> String {
     let prefix = get_termux_prefix();
-    if path.starts_with("/usr/bin/") {
+    let mapped = if path.starts_with("/usr/bin/") {
         format!("{}/bin/{}", prefix, &path[9..])
     } else if path.starts_with("/bin/") {
         format!("{}/bin/{}", prefix, &path[5..])
     } else {
         path.to_string()
+    };
+    if mapped != path {
+        log::debug!("map_path: \"{}\" -> \"{}\" (prefix={})", path, mapped, prefix);
     }
+    mapped
 }
 
 #[cfg(test)]
