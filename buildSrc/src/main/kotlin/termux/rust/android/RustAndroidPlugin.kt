@@ -155,10 +155,9 @@ class RustAndroidPlugin : Plugin<Project> {
                             group = "rust"
                             description = "Copy Rust standalone binaries for $abi into assets"
 
-                            onlyIf {
-                                project.tasks.findByName(execBuildTaskName) != null
+                            if (project.tasks.findByName(execBuildTaskName) != null) {
+                                dependsOn(execBuildTaskName)
                             }
-                            dependsOn(execBuildTaskName)
 
                             from(project.file("${execTargetDir.path}/$rustArch/release/termux_exec_device_probe"))
                             into(assetsDest)
