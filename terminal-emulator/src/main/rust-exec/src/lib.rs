@@ -47,12 +47,14 @@ unsafe fn setup_universal_interceptor() {
 unsafe extern "C" fn sigsys_handler(_sig: c_int, _info: *mut libc::siginfo_t, void_context: *mut c_void) {
     let ctx_ptr = void_context as *mut u64;
     
-    // aarch64 ucontext layout: x0 is at index 23, x1 at 24, x2 at 25, syscall nr at 31
+    // aarch64 bionic ucontext layout:
+    // uc_flags(0) + uc_link(1) + uc_stack(2..4) + fault_address(5)
+    // regs[0] (x0) = offset 6, regs[1] (x1) = offset 7, regs[2] (x2) = offset 8
     #[cfg(target_arch = "aarch64")]
     let (path_ptr, argv_ptr, envp_ptr) = unsafe { (
-        *ctx_ptr.offset(23) as *const c_char,
-        *ctx_ptr.offset(24) as *const *const c_char,
-        *ctx_ptr.offset(25) as *const *const c_char,
+        *ctx_ptr.offset(6) as *const c_char,
+        *ctx_ptr.offset(7) as *const *const c_char,
+        *ctx_ptr.offset(8) as *const *const c_char,
     ) };
 
     #[cfg(not(target_arch = "aarch64"))]
