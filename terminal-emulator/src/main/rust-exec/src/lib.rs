@@ -44,23 +44,32 @@ unsafe fn setup_universal_interceptor() {
     }
 }
 
-unsafe extern "C" {
-    fn get_execve_path(ucontext: *mut c_void) -> libc::c_ulong;
-    fn get_execve_argv(ucontext: *mut c_void) -> libc::c_ulong;
-    fn get_execve_envp(ucontext: *mut c_void) -> libc::c_ulong;
+// aarch64 ucontext register offsets (verified on-device via test_sigsys)
+// ucontext_t.uc_mcontext.regs[0] sits at u64 offset 23 from void_context.
+const UCONTEXT_X0_OFFSET: isize = 23;
+
+unsafe fn get_execve_path(ctx: *mut c_void) -> *const c_char {
+    *((ctx as *const u64).offset(UCONTEXT_X0_OFFSET) as *const *const c_char)
+}
+unsafe fn get_execve_argv(ctx: *mut c_void) -> *const *const c_char {
+    *((ctx as *const u64).offset(UCONTEXT_X0_OFFSET + 1) as *const *const *const c_char)
+}
+unsafe fn get_execve_envp(ctx: *mut c_void) -> *const *const c_char {
+    *((ctx as *const u64).offset(UCONTEXT_X0_OFFSET + 2) as *const *const *const c_char)
 }
 
 unsafe extern "C" fn sigsys_handler(_sig: c_int, _info: *mut libc::siginfo_t, void_context: *mut c_void) {
-    let path_ptr = unsafe { get_execve_path(void_context) as *const c_char };
-    let argv_ptr = unsafe { get_execve_argv(void_context) as *const *const c_char };
-    let envp_ptr = unsafe { get_execve_envp(void_context) as *const *const c_char };
+    let path_ptr = get_execve_path(void_context);
+    let argv_ptr = get_execve_argv(void_context);
+    let envp_ptr = get_execve_envp(void_context);
 
     if path_ptr.is_null() { return; }
     let path_str = unsafe { CStr::from_ptr(path_ptr) }.to_string_lossy().to_string();
 
-    // Skip system binaries
+    // For system binaries: bypass our own SECCOMP filter by using execveat
     if path_str.starts_with("/system/") || path_str.starts_with("/vendor/") || path_str.contains("/linker") {
-        return;
+        unsafe { libc::syscall(libc::SYS_execveat, libc::AT_FDCWD, path_ptr, argv_ptr, envp_ptr, 0) };
+        unsafe { libc::_exit(1) };
     }
 
     // Map paths and handle shebangs
@@ -103,10 +112,15 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char, depth: u32) -> Op
     };
 
     if n > 4 && buffer[0] == 0x7F && buffer[1] == b'E' && buffer[2] == b'L' && buffer[3] == b'F' {
-        // ELF: Prepend linker
+        // ELF: Prepend linker, but keep orig_argv[0] as the program name
+        // (critical for multi-call binaries like busybox/coreutils/toybox)
         let mut new_argv = Vec::new();
         new_argv.push(CString::new(linker).unwrap());
-        new_argv.push(CString::new(path).unwrap());
+        if !orig_argv.is_null() && unsafe { !(*orig_argv).is_null() } {
+            new_argv.push(unsafe { CStr::from_ptr(*orig_argv).to_owned() });
+        } else {
+            new_argv.push(CString::new(path).unwrap());
+        }
         let mut i = 1;
         unsafe {
             while !orig_argv.is_null() && !(*orig_argv.offset(i)).is_null() {
@@ -120,7 +134,15 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char, depth: u32) -> Op
         let resolved_interp = map_path(&interpreter);
 
         // If the interpreter itself is a shebang script, recurse to find the real ELF loader
-        if let Some((real_linker, real_argv)) = transform_exec(&resolved_interp, orig_argv, depth + 1) {
+        if let Some((real_linker, mut real_argv)) = transform_exec(&resolved_interp, orig_argv, depth + 1) {
+            // Insert the script path into the recursive result (after the interpreter)
+            // real_argv layout: [linker, interp, ...orig_args...]
+            // we need: [linker, interp, script_path, ...orig_args...]
+            if real_argv.len() >= 2 {
+                real_argv.insert(2, CString::new(path).unwrap());
+            } else {
+                real_argv.push(CString::new(path).unwrap());
+            }
             return Some((real_linker, real_argv));
         }
 
