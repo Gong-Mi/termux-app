@@ -5,7 +5,6 @@ use nix::unistd::{ForkResult, chdir, fork, setsid};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::ffi::CString;
-use std::io::Read;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -119,12 +118,94 @@ pub fn map_interpreter(interp: &str, normalize: &dyn Fn(String) -> String) -> St
         let binary = interp.rsplit('/').next().unwrap_or("sh");
         format!("{}/bin/{}", termux_prefix, binary)
     } else if interp.starts_with("/data/data/com.termux/")
-        || interp.starts_with("/data/user/0/com.termux/")
+        || interp.starts_with("/data/user/")
     {
         normalize(interp.to_string())
     } else {
         interp.to_string()
     }
+}
+
+fn is_elf_file(path: &str) -> bool {
+    use std::io::Read;
+
+    std::fs::File::open(path)
+        .and_then(|mut f| {
+            let mut buf = [0u8; 4];
+            f.read_exact(&mut buf)?;
+            Ok(buf[0] == 0x7F && buf[1] == b'E' && buf[2] == b'L' && buf[3] == b'F')
+        })
+        .unwrap_or(false)
+}
+
+fn resolve_executable(
+    cmd: String,
+    argv: Vec<String>,
+    termux_prefix: &str,
+    normalize_path: &dyn Fn(String) -> String,
+    depth: usize,
+) -> (String, Vec<String>) {
+    if depth > 4 {
+        android_log(
+            LogPriority::WARN,
+            &format!("[PTY] Shebang chain too deep, using command as-is: {}", cmd),
+        );
+        return (cmd, argv);
+    }
+
+    let Ok(mut file) = std::fs::File::open(&cmd) else {
+        return (cmd, argv);
+    };
+
+    use std::io::Read;
+    let mut buffer = [0u8; 4096];
+    let Ok(n) = file.read(&mut buffer) else {
+        return (cmd, argv);
+    };
+
+    if n > 4 && buffer[0] == 0x7F && buffer[1] == b'E' && buffer[2] == b'L' && buffer[3] == b'F' {
+        return (cmd, argv);
+    }
+
+    if let Some((raw_interpreter, shebang_args)) = parse_shebang(&buffer[..n]) {
+        let interpreter = map_interpreter(&raw_interpreter, normalize_path);
+        let mut new_argv = Vec::new();
+        if !argv.is_empty() {
+            new_argv.push(argv[0].clone());
+        }
+        if let Some(ref args) = shebang_args {
+            new_argv.extend(args.split_whitespace().map(|arg| arg.to_string()));
+        }
+        new_argv.push(cmd.clone());
+        if argv.len() > 1 {
+            new_argv.extend(argv[1..].iter().cloned());
+        }
+
+        android_log(
+            LogPriority::INFO,
+            &format!(
+                "[PTY] Shebang detected: interpreter={}, args={:?}, script={}, new_argv={:?}",
+                interpreter, shebang_args, cmd, new_argv
+            ),
+        );
+
+        return resolve_executable(interpreter, new_argv, termux_prefix, normalize_path, depth + 1);
+    }
+
+    let interpreter = format!("{}/bin/sh", termux_prefix);
+    let mut new_argv = Vec::new();
+    if !argv.is_empty() {
+        new_argv.push(argv[0].clone());
+    }
+    new_argv.push(cmd.clone());
+    if argv.len() > 1 {
+        new_argv.extend(argv[1..].iter().cloned());
+    }
+    android_log(
+        LogPriority::INFO,
+        &format!("[PTY] No shebang/ELF, defaulting to shell: {}", interpreter),
+    );
+    resolve_executable(interpreter, new_argv, termux_prefix, normalize_path, depth + 1)
 }
 
 pub fn create_subprocess_with_data(
@@ -179,17 +260,22 @@ pub fn create_subprocess_with_data(
     };
 
     let normalize_path = |path: String| -> String {
-        // 动态适配：如果路径包含 /data/user/0/com.termux 或类似的硬编码 Android 路径，
+        // 动态适配：如果路径包含 /data/user/<id>/com.termux 或类似的硬编码 Android 路径，
         // 且它不匹配当前实际的 termux_data_dir，则进行全量替换。
-        if (path.contains("/data/user/0/com.termux") || path.contains("/data/data/com.termux"))
-            && !path.contains(&termux_data_dir)
-        {
-            // 将所有已知的硬编码前缀替换为动态探测的前缀
-            path.replace("/data/user/0/com.termux", &termux_data_dir)
-                .replace("/data/data/com.termux", &termux_data_dir)
-        } else {
-            path
+        if path.contains(&termux_data_dir) {
+            return path;
         }
+        if path.contains("/data/data/com.termux") {
+            return path.replace("/data/data/com.termux", &termux_data_dir);
+        }
+        if let Some(data_user_index) = path.find("/data/user/") {
+            if let Some(package_index) = path[data_user_index..].find("/com.termux") {
+                let package_index = data_user_index + package_index;
+                let old_prefix = &path[data_user_index..package_index + "/com.termux".len()];
+                return path.replace(old_prefix, &termux_data_dir);
+            }
+        }
+        path
     };
 
     let cmd_str = normalize_path(cmd_str);
@@ -264,72 +350,8 @@ pub fn create_subprocess_with_data(
 
     let _cmd_log = real_cmd.clone();
 
-    // Read the first 256 bytes of the target file to determine ELF / shebang / plain script.
-    let (final_cmd, final_argv) = if let Ok(mut file) = std::fs::File::open(&real_cmd) {
-        use std::io::Read;
-        let mut buffer = [0u8; 4096];
-        if let Ok(n) = file.read(&mut buffer) {
-            if n > 4
-                && buffer[0] == 0x7F
-                && buffer[1] == b'E'
-                && buffer[2] == b'L'
-                && buffer[3] == b'F'
-            {
-                // ELF file - execute directly.
-                // argv[0] is already set (e.g. "-login" or the binary name).
-                (real_cmd, real_argv)
-            } else if let Some((raw_interpreter, shebang_args)) = parse_shebang(&buffer[..n]) {
-                // Shebang detected.  The interpreter becomes the real executable;
-                // the original script path is passed as an argument.
-                let interpreter = map_interpreter(&raw_interpreter, &normalize_path);
-
-                // argv[0] = process name (already in real_argv[0], e.g. "-login")
-                // argv[1..] = shebang args (if any, e.g. "bash")
-                // argv[...] = original script path
-                // argv[...] = user-supplied args (real_argv[1..])
-                let mut new_argv = Vec::new();
-                if !real_argv.is_empty() {
-                    new_argv.push(real_argv[0].clone()); // process name
-                }
-                if let Some(ref args) = shebang_args {
-                    new_argv.push(args.clone());
-                }
-                new_argv.push(real_cmd.clone()); // script path
-                if real_argv.len() > 1 {
-                    new_argv.extend(real_argv[1..].iter().cloned());
-                }
-
-                android_log(
-                    LogPriority::INFO,
-                    &format!(
-                        "[PTY] Shebang detected: interpreter={}, args={:?}, script={}, new_argv={:?}",
-                        interpreter, shebang_args, real_cmd, new_argv
-                    ),
-                );
-                (interpreter, new_argv)
-            } else {
-                // No shebang and no ELF - default to $PREFIX/bin/sh.
-                let interpreter = format!("{}/bin/sh", termux_prefix);
-                let mut new_argv = Vec::new();
-                if !real_argv.is_empty() {
-                    new_argv.push(real_argv[0].clone()); // process name
-                }
-                new_argv.push(real_cmd.clone()); // script path
-                if real_argv.len() > 1 {
-                    new_argv.extend(real_argv[1..].iter().cloned());
-                }
-                android_log(
-                    LogPriority::INFO,
-                    &format!("[PTY] No shebang/ELF, defaulting to shell: {}", interpreter),
-                );
-                (interpreter, new_argv)
-            }
-        } else {
-            (real_cmd, real_argv)
-        }
-    } else {
-        (real_cmd, real_argv)
-    };
+    let (final_cmd, final_argv) =
+        resolve_executable(real_cmd, real_argv, &termux_prefix, &normalize_path, 0);
 
     // ------------------------------------------------------------------
     // Android 10+ (API 29+) W^X / exec() 限制绕过：linker64 间接执行
@@ -343,17 +365,6 @@ pub fn create_subprocess_with_data(
     // 子进程自己再 exec 的程序（如 Go 静态链接二进制内部的 exec）
     // 需要 LD_PRELOAD + libtermux-exec.so 来覆盖。
     // ------------------------------------------------------------------
-
-    /// 判断文件是否为 ELF（跟随符号链接）
-    fn is_elf_file(path: &str) -> bool {
-        std::fs::File::open(path)
-            .and_then(|mut f| {
-                let mut buf = [0u8; 4];
-                f.read_exact(&mut buf)?;
-                Ok(buf[0] == 0x7F && buf[1] == b'E' && buf[2] == b'L' && buf[3] == b'F')
-            })
-            .unwrap_or(false)
-    }
 
     /// 判断目标路径是否需要 linker64 wrapper
     fn needs_linker_wrapper(path: &str, _termux_files_dir: &str) -> bool {

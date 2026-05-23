@@ -56,13 +56,7 @@ public class TermuxShellUtils {
                             } else {
                                 // End of shebang.
                                 String shebangExecutable = builder.toString();
-                                if (shebangExecutable.startsWith("/usr") || shebangExecutable.startsWith("/bin")) {
-                                    String[] parts = shebangExecutable.split("/");
-                                    String binary = parts[parts.length - 1];
-                                    interpreter = TermuxConstants.BIN_PATH + "/" + binary;
-                                } else if (shebangExecutable.startsWith(TermuxConstants.FILES_PATH)) {
-                                    interpreter = shebangExecutable;
-                                }
+                                interpreter = mapShebangExecutable(shebangExecutable);
                                 break;
                             }
                         } else {
@@ -101,6 +95,42 @@ public class TermuxShellUtils {
         return new ExecuteCommand(actualFileToExecute, actualArguments.toArray(new String[0]));
     }
 
+    private static String mapShebangExecutable(@NonNull String shebangExecutable) {
+        if (shebangExecutable.startsWith("/usr") || shebangExecutable.startsWith("/bin")) {
+            String[] parts = shebangExecutable.split("/");
+            String binary = parts[parts.length - 1];
+            return TermuxConstants.BIN_PATH + "/" + binary;
+        }
+
+        String normalizedTermuxPath = normalizeTermuxFilesPath(shebangExecutable);
+        if (normalizedTermuxPath != null) {
+            return normalizedTermuxPath;
+        }
+
+        return null;
+    }
+
+    private static String normalizeTermuxFilesPath(@NonNull String path) {
+        String legacyPrefix = "/data/data/" + TermuxConstants.PACKAGE_NAME + "/files";
+        if (path.startsWith(legacyPrefix)) {
+            return TermuxConstants.FILES_PATH + path.substring(legacyPrefix.length());
+        }
+
+        String dataUserPrefix = "/data/user/";
+        String packageFilesSegment = "/" + TermuxConstants.PACKAGE_NAME + "/files";
+        if (path.startsWith(dataUserPrefix)) {
+            int packageFilesIndex = path.indexOf(packageFilesSegment, dataUserPrefix.length());
+            if (packageFilesIndex >= 0) {
+                return TermuxConstants.FILES_PATH + path.substring(packageFilesIndex + packageFilesSegment.length());
+            }
+        }
+
+        if (path.startsWith(TermuxConstants.FILES_PATH)) {
+            return path;
+        }
+
+        return null;
+    }
 
     public static String[] setupEnvironment(boolean failsafe) {
         String tmpDir = TermuxConstants.PREFIX_PATH + "/tmp";
