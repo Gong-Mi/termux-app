@@ -87,7 +87,8 @@ public class TermuxShellUtils {
         String actualFileToExecute;
         if (elfFileToExecute.startsWith(TermuxConstants.FILES_PATH)) {
             actualFileToExecute = "/system/bin/linker" + (android.os.Process.is64Bit() ? "64" : "");
-            actualArguments.add(elfFileToExecute);
+            actualArguments.add(0, elfFileToExecute);
+            actualArguments.add(0, actualFileToExecute);
         } else {
             actualFileToExecute = elfFileToExecute;
         }
@@ -213,4 +214,3 @@ public class TermuxShellUtils {
 
 
 }
-

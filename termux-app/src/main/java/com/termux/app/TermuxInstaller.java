@@ -16,6 +16,7 @@ import android.util.Log;
 import android.util.Pair;
 import android.view.WindowManager;
 
+import com.termux.BuildConfig;
 import com.termux.R;
 
 import java.io.BufferedReader;
@@ -80,8 +81,10 @@ final class TermuxInstaller {
 
         // If prefix directory exists, even if its a symlink to a valid directory and symlink is not broken/dangling
         if (new File(TermuxConstants.PREFIX_PATH).exists()) {
-            whenDone.run();
-            return;
+            if (isBootstrapSecondStageDone()) {
+                whenDone.run();
+                return;
+            }
         }
 
         final ProgressDialog progress = ProgressDialog.show(activity, null, activity.getString(R.string.bootstrap_installer_body), true, false);
@@ -161,10 +164,13 @@ final class TermuxInstaller {
                 }
 
                 Os.rename(TERMUX_STAGING_PREFIX_DIR_PATH, TermuxConstants.PREFIX_PATH);
+                runBootstrapSecondStage();
 
                 activity.runOnUiThread(whenDone);
             } catch (final Exception e) {
                 Log.e(TermuxConstants.LOG_TAG, "Error in installation", e);
+                deleteDir(new File(TERMUX_STAGING_PREFIX_DIR_PATH));
+                deleteDir(new File(TermuxConstants.PREFIX_PATH));
                 showBootstrapErrorDialog(activity, whenDone, "Error in installation: " + e.getMessage());
             } finally {
                 activity.runOnUiThread(() -> {
@@ -176,6 +182,48 @@ final class TermuxInstaller {
                 });
             }
         }).start();
+    }
+
+    private static void runBootstrapSecondStage() throws IOException, InterruptedException {
+        String linkerPath = "/system/bin/linker" + (android.os.Process.is64Bit() ? "64" : "");
+        String bashPath = TermuxConstants.BIN_PATH + "/bash";
+        String secondStagePath = TermuxConstants.PREFIX_PATH +
+            "/etc/termux/termux-bootstrap/second-stage/termux-bootstrap-second-stage.sh";
+
+        ProcessBuilder builder = new ProcessBuilder(linkerPath, bashPath, bashPath, secondStagePath);
+        builder.redirectErrorStream(true);
+        var environment = builder.environment();
+        environment.put("HOME", TermuxConstants.HOME_PATH);
+        environment.put("PREFIX", TermuxConstants.PREFIX_PATH);
+        environment.put("TMPDIR", TermuxConstants.PREFIX_PATH + "/tmp");
+        environment.put("PATH", TermuxConstants.BIN_PATH + ":/system/bin:/system/xbin");
+        environment.put("TERMUX_VERSION", BuildConfig.VERSION_NAME);
+        environment.put("TERMUX_APP_PACKAGE_MANAGER", "apt");
+        environment.put("ANDROID__BUILD_VERSION_SDK", String.valueOf(android.os.Build.VERSION.SDK_INT));
+        File termuxExecPreload = new File(TermuxConstants.PREFIX_PATH + "/lib/libtermux-exec-ld-preload.so");
+        if (termuxExecPreload.exists()) {
+            environment.put("LD_PRELOAD", termuxExecPreload.getAbsolutePath());
+        }
+
+        Process process = builder.start();
+        StringBuilder output = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                Log.i(TermuxConstants.LOG_TAG, "bootstrap second-stage: " + line);
+                output.append(line).append('\n');
+            }
+        }
+
+        int exitCode = process.waitFor();
+        if (exitCode != 0) {
+            throw new RuntimeException("Bootstrap second stage failed with exit code " + exitCode + ": " + output);
+        }
+    }
+
+    private static boolean isBootstrapSecondStageDone() {
+        return new File(TermuxConstants.PREFIX_PATH +
+            "/etc/termux/termux-bootstrap/second-stage/termux-bootstrap-second-stage.sh.lock").exists();
     }
 
     public static void showBootstrapErrorDialog(Activity activity, Runnable whenDone, String message) {

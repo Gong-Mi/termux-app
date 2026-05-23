@@ -2,17 +2,11 @@ use crate::utils::{LogPriority, android_log};
 use ash::khr::swapchain;
 use ash::vk::Handle;
 use ash::{Device, Entry, Instance, vk as ash_vk};
-use skia_safe::{
-    ColorType, Surface as SkSurface, gpu::ContextOptions, gpu::DirectContext, gpu::vk,
-};
+use skia_safe::{ColorType, Surface as SkSurface, gpu::DirectContext, gpu::vk};
 use std::ffi::CStr;
 use std::os::raw::c_void;
-use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 
-// === Pipeline Cache Persistence Hooks ===
-static ORIGINAL_CREATE_PIPELINE_CACHE: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
-static ORIGINAL_DESTROY_PIPELINE_CACHE: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
-static HOOKED_PIPELINE_CACHE: AtomicU64 = AtomicU64::new(0);
 static PIPELINE_CACHE_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 /// Set by Java/Kotlin via JNI to the app's cache directory
@@ -20,37 +14,6 @@ static PIPELINE_CACHE_FILE_PATH: std::sync::Mutex<Option<String>> = std::sync::M
 
 pub fn set_pipeline_cache_file_path(path: &str) {
     *PIPELINE_CACHE_FILE_PATH.lock().unwrap() = Some(path.to_string());
-}
-
-unsafe extern "C" fn hooked_vk_create_pipeline_cache(
-    _device: u64,
-    _p_create_info: *const c_void,
-    _p_allocator: *const c_void,
-    p_pipeline_cache: *mut u64,
-) -> i32 {
-    let cache = HOOKED_PIPELINE_CACHE.load(Ordering::SeqCst);
-    if cache != 0 {
-        unsafe {
-            *p_pipeline_cache = cache;
-        }
-        0 // VK_SUCCESS
-    } else {
-        let original = ORIGINAL_CREATE_PIPELINE_CACHE.load(Ordering::SeqCst);
-        if original.is_null() {
-            return -1; // VK_ERROR_INITIALIZATION_FAILED
-        }
-        let fn_ptr: unsafe extern "C" fn(u64, *const c_void, *const c_void, *mut u64) -> i32 =
-            unsafe { std::mem::transmute(original) };
-        unsafe { fn_ptr(_device, _p_create_info, _p_allocator, p_pipeline_cache) }
-    }
-}
-
-unsafe extern "C" fn hooked_vk_destroy_pipeline_cache(
-    _device: u64,
-    _pipeline_cache: u64,
-    _p_allocator: *const c_void,
-) {
-    // Ignore: lifetime managed by VulkanContext::drop
 }
 
 fn load_pipeline_cache_file() -> Vec<u8> {
@@ -259,9 +222,17 @@ impl VulkanContext {
             android_log(LogPriority::INFO, "Vulkan: VK_EXT_debug_utils enabled");
         }
 
-        // 尝试使用 1.1，如果失败则回退到 1.0 (增强 Adreno 兼容性)
+        // Prefer the highest API exposed by the Android Vulkan loader, then fall back for older drivers.
         let mut instance = None;
-        for api_version in [ash_vk::API_VERSION_1_1, ash_vk::API_VERSION_1_0] {
+        let mut selected_instance_api_version = ash_vk::API_VERSION_1_0;
+        let api_version_1_4 = ash_vk::make_api_version(0, 1, 4, 0);
+        for api_version in [
+            api_version_1_4,
+            ash_vk::API_VERSION_1_3,
+            ash_vk::API_VERSION_1_2,
+            ash_vk::API_VERSION_1_1,
+            ash_vk::API_VERSION_1_0,
+        ] {
             let app_info = ash_vk::ApplicationInfo {
                 p_application_name: std::ptr::null(),
                 application_version: 0,
@@ -280,14 +251,14 @@ impl VulkanContext {
             match unsafe { entry.create_instance(&create_info, None) } {
                 Ok(inst) => {
                     instance = Some(inst);
-                    let ver_str = if api_version == ash_vk::API_VERSION_1_1 {
-                        "1.1"
-                    } else {
-                        "1.0"
-                    };
+                    selected_instance_api_version = api_version;
                     android_log(
                         LogPriority::INFO,
-                        &format!("VulkanContext::new: Instance created with API {}", ver_str),
+                        &format!(
+                            "VulkanContext::new: Instance created with API {}.{}",
+                            ash_vk::api_version_major(api_version),
+                            ash_vk::api_version_minor(api_version)
+                        ),
                     );
                     break;
                 }
@@ -295,7 +266,9 @@ impl VulkanContext {
                     android_log(
                         LogPriority::WARN,
                         &format!(
-                            "VulkanContext::new: Failed to create instance with API: {:?}",
+                            "VulkanContext::new: Failed to create instance with API {}.{}: {:?}",
+                            ash_vk::api_version_major(api_version),
+                            ash_vk::api_version_minor(api_version),
                             e
                         ),
                     );
@@ -420,6 +393,19 @@ impl VulkanContext {
         };
 
         let queue_family_index = selected_queue_family;
+        let physical_props = unsafe { instance.get_physical_device_properties(pdevice) };
+        let selected_api_version =
+            std::cmp::min(selected_instance_api_version, physical_props.api_version);
+        android_log(
+            LogPriority::INFO,
+            &format!(
+                "VulkanContext::new: Physical device API {}.{}, Skia max API {}.{}",
+                ash_vk::api_version_major(physical_props.api_version),
+                ash_vk::api_version_minor(physical_props.api_version),
+                ash_vk::api_version_major(selected_api_version),
+                ash_vk::api_version_minor(selected_api_version)
+            ),
+        );
 
         // 设备级扩展
         let mut device_exts = vec![swapchain::NAME.as_ptr()];
@@ -511,10 +497,12 @@ impl VulkanContext {
 
         // === Pipeline Cache: load previous data and create cache before Skia initializes ===
         let raw_cache_data = load_pipeline_cache_file();
-        let props = unsafe { instance.get_physical_device_properties(pdevice) };
-        let pipeline_cache_data =
-            validate_pipeline_cache(&raw_cache_data, props.vendor_id, props.device_id)
-                .unwrap_or_default();
+        let pipeline_cache_data = validate_pipeline_cache(
+            &raw_cache_data,
+            physical_props.vendor_id,
+            physical_props.device_id,
+        )
+        .unwrap_or_default();
         let cache_create_info = ash_vk::PipelineCacheCreateInfo {
             flags: ash_vk::PipelineCacheCreateFlags::empty(),
             initial_data_size: pipeline_cache_data.len(),
@@ -549,21 +537,20 @@ impl VulkanContext {
             }
         };
 
-        // Set up hooks so Skia uses our pipeline cache instead of creating its own
-        HOOKED_PIPELINE_CACHE.store(pipeline_cache.as_raw(), Ordering::SeqCst);
         PIPELINE_CACHE_INITIALIZED.store(true, Ordering::SeqCst);
 
         let get_proc = move |of: vk::GetProcOf| unsafe {
             match of {
                 vk::GetProcOf::Instance(inst, name) => {
                     let name_cstr = CStr::from_ptr(name);
-                    entry_ptr
+                    let ptr: *const c_void = entry_ptr
                         .get_instance_proc_addr(
                             ash_vk::Instance::from_raw(inst as _),
                             name_cstr.as_ptr(),
                         )
                         .map(|f| f as _)
-                        .unwrap_or(std::ptr::null())
+                        .unwrap_or(std::ptr::null());
+                    ptr
                 }
                 vk::GetProcOf::Device(dev, name) => {
                     let name_cstr = CStr::from_ptr(name);
@@ -577,47 +564,33 @@ impl VulkanContext {
                     if ptr.is_null() {
                         return std::ptr::null();
                     }
-                    let name_str = name_cstr.to_str().unwrap_or("");
-                    if name_str == "vkCreatePipelineCache" {
-                        ORIGINAL_CREATE_PIPELINE_CACHE.store(ptr, Ordering::SeqCst);
-                        hooked_vk_create_pipeline_cache as *const () as usize as *const c_void
-                    } else if name_str == "vkDestroyPipelineCache" {
-                        ORIGINAL_DESTROY_PIPELINE_CACHE.store(ptr, Ordering::SeqCst);
-                        hooked_vk_destroy_pipeline_cache as *const () as usize as *const c_void
-                    } else {
-                        ptr as *const c_void
-                    }
+                    ptr as *const c_void
                 }
             }
         };
 
-        let backend_context = unsafe {
-            vk::BackendContext::new(
+        let mut backend_context = unsafe {
+            vk::BackendContext::new_with_extensions(
                 instance_raw as _,
                 pdevice.as_raw() as _,
                 device_raw as _,
                 (queue.as_raw() as _, queue_family_index as usize),
                 &get_proc,
+                &["VK_KHR_surface", "VK_KHR_android_surface"],
+                &["VK_KHR_swapchain"],
             )
         };
+        backend_context.set_max_api_version(vk::Version::new(
+            ash_vk::api_version_major(selected_api_version) as usize,
+            ash_vk::api_version_minor(selected_api_version) as usize,
+            0,
+        ));
 
         android_log(
             LogPriority::INFO,
             "VulkanContext::new: Creating Skia context",
         );
-        let mut context_options = ContextOptions::new();
-        // 限制字形 atlas 纹理大小，防止大字体场景下内存暴涨
-        context_options.glyph_cache_texture_maximum_bytes = 8 * 1024 * 1024;
-        // 增大运行时着色器程序缓存，减少重复编译
-        context_options.runtime_program_cache_size = 256;
-        // 允许字形 atlas 使用多张纹理，提升大字符集渲染效率
-        context_options.allow_multiple_glyph_cache_textures =
-            skia_safe::gpu::ganesh::context_options::Enable::Yes;
-        // 缓存 Vulkan 二级命令缓冲，减少命令构建开销
-        context_options.max_cached_vulkan_secondary_command_buffers = 64;
-
-        let context =
-            skia_safe::gpu::direct_contexts::make_vulkan(&backend_context, Some(&context_options));
+        let context = skia_safe::gpu::direct_contexts::make_vulkan(&backend_context, None);
         if context.is_none() {
             android_log(
                 LogPriority::ERROR,
@@ -1118,7 +1091,6 @@ impl Drop for VulkanContext {
             self.device
                 .destroy_semaphore(self.render_finished_semaphore, None);
 
-            // Destroy our pipeline cache (Skia's hook ignores vkDestroyPipelineCache)
             if self.pipeline_cache != ash_vk::PipelineCache::null() {
                 self.device
                     .destroy_pipeline_cache(self.pipeline_cache, None);
@@ -1128,7 +1100,6 @@ impl Drop for VulkanContext {
             self.instance.destroy_instance(None);
         }
 
-        HOOKED_PIPELINE_CACHE.store(0, Ordering::SeqCst);
         PIPELINE_CACHE_INITIALIZED.store(false, Ordering::SeqCst);
         android_log(LogPriority::INFO, "VulkanContext::drop: Cleanup complete");
     }

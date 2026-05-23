@@ -388,19 +388,9 @@ pub fn create_subprocess_with_data(
         // 为了保持与 upstream Java 的 TermuxShellUtils 行为一致：
         //   [process_name, target_elf, original_args...]
         // 其中 target_elf 会被 linker 当作要加载的 ELF，original_args 会透传。
-        let mut wrapped_argv = vec![];
-        if !final_argv.is_empty() {
-            // process name (e.g. "-login" or "bash")
-            // 注意：linker64 会把 argv[1] 作为 ELF 加载，argv[0] 通常被忽略。
-            // 我们把 process_name 放在 argv[0]，让 linker64 能看到它（某些场景有用）。
-            wrapped_argv.push(final_argv[0].clone());
-        } else {
-            wrapped_argv.push(final_cmd.clone());
-        }
+        let mut wrapped_argv = vec![linker_path.to_string()];
         wrapped_argv.push(final_cmd.clone()); // target ELF path for linker64
-        if final_argv.len() > 1 {
-            wrapped_argv.extend(final_argv[1..].iter().cloned());
-        }
+        wrapped_argv.extend(final_argv.iter().cloned());
         android_log(
             LogPriority::INFO,
             &format!(
