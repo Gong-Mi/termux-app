@@ -307,7 +307,10 @@ public final class TermuxLogCollector {
     }
 
     private static File extractDeviceProbe(Context context) {
-        File probesDir = new File(context.getFilesDir(), "termux-probes");
+        // Extract to $PREFIX/bin/ instead of getFilesDir() to avoid Android 10+ W^X restriction.
+        // getFilesDir() is subject to noexec on targetSdk >= 29, but $PREFIX/bin is the
+        // Termux-managed filesystem and allows execution.
+        File probesDir = new File(TermuxConstants.PREFIX_PATH + "/bin");
         if (!probesDir.exists() && !probesDir.mkdirs()) {
             TermuxLogger.e("LogCollector", "Failed to create probes dir: " + probesDir.getAbsolutePath());
             return null;
