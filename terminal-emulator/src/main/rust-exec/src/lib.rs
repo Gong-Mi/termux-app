@@ -29,6 +29,7 @@ unsafe extern "C" {
 pub static LOAD_HOOK: unsafe extern "C" fn() = {
     unsafe extern "C" fn init() {
         unsafe { init_logging() };
+        ensure_ld_preload_is_exported();
         unsafe { setup_universal_interceptor() };
     }
     init
@@ -49,6 +50,79 @@ unsafe fn init_logging() {
 #[cfg(not(target_os = "android"))]
 unsafe fn init_logging() {
     // noop on non-Android targets
+}
+
+fn ensure_ld_preload_is_exported() {
+    let Some(path) = current_library_path() else {
+        log::warn!("unable to restore LD_PRELOAD: libtermux-exec.so not found in maps");
+        return;
+    };
+
+    unsafe {
+        if let Ok(key) = CString::new("LD_PRELOAD") {
+            if let Ok(value) = CString::new(path.as_str()) {
+                libc::setenv(key.as_ptr(), value.as_ptr(), 1);
+            }
+        }
+    }
+    log::info!("restored LD_PRELOAD to {}", path);
+}
+
+fn current_library_path() -> Option<String> {
+    let Ok(maps) = std::fs::read_to_string("/proc/self/maps") else {
+        return None;
+    };
+
+    for line in maps.lines() {
+        let Some(path_start) = line.find('/') else {
+            continue;
+        };
+        let path = &line[path_start..];
+        if !path.ends_with("libtermux-exec.so") {
+            continue;
+        }
+
+        return Some(path.to_string());
+    }
+
+    None
+}
+
+fn envp_with_ld_preload(envp: *const *const c_char) -> (Vec<CString>, Vec<*const c_char>) {
+    let Some(ld_preload) = current_library_path().or_else(|| {
+        std::env::var("LD_PRELOAD")
+            .ok()
+            .filter(|value| !value.is_empty())
+    }) else {
+        return (Vec::new(), vec![ptr::null()]);
+    };
+
+    let mut entries = Vec::new();
+    let mut has_ld_preload = false;
+
+    unsafe {
+        let mut i = 0;
+        while !envp.is_null() && !(*envp.offset(i)).is_null() {
+            let entry = CStr::from_ptr(*envp.offset(i)).to_string_lossy();
+            if entry.starts_with("LD_PRELOAD=") {
+                has_ld_preload = true;
+                entries.push(CString::new(format!("LD_PRELOAD={}", ld_preload)).unwrap());
+            } else {
+                entries.push(CString::new(entry.as_bytes()).unwrap_or_else(|_| {
+                    CString::new("").unwrap()
+                }));
+            }
+            i += 1;
+        }
+    }
+
+    if !has_ld_preload {
+        entries.push(CString::new(format!("LD_PRELOAD={}", ld_preload)).unwrap());
+    }
+
+    let mut ptrs: Vec<*const c_char> = entries.iter().map(|entry| entry.as_ptr()).collect();
+    ptrs.push(ptr::null());
+    (entries, ptrs)
 }
 
 unsafe fn setup_universal_interceptor() {
@@ -100,7 +174,9 @@ unsafe extern "C" fn sigsys_handler(_sig: c_int, _info: *mut libc::siginfo_t, vo
     // For system binaries: bypass our own SECCOMP filter by using execveat
     if path_str.starts_with("/system/") || path_str.starts_with("/vendor/") || path_str.contains("/linker") {
         log::debug!("sigsys: passing through system binary \"{}\"", path_str);
-        unsafe { libc::syscall(libc::SYS_execveat, libc::AT_FDCWD, path_ptr, argv_ptr, envp_ptr, 0) };
+        let (_env_entries, env_ptrs) = envp_with_ld_preload(envp_ptr);
+        let final_envp = if env_ptrs.len() > 1 { env_ptrs.as_ptr() } else { envp_ptr };
+        unsafe { libc::syscall(libc::SYS_execveat, libc::AT_FDCWD, path_ptr, argv_ptr, final_envp, 0) };
         unsafe { libc::_exit(1) };
     }
 
@@ -111,6 +187,8 @@ unsafe extern "C" fn sigsys_handler(_sig: c_int, _info: *mut libc::siginfo_t, vo
 
         let c_path = CString::new(final_path).unwrap();
         let c_argv_ptrs: Vec<*const c_char> = new_argv.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
+        let (_env_entries, env_ptrs) = envp_with_ld_preload(envp_ptr);
+        let final_envp = if env_ptrs.len() > 1 { env_ptrs.as_ptr() } else { envp_ptr };
         
         // Execute using execveat to bypass our own SECCOMP filter (which only traps execve)
         unsafe { libc::syscall(
@@ -118,12 +196,14 @@ unsafe extern "C" fn sigsys_handler(_sig: c_int, _info: *mut libc::siginfo_t, vo
             libc::AT_FDCWD,
             c_path.as_ptr(),
             c_argv_ptrs.as_ptr(),
-            envp_ptr,
+            final_envp,
             0
         ) };
     } else {
         log::debug!("sigsys: no transform for \"{}\", falling back to execveat", path_str);
-        unsafe { libc::syscall(libc::SYS_execveat, libc::AT_FDCWD, path_ptr, argv_ptr, envp_ptr, 0) };
+        let (_env_entries, env_ptrs) = envp_with_ld_preload(envp_ptr);
+        let final_envp = if env_ptrs.len() > 1 { env_ptrs.as_ptr() } else { envp_ptr };
+        unsafe { libc::syscall(libc::SYS_execveat, libc::AT_FDCWD, path_ptr, argv_ptr, final_envp, 0) };
     }
 
     // If we reach here, execveat failed
