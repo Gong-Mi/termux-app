@@ -196,6 +196,19 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface(
                 }
             }
 
+            // 2.5 显式保存 Vulkan Pipeline Cache（因为渲染线程刚刚停止，上下文在后台可能被强杀，此时是落盘的绝佳契机）
+            if let Some(mutex) = render_thread::get_vulkan_context().get() {
+                if let Ok(mut guard) = mutex.lock() {
+                    if let Some(ctx) = guard.as_mut() {
+                        android_log(
+                            LogPriority::INFO,
+                            "nativeSetSurface: Saving Vulkan pipeline cache after render thread stop",
+                        );
+                        ctx.save_pipeline_cache_periodic();
+                    }
+                }
+            }
+
             // 3. 【关键修复】不销毁 Vulkan 上下文，保持存活等待 surfaceCreated 再次调用。
             // MIUI/HyperOS 在 surfaceDestroyed 后可能长时间不回调 surfaceCreated（数分钟），
             // 如果销毁 Vulkan 上下文，恢复时需要从头初始化（Entry/Instance/Device/Skia），

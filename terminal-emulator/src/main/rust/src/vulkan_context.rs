@@ -5,7 +5,12 @@ use ash::{Device, Entry, Instance, vk as ash_vk};
 use skia_safe::{ColorType, Surface as SkSurface, gpu::DirectContext, gpu::vk};
 use std::ffi::CStr;
 use std::os::raw::c_void;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, Ordering};
+
+// === Pipeline Cache Persistence Hooks ===
+static ORIGINAL_CREATE_PIPELINE_CACHE: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
+static ORIGINAL_DESTROY_PIPELINE_CACHE: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
+static HOOKED_PIPELINE_CACHE: AtomicU64 = AtomicU64::new(0);
 
 static PIPELINE_CACHE_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
@@ -14,6 +19,57 @@ static PIPELINE_CACHE_FILE_PATH: std::sync::Mutex<Option<String>> = std::sync::M
 
 pub fn set_pipeline_cache_file_path(path: &str) {
     *PIPELINE_CACHE_FILE_PATH.lock().unwrap() = Some(path.to_string());
+}
+
+unsafe extern "C" fn hooked_vk_create_pipeline_cache(
+    device: u64,
+    p_create_info: *const c_void,
+    p_allocator: *const c_void,
+    p_pipeline_cache: *mut u64,
+) -> i32 {
+    let cache = HOOKED_PIPELINE_CACHE.load(Ordering::SeqCst);
+    android_log(
+        LogPriority::INFO,
+        &format!("hooked_vk_create_pipeline_cache: HOOKED_PIPELINE_CACHE={:#x}", cache),
+    );
+    if cache != 0 {
+        unsafe {
+            *p_pipeline_cache = cache;
+        }
+        0 // VK_SUCCESS
+    } else {
+        let original = ORIGINAL_CREATE_PIPELINE_CACHE.load(Ordering::SeqCst);
+        if original.is_null() {
+            return -1; // VK_ERROR_INITIALIZATION_FAILED
+        }
+        let fn_ptr: unsafe extern "C" fn(u64, *const c_void, *const c_void, *mut u64) -> i32 =
+            unsafe { std::mem::transmute(original) };
+        unsafe { fn_ptr(device, p_create_info, p_allocator, p_pipeline_cache) }
+    }
+}
+
+unsafe extern "C" fn hooked_vk_destroy_pipeline_cache(
+    device: u64,
+    pipeline_cache: u64,
+    p_allocator: *const c_void,
+) {
+    let hooked = HOOKED_PIPELINE_CACHE.load(Ordering::SeqCst);
+    android_log(
+        LogPriority::INFO,
+        &format!("hooked_vk_destroy_pipeline_cache: pipeline_cache={:#x}, HOOKED_PIPELINE_CACHE={:#x}", pipeline_cache, hooked),
+    );
+    if pipeline_cache == hooked && hooked != 0 {
+        // Ignore: lifetime managed by VulkanContext::drop
+    } else {
+        let original = ORIGINAL_DESTROY_PIPELINE_CACHE.load(Ordering::SeqCst);
+        if !original.is_null() {
+            unsafe {
+                let fn_ptr: unsafe extern "C" fn(u64, u64, *const c_void) =
+                    std::mem::transmute(original);
+                fn_ptr(device, pipeline_cache, p_allocator);
+            }
+        }
+    }
 }
 
 fn load_pipeline_cache_file() -> Vec<u8> {
@@ -537,6 +593,7 @@ impl VulkanContext {
             }
         };
 
+        HOOKED_PIPELINE_CACHE.store(pipeline_cache.as_raw(), Ordering::SeqCst);
         PIPELINE_CACHE_INITIALIZED.store(true, Ordering::SeqCst);
 
         let get_proc = move |of: vk::GetProcOf| unsafe {
@@ -564,7 +621,16 @@ impl VulkanContext {
                     if ptr.is_null() {
                         return std::ptr::null();
                     }
-                    ptr as *const c_void
+                    let name_str = name_cstr.to_str().unwrap_or("");
+                    if name_str == "vkCreatePipelineCache" {
+                        ORIGINAL_CREATE_PIPELINE_CACHE.store(ptr, Ordering::SeqCst);
+                        hooked_vk_create_pipeline_cache as *const () as usize as *const c_void
+                    } else if name_str == "vkDestroyPipelineCache" {
+                        ORIGINAL_DESTROY_PIPELINE_CACHE.store(ptr, Ordering::SeqCst);
+                        hooked_vk_destroy_pipeline_cache as *const () as usize as *const c_void
+                    } else {
+                        ptr as *const c_void
+                    }
                 }
             }
         };
@@ -590,7 +656,18 @@ impl VulkanContext {
             LogPriority::INFO,
             "VulkanContext::new: Creating Skia context",
         );
-        let context = skia_safe::gpu::direct_contexts::make_vulkan(&backend_context, None);
+        let mut context_options = skia_safe::gpu::ContextOptions::new();
+        // 限制字形 atlas 纹理大小，防止大字体场景下内存暴涨
+        context_options.glyph_cache_texture_maximum_bytes = 8 * 1024 * 1024;
+        // 增大运行时着色器程序缓存，减少重复编译
+        context_options.runtime_program_cache_size = 256;
+        // 允许字形 atlas 使用多张纹理，提升大字符集渲染效率
+        context_options.allow_multiple_glyph_cache_textures =
+            skia_safe::gpu::ganesh::context_options::Enable::Yes;
+        // 缓存 Vulkan 二级命令缓冲，减少命令构建开销
+        context_options.max_cached_vulkan_secondary_command_buffers = 64;
+
+        let context = skia_safe::gpu::direct_contexts::make_vulkan(&backend_context, Some(&context_options));
         if context.is_none() {
             android_log(
                 LogPriority::ERROR,
@@ -1100,6 +1177,7 @@ impl Drop for VulkanContext {
             self.instance.destroy_instance(None);
         }
 
+        HOOKED_PIPELINE_CACHE.store(0, Ordering::SeqCst);
         PIPELINE_CACHE_INITIALIZED.store(false, Ordering::SeqCst);
         android_log(LogPriority::INFO, "VulkanContext::drop: Cleanup complete");
     }

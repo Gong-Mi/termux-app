@@ -430,9 +430,9 @@ fn spawn_render_thread(engine_ptr: jlong) {
                 match render_result {
                     Ok(Ok(_)) => {
                         frame_count += 1;
-                        // 每 300 帧（约 5 秒）清理一次未锁定的 GPU 资源，防止内存泄漏
+                        // 每 60 帧（约 1 秒活跃渲染）清理一次未锁定的 GPU 资源，防止内存泄漏
                         // 同时保存 pipeline cache，减少后台被杀时的缓存损失
-                        if frame_count % 300 == 0 {
+                        if frame_count % 60 == 0 {
                             if let Ok(mut ctx_guard) = ctx_mutex.try_lock() {
                                 if let Some(ctx) = ctx_guard.as_mut() {
                                     use skia_safe::gpu::ganesh::PurgeResourceOptions;
@@ -452,6 +452,15 @@ fn spawn_render_thread(engine_ptr: jlong) {
                     Err(_) => {
                         android_log(LogPriority::ERROR, "Render Thread CRITICAL: Caught panic in render loop, attempting recovery...");
                         std::thread::sleep(std::time::Duration::from_millis(100));
+                    }
+                }
+            }
+            // 线程退出时，显式保存 Vulkan Pipeline Cache
+            if let Some(ctx_mutex) = VULKAN_CONTEXT.get() {
+                if let Ok(mut ctx_guard) = ctx_mutex.lock() {
+                    if let Some(ctx) = ctx_guard.as_mut() {
+                        android_log(LogPriority::INFO, "Render thread: Saving pipeline cache on thread exit");
+                        ctx.save_pipeline_cache_periodic();
                     }
                 }
             }

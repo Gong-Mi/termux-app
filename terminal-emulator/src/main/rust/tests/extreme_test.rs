@@ -39,10 +39,19 @@ fn test_extreme_concurrent_spawn_under_pressure() {
             thread::sleep(Duration::from_millis(i as u64 * 2)); // 极短间隔模拟突发
 
             let start = Instant::now();
+            #[cfg(target_os = "android")]
             let cmd = "/system/bin/sh".to_string();
+            #[cfg(target_os = "android")]
+            let cwd = "/data/user/0/com.termux/files/home".to_string();
+
+            #[cfg(not(target_os = "android"))]
+            let cmd = "/bin/sh".to_string();
+            #[cfg(not(target_os = "android"))]
+            let cwd = "/tmp".to_string();
+
             let result = pty::create_subprocess_with_data(
                 cmd,
-                "/data/user/0/com.termux/files/home".to_string(),
+                cwd,
                 vec!["sh".to_string(), "-c".to_string(), "exit 0".to_string()],
                 24,
                 80,

@@ -1,27 +1,17 @@
 use std::ffi::{CStr, CString};
 use std::io::Read;
-use std::os::raw::{c_char, c_int, c_void};
+use std::os::raw::{c_char, c_int};
 use std::ptr;
-use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
+#[cfg(target_os = "android")]
+use std::sync::atomic::AtomicBool;
+#[cfg(target_os = "android")]
+use std::sync::atomic::Ordering;
 
-static REAL_DLSYM: AtomicPtr<libc::c_void> = AtomicPtr::new(ptr::null_mut());
+#[cfg(target_os = "android")]
 static LOGGER_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
-#[repr(C)]
-struct sock_filter { code: u16, jt: u8, jf: u8, k: u32 }
-#[repr(C)]
-struct sock_fprog { len: u16, _pad: [u16; 3], filter: *const sock_filter }
-
-const SECCOMP_RET_TRAP: u32 = 0x00030000;
-const SECCOMP_RET_ALLOW: u32 = 0x7fff0000;
-const RTLD_NEXT: *mut libc::c_void = -1i64 as *mut libc::c_void;
-const AUDIT_ARCH_AARCH64: u32 = 0xc00000b7;
-const AUDIT_ARCH_X86_64: u32 = 0xc000003e;
-
 unsafe extern "C" {
-    fn get_execve_path(ucontext: *mut c_void) -> usize;
-    fn get_execve_argv(ucontext: *mut c_void) -> usize;
-    fn get_execve_envp(ucontext: *mut c_void) -> usize;
+    static mut environ: *mut *mut c_char;
 }
 
 #[unsafe(no_mangle)]
@@ -30,7 +20,7 @@ pub static LOAD_HOOK: unsafe extern "C" fn() = {
     unsafe extern "C" fn init() {
         unsafe { init_logging() };
         ensure_ld_preload_is_exported();
-        unsafe { setup_universal_interceptor() };
+        log::info!("execve preload hooks active");
     }
     init
 };
@@ -68,6 +58,14 @@ fn ensure_ld_preload_is_exported() {
     log::info!("restored LD_PRELOAD to {}", path);
 }
 
+fn selected_ld_preload_path() -> Option<String> {
+    current_library_path().or_else(|| {
+        std::env::var("LD_PRELOAD")
+            .ok()
+            .filter(|value| !value.is_empty())
+    })
+}
+
 fn current_library_path() -> Option<String> {
     let Ok(maps) = std::fs::read_to_string("/proc/self/maps") else {
         return None;
@@ -88,127 +86,133 @@ fn current_library_path() -> Option<String> {
     None
 }
 
+fn env_entries_with_ld_preload<I, S>(entries: I, ld_preload: &str) -> Vec<CString>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut out = Vec::new();
+    let mut has_ld_preload = false;
+
+    for entry in entries {
+        let entry = entry.as_ref();
+        if entry.starts_with("LD_PRELOAD=") {
+            has_ld_preload = true;
+            out.push(CString::new(format!("LD_PRELOAD={}", ld_preload)).unwrap());
+        } else {
+            out.push(CString::new(entry.as_bytes()).unwrap_or_else(|_| CString::new("").unwrap()));
+        }
+    }
+
+    if !has_ld_preload {
+        out.push(CString::new(format!("LD_PRELOAD={}", ld_preload)).unwrap());
+    }
+
+    out
+}
+
 fn envp_with_ld_preload(envp: *const *const c_char) -> (Vec<CString>, Vec<*const c_char>) {
-    let Some(ld_preload) = current_library_path().or_else(|| {
-        std::env::var("LD_PRELOAD")
-            .ok()
-            .filter(|value| !value.is_empty())
-    }) else {
+    let Some(ld_preload) = selected_ld_preload_path() else {
         return (Vec::new(), vec![ptr::null()]);
     };
 
-    let mut entries = Vec::new();
-    let mut has_ld_preload = false;
+    let mut raw_entries = Vec::new();
 
     unsafe {
         let mut i = 0;
         while !envp.is_null() && !(*envp.offset(i)).is_null() {
             let entry = CStr::from_ptr(*envp.offset(i)).to_string_lossy();
-            if entry.starts_with("LD_PRELOAD=") {
-                has_ld_preload = true;
-                entries.push(CString::new(format!("LD_PRELOAD={}", ld_preload)).unwrap());
-            } else {
-                entries.push(CString::new(entry.as_bytes()).unwrap_or_else(|_| {
-                    CString::new("").unwrap()
-                }));
-            }
+            raw_entries.push(entry.to_string());
             i += 1;
         }
     }
 
-    if !has_ld_preload {
-        entries.push(CString::new(format!("LD_PRELOAD={}", ld_preload)).unwrap());
-    }
+    let entries = env_entries_with_ld_preload(raw_entries.iter().map(String::as_str), &ld_preload);
 
     let mut ptrs: Vec<*const c_char> = entries.iter().map(|entry| entry.as_ptr()).collect();
     ptrs.push(ptr::null());
     (entries, ptrs)
 }
 
-unsafe fn setup_universal_interceptor() {
-    unsafe {
-        let mut sa: libc::sigaction = std::mem::zeroed();
-        sa.sa_sigaction = sigsys_handler as *const () as usize;
-        sa.sa_flags = libc::SA_SIGINFO;
-        libc::sigaction(libc::SIGSYS, &sa, ptr::null_mut());
-
-        let expected_arch = if cfg!(target_arch = "aarch64") {
-            AUDIT_ARCH_AARCH64
-        } else if cfg!(target_arch = "x86_64") {
-            AUDIT_ARCH_X86_64
-        } else {
-            0
-        };
-        if expected_arch == 0 {
-            log::warn!("seccomp interceptor disabled on unsupported architecture");
-            return;
-        }
-
-        let filter = [
-            sock_filter { code: 0x20, jt: 0, jf: 4, k: 4 }, // BPF_LD | BPF_W | BPF_ABS seccomp_data.arch
-            sock_filter { code: 0x15, jt: 0, jf: 3, k: expected_arch }, // if arch != expected, allow
-            sock_filter { code: 0x20, jt: 0, jf: 0, k: 0 }, // load seccomp_data.nr
-            sock_filter { code: 0x15, jt: 0, jf: 1, k: libc::SYS_execve as u32 }, // if execve, trap
-            sock_filter { code: 0x06, jt: 0, jf: 0, k: SECCOMP_RET_TRAP },
-            sock_filter { code: 0x06, jt: 0, jf: 0, k: SECCOMP_RET_ALLOW },
-        ];
-
-        let prog = sock_fprog { len: filter.len() as u16, _pad: [0; 3], filter: filter.as_ptr() };
-        libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
-        libc::prctl(libc::PR_SET_SECCOMP, libc::SECCOMP_MODE_FILTER, &prog as *const _);
+unsafe fn execve_common(
+    path: *const c_char,
+    argv: *const *const c_char,
+    envp: *const *const c_char,
+) -> c_int {
+    if path.is_null() {
+        return -1;
     }
+
+    let path_str = unsafe { CStr::from_ptr(path) }.to_string_lossy().to_string();
+    let (_env_entries, env_ptrs) = envp_with_ld_preload(envp);
+    let final_envp = if env_ptrs.len() > 1 { env_ptrs.as_ptr() } else { envp };
+
+    if path_str.starts_with("/system/") || path_str.starts_with("/vendor/") || path_str.contains("/linker") {
+        log::debug!("execve hook: passing through system binary \"{}\"", path_str);
+        return unsafe {
+            libc::syscall(libc::SYS_execveat, libc::AT_FDCWD, path, argv, final_envp, 0) as c_int
+        };
+    }
+
+    if let Some((final_path, new_argv)) = transform_exec(&path_str, argv, 0) {
+        let argv_display: Vec<String> = new_argv
+            .iter()
+            .map(|s| s.to_string_lossy().to_string())
+            .collect();
+        log::info!(
+            "execve hook: transformed \"{}\" -> \"{}\" with argv {:?}",
+            path_str,
+            final_path,
+            argv_display
+        );
+
+        let Ok(c_path) = CString::new(final_path) else {
+            return -1;
+        };
+        let c_argv_ptrs: Vec<*const c_char> = new_argv
+            .iter()
+            .map(|s| s.as_ptr())
+            .chain(std::iter::once(ptr::null()))
+            .collect();
+
+        return unsafe {
+            libc::syscall(
+                libc::SYS_execveat,
+                libc::AT_FDCWD,
+                c_path.as_ptr(),
+                c_argv_ptrs.as_ptr(),
+                final_envp,
+                0,
+            ) as c_int
+        };
+    }
+
+    log::debug!("execve hook: no transform for \"{}\", using execveat", path_str);
+    unsafe { libc::syscall(libc::SYS_execveat, libc::AT_FDCWD, path, argv, final_envp, 0) as c_int }
 }
 
-unsafe extern "C" fn sigsys_handler(_sig: c_int, _info: *mut libc::siginfo_t, void_context: *mut c_void) {
-    let path_ptr = unsafe { get_execve_path(void_context) } as *const c_char;
-    let argv_ptr = unsafe { get_execve_argv(void_context) } as *const *const c_char;
-    let envp_ptr = unsafe { get_execve_envp(void_context) } as *const *const c_char;
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn execve(
+    path: *const c_char,
+    argv: *const *const c_char,
+    envp: *const *const c_char,
+) -> c_int {
+    unsafe { execve_common(path, argv, envp) }
+}
 
-    if path_ptr.is_null() {
-        log::warn!("sigsys_handler: path_ptr is null, ignoring");
-        return;
-    }
-    let path_str = unsafe { CStr::from_ptr(path_ptr) }.to_string_lossy().to_string();
-    log::debug!("sigsys: execve(\"{}\")", path_str);
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn execvpe(
+    path: *const c_char,
+    argv: *const *const c_char,
+    envp: *const *const c_char,
+) -> c_int {
+    unsafe { execve_common(path, argv, envp) }
+}
 
-    // For system binaries: bypass our own SECCOMP filter by using execveat
-    if path_str.starts_with("/system/") || path_str.starts_with("/vendor/") || path_str.contains("/linker") {
-        log::debug!("sigsys: passing through system binary \"{}\"", path_str);
-        let (_env_entries, env_ptrs) = envp_with_ld_preload(envp_ptr);
-        let final_envp = if env_ptrs.len() > 1 { env_ptrs.as_ptr() } else { envp_ptr };
-        unsafe { libc::syscall(libc::SYS_execveat, libc::AT_FDCWD, path_ptr, argv_ptr, final_envp, 0) };
-        unsafe { libc::_exit(1) };
-    }
-
-    // Map paths and handle shebangs
-    if let Some((final_path, new_argv)) = transform_exec(&path_str, argv_ptr, 0) {
-        let argv_display: Vec<String> = new_argv.iter().map(|s| s.to_string_lossy().to_string()).collect();
-        log::info!("sigsys: transformed \"{}\" -> \"{}\" with argv {:?}", path_str, final_path, argv_display);
-
-        let c_path = CString::new(final_path).unwrap();
-        let c_argv_ptrs: Vec<*const c_char> = new_argv.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
-        let (_env_entries, env_ptrs) = envp_with_ld_preload(envp_ptr);
-        let final_envp = if env_ptrs.len() > 1 { env_ptrs.as_ptr() } else { envp_ptr };
-        
-        // Execute using execveat to bypass our own SECCOMP filter (which only traps execve)
-        unsafe { libc::syscall(
-            libc::SYS_execveat,
-            libc::AT_FDCWD,
-            c_path.as_ptr(),
-            c_argv_ptrs.as_ptr(),
-            final_envp,
-            0
-        ) };
-    } else {
-        log::debug!("sigsys: no transform for \"{}\", falling back to execveat", path_str);
-        let (_env_entries, env_ptrs) = envp_with_ld_preload(envp_ptr);
-        let final_envp = if env_ptrs.len() > 1 { env_ptrs.as_ptr() } else { envp_ptr };
-        unsafe { libc::syscall(libc::SYS_execveat, libc::AT_FDCWD, path_ptr, argv_ptr, final_envp, 0) };
-    }
-
-    // If we reach here, execveat failed
-    log::error!("sigsys: execveat failed for \"{}\", exiting", path_str);
-    unsafe { libc::_exit(1) };
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn execvp(path: *const c_char, argv: *const *const c_char) -> c_int {
+    let envp = unsafe { environ as *const *const c_char };
+    unsafe { execve_common(path, argv, envp) }
 }
 
 fn transform_exec(path: &str, orig_argv: *const *const c_char, depth: u32) -> Option<(String, Vec<CString>)> {
@@ -357,6 +361,50 @@ fn map_path(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use std::os::unix::fs::symlink;
+    use std::path::{Path, PathBuf};
+
+    fn cstring_argv_from_slice(args: &[&str]) -> Vec<CString> {
+        args.iter().map(|arg| CString::new(*arg).unwrap()).collect()
+    }
+
+    fn cstring_ptrs(args: &[CString]) -> Vec<*const c_char> {
+        args.iter()
+            .map(|arg| arg.as_ptr())
+            .chain(std::iter::once(ptr::null()))
+            .collect()
+    }
+
+    fn create_test_elf(path: &std::path::Path) {
+        let mut file = std::fs::File::create(path).unwrap();
+        file.write_all(b"\x7fELF\x02\x01\x01\0test").unwrap();
+    }
+
+    fn test_dir(name: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "termux-exec-rs-{}-{}",
+            std::process::id(),
+            name
+        ));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    fn argv_strings(args: Vec<CString>) -> Vec<String> {
+        args.iter()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect()
+    }
+
+    fn transform_with_argv(path: &Path, argv: &[&str]) -> (String, Vec<String>) {
+        let argv = cstring_argv_from_slice(argv);
+        let ptrs = cstring_ptrs(&argv);
+        let (exec_path, exec_argv) =
+            transform_exec(path.to_str().unwrap(), ptrs.as_ptr(), 0).unwrap();
+        (exec_path, argv_strings(exec_argv))
+    }
 
     #[test]
     fn test_parse_shebang_simple() {
@@ -396,5 +444,88 @@ mod tests {
             map_path("/system/bin/linker64"),
             "/system/bin/linker64"
         );
+    }
+
+    #[test]
+    fn test_transform_relative_coreutils_applet_symlink() {
+        let root = test_dir("coreutils-applet");
+        let bin = root.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let coreutils = bin.join("coreutils");
+        let id = bin.join("id");
+        create_test_elf(&coreutils);
+        symlink("coreutils", &id).unwrap();
+
+        let (exec_path, argv) = transform_with_argv(&id, &[id.to_str().unwrap(), "-u"]);
+
+        assert!(exec_path.ends_with("linker") || exec_path.ends_with("linker64"));
+        assert_eq!(argv[0], exec_path);
+        assert_eq!(argv[1], id.to_string_lossy());
+        assert_eq!(argv[2], "-u");
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn test_transform_apt_https_method_symlink() {
+        let root = test_dir("apt-https-method");
+        let methods = root.join("usr/lib/apt/methods");
+        std::fs::create_dir_all(&methods).unwrap();
+        let http = methods.join("http");
+        let https = methods.join("https");
+        create_test_elf(&http);
+        symlink("http", &https).unwrap();
+
+        let (exec_path, argv) = transform_with_argv(&https, &[https.to_str().unwrap()]);
+
+        assert!(exec_path.ends_with("linker") || exec_path.ends_with("linker64"));
+        assert_eq!(argv[0], exec_path);
+        assert_eq!(argv[1], https.to_string_lossy());
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn test_transform_shebang_adds_script_after_interpreter() {
+        let root = test_dir("shebang");
+        let bin = root.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let sh = bin.join("sh");
+        let script = bin.join("script");
+        create_test_elf(&sh);
+        std::fs::write(&script, format!("#!{}\n", sh.to_string_lossy())).unwrap();
+
+        let (exec_path, argv) = transform_with_argv(&script, &[script.to_str().unwrap(), "arg1"]);
+
+        assert!(exec_path.ends_with("linker") || exec_path.ends_with("linker64"));
+        assert_eq!(argv[0], exec_path);
+        assert_eq!(argv[1], sh.to_string_lossy());
+        assert_eq!(argv[2], script.to_string_lossy());
+        assert_eq!(argv[3], "arg1");
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn test_env_entries_add_ld_preload_when_missing() {
+        let entries = env_entries_with_ld_preload(["PATH=/bin", "TERM=xterm"], "/app/libtermux-exec.so");
+        let strings = argv_strings(entries);
+
+        assert!(strings.contains(&"PATH=/bin".to_string()));
+        assert!(strings.contains(&"TERM=xterm".to_string()));
+        assert!(strings.contains(&"LD_PRELOAD=/app/libtermux-exec.so".to_string()));
+    }
+
+    #[test]
+    fn test_env_entries_replace_existing_ld_preload() {
+        let entries = env_entries_with_ld_preload(
+            ["PATH=/bin", "LD_PRELOAD=/old/lib.so"],
+            "/app/libtermux-exec.so",
+        );
+        let strings = argv_strings(entries);
+
+        assert!(strings.contains(&"PATH=/bin".to_string()));
+        assert!(strings.contains(&"LD_PRELOAD=/app/libtermux-exec.so".to_string()));
+        assert!(!strings.contains(&"LD_PRELOAD=/old/lib.so".to_string()));
     }
 }
