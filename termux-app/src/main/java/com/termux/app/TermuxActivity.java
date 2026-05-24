@@ -178,7 +178,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         // 启用广色域 (Wide Color Gamut) 模式。
         // 这允许 Hardware Composer (HWC) 接受 10-bit 格式（如 0x38），并利用 OLED 屏幕的 HDR 特性。
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            getWindow().setColorMode(ActivityInfo.COLOR_MODE_WIDE_COLOR_GAMUT);
+            getWindow().setColorMode(ActivityInfo.COLOR_MODE_HDR);
         }
 
         // 关键修复：禁用窗口动画，避免 SurfaceView 在 MIUI/HyperOS 的 transition 动画中

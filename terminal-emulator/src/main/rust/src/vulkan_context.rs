@@ -768,7 +768,7 @@ impl VulkanContext {
                 // 记录所有可用格式，便于调试
                 for (i, f) in surface_formats.iter().enumerate() {
                     android_log(
-                        LogPriority::DEBUG,
+                        LogPriority::INFO,
                         &format!(
                             "Vulkan: Available surface format #{}: {:?} (colorspace: {:?})",
                             i, f.format, f.color_space
@@ -1107,7 +1107,23 @@ impl VulkanContext {
                 // scRGB HDR (F16 Linear)
                 Some(skia_safe::ColorSpace::new_srgb_linear())
             }
-            _ => Some(skia_safe::ColorSpace::new_srgb()),
+            _ => {
+                // 特殊适配：如果当前交换链选用的是 10-bit 的 A2B10G10R10 格式，
+                // 且 Android 侧已经启用 COLOR_MODE_HDR，
+                // 我们在 Skia 侧显式绑定为 Display P3 色彩空间，以激活高动态广色域渲染。
+                if self.skia_format == skia_safe::gpu::vk::Format::A2B10G10R10_UNORM_PACK32 {
+                    android_log(
+                        LogPriority::INFO,
+                        "Vulkan ColorSpace: 10-bit swapchain format active, mapping to Display P3 ColorSpace in Skia",
+                    );
+                    skia_safe::ColorSpace::new_cicp(
+                        skia_safe::named_primaries::CicpId::SMPTE_EG_432_1,
+                        skia_safe::named_transfer_fn::CicpId::SRGB,
+                    )
+                } else {
+                    Some(skia_safe::ColorSpace::new_srgb())
+                }
+            }
         };
 
         skia_safe::gpu::surfaces::wrap_backend_render_target(
