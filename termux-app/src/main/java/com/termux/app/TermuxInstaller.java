@@ -131,7 +131,9 @@ final class TermuxInstaller {
 
                             // Silence google play scanning flagging about this: https://support.google.com/faqs/answer/9294009
                             var canonicalPath = targetFile.getCanonicalPath();
-                            if (!canonicalPath.startsWith(getStagingPrefixPath())) {
+                            var canonicalStagingPrefixPath = new File(getStagingPrefixPath()).getCanonicalPath();
+                            if (!canonicalPath.equals(canonicalStagingPrefixPath) &&
+                                !canonicalPath.startsWith(canonicalStagingPrefixPath + File.separator)) {
                                 throw new RuntimeException("Invalid zip entry: " + zipEntryName);
                             }
 
@@ -194,7 +196,7 @@ final class TermuxInstaller {
         String secondStagePath = TermuxConstants.PREFIX_PATH +
             "/etc/termux/termux-bootstrap/second-stage/termux-bootstrap-second-stage.sh";
 
-        ProcessBuilder builder = new ProcessBuilder(linkerPath, bashPath, bashPath, secondStagePath);
+        ProcessBuilder builder = new ProcessBuilder(linkerPath, bashPath, secondStagePath);
         builder.redirectErrorStream(true);
         var environment = builder.environment();
         environment.put("HOME", TermuxConstants.HOME_PATH);
