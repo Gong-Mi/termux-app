@@ -103,12 +103,15 @@ pub fn get_termux_home() -> String {
 // 声明子模块
 pub mod bootstrap;
 pub mod coordinator;
+pub mod cpu_features;
 pub mod engine;
 pub mod env_builder;
 pub mod jni_bindings;
+pub mod pixel;
 pub mod pty;
 pub mod render_thread;
 pub mod renderer;
+pub mod simd;
 pub mod sve_scan;
 pub mod terminal;
 pub mod utils;
