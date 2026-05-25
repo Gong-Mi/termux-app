@@ -3,7 +3,8 @@
 **Auditor:** Kimi Code CLI  
 **Date:** 2026-05-25  
 **Branch:** `work/googleplay-base`  
-**HEAD:** `cb8ba033` — "Add SVE2 performance benchmark binary"  
+**Original HEAD:** `cb8ba033` — "Add SVE2 performance benchmark binary"  
+**Updated HEAD:** `8d110071` — "Truly commit the deletion of performance_sve2 bin and android-only logic for analyze_exceptions"  
 **Repository:** `https://github.com/Gong-Mi/termux-app`
 
 ---
@@ -187,6 +188,95 @@ Contains only `assert!(true);`. While it provides no real coverage, it compiles 
 6. Verified every `pub mod` declaration has a corresponding `.rs` file
 7. Verified native method declarations in Java have corresponding `pub extern "system" fn Java_...` in Rust
 8. Manually inspected `vulkan_context.rs`, `bootstrap.rs`, `TermuxLogCollector.java`, `TermuxInstaller.java`
+
+---
+
+---
+
+## 7. Round 2 Audit (Post-Update)
+
+**Date:** 2026-05-25 (follow-up)  
+**New commits reviewed:** `db5f025f`, `33c9c979`, `8d110071`
+
+### 7.1 Fixes Applied ✅
+
+| Issue | Fix Commit | Status |
+|-------|-----------|--------|
+| `performance_sve2.rs` unresolved imports | `8d110071` | **Deleted** the orphan binary |
+| `analyze_exceptions.rs` not a test | `8d110071` | Rewrote as `#[test]` with `#[cfg(target_os = "android")]` |
+| Skia test platform-specific pixel assertions | `33c9c979` | Replaced raw pointer reads with `pixmap.get_color()` |
+| Missing scalar SIMD fallback | `db5f025f` | Added `simd/scalar.rs`, `pixel.rs`, `cpu_features.rs` |
+| `anyhow` dev-dependency missing | `33c9c979` | Added to `Cargo.toml` |
+
+### 7.2 New / Remaining Issues ❌
+
+#### 7.2.1 New modules are NOT registered in `lib.rs` (dead code)
+
+**Files added but unlinked:**
+- `src/simd/mod.rs`
+- `src/simd/scalar.rs`
+- `src/pixel.rs`
+- `src/cpu_features.rs`
+
+**Evidence:** `src/lib.rs` lines 103–117 still lists only the original modules; no `pub mod simd;`, `pub mod pixel;`, or `pub mod cpu_features;` was added.
+
+**Consequence:** `cargo check --all-targets` passes only because these files are invisible to the compiler. They are currently **dead code**.
+
+#### 7.2.2 `simd/mod.rs` references a non-existent `sve2` submodule
+
+**File:** `src/simd/mod.rs` lines 4–5
+
+```rust
+#[cfg(target_arch = "aarch64")]
+pub mod sve2;
+```
+
+**Missing file:** `src/simd/sve2.rs`
+
+**Consequence:** The moment `pub mod simd;` is added to `lib.rs`, builds on aarch64 will fail with:
+```
+error[E0583]: file not found for module `sve2`
+```
+
+#### 7.2.3 Inconsistent color-space mapping formulas in `vulkan_hdr_simulation.rs`
+
+**File:** `tests/vulkan_hdr_simulation.rs`
+
+| Implementation | Formula | Approximate multiplier |
+|----------------|---------|------------------------|
+| Scalar | `(val * 1023 + 127) / 255` | 4.01176 |
+| "Vectorized" | `((val * 263) >> 6).min(1023)` | 4.109375 |
+
+These formulas are **not mathematically equivalent**. The test allows ±1 LSB tolerance, but the discrepancy is a design-level inconsistency, not just a rounding difference. Furthermore, the "vectorized" function is plain Rust with no SVE2/NEON intrinsics; it relies entirely on LLVM auto-vectorization, which is not guaranteed.
+
+---
+
+## 8. Updated Compilation Matrix
+
+| Crate / Target | `cargo check` | Notes |
+|----------------|---------------|-------|
+| `termux-rust-new` (lib only) | ✅ Pass | Library compiles because new modules are unlinked. |
+| `termux-rust-new` (all targets) | ✅ Pass | `performance_sve2.rs` removed; no compile errors. |
+| `termux-exec-rs` | ✅ Pass | 10/10 tests pass. |
+
+**Critical caveat:** The "all targets" check passes only because `simd/`, `pixel.rs`, and `cpu_features.rs` are **not included in the build**. If they were registered in `lib.rs`, the missing `sve2.rs` would break aarch64 builds.
+
+---
+
+## 9. Recommended Actions (Updated)
+
+### Immediate
+1. **Register new modules in `lib.rs`:**
+   ```rust
+   pub mod cpu_features;
+   pub mod pixel;
+   pub mod simd;
+   ```
+2. **Create `src/simd/sve2.rs`** (even if it is a stub that panics or falls back to scalar), **or** remove the `pub mod sve2;` declaration from `simd/mod.rs` until SVE2 is implemented.
+
+### Short-term
+3. **Unify the RGBA8→RGBA10 mapping formula** in `vulkan_hdr_simulation.rs` so the scalar and "vectorized" implementations use the same arithmetic, or document why a different approximation is acceptable.
+4. **Add a real SVE2 implementation** using `std::arch::aarch64::*` intrinsics, gated behind `#[cfg(target_arch = "aarch64")]` and runtime feature detection via `cpu_features::has_sve2()`.
 
 ---
 
