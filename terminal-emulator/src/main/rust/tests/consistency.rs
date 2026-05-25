@@ -1430,17 +1430,47 @@ fn test_key_event_keypad() {
 // DCS/APC 序列测试（新增）
 // =============================================================================
 
-/// 验证 DCS 序列处理框架 - ⚠️ PARTIAL
+/// 验证 DCS 序列处理框架 - ✅ PASS
 #[test]
 fn test_dcs_sequence_framework() {
     let mut engine = TerminalEngine::new(80 as i64, 24 as i64, 100, 10, 20);
 
-    // DECSIXEL 序列框架
-    let data = b"\x1bPq\x1b\\";
+    // DECSIXEL 序列测试
+    // \x1bPq (开始 Sixel)
+    // "1;1;2;6 (栅格参数：Aspect Ratio, 宽高限制 2x6)
+    // #0;2;100;0;0 (定义颜色 0 = RGB 红色 100%)
+    // #1;2;0;100;0 (定义颜色 1 = RGB 绿色 100%)
+    // #0 (选择颜色 0)
+    // ~~ (绘制两列，每列 6 像素高)
+    // \x1b\\ (ST，结束)
+    let data = b"\x1bPq\"1;1;2;6#0;2;100;0;0#1;2;0;100;0#0~~\x1b\\";
     engine.process_bytes(data);
 
-    // 目前 DCS 处理是框架性的，不报错即可
-    // TODO: 添加 Sixel 解析后的具体验证
+    let decoder = &engine.state.sixel_decoder;
+
+    // 验证基本尺寸
+    assert_eq!(decoder.width, 2, "Sixel image width should be 2");
+    assert_eq!(decoder.height, 6, "Sixel image height should be 6");
+
+    // 验证颜色定义 (颜色 0: 红色，1: 绿色)
+    let color_0 = decoder.color_registers[0].as_ref().unwrap();
+    assert_eq!(color_0.r, 255, "Color 0 Red should be 255");
+    assert_eq!(color_0.g, 0, "Color 0 Green should be 0");
+    assert_eq!(color_0.b, 0, "Color 0 Blue should be 0");
+
+    let color_1 = decoder.color_registers[1].as_ref().unwrap();
+    assert_eq!(color_1.r, 0, "Color 1 Red should be 0");
+    assert_eq!(color_1.g, 255, "Color 1 Green should be 255");
+    assert_eq!(color_1.b, 0, "Color 1 Blue should be 0");
+
+    // 验证像素数据
+    assert_eq!(decoder.pixel_data.len(), 6, "Sixel pixel data should have 6 rows");
+    for row in 0..6 {
+        assert!(decoder.pixel_data[row].len() >= 2, "Row {} should have at least 2 columns", row);
+        // 像素值为 color_index + 1
+        assert_eq!(decoder.pixel_data[row][0], 1, "Pixel at {},0 should be Color 0", row);
+        assert_eq!(decoder.pixel_data[row][1], 1, "Pixel at {},1 should be Color 0", row);
+    }
 }
 
 /// 验证 APC 序列处理框架 - ⚠️ PARTIAL

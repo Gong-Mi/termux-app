@@ -224,6 +224,10 @@ impl SixelDecoder {
                             self.params.clear();
                             self.current_param = -1;
                             self.state = SixelState::RasterParam;
+                        } else if byte == b'#' {
+                            self.params.clear();
+                            self.current_param = -1;
+                            self.state = SixelState::ColorParam;
                         }
                     }
                 }
