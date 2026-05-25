@@ -1,0 +1,11 @@
+# Gitignore for terminal-emulator project
+# Ignore compiled artifacts
+src/main/rust-exec/target/
+src/main/assets/termux-probes/**/termux_exec_device_probe
+# Backup files
+*.bak
+# IDE/editor files
+*.swp
+*.swo
+# Cargo lock if not needed (keep if needed)
+# Cargo.lock
