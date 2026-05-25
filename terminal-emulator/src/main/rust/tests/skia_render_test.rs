@@ -6,17 +6,12 @@ use skia_safe::{Color, Font, FontMgr, FontStyle, Paint, PaintStyle, Rect, surfac
 // ============================================================
 // 辅助函数：从 pixmap 获取指定坐标的 ARGB 颜色
 // raster_n32_premul 使用 Skia 的 kN32_SkColorType，在 little-endian 平台上
-// 内存布局为 [R, G, B, A]。Color::new(0xFFRRGGBB) 按 ARGB 解释。
 fn get_pixel(pixmap: &skia_safe::Pixmap, x: i32, y: i32) -> u32 {
-    let row_bytes = pixmap.row_bytes();
-    let offset = y as usize * row_bytes + x as usize * 4;
-    let addr = unsafe { pixmap.addr().add(offset) as *const u8 };
-    let bytes = unsafe { std::slice::from_raw_parts(addr, 4) };
-    // 内存: [R, G, B, A] -> 重建为 ARGB 0xAARRGGBB
-    let a = bytes[3] as u32;
-    let r = bytes[0] as u32;
-    let g = bytes[1] as u32;
-    let b = bytes[2] as u32;
+    let color = pixmap.get_color((x, y));
+    let a = color.a() as u32;
+    let r = color.r() as u32;
+    let g = color.g() as u32;
+    let b = color.b() as u32;
     (a << 24) | (r << 16) | (g << 8) | b
 }
 

@@ -29,23 +29,11 @@ fn test_skia_raster_draw() {
         assert_eq!(info.width(), 100);
         assert_eq!(info.height(), 100);
 
-        // 获取中心点 (50, 50) 的像素地址
-        // N32 是 4 bytes per pixel
-        let addr = pixmap.addr();
-        let row_bytes = pixmap.row_bytes();
+        let color = pixmap.get_color((50, 50));
+        println!("Color at (50, 50): {:?}", color);
 
-        // 计算 (50, 50) 的偏移量
-        let offset = 50 * 4 + 50 * row_bytes;
-        let pixel_ptr = unsafe { addr.add(offset) as *const u8 };
-        let pixel_bytes = unsafe { std::slice::from_raw_parts(pixel_ptr, 4) };
-
-        // Android 小端序 N32 通常是 BGRA，但这里输出是 [255, 0, 0, 255] -> RGBA
-        // Color::RED (0xFFFF0000 ARGB) -> 内存: FF 00 00 FF (R=255, G=0, B=0, A=255)
-        println!("Pixel at (50,50): {:?}", pixel_bytes);
-
-        // 检查红色分量 (index 0)
-        assert_eq!(pixel_bytes[0], 255, "Red channel should be 255");
-        assert_eq!(pixel_bytes[3], 255, "Alpha channel should be 255");
+        assert_eq!(color.r(), 255, "Red channel should be 255");
+        assert_eq!(color.a(), 255, "Alpha channel should be 255");
 
         println!("✅ Skia Raster 绘图测试通过！");
     } else {
