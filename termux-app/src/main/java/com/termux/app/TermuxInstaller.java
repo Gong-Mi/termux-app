@@ -209,6 +209,11 @@ final class TermuxInstaller {
         File termuxExecPreload = new File(TermuxConstants.PREFIX_PATH + "/lib/libtermux-exec-ld-preload.so");
         if (termuxExecPreload.exists()) {
             environment.put("LD_PRELOAD", termuxExecPreload.getAbsolutePath());
+        } else {
+            File appLibPreload = new File(TermuxConstants.APP_LIB_PATH + "/libtermux-exec.so");
+            if (appLibPreload.exists()) {
+                environment.put("LD_PRELOAD", appLibPreload.getAbsolutePath());
+            }
         }
 
         Process process = builder.start();
