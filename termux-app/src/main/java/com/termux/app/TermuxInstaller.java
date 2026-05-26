@@ -170,7 +170,7 @@ final class TermuxInstaller {
                 }
 
                 Os.rename(getStagingPrefixPath(), TermuxConstants.PREFIX_PATH);
-                runBootstrapSecondStage();
+                runBootstrapSecondStage(activity);
 
                 activity.runOnUiThread(whenDone);
             } catch (final Exception e) {
@@ -190,7 +190,7 @@ final class TermuxInstaller {
         }).start();
     }
 
-    private static void runBootstrapSecondStage() throws IOException, InterruptedException {
+    private static void runBootstrapSecondStage(Context context) throws IOException, InterruptedException {
         String linkerPath = "/system/bin/linker" + (android.os.Process.is64Bit() ? "64" : "");
         String bashPath = TermuxConstants.BIN_PATH + "/bash";
         String secondStagePath = TermuxConstants.PREFIX_PATH +
@@ -206,13 +206,15 @@ final class TermuxInstaller {
         environment.put("TERMUX_VERSION", BuildConfig.VERSION_NAME);
         environment.put("TERMUX_APP_PACKAGE_MANAGER", "apt");
         environment.put("ANDROID__BUILD_VERSION_SDK", String.valueOf(android.os.Build.VERSION.SDK_INT));
-        File termuxExecPreload = new File(TermuxConstants.PREFIX_PATH + "/lib/libtermux-exec-ld-preload.so");
-        if (termuxExecPreload.exists()) {
-            environment.put("LD_PRELOAD", termuxExecPreload.getAbsolutePath());
+
+        // Prioritize using the APK's nativeLibraryDir which is guaranteed to exist and bypass W^X
+        File nativeExecPreload = new File(context.getApplicationInfo().nativeLibraryDir + "/libtermux-exec.so");
+        if (nativeExecPreload.exists()) {
+            environment.put("LD_PRELOAD", nativeExecPreload.getAbsolutePath());
         } else {
-            File appLibPreload = new File(TermuxConstants.APP_LIB_PATH + "/libtermux-exec.so");
-            if (appLibPreload.exists()) {
-                environment.put("LD_PRELOAD", appLibPreload.getAbsolutePath());
+            File termuxExecPreload = new File(TermuxConstants.PREFIX_PATH + "/lib/libtermux-exec-ld-preload.so");
+            if (termuxExecPreload.exists()) {
+                environment.put("LD_PRELOAD", termuxExecPreload.getAbsolutePath());
             }
         }
 
