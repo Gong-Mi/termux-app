@@ -86,29 +86,64 @@ fn current_library_path() -> Option<String> {
     None
 }
 
-fn env_entries_with_ld_preload<I, S>(entries: I, ld_preload: &str) -> Vec<CString>
+fn push_env_if_missing(entries: &mut Vec<String>, key: &str, value: String) {
+    let prefix = format!("{}=", key);
+    if !entries.iter().any(|entry| entry.starts_with(&prefix)) {
+        entries.push(format!("{}={}", key, value));
+    }
+}
+
+fn ensure_termux_core_env(entries: &mut Vec<String>) {
+    let prefix = get_termux_prefix();
+    let files_dir = std::path::Path::new(&prefix)
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| "/data/data/com.termux/files".to_string());
+    let home = format!("{}/home", files_dir);
+
+    push_env_if_missing(entries, "PREFIX", prefix.clone());
+    push_env_if_missing(entries, "HOME", home);
+    push_env_if_missing(entries, "TMPDIR", format!("{}/tmp", prefix));
+    push_env_if_missing(entries, "TMP", format!("{}/tmp", prefix));
+    push_env_if_missing(
+        entries,
+        "PATH",
+        format!("{}/bin:{}/bin/applets:/system/bin", prefix, prefix),
+    );
+    push_env_if_missing(entries, "TERM", "xterm-256color".to_string());
+    push_env_if_missing(entries, "COLORTERM", "truecolor".to_string());
+    push_env_if_missing(entries, "LANG", "en_US.UTF-8".to_string());
+    push_env_if_missing(entries, "SHELL", format!("{}/bin/bash", prefix));
+}
+
+fn env_entries_with_termux_defaults<I, S>(entries: I, ld_preload: &str) -> Vec<CString>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
 {
-    let mut out = Vec::new();
+    let mut raw_entries = Vec::new();
     let mut has_ld_preload = false;
 
     for entry in entries {
         let entry = entry.as_ref();
         if entry.starts_with("LD_PRELOAD=") {
             has_ld_preload = true;
-            out.push(CString::new(format!("LD_PRELOAD={}", ld_preload)).unwrap());
+            raw_entries.push(format!("LD_PRELOAD={}", ld_preload));
         } else {
-            out.push(CString::new(entry.as_bytes()).unwrap_or_else(|_| CString::new("").unwrap()));
+            raw_entries.push(entry.to_string());
         }
     }
 
     if !has_ld_preload {
-        out.push(CString::new(format!("LD_PRELOAD={}", ld_preload)).unwrap());
+        raw_entries.push(format!("LD_PRELOAD={}", ld_preload));
     }
 
-    out
+    ensure_termux_core_env(&mut raw_entries);
+
+    raw_entries
+        .into_iter()
+        .map(|entry| CString::new(entry.as_bytes()).unwrap_or_else(|_| CString::new("").unwrap()))
+        .collect()
 }
 
 fn envp_with_ld_preload(envp: *const *const c_char) -> (Vec<CString>, Vec<*const c_char>) {
@@ -127,7 +162,8 @@ fn envp_with_ld_preload(envp: *const *const c_char) -> (Vec<CString>, Vec<*const
         }
     }
 
-    let entries = env_entries_with_ld_preload(raw_entries.iter().map(String::as_str), &ld_preload);
+    let entries =
+        env_entries_with_termux_defaults(raw_entries.iter().map(String::as_str), &ld_preload);
 
     let mut ptrs: Vec<*const c_char> = entries.iter().map(|entry| entry.as_ptr()).collect();
     ptrs.push(ptr::null());
@@ -213,6 +249,42 @@ pub unsafe extern "C" fn execvpe(
 pub unsafe extern "C" fn execvp(path: *const c_char, argv: *const *const c_char) -> c_int {
     let envp = unsafe { environ as *const *const c_char };
     unsafe { execve_common(path, argv, envp) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn execveat(
+    _dirfd: c_int,
+    path: *const c_char,
+    argv: *const *const c_char,
+    envp: *const *const c_char,
+    _flags: c_int,
+) -> c_int {
+    if path.is_null() {
+        log::debug!("execveat hook: null path");
+        return -1;
+    }
+
+    let path_str = unsafe { CStr::from_ptr(path) }.to_string_lossy().to_string();
+    let argv_dump = debug_argv(argv);
+    log::info!(
+        "execveat hook: path=\"{}\" argv={:?}",
+        path_str,
+        argv_dump
+    );
+
+    unsafe { execve_common(path, argv, envp) }
+}
+
+fn debug_argv(argv: *const *const c_char) -> Vec<String> {
+    let mut out = Vec::new();
+    unsafe {
+        let mut i = 0;
+        while !argv.is_null() && !(*argv.offset(i)).is_null() && i < 32 {
+            out.push(CStr::from_ptr(*argv.offset(i)).to_string_lossy().to_string());
+            i += 1;
+        }
+    }
+    out
 }
 
 fn transform_exec(path: &str, orig_argv: *const *const c_char, depth: u32) -> Option<(String, Vec<CString>)> {
@@ -508,17 +580,21 @@ mod tests {
 
     #[test]
     fn test_env_entries_add_ld_preload_when_missing() {
-        let entries = env_entries_with_ld_preload(["PATH=/bin", "TERM=xterm"], "/app/libtermux-exec.so");
+        let entries =
+            env_entries_with_termux_defaults(["PATH=/bin", "TERM=xterm"], "/app/libtermux-exec.so");
         let strings = argv_strings(entries);
 
         assert!(strings.contains(&"PATH=/bin".to_string()));
         assert!(strings.contains(&"TERM=xterm".to_string()));
         assert!(strings.contains(&"LD_PRELOAD=/app/libtermux-exec.so".to_string()));
+        assert!(strings.iter().any(|entry| entry.starts_with("PREFIX=")));
+        assert!(strings.iter().any(|entry| entry.starts_with("HOME=")));
+        assert!(strings.iter().any(|entry| entry.starts_with("TMPDIR=")));
     }
 
     #[test]
     fn test_env_entries_replace_existing_ld_preload() {
-        let entries = env_entries_with_ld_preload(
+        let entries = env_entries_with_termux_defaults(
             ["PATH=/bin", "LD_PRELOAD=/old/lib.so"],
             "/app/libtermux-exec.so",
         );

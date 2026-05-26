@@ -441,7 +441,15 @@ public final class TermuxLogCollector {
                 || line.contains(" Termux")
                 || line.contains("TermuxExec")
                 || line.contains("TermuxTrace")
-                || line.contains("bootstrap second-stage")) {
+                || line.contains("bootstrap second-stage")
+                || line.contains("apt/methods/")
+                || line.contains("Failed to exec method")
+                || line.contains("Method https has died unexpectedly")
+                || line.contains("CANNOT LINK EXECUTABLE")
+                || line.contains("execveat hook")
+                || line.contains("execve hook")
+                || line.contains("execvp() failed")
+                || line.contains("execveat failed")) {
                 filtered.append(line).append("\n");
                 kept++;
             }

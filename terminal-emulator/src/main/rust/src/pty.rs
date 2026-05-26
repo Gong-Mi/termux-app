@@ -484,6 +484,11 @@ pub fn create_subprocess_with_data(
             .map(|s| s.as_ptr())
             .chain(std::iter::once(std::ptr::null()))
             .collect();
+        let ptr_env: Vec<_> = c_envs
+            .iter()
+            .map(|s| s.as_ptr())
+            .chain(std::iter::once(std::ptr::null()))
+            .collect();
         let fallback_cmd = CString::new("/system/bin/sh").unwrap();
         let fallback_arg0 = CString::new("sh").unwrap();
         let fallback_args = [fallback_arg0.as_ptr(), std::ptr::null()];
@@ -532,30 +537,27 @@ pub fn create_subprocess_with_data(
                     libc::closedir(self_dir);
                 }
 
-                // Clear environment and rebuild.
-                libc::clearenv();
-                for env_str in &c_envs {
-                    libc::putenv(env_str.as_ptr() as *mut _);
-                }
-
                 // Change directory.
                 if let Some(ref c_cwd) = c_cwd {
                     let _ = chdir(c_cwd.as_c_str());
                 }
 
-                // Use execvp to search PATH and match upstream behavior
-                libc::execvp(c_exec_cmd.as_ptr(), ptr_args.as_ptr());
+                // Pass the Termux environment directly to execve. Updating the
+                // process environment with clearenv()/putenv() after fork is
+                // fragile and has been observed to leave the child with only
+                // inherited Android variables.
+                libc::execve(c_exec_cmd.as_ptr(), ptr_args.as_ptr(), ptr_env.as_ptr());
 
                 // --- If we reach here, execvp failed ---
                 // 使用栈上静态缓冲区，避免 fork 后分配
                 let mut buf = [0u8; 256];
-                let msg = b"\r\n[Termux] execvp() failed (see errno)\r\n";
+                let msg = b"\r\n[Termux] execve() failed (see errno)\r\n";
                 let len = msg.len().min(buf.len());
                 buf[..len].copy_from_slice(&msg[..len]);
                 libc::write(2, buf.as_ptr() as *const _, len);
 
                 // Fallback to /system/bin/sh as last resort
-                libc::execvp(fallback_cmd.as_ptr(), fallback_args.as_ptr());
+                libc::execve(fallback_cmd.as_ptr(), fallback_args.as_ptr(), ptr_env.as_ptr());
                 libc::_exit(1);
             }
             Err(_) => Err(()),
