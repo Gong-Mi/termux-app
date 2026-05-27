@@ -154,8 +154,10 @@ fn env_path(name: &str) -> Option<PathBuf> {
 
 fn default_ld_preload() -> Option<PathBuf> {
     [
+        // Prefer bootstrap-installed lib (most up-to-date, already on device)
         "/data/data/com.termux/files/usr/lib/libtermux-exec-ld-preload.so",
         "/data/data/com.termux/files/usr/lib/libtermux-exec.so",
+        // multi-user path (Android 5+)
         "/data/user/0/com.termux/files/usr/lib/libtermux-exec-ld-preload.so",
         "/data/user/0/com.termux/files/usr/lib/libtermux-exec.so",
     ]
@@ -183,6 +185,11 @@ fn apply_env(env_cfg: &ProbeEnv, command: &mut Command) {
     command.env("ANDROID_DATA", "/data");
     if let Some(ld_preload) = &env_cfg.ld_preload {
         command.env("LD_PRELOAD", ld_preload);
+        // Also pass LD_LIBRARY_PATH so libc++_shared.so and other APK libs
+        // can be found by the dynamic linker in child processes.
+        if let Some(lib_dir) = ld_preload.parent() {
+            command.env("LD_LIBRARY_PATH", lib_dir);
+        }
     }
 }
 
@@ -196,6 +203,31 @@ fn run_ok(env_cfg: &ProbeEnv, program: &str, args: &[&str], expect: &str) -> Cas
     let mut command = base_command(env_cfg, program);
     command.args(args);
     output_to_result(command.output(), program, args, Some(expect))
+}
+
+/// Run an ELF binary that lives under /data/... via linker64 to bypass W^X.
+/// Shebang scripts do NOT need this wrapper — they are executed by the shell
+/// which is itself already launched via linker64 by the PTY layer.
+fn run_elf(env_cfg: &ProbeEnv, elf: &str, args: &[&str], expect: Option<&str>) -> CaseResult {
+    const LINKER64: &str = "/system/bin/linker64";
+    const LINKER32: &str = "/system/bin/linker";
+    let linker = if Path::new(LINKER64).exists() { LINKER64 } else { LINKER32 };
+
+    // Only wrap if the binary lives inside app-data (W^X applies there).
+    // System binaries (/system/bin/*) can be exec'd directly.
+    let needs_wrap = elf.contains("/com.termux/files/");
+
+    if needs_wrap {
+        let mut cmd = base_command(env_cfg, linker);
+        cmd.arg(elf);
+        cmd.args(args);
+        let display_cmd = format!("linker64 {elf}");
+        output_to_result(cmd.output(), &display_cmd, args, expect)
+    } else {
+        let mut cmd = base_command(env_cfg, elf);
+        cmd.args(args);
+        output_to_result(cmd.output(), elf, args, expect)
+    }
 }
 
 fn output_to_result(
@@ -255,12 +287,8 @@ fn case_prefix_layout(env_cfg: &ProbeEnv) -> CaseResult {
 
 fn case_shell_command(env_cfg: &ProbeEnv) -> CaseResult {
     let shell = sh(env_cfg);
-    run_ok(
-        env_cfg,
-        &shell,
-        &["-c", "printf probe-shell-ok"],
-        "probe-shell-ok",
-    )
+    // Shell is an ELF under /data — use linker64 wrapper.
+    run_elf(env_cfg, &shell, &["-c", "printf probe-shell-ok"], Some("probe-shell-ok"))
 }
 
 fn case_usr_bin_env_shebang(env_cfg: &ProbeEnv) -> CaseResult {
@@ -332,7 +360,8 @@ fn case_git_local_clone(env_cfg: &ProbeEnv) -> CaseResult {
         shell_quote(&clone)
     );
     let shell = sh(env_cfg);
-    run_ok(env_cfg, &shell, &["-c", &script], "probe-git-ok")
+    // Shell is an ELF under /data — use linker64 wrapper.
+    run_elf(env_cfg, &shell, &["-c", &script], Some("probe-git-ok"))
 }
 
 fn case_python_subprocess(env_cfg: &ProbeEnv) -> CaseResult {

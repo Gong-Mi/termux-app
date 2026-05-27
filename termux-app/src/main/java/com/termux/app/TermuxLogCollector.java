@@ -80,9 +80,10 @@ public final class TermuxLogCollector {
         checkPath(sb, "ld-preload-alt", TermuxConstants.PREFIX_PATH + "/lib/libtermux-exec-ld-preload.so");
         sb.append("\n");
 
-        // libtermux_exec status
+        // libtermux_exec status - check both hyphen and underscore naming
         sb.append("----- libtermux_exec Status -----\n");
-        checkNativeLib(sb, context, "libtermux_exec.so");
+        checkNativeLib(sb, context, "libtermux_exec.so");   // underscore (legacy lookup)
+        checkNativeLib(sb, context, "libtermux-exec.so");   // hyphen (actual APK name)
         sb.append("\n");
 
         // Process Info
@@ -271,7 +272,13 @@ public final class TermuxLogCollector {
         }
 
         try {
-            ProcessBuilder pb = new ProcessBuilder(probeBinary.getAbsolutePath());
+            // API 29+ W^X: app data files cannot be directly exec()'d from Java.
+            // Use /system/bin/linker64 as the real executable so the kernel sees
+            // a system-domain binary; linker64 then maps and runs our probe ELF.
+            ProcessBuilder pb = new ProcessBuilder(
+                "/system/bin/linker64",
+                probeBinary.getAbsolutePath()
+            );
             pb.redirectErrorStream(true);
             Map<String, String> pbEnv = pb.environment();
             pbEnv.clear();
@@ -328,10 +335,12 @@ public final class TermuxLogCollector {
     }
 
     private static File extractDeviceProbe(Context context) {
-        // Extract to $PREFIX/bin/ instead of getFilesDir() to avoid Android 10+ W^X restriction.
-        // getFilesDir() is subject to noexec on targetSdk >= 29, but $PREFIX/bin is the
-        // Termux-managed filesystem and allows execution.
-        File probesDir = new File(TermuxConstants.PREFIX_PATH + "/bin");
+        // Extract to getCacheDir()/probes/ — this directory is:
+        //   - always writable by the app process (no bootstrap required)
+        //   - executable via /system/bin/linker64 (system-domain, bypasses W^X)
+        // Do NOT use PREFIX/bin: that directory may not exist yet (bootstrap not
+        // installed) and writing there from the Java process can race with Rust.
+        File probesDir = new File(context.getCacheDir(), "probes");
         if (!probesDir.exists() && !probesDir.mkdirs()) {
             TermuxLogger.e("LogCollector", "Failed to create probes dir: " + probesDir.getAbsolutePath());
             return null;

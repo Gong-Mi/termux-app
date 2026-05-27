@@ -1,7 +1,8 @@
 # Gitignore for terminal-emulator project
 # Ignore compiled artifacts
 src/main/rust-exec/target/
-src/main/assets/termux-probes/**/termux_exec_device_probe
+# NOTE: termux_exec_device_probe binaries are intentionally tracked in git
+# as APK assets (src/main/assets/termux-probes/**). Do NOT ignore them.
 # Backup files
 *.bak
 # IDE/editor files
