@@ -20,6 +20,7 @@ pub static LOAD_HOOK: unsafe extern "C" fn() = {
     unsafe extern "C" fn init() {
         unsafe { init_logging() };
         ensure_ld_preload_is_exported();
+        ensure_termux_prefix_is_exported();
         log::info!("execve preload hooks active");
     }
     init
@@ -56,6 +57,56 @@ fn ensure_ld_preload_is_exported() {
         }
     }
     log::info!("restored LD_PRELOAD to {}", path);
+}
+
+/// If PREFIX is missing from the environment, infer it from the LD_PRELOAD path
+/// and export it. This ensures child processes always have a valid Termux prefix,
+/// even when launched from a clean environment (e.g. linker64 → target ELF).
+fn ensure_termux_prefix_is_exported() {
+    if std::env::var("PREFIX").is_ok() {
+        return;
+    }
+
+    if let Some(prefix) = prefix_from_ld_preload_path() {
+        unsafe {
+            if let Ok(key) = CString::new("PREFIX") {
+                if let Ok(value) = CString::new(prefix.as_str()) {
+                    libc::setenv(key.as_ptr(), value.as_ptr(), 1);
+                }
+            }
+        }
+        log::info!("restored PREFIX to {}", prefix);
+    }
+}
+
+/// Infer Termux prefix from the LD_PRELOAD path.
+/// LD_PRELOAD is usually .../files/usr/lib/libtermux-exec.so or .../applib/libtermux-exec.so.
+fn prefix_from_ld_preload_path() -> Option<String> {
+    let ld_preload = selected_ld_preload_path()?;
+    let path = std::path::Path::new(&ld_preload);
+
+    // Case 1: .../files/usr/lib/libtermux-exec.so → prefix is .../files/usr
+    if let Some(parent) = path.parent() {
+        if let Some(grandparent) = parent.parent() {
+            let candidate = grandparent.to_string_lossy().to_string();
+            if candidate.ends_with("/usr") || candidate.ends_with("\\usr") {
+                return Some(candidate);
+            }
+        }
+    }
+
+    // Case 2: .../applib/libtermux-exec.so → prefix is .../files/usr
+    if let Some(parent) = path.parent() {
+        if let Some(grandparent) = parent.parent() {
+            let candidate = grandparent.to_string_lossy().to_string();
+            let prefix_candidate = format!("{}/usr", candidate);
+            if std::path::Path::new(&prefix_candidate).exists() {
+                return Some(prefix_candidate);
+            }
+        }
+    }
+
+    None
 }
 
 fn selected_ld_preload_path() -> Option<String> {
@@ -401,7 +452,7 @@ fn parse_shebang(buffer: &[u8]) -> Option<(String, Option<String>)> {
 }
 
 fn get_termux_prefix() -> String {
-    // 1. Try PREFIX env var (set by Termux shell)
+    // 1. Try PREFIX env var (set by Termux shell or .init_array hook)
     if let Ok(prefix) = std::env::var("PREFIX") {
         return prefix;
     }
@@ -411,7 +462,12 @@ fn get_termux_prefix() -> String {
             return format!("{}/usr", &home[..home.len() - 4]);
         }
     }
-    // 3. Fallback to standard single-user path
+    // 3. Try infer from LD_PRELOAD path
+    if let Some(prefix) = prefix_from_ld_preload_path() {
+        return prefix;
+    }
+    // 4. Fallback to standard single-user path
+    log::warn!("get_termux_prefix: falling back to hardcoded path; consider setting PREFIX env var");
     "/data/data/com.termux/files/usr".to_string()
 }
 
