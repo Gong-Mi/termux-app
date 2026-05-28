@@ -111,7 +111,13 @@ pub fn parse_shebang(buffer: &[u8]) -> Option<(String, Option<String>)> {
 
 /// Map an interpreter path to the Termux prefix, matching upstream logic.
 pub fn map_interpreter(interp: &str, normalize: &dyn Fn(String) -> String) -> String {
-    let termux_prefix = crate::get_termux_prefix();
+    let mut termux_prefix = crate::get_termux_prefix();
+    if termux_prefix.starts_with("/data/data/com.termux/") {
+        let user_prefix = termux_prefix.replacen("/data/data/com.termux", "/data/user/0/com.termux", 1);
+        if std::path::Path::new(&user_prefix).exists() {
+            termux_prefix = user_prefix;
+        }
+    }
     if interp.starts_with("/usr/bin/env") {
         format!("{}/bin/env", termux_prefix)
     } else if interp.starts_with("/bin/") || interp.starts_with("/usr/bin/") {

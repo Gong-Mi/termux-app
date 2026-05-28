@@ -1893,7 +1893,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
     cmd: jstring,
     cwd: jstring,
     args: jni::sys::jobjectArray,
-    _env_vars: jni::sys::jobjectArray,
+    env_vars: jni::sys::jobjectArray,
     rows: jint,
     cols: jint,
     cw: jint,
@@ -1931,7 +1931,36 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
         }
     }
 
-    // 环境变量由 Rust 层完全自主构建，忽略 Java 层传递的 env_vars。
+    // Rust 层仍然自主构建最终环境，但 Java 层已经用 Context 初始化了真实
+    // app files dir。先从 env_vars 读取 PREFIX，避免 Service/Activity 初始化
+    // 顺序导致 Rust 回退到 /data/data/com.termux。
+    let env_vars_obj = unsafe { jni::objects::JObjectArray::from_raw(env_vars) };
+    if !env_vars_obj.is_null() {
+        if let Ok(len) = env.get_array_length(&env_vars_obj) {
+            for i in 0..len {
+                if let Ok(env_obj) = env.get_object_array_element(&env_vars_obj, i) {
+                    let env_java: JString = env_obj.into();
+                    if let Ok(env_value) = env.get_string(&env_java) {
+                        let env_str = String::from(env_value);
+                        if let Some(prefix) = env_str.strip_prefix("PREFIX=") {
+                            let prefix_str = crate::validate_termux_prefix(prefix);
+                            let prefix_mutex =
+                                crate::TERMUX_PREFIX.get_or_init(|| Mutex::new(prefix_str.clone()));
+                            if let Ok(mut current_prefix) = prefix_mutex.lock() {
+                                *current_prefix = prefix_str.clone();
+                            }
+                            android_log(
+                                LogPriority::INFO,
+                                &format!("[TRACE_SESSION] TERMUX_PREFIX from env_vars: {}", prefix_str),
+                            );
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let is_failsafe_bool = is_failsafe != 0;
 
     let callback_ref = if !callback.is_null() {
@@ -2114,7 +2143,10 @@ pub extern "system" fn Java_com_termux_terminal_JNI_setTermuxVersion(
 ) {
     if let Ok(v) = env.get_string(&version) {
         let version_str: String = v.into();
-        let _ = crate::TERMUX_VERSION.get_or_init(|| Mutex::new(version_str.clone()));
+        let version_mutex = crate::TERMUX_VERSION.get_or_init(|| Mutex::new(version_str.clone()));
+        if let Ok(mut current_version) = version_mutex.lock() {
+            *current_version = version_str.clone();
+        }
         android_log(
             LogPriority::INFO,
             &format!("[JNI] TERMUX_VERSION set to: {}", version_str),
@@ -2132,7 +2164,10 @@ pub extern "system" fn Java_com_termux_terminal_JNI_setTermuxPrefix(
     if let Ok(v) = env.get_string(&prefix) {
         let raw_prefix: String = v.into();
         let prefix_str = crate::validate_termux_prefix(&raw_prefix);
-        let _ = crate::TERMUX_PREFIX.get_or_init(|| Mutex::new(prefix_str.clone()));
+        let prefix_mutex = crate::TERMUX_PREFIX.get_or_init(|| Mutex::new(prefix_str.clone()));
+        if let Ok(mut current_prefix) = prefix_mutex.lock() {
+            *current_prefix = prefix_str.clone();
+        }
         android_log(
             LogPriority::INFO,
             &format!("[JNI] TERMUX_PREFIX set to: {}", prefix_str),

@@ -33,6 +33,11 @@ public class TermuxShellUtils {
 
     @NonNull
     public static ExecuteCommand setupShellCommandArguments(@NonNull File executable, @NonNull String[] arguments, boolean isLoginShell) {
+        String normalizedExecutablePath = normalizeTermuxFilesPath(executable.getAbsolutePath());
+        if (normalizedExecutablePath != null) {
+            executable = new File(normalizedExecutablePath);
+        }
+
         // The file to execute may either be:
         // - An elf file, in which we execute it directly.
         // - A script file without shebang, which we execute with our standard shell $PREFIX/bin/sh instead of the
@@ -78,15 +83,7 @@ public class TermuxShellUtils {
         var processName = (isLoginShell ? "-" : "") + executable.getName();
         actualArguments.add(processName);
 
-        String actualFileToExecute;
-        if (elfFileToExecute.contains("/com.termux/files/")) {
-            actualFileToExecute = "/system/bin/linker" + (android.os.Process.is64Bit() ? "64" : "");
-            actualArguments.clear();
-            actualArguments.add(actualFileToExecute);
-            actualArguments.add(elfFileToExecute);
-        } else {
-            actualFileToExecute = elfFileToExecute;
-        }
+        String actualFileToExecute = elfFileToExecute;
 
         if (interpreter != null) {
             actualArguments.add(executable.getAbsolutePath());

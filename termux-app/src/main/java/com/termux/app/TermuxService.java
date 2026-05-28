@@ -23,6 +23,7 @@ import androidx.annotation.Nullable;
 
 import com.termux.R;
 import com.termux.app.api.TermuxApiHandler;
+import com.termux.BuildConfig;
 import com.termux.terminal.TerminalSession;
 import com.termux.terminal.TerminalSessionClient;
 
@@ -104,6 +105,8 @@ public final class TermuxService extends Service {
 
         TermuxConstants.init(this);
         TermuxInstaller.setupAppLibSymlink(this);
+        com.termux.terminal.JNI.setTermuxVersion(BuildConfig.VERSION_NAME);
+        com.termux.terminal.JNI.setTermuxPrefix(TermuxConstants.PREFIX_PATH);
     }
 
     /** {@inheritDoc} */
