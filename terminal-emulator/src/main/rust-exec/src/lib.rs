@@ -376,11 +376,19 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char, depth: u32) -> Op
 
         // If the interpreter itself is a shebang script, recurse to find the real ELF loader
         if let Some((real_linker, mut real_argv)) = transform_exec(&resolved_interp, orig_argv, depth + 1) {
-            // Insert the script path into the recursive result (after the interpreter)
+            // Insert the shebang arguments and then the script path into the recursive result
             // real_argv layout: [linker, interp, ...orig_args...]
-            // we need: [linker, interp, script_path, ...orig_args...]
-            if real_argv.len() >= 2 {
-                real_argv.insert(2, CString::new(path.clone()).unwrap());
+            // we need: [linker, interp, [shebang_args], script_path, ...orig_args...]
+            let mut insert_idx = 2;
+            if let Some(args) = shebang_args {
+                for arg in args.split_whitespace() {
+                    real_argv.insert(insert_idx, CString::new(arg).unwrap());
+                    insert_idx += 1;
+                }
+            }
+
+            if real_argv.len() >= insert_idx {
+                real_argv.insert(insert_idx, CString::new(path.clone()).unwrap());
             } else {
                 real_argv.push(CString::new(path.clone()).unwrap());
             }
