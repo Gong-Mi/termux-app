@@ -357,8 +357,18 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char, depth: u32) -> Op
         "/system/bin/linker"
     };
 
-    if n > 4 && buffer[0] == 0x7F && buffer[1] == b'E' && buffer[2] == b'L' && buffer[3] == b'F' {
-        log::debug!("transform_exec: \"{}\" is ELF, prepending linker", path);
+    if n > 17 && buffer[0] == 0x7F && buffer[1] == b'E' && buffer[2] == b'L' && buffer[3] == b'F' {
+        let e_type = u16::from_le_bytes([buffer[16], buffer[17]]);
+        if e_type != 3 {
+            log::debug!(
+                "transform_exec: \"{}\" is ELF with e_type {} (not ET_DYN), skipping linker wrapper",
+                path,
+                e_type
+            );
+            return None;
+        }
+
+        log::debug!("transform_exec: \"{}\" is PIE ELF, prepending linker", path);
         let mut new_argv = Vec::new();
         new_argv.push(CString::new(linker).unwrap());
         new_argv.push(CString::new(path.clone()).unwrap());
