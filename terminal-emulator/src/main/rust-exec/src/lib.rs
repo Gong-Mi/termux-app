@@ -197,7 +197,7 @@ where
         .collect()
 }
 
-fn envp_with_ld_preload(envp: *const *const c_char) -> (Vec<CString>, Vec<*const c_char>) {
+fn envp_with_ld_preload(envp: *const *const c_char, original_path: &str) -> (Vec<CString>, Vec<*const c_char>) {
     let Some(ld_preload) = selected_ld_preload_path() else {
         return (Vec::new(), vec![ptr::null()]);
     };
@@ -212,6 +212,8 @@ fn envp_with_ld_preload(envp: *const *const c_char) -> (Vec<CString>, Vec<*const
             i += 1;
         }
     }
+
+    push_env_if_missing(&mut raw_entries, "TERMUX_ORIGINAL_EXE_PATH", original_path.to_string());
 
     let entries =
         env_entries_with_termux_defaults(raw_entries.iter().map(String::as_str), &ld_preload);
@@ -231,7 +233,7 @@ unsafe fn execve_common(
     }
 
     let path_str = unsafe { CStr::from_ptr(path) }.to_string_lossy().to_string();
-    let (_env_entries, env_ptrs) = envp_with_ld_preload(envp);
+    let (_env_entries, env_ptrs) = envp_with_ld_preload(envp, &path_str);
     let final_envp = if env_ptrs.len() > 1 { env_ptrs.as_ptr() } else { envp };
 
     if path_str.starts_with("/system/") || path_str.starts_with("/vendor/") || path_str.contains("/linker") {
