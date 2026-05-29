@@ -14,10 +14,11 @@ use crate::utils::{LogPriority, android_log};
 /// # 参数
 /// - `cwd`: 工作目录（用于设置 PWD）
 /// - `is_failsafe`: 是否为 failsafe 模式。failsafe 模式下保留系统 PATH/TMPDIR，不注入 Termux 路径。
+/// - `session_env_vars`: Java 层传递的当前 Session 专属运行环境变量。
 ///
 /// # 返回
 /// 可直接用于 `clearenv()` + `putenv()` 的 `CString` 向量。
-pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
+pub fn build_termux_environment(cwd: &str, is_failsafe: bool, session_env_vars: &[String]) -> Vec<CString> {
     let mut env = HashMap::new();
 
     // ------------------------------------------------------------------
@@ -218,13 +219,23 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool) -> Vec<CString> {
     env.insert("PWD".to_string(), pwd);
 
     // ------------------------------------------------------------------
-    // 8. 合并 Java 层传递的扩展环境变量（TERMUX_APP__* 等）
+    // 8. 合并 Java 层传递的扩展环境变量（TERMUX_APP__* 等）及 Session 专有环境
     // ------------------------------------------------------------------
+    // 先合并不变的全局扩展变量
     if let Some(ext_mutex) = crate::EXTENDED_ENV.get() {
         if let Ok(ext_map) = ext_mutex.lock() {
             for (k, v) in ext_map.iter() {
                 env.insert(k.clone(), v.clone());
             }
+        }
+    }
+
+    // 再合并 Session 动态专有环境变量 (如从 Java Execute Intent 传入的环境)
+    for env_str in session_env_vars {
+        if let Some(idx) = env_str.find('=') {
+            let key = env_str[..idx].to_string();
+            let val = env_str[idx + 1..].to_string();
+            env.insert(key, val);
         }
     }
 
@@ -274,7 +285,7 @@ mod tests {
 
     #[test]
     fn test_failsafe_no_termux_injection() {
-        let envs = build_termux_environment("/data/data/com.termux/files/home", true);
+        let envs = build_termux_environment("/data/data/com.termux/files/home", true, &[]);
         let env_strs: Vec<String> = envs
             .iter()
             .map(|c| c.to_string_lossy().to_string())
@@ -296,7 +307,7 @@ mod tests {
 
     #[test]
     fn test_normal_has_termux_paths() {
-        let envs = build_termux_environment("/data/data/com.termux/files/home", false);
+        let envs = build_termux_environment("/data/data/com.termux/files/home", false, &[]);
         let env_strs: Vec<String> = envs
             .iter()
             .map(|c| c.to_string_lossy().to_string())

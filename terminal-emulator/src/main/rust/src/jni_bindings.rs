@@ -1931,10 +1931,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
         }
     }
 
-    // Rust 层仍然自主构建最终环境，但 Java 层已经用 Context 初始化了真实
-    // app files dir。先从 env_vars 读取 PREFIX，避免 Service/Activity 初始化
-    // 顺序导致 Rust 回退到 /data/data/com.termux。
+    // 从 Java 侧传递来的环境数组
     let env_vars_obj = unsafe { jni::objects::JObjectArray::from_raw(env_vars) };
+    let mut session_env_vars = Vec::new();
     if !env_vars_obj.is_null() {
         if let Ok(len) = env.get_array_length(&env_vars_obj) {
             for i in 0..len {
@@ -1942,6 +1941,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
                     let env_java: JString = env_obj.into();
                     if let Ok(env_value) = env.get_string(&env_java) {
                         let env_str = String::from(env_value);
+                        session_env_vars.push(env_str.clone());
                         if let Some(prefix) = env_str.strip_prefix("PREFIX=") {
                             let prefix_str = crate::validate_termux_prefix(prefix);
                             let prefix_mutex =
@@ -1953,7 +1953,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
                                 LogPriority::INFO,
                                 &format!("[TRACE_SESSION] TERMUX_PREFIX from env_vars: {}", prefix_str),
                             );
-                            break;
+                            // 不再 break，因为我们需要收集所有的环境变量
                         }
                     }
                 }
@@ -1986,6 +1986,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
             cmd_str,
             cwd_str,
             argv,
+            session_env_vars,
             rows,
             cols,
             cw,
@@ -2210,7 +2211,10 @@ pub extern "system" fn Java_com_termux_terminal_JNI_setExtendedEnvironment(
         }
     }
 
-    let _ = crate::EXTENDED_ENV.get_or_init(|| Mutex::new(map.clone()));
+    let ext_env = crate::EXTENDED_ENV.get_or_init(|| Mutex::new(map.clone()));
+    if let Ok(mut current_map) = ext_env.lock() {
+        *current_map = map.clone();
+    }
     android_log(
         LogPriority::INFO,
         &format!("[JNI] Extended environment set with {} vars", map.len()),

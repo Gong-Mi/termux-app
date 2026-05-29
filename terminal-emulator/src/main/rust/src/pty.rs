@@ -67,9 +67,22 @@ pub unsafe fn create_subprocess(
         }
     }
 
-    // 环境变量由 Rust 层完全自主构建，不再解析 Java 层传递的 env_vars。
-    // _env_vars 参数保留以保持 JNI 签名兼容，但内容被忽略。
-    match create_subprocess_with_data(cmd_str, cwd_str, argv, rows, cols, cw, ch, is_failsafe) {
+    let env_vars_obj = unsafe { JObjectArray::from_raw(_env_vars) };
+    let mut session_env_vars = Vec::new();
+    if !env_vars_obj.is_null() {
+        if let Ok(len) = env.get_array_length(&env_vars_obj) {
+            for i in 0..len {
+                if let Ok(env_obj) = env.get_object_array_element(&env_vars_obj, i) {
+                    let env_java: JString = env_obj.into();
+                    if let Ok(env_value) = env.get_string(&env_java) {
+                        session_env_vars.push(String::from(env_value));
+                    }
+                }
+            }
+        }
+    }
+
+    match create_subprocess_with_data(cmd_str, cwd_str, argv, session_env_vars, rows, cols, cw, ch, is_failsafe) {
         Ok((fd, pid)) => {
             let pid_val = [pid as jint];
             let j_pid_array = unsafe { JIntArray::from_raw(process_id_array) };
@@ -218,6 +231,7 @@ pub fn create_subprocess_with_data(
     cmd_str: String,
     cwd_str: String,
     argv: Vec<String>,
+    session_env_vars: Vec<String>,
     rows: jint,
     cols: jint,
     cw: jint,
@@ -292,7 +306,7 @@ pub fn create_subprocess_with_data(
     // 环境变量由 Rust 层完全自主构建，不再接收/修补 Java 层传递的 envp。
     // 这消除了 Java ↔ Native 之间的“中间状态”不一致。
     // ------------------------------------------------------------------
-    let env_list = crate::env_builder::build_termux_environment(&cwd_str, is_failsafe);
+    let env_list = crate::env_builder::build_termux_environment(&cwd_str, is_failsafe, &session_env_vars);
 
     // 二次清洗环境变量：确保即使 env_builder 漏掉某些系统变量，这里也会进行路径归一化
     let c_envs: Vec<CString> = env_list
@@ -862,9 +876,20 @@ mod tests {
         s
     }
 
+    fn get_expected_prefix() -> String {
+        let mut prefix = crate::get_termux_prefix();
+        if prefix.starts_with("/data/data/com.termux/") {
+            let user_prefix = prefix.replacen("/data/data/com.termux", "/data/user/0/com.termux", 1);
+            if std::path::Path::new(&user_prefix).exists() {
+                prefix = user_prefix;
+            }
+        }
+        prefix
+    }
+
     #[test]
     fn map_interpreter_env() {
-        let prefix = crate::get_termux_prefix();
+        let prefix = get_expected_prefix();
         assert_eq!(
             map_interpreter("/usr/bin/env", &noop_normalize),
             format!("{}/bin/env", prefix)
@@ -873,7 +898,7 @@ mod tests {
 
     #[test]
     fn map_interpreter_bin_sh() {
-        let prefix = crate::get_termux_prefix();
+        let prefix = get_expected_prefix();
         assert_eq!(
             map_interpreter("/bin/sh", &noop_normalize),
             format!("{}/bin/sh", prefix)
@@ -882,7 +907,7 @@ mod tests {
 
     #[test]
     fn map_interpreter_usr_bin_awk() {
-        let prefix = crate::get_termux_prefix();
+        let prefix = get_expected_prefix();
         assert_eq!(
             map_interpreter("/usr/bin/awk", &noop_normalize),
             format!("{}/bin/awk", prefix)
@@ -891,7 +916,7 @@ mod tests {
 
     #[test]
     fn map_interpreter_termux_path() {
-        let prefix = crate::get_termux_prefix();
+        let prefix = get_expected_prefix();
         assert_eq!(
             map_interpreter(&format!("{}/bin/python", prefix), &noop_normalize),
             format!("{}/bin/python", prefix)

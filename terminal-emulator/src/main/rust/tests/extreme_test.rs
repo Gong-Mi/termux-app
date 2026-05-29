@@ -53,6 +53,7 @@ fn test_extreme_concurrent_spawn_under_pressure() {
                 cmd,
                 cwd,
                 vec!["sh".to_string(), "-c".to_string(), "exit 0".to_string()],
+                vec![],
                 24,
                 80,
                 10,
