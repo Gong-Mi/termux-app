@@ -113,6 +113,17 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool, session_env_vars: 
 
         let mut found_ld_preload_path = None;
 
+        // 0. 优先检查固定路径 /data/data/com.termux/files/exec/libtermux-exec.so
+        //    TermuxActivity 启动时会把 APK 的 rust-exec so 拷贝到这里，路径永不随 APK 更新变化。
+        let fixed_exec_lib = format!("{}/exec/libtermux-exec.so", crate::get_termux_files_dir());
+        if std::path::Path::new(&fixed_exec_lib).exists() {
+            found_ld_preload_path = Some(fixed_exec_lib.clone());
+            android_log(
+                LogPriority::INFO,
+                &format!("[env_builder] Using fixed exec path for LD_PRELOAD: {}", fixed_exec_lib),
+            );
+        }
+
         // 1. 优先检查 applib (APK 原生库目录，API 29+ 必需)
         // 注意：必须使用真实物理路径而非 /data/data/ 下的软链接，否则 Android Linker 会拒绝加载。
         // 我们通过读取 /proc/self/maps 找到当前正在运行的 libtermux_rust.so 所在的真实目录。
@@ -141,12 +152,14 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool, session_env_vars: 
             }
         }
 
-        if let Some(lib_dir) = real_app_lib {
-            for variant in &ld_preload_variants {
-                let ld_preload_path = lib_dir.join(variant);
-                if ld_preload_path.exists() {
-                    found_ld_preload_path = Some(ld_preload_path.to_string_lossy().to_string());
-                    break;
+        if found_ld_preload_path.is_none() {
+            if let Some(lib_dir) = real_app_lib {
+                for variant in &ld_preload_variants {
+                    let ld_preload_path = lib_dir.join(variant);
+                    if ld_preload_path.exists() {
+                        found_ld_preload_path = Some(ld_preload_path.to_string_lossy().to_string());
+                        break;
+                    }
                 }
             }
         }
