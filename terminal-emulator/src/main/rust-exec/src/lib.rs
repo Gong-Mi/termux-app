@@ -162,25 +162,42 @@ fn push_env_if_missing(entries: &mut Vec<String>, key: &str, value: String) {
 }
 
 fn ensure_termux_core_env(entries: &mut Vec<String>) {
-    let prefix = get_termux_prefix();
-    let files_dir = std::path::Path::new(&prefix)
-        .parent()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|| "/data/data/com.termux/files".to_string());
-    let home = format!("{}/home", files_dir);
+    let prefix = "/data/data/com.termux/files/usr".to_string();
+    let home = "/data/data/com.termux/files/home".to_string();
 
-    push_env_if_missing(entries, "PREFIX", prefix.clone());
-    push_env_if_missing(entries, "HOME", home);
+    // Force key environment variables to ensure consistency
+    let mut prefix_set = false;
+    let mut home_set = false;
+    let mut path_idx = None;
+
+    for (i, entry) in entries.iter_mut().enumerate() {
+        if entry.starts_with("PREFIX=") {
+            *entry = format!("PREFIX={}", prefix);
+            prefix_set = true;
+        } else if entry.starts_with("HOME=") {
+            *entry = format!("HOME={}", home);
+            home_set = true;
+        } else if entry.starts_with("PATH=") {
+            path_idx = Some(i);
+        }
+    }
+
+    if !prefix_set { entries.push(format!("PREFIX={}", prefix)); }
+    if !home_set { entries.push(format!("HOME={}", home)); }
+
+    // Prepend Termux bin to PATH
+    let termux_bin = format!("{}/bin", prefix);
+    if let Some(idx) = path_idx {
+        let current_path = &entries[idx][5..];
+        if !current_path.contains(&termux_bin) {
+            entries[idx] = format!("PATH={}:{}", termux_bin, current_path);
+        }
+    } else {
+        entries.push(format!("PATH={}:/system/bin", termux_bin));
+    }
+
     push_env_if_missing(entries, "TMPDIR", format!("{}/tmp", prefix));
-    push_env_if_missing(entries, "TMP", format!("{}/tmp", prefix));
-    push_env_if_missing(
-        entries,
-        "PATH",
-        format!("{}/bin:{}/bin/applets:/system/bin", prefix, prefix),
-    );
     push_env_if_missing(entries, "TERM", "xterm-256color".to_string());
-    push_env_if_missing(entries, "COLORTERM", "truecolor".to_string());
-    push_env_if_missing(entries, "LANG", "en_US.UTF-8".to_string());
     push_env_if_missing(entries, "SHELL", format!("{}/bin/bash", prefix));
 }
 
@@ -539,22 +556,6 @@ fn parse_shebang(buffer: &[u8]) -> Option<(String, Option<String>)> {
 }
 
 fn get_termux_prefix() -> String {
-    // 1. Try PREFIX env var (set by Termux shell or .init_array hook)
-    if let Ok(prefix) = std::env::var("PREFIX") {
-        return prefix;
-    }
-    // 2. Try infer from HOME env var (HOME=/data/.../files/home)
-    if let Ok(home) = std::env::var("HOME") {
-        if home.ends_with("/files/home") {
-            return format!("{}/usr", &home[..home.len() - 4]);
-        }
-    }
-    // 3. Try infer from LD_PRELOAD path
-    if let Some(prefix) = prefix_from_ld_preload_path() {
-        return prefix;
-    }
-    // 4. Fallback to standard single-user path
-    log::warn!("get_termux_prefix: falling back to hardcoded path; consider setting PREFIX env var");
     "/data/data/com.termux/files/usr".to_string()
 }
 
