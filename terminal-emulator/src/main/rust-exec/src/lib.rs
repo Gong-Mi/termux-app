@@ -277,6 +277,32 @@ unsafe fn execve_common(
             }
         }
 
+        // Android 16+ compatibility: app_process no longer accepts -Xnoimage-dex2oat.
+        // Filter it out transparently so termux-am (am / termux-open-url) keeps working.
+        if path_str.contains("app_process") {
+            let mut filtered_argv: Vec<*const c_char> = Vec::new();
+            let mut stripped = false;
+            unsafe {
+                let mut i = 0;
+                while !(*argv.offset(i)).is_null() {
+                    let arg = CStr::from_ptr(*argv.offset(i));
+                    if arg.to_bytes() == b"-Xnoimage-dex2oat" {
+                        stripped = true;
+                    } else {
+                        filtered_argv.push(*argv.offset(i));
+                    }
+                    i += 1;
+                }
+            }
+            if stripped {
+                filtered_argv.push(ptr::null());
+                log::info!("execve hook: stripped -Xnoimage-dex2oat from app_process for Android 16+ compatibility");
+                return unsafe {
+                    libc::syscall(libc::SYS_execveat, libc::AT_FDCWD, path, filtered_argv.as_ptr(), final_envp, 0) as c_int
+                };
+            }
+        }
+
         log::debug!("execve hook: passing through system binary \"{}\"", path_str);
         return unsafe {
             libc::syscall(libc::SYS_execveat, libc::AT_FDCWD, path, argv, final_envp, 0) as c_int
