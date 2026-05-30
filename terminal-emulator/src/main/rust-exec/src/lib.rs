@@ -237,6 +237,31 @@ unsafe fn execve_common(
     let final_envp = if env_ptrs.len() > 1 { env_ptrs.as_ptr() } else { envp };
 
     if path_str.starts_with("/system/") || path_str.starts_with("/vendor/") || path_str.contains("/linker") {
+        // Special case: If a wrapped process (e.g. Node.js) tries to relaunch itself using process.execPath
+        // which has been corrupted to /system/bin/linker64, we need to fix the command line.
+        // Symptoms: execve("/system/bin/linker64", ["/system/bin/linker64", "--max-old-space-size=...", ...])
+        let is_flag_start = unsafe {
+            !argv.is_null() && !(*argv.offset(1)).is_null() && 
+            (*(*argv.offset(1)) as u8) == b'-'
+        };
+
+        if is_flag_start {
+            if let Ok(original_exe) = std::env::var("TERMUX_ORIGINAL_EXE_PATH") {
+                log::info!("execve hook: detected linker relaunch of \"{}\", redirecting", original_exe);
+                if let Some((final_path, mut new_argv)) = transform_exec(&original_exe, argv, 0) {
+                    // transform_exec returns [linker, original_exe, ...orig_args[1..]...]
+                    // But here orig_argv[0] is the linker itself. 
+                    // The transform_exec logic for ELF usually handles this.
+                    
+                    let Ok(c_path) = CString::new(final_path) else { return -1; };
+                    let c_argv_ptrs: Vec<*const c_char> = new_argv.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
+                    return unsafe {
+                        libc::syscall(libc::SYS_execveat, libc::AT_FDCWD, c_path.as_ptr(), c_argv_ptrs.as_ptr(), final_envp, 0) as c_int
+                    };
+                }
+            }
+        }
+
         log::debug!("execve hook: passing through system binary \"{}\"", path_str);
         return unsafe {
             libc::syscall(libc::SYS_execveat, libc::AT_FDCWD, path, argv, final_envp, 0) as c_int
