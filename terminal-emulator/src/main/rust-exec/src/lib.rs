@@ -213,7 +213,22 @@ fn envp_with_ld_preload(envp: *const *const c_char, original_path: &str) -> (Vec
         }
     }
 
-    push_env_if_missing(&mut raw_entries, "TERMUX_ORIGINAL_EXE_PATH", original_path.to_string());
+    // Always overwrite TERMUX_ORIGINAL_EXE_PATH so child processes know their own
+    // true executable path, not the inherited one from the parent shell.
+    let key = "TERMUX_ORIGINAL_EXE_PATH";
+    let prefix = format!("{}=", key);
+    let new_value = format!("{}={}", key, original_path);
+    let mut replaced = false;
+    for entry in &mut raw_entries {
+        if entry.starts_with(&prefix) {
+            *entry = new_value.clone();
+            replaced = true;
+            break;
+        }
+    }
+    if !replaced {
+        raw_entries.push(new_value);
+    }
 
     let entries =
         env_entries_with_termux_defaults(raw_entries.iter().map(String::as_str), &ld_preload);
