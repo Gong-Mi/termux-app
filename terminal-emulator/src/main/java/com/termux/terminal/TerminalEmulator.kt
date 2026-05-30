@@ -226,6 +226,7 @@ class TerminalEmulator(
     fun isInsertMode(): Boolean = mCachedInsertMode
     fun clearScrollCounter() {
         RustTerminal.clearScrollCounter(mEnginePtr)
+        mCachedScrollCounter = 0
     }
 
     // --- 屏幕数据读取 ---
