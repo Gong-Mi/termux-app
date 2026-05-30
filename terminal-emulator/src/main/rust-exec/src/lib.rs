@@ -49,6 +49,18 @@ fn ensure_ld_preload_is_exported() {
         return;
     };
 
+    // Validate existing LD_PRELOAD path. If the APK has been updated,
+    // the old path under /data/app/~~xxx/ no longer exists and must be refreshed.
+    if let Ok(existing) = std::env::var("LD_PRELOAD") {
+        if !existing.is_empty() && std::path::Path::new(&existing).exists() {
+            // Existing path is still valid; leave it alone to avoid unnecessary churn.
+            return;
+        }
+        if !existing.is_empty() {
+            log::warn!("LD_PRELOAD stale path detected: {} -> refreshing to {}", existing, path);
+        }
+    }
+
     unsafe {
         if let Ok(key) = CString::new("LD_PRELOAD") {
             if let Ok(value) = CString::new(path.as_str()) {
