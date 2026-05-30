@@ -17,7 +17,7 @@ public class TermuxConstants {
     public static String EXEC_PATH = FILES_PATH + "/exec";
 
     public static void init(android.content.Context context) {
-        FILES_PATH = "/data/data/com.termux/files";
+        FILES_PATH = context.getFilesDir().getAbsolutePath();
         PREFIX_PATH = FILES_PATH + "/usr";
         BIN_PATH = PREFIX_PATH + "/bin";
         HOME_PATH = FILES_PATH + "/home";
