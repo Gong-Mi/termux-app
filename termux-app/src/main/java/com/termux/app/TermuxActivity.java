@@ -6,6 +6,7 @@ import android.app.AlertDialog;
 import android.content.pm.ActivityInfo;
 import android.os.Handler;
 import android.os.Looper;
+import android.system.Os;
 import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
@@ -32,6 +33,12 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.ListView;
 import android.widget.Toast;
+
+import java.io.BufferedInputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.security.MessageDigest;
 
 import com.termux.R;
 import com.termux.BuildConfig;
@@ -174,6 +181,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         super.onCreate(savedInstanceState);
 
         TermuxConstants.init(this);
+        ensureExecLib(this);
 
         // 启用广色域 (Wide Color Gamut) 模式。
         // 这允许 Hardware Composer (HWC) 接受 10-bit 格式（如 0x38），并利用 OLED 屏幕的 HDR 特性。
@@ -859,6 +867,67 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
             getWindow().clearFlags(flags);
             windowInsetsController.show(WindowInsetsCompat.Type.systemBars());
         }
+    }
+
+    /**
+     * Ensure the rust-exec preload library is copied to a fixed path
+     * (/data/data/com.termux/files/exec/libtermux-exec.so) so that
+     * LD_PRELOAD remains stable across APK updates.
+     */
+    private static void ensureExecLib(Context context) {
+        File execDir = new File(TermuxConstants.EXEC_PATH);
+        if (!execDir.exists() && !execDir.mkdirs()) {
+            Log.e(TermuxConstants.LOG_TAG, "Failed to create exec directory");
+            return;
+        }
+
+        File apkLib = new File(context.getApplicationInfo().nativeLibraryDir, "libtermux-exec.so");
+        File execLib = new File(TermuxConstants.EXEC_PATH, "libtermux-exec.so");
+
+        if (!apkLib.exists()) {
+            Log.w(TermuxConstants.LOG_TAG, "APK libtermux-exec.so not found");
+            return;
+        }
+
+        try {
+            String apkHash = sha256(apkLib);
+            String execHash = execLib.exists() ? sha256(execLib) : "";
+            if (apkHash.equals(execHash)) {
+                return;
+            }
+        } catch (Exception e) {
+            Log.w(TermuxConstants.LOG_TAG, "Hash comparison failed, forcing copy", e);
+        }
+
+        try (FileInputStream in = new FileInputStream(apkLib);
+             FileOutputStream out = new FileOutputStream(execLib)) {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                out.write(buffer, 0, read);
+            }
+            //noinspection OctalInteger
+            android.system.Os.chmod(execLib.getAbsolutePath(), 0700);
+            Log.i(TermuxConstants.LOG_TAG, "Copied libtermux-exec.so to " + execLib.getAbsolutePath());
+        } catch (Exception e) {
+            Log.e(TermuxConstants.LOG_TAG, "Failed to copy libtermux-exec.so", e);
+        }
+    }
+
+    private static String sha256(File file) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        try (BufferedInputStream in = new BufferedInputStream(new FileInputStream(file))) {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                digest.update(buffer, 0, read);
+            }
+        }
+        StringBuilder sb = new StringBuilder();
+        for (byte b : digest.digest()) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
     }
 
 }

@@ -207,14 +207,20 @@ final class TermuxInstaller {
         environment.put("TERMUX_APP_PACKAGE_MANAGER", "apt");
         environment.put("ANDROID__BUILD_VERSION_SDK", String.valueOf(android.os.Build.VERSION.SDK_INT));
 
-        // Prioritize using the APK's nativeLibraryDir which is guaranteed to exist and bypass W^X
-        File nativeExecPreload = new File(context.getApplicationInfo().nativeLibraryDir + "/libtermux-exec.so");
-        if (nativeExecPreload.exists()) {
-            environment.put("LD_PRELOAD", nativeExecPreload.getAbsolutePath());
+        // Use the fixed exec path for LD_PRELOAD so it survives APK updates.
+        File execPreload = new File(TermuxConstants.EXEC_PATH + "/libtermux-exec.so");
+        if (execPreload.exists()) {
+            environment.put("LD_PRELOAD", execPreload.getAbsolutePath());
         } else {
-            File termuxExecPreload = new File(TermuxConstants.PREFIX_PATH + "/lib/libtermux-exec-ld-preload.so");
-            if (termuxExecPreload.exists()) {
-                environment.put("LD_PRELOAD", termuxExecPreload.getAbsolutePath());
+            // Fallback to APK nativeLibraryDir during first install before ensureExecLib runs.
+            File nativeExecPreload = new File(context.getApplicationInfo().nativeLibraryDir + "/libtermux-exec.so");
+            if (nativeExecPreload.exists()) {
+                environment.put("LD_PRELOAD", nativeExecPreload.getAbsolutePath());
+            } else {
+                File termuxExecPreload = new File(TermuxConstants.PREFIX_PATH + "/lib/libtermux-exec-ld-preload.so");
+                if (termuxExecPreload.exists()) {
+                    environment.put("LD_PRELOAD", termuxExecPreload.getAbsolutePath());
+                }
             }
         }
 

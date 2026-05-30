@@ -14,6 +14,7 @@ public class TermuxConstants {
     public static String BIN_PATH = PREFIX_PATH + "/bin";
     public static String HOME_PATH = FILES_PATH + "/home";
     public static String APP_LIB_PATH = FILES_PATH + "/applib";
+    public static String EXEC_PATH = FILES_PATH + "/exec";
 
     public static void init(android.content.Context context) {
         FILES_PATH = context.getFilesDir().getAbsolutePath();
@@ -21,6 +22,7 @@ public class TermuxConstants {
         BIN_PATH = PREFIX_PATH + "/bin";
         HOME_PATH = FILES_PATH + "/home";
         APP_LIB_PATH = FILES_PATH + "/applib";
+        EXEC_PATH = FILES_PATH + "/exec";
         FONT_PATH = HOME_PATH + "/.termux/font.ttf";
         COLORS_PATH = HOME_PATH + "/.termux/colors.properties";
     }
