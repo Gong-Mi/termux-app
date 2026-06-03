@@ -162,8 +162,15 @@ fn push_env_if_missing(entries: &mut Vec<String>, key: &str, value: String) {
 }
 
 fn ensure_termux_core_env(entries: &mut Vec<String>) {
-    let prefix = "/data/data/com.termux/files/usr".to_string();
-    let home = "/data/data/com.termux/files/home".to_string();
+    let prefix = get_termux_prefix();
+    let home = std::env::var("HOME").unwrap_or_else(|_| {
+        let path = std::path::Path::new(&prefix);
+        if let Some(parent) = path.parent() {
+            parent.join("home").to_string_lossy().to_string()
+        } else {
+            "/data/data/com.termux/files/home".to_string()
+        }
+    });
 
     // Force key environment variables to ensure consistency
     let mut prefix_set = false;
@@ -285,7 +292,8 @@ unsafe fn execve_common(
     let (_env_entries, env_ptrs) = envp_with_ld_preload(envp, &path_str);
     let final_envp = if env_ptrs.len() > 1 { env_ptrs.as_ptr() } else { envp };
 
-    if path_str.starts_with("/system/") || path_str.starts_with("/vendor/") || path_str.contains("/linker") {
+    let is_linker = path_str.ends_with("/linker64") || path_str.ends_with("/linker");
+    if path_str.starts_with("/system/") || path_str.starts_with("/vendor/") || is_linker {
         // Special case: If a wrapped process (e.g. Node.js) tries to relaunch itself using process.execPath
         // which has been corrupted to /system/bin/linker64, we need to fix the command line.
         // Symptoms: execve("/system/bin/linker64", ["/system/bin/linker64", "--max-old-space-size=...", ...])
@@ -294,13 +302,16 @@ unsafe fn execve_common(
             (*(*argv.offset(1)) as u8) == b'-'
         };
 
-        if is_flag_start {
+        if is_linker && is_flag_start {
             if let Ok(original_exe) = std::env::var("TERMUX_ORIGINAL_EXE_PATH") {
                 log::info!("execve hook: detected linker relaunch of \"{}\", redirecting", original_exe);
                 if let Some((final_path, mut new_argv)) = transform_exec(&original_exe, argv, 0) {
-                    // transform_exec returns [linker, original_exe, ...orig_args[1..]...]
+                    // transform_exec returns [linker, original_exe, ...orig_args[0..]...]
                     // But here orig_argv[0] is the linker itself. 
-                    // The transform_exec logic for ELF usually handles this.
+                    // We must ensure the child sees original_exe as its argv[0].
+                    if new_argv.len() > 2 {
+                        new_argv[2] = CString::new(original_exe).unwrap();
+                    }
                     
                     let Ok(c_path) = CString::new(final_path) else { return -1; };
                     let c_argv_ptrs: Vec<*const c_char> = new_argv.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
@@ -556,6 +567,14 @@ fn parse_shebang(buffer: &[u8]) -> Option<(String, Option<String>)> {
 }
 
 fn get_termux_prefix() -> String {
+    if let Ok(prefix) = std::env::var("PREFIX") {
+        return prefix;
+    }
+
+    if let Some(prefix) = prefix_from_ld_preload_path() {
+        return prefix;
+    }
+
     "/data/data/com.termux/files/usr".to_string()
 }
 
@@ -594,7 +613,11 @@ mod tests {
 
     fn create_test_elf(path: &std::path::Path) {
         let mut file = std::fs::File::create(path).unwrap();
-        file.write_all(b"\x7fELF\x02\x01\x01\0test").unwrap();
+        // Use a 64-byte buffer to ensure n > 17 and enough room for ELF header
+        let mut header = [0u8; 64];
+        header[0..4].copy_from_slice(b"\x7fELF");
+        header[16..18].copy_from_slice(&3u16.to_le_bytes()); // ET_DYN
+        file.write_all(&header).unwrap();
     }
 
     fn test_dir(name: &str) -> PathBuf {
@@ -640,17 +663,19 @@ mod tests {
 
     #[test]
     fn test_map_path_usr_bin() {
+        let prefix = get_termux_prefix();
         assert_eq!(
             map_path("/usr/bin/ls"),
-            "/data/data/com.termux/files/usr/bin/ls"
+            format!("{}/bin/ls", prefix)
         );
     }
 
     #[test]
     fn test_map_path_bin() {
+        let prefix = get_termux_prefix();
         assert_eq!(
             map_path("/bin/sh"),
-            "/data/data/com.termux/files/usr/bin/sh"
+            format!("{}/bin/sh", prefix)
         );
     }
 
@@ -677,7 +702,9 @@ mod tests {
         assert!(exec_path.ends_with("linker") || exec_path.ends_with("linker64"));
         assert_eq!(argv[0], exec_path);
         assert_eq!(argv[1], id.to_string_lossy());
-        assert_eq!(argv[2], "-u");
+        // argv[2] is argv[0] of the executed process, which is 'id'
+        assert_eq!(argv[2], id.to_string_lossy());
+        assert_eq!(argv[3], "-u");
 
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -697,6 +724,7 @@ mod tests {
         assert!(exec_path.ends_with("linker") || exec_path.ends_with("linker64"));
         assert_eq!(argv[0], exec_path);
         assert_eq!(argv[1], https.to_string_lossy());
+        assert_eq!(argv[2], https.to_string_lossy());
 
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -717,7 +745,8 @@ mod tests {
         assert_eq!(argv[0], exec_path);
         assert_eq!(argv[1], sh.to_string_lossy());
         assert_eq!(argv[2], script.to_string_lossy());
-        assert_eq!(argv[3], "arg1");
+        assert_eq!(argv[3], script.to_string_lossy());
+        assert_eq!(argv[4], "arg1");
 
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -728,7 +757,8 @@ mod tests {
             env_entries_with_termux_defaults(["PATH=/bin", "TERM=xterm"], "/app/libtermux-exec.so");
         let strings = argv_strings(entries);
 
-        assert!(strings.contains(&"PATH=/bin".to_string()));
+        let prefix = get_termux_prefix();
+        assert!(strings.contains(&format!("PATH={}/bin:/bin", prefix)));
         assert!(strings.contains(&"TERM=xterm".to_string()));
         assert!(strings.contains(&"LD_PRELOAD=/app/libtermux-exec.so".to_string()));
         assert!(strings.iter().any(|entry| entry.starts_with("PREFIX=")));
@@ -744,7 +774,8 @@ mod tests {
         );
         let strings = argv_strings(entries);
 
-        assert!(strings.contains(&"PATH=/bin".to_string()));
+        let prefix = get_termux_prefix();
+        assert!(strings.contains(&format!("PATH={}/bin:/bin", prefix)));
         assert!(strings.contains(&"LD_PRELOAD=/app/libtermux-exec.so".to_string()));
         assert!(!strings.contains(&"LD_PRELOAD=/old/lib.so".to_string()));
     }
