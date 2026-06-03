@@ -457,11 +457,6 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char, depth: u32) -> Op
         let mut new_argv = Vec::new();
         new_argv.push(CString::new(linker).unwrap());
         new_argv.push(CString::new(path.clone()).unwrap());
-        if !orig_argv.is_null() && unsafe { !(*orig_argv).is_null() } {
-            new_argv.push(unsafe { CStr::from_ptr(*orig_argv).to_owned() });
-        } else {
-            new_argv.push(CString::new(path.clone()).unwrap());
-        }
         let mut i = 1;
         unsafe {
             while !orig_argv.is_null() && !(*orig_argv.offset(i)).is_null() {
@@ -501,11 +496,6 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char, depth: u32) -> Op
         let mut new_argv = Vec::new();
         new_argv.push(CString::new(linker).unwrap());
         new_argv.push(CString::new(resolved_interp.clone()).unwrap());
-        if !orig_argv.is_null() && unsafe { !(*orig_argv).is_null() } {
-            new_argv.push(unsafe { CStr::from_ptr(*orig_argv).to_owned() });
-        } else {
-            new_argv.push(CString::new(path.clone()).unwrap());
-        }
         
         if let Some(args) = shebang_args {
             for arg in args.split_whitespace() {
