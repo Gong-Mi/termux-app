@@ -305,14 +305,7 @@ unsafe fn execve_common(
         if is_linker && is_flag_start {
             if let Ok(original_exe) = std::env::var("TERMUX_ORIGINAL_EXE_PATH") {
                 log::info!("execve hook: detected linker relaunch of \"{}\", redirecting", original_exe);
-                if let Some((final_path, mut new_argv)) = transform_exec(&original_exe, argv, 0) {
-                    // transform_exec returns [linker, original_exe, ...orig_args[0..]...]
-                    // But here orig_argv[0] is the linker itself. 
-                    // We must ensure the child sees original_exe as its argv[0].
-                    if new_argv.len() > 2 {
-                        new_argv[2] = CString::new(original_exe).unwrap();
-                    }
-                    
+                if let Some((final_path, new_argv)) = transform_exec(&original_exe, argv, 0) {
                     let Ok(c_path) = CString::new(final_path) else { return -1; };
                     let c_argv_ptrs: Vec<*const c_char> = new_argv.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
                     return unsafe {
@@ -570,17 +563,27 @@ fn get_termux_prefix() -> String {
 
 fn map_path(path: &str) -> String {
     let prefix = get_termux_prefix();
-    let mapped = if path.starts_with("/usr/bin/") {
-        format!("{}/bin/{}", prefix, &path[9..])
-    } else if path.starts_with("/bin/") {
-        format!("{}/bin/{}", prefix, &path[5..])
-    } else {
-        path.to_string()
-    };
-    if mapped != path {
-        log::debug!("map_path: \"{}\" -> \"{}\" (prefix={})", path, mapped, prefix);
+    
+    // Handle standard short paths
+    if path.starts_with("/usr/bin/") {
+        return format!("{}/bin/{}", prefix, &path[9..]);
     }
-    mapped
+    if path.starts_with("/bin/") {
+        return format!("{}/bin/{}", prefix, &path[5..]);
+    }
+
+    // Handle legacy and multi-user absolute paths
+    // Example: /data/data/com.termux/files/usr/bin/sh -> [dynamic prefix]/bin/sh
+    // Example: /data/user/0/com.termux/files/usr/bin/sh -> [dynamic prefix]/bin/sh
+    let package_files_usr = "/com.termux/files/usr/";
+    if let Some(idx) = path.find(package_files_usr) {
+        let suffix = &path[idx + package_files_usr.len()..];
+        let mapped = format!("{}/{}", prefix, suffix);
+        log::debug!("map_path: matched package path, mapping to \"{}\"", mapped);
+        return mapped;
+    }
+
+    path.to_string()
 }
 
 #[cfg(test)]

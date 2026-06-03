@@ -413,18 +413,14 @@ pub fn create_subprocess_with_data(
         // Android linker64 的 argv 约定：
         //   linker64 <target_elf_path> [args...]
         // 目标 ELF 的 argv[0] 会被 linker 自动设为 target_elf_path，
-        // 因此我们需要把期望的 process name 放在更前面的位置，
-        // 但 linker64 的标准行为是 argv[0]=linker64, argv[1]=target_elf, argv[2..]=args
-        // 目标程序看到的 argv[0] 实际上是 target_elf_path。
-        //
-        // 为了保持与 upstream Java 的 TermuxShellUtils 行为一致：
-        //   [process_name, target_elf, original_args...]
-        // 其中 target_elf 会被 linker 当作要加载的 ELF，original_args 会透传。
+        // 因此我们需要丢弃原始的 argv[0]（它通常是 process name），
+        // 确保后续参数（如 -login）能正确对齐。
         let mut wrapped_argv = vec![linker_path.to_string()];
         wrapped_argv.push(final_cmd.clone()); // target ELF path for linker64
         if !final_argv.is_empty() {
             wrapped_argv.extend(final_argv[1..].iter().cloned());
         }
+
         android_log(
             LogPriority::INFO,
             &format!(
