@@ -539,37 +539,40 @@ fn parse_shebang(buffer: &[u8]) -> Option<(String, Option<String>)> {
 }
 
 fn get_termux_prefix() -> String {
-    if let Ok(prefix) = std::env::var("PREFIX") {
-        return prefix;
-    }
-
-    if let Some(prefix) = prefix_from_ld_preload_path() {
-        return prefix;
-    }
-
-    "/data/data/com.termux/files/usr".to_string()
+    let prefix = if let Ok(prefix) = std::env::var("PREFIX") {
+        prefix
+    } else if let Some(prefix) = prefix_from_ld_preload_path() {
+        prefix
+    } else {
+        "/data/data/com.termux/files/usr".to_string()
+    };
+    android_log(LogPriority::DEBUG, "TermuxExec", &format!("get_termux_prefix: \"{}\"", prefix));
+    prefix
 }
 
 fn map_path(path: &str) -> String {
     let prefix = get_termux_prefix();
     
     // Handle standard short paths
-    if path.starts_with("/usr/bin/") {
-        return format!("{}/bin/{}", prefix, &path[9..]);
-    }
-    if path.starts_with("/bin/") {
-        return format!("{}/bin/{}", prefix, &path[5..]);
-    }
+    let mapped = if path.starts_with("/usr/bin/") {
+        format!("{}/bin/{}", prefix, &path[9..])
+    } else if path.starts_with("/bin/") {
+        format!("{}/bin/{}", prefix, &path[5..])
+    } else {
+        // Handle legacy and multi-user absolute paths
+        let package_files_usr = "/com.termux/files/usr/";
+        if let Some(idx) = path.find(package_files_usr) {
+            let suffix = &path[idx + package_files_usr.len()..];
+            format!("{}/{}", prefix, suffix)
+        } else {
+            path.to_string()
+        }
+    };
 
-    // Handle legacy and multi-user absolute paths
-    let package_files_usr = "/com.termux/files/usr/";
-    if let Some(idx) = path.find(package_files_usr) {
-        let suffix = &path[idx + package_files_usr.len()..];
-        let mapped = format!("{}/{}", prefix, suffix);
-        return mapped;
+    if mapped != path {
+        android_log(LogPriority::INFO, "TermuxExec", &format!("map_path: \"{}\" -> \"{}\"", path, mapped));
     }
-
-    path.to_string()
+    mapped
 }
 
 #[cfg(test)]
