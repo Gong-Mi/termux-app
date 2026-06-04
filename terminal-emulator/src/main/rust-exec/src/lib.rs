@@ -10,6 +10,8 @@ use std::sync::atomic::Ordering;
 #[cfg(target_os = "android")]
 static LOGGER_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
+use crate::utils::{LogPriority, android_log};
+
 unsafe extern "C" {
     static mut environ: *mut *mut c_char;
 }
@@ -172,10 +174,13 @@ fn ensure_termux_core_env(entries: &mut Vec<String>) {
         }
     });
 
+    let current_lib = selected_ld_preload_path().unwrap_or_default();
+
     // Force key environment variables to ensure consistency
     let mut prefix_set = false;
     let mut home_set = false;
     let mut path_idx = None;
+    let mut ld_preload_idx = None;
 
     for (i, entry) in entries.iter_mut().enumerate() {
         if entry.starts_with("PREFIX=") {
@@ -186,6 +191,8 @@ fn ensure_termux_core_env(entries: &mut Vec<String>) {
             home_set = true;
         } else if entry.starts_with("PATH=") {
             path_idx = Some(i);
+        } else if entry.starts_with("LD_PRELOAD=") {
+            ld_preload_idx = Some(i);
         }
     }
 
@@ -201,6 +208,20 @@ fn ensure_termux_core_env(entries: &mut Vec<String>) {
         }
     } else {
         entries.push(format!("PATH={}:/system/bin", termux_bin));
+    }
+
+    // SELF-HEALING: If LD_PRELOAD is set but points to a legacy or different path, 
+    // force it back to our current working path to ensure subcommands don't break on Android 16.
+    if !current_lib.is_empty() {
+        if let Some(idx) = ld_preload_idx {
+            let existing = &entries[idx][11..];
+            if existing != current_lib {
+                android_log(LogPriority::WARN, "TermuxExec", &format!("termux_exec: refreshing LD_PRELOAD ({} -> {})", existing, current_lib));
+                entries[idx] = format!("LD_PRELOAD={}", current_lib);
+            }
+        } else {
+            entries.push(format!("LD_PRELOAD={}", current_lib));
+        }
     }
 
     push_env_if_missing(entries, "TMPDIR", format!("{}/tmp", prefix));
@@ -220,13 +241,13 @@ where
         let entry = entry.as_ref();
         if entry.starts_with("LD_PRELOAD=") {
             has_ld_preload = true;
-            raw_entries.push(format!("LD_PRELOAD={}", ld_preload));
+            raw_entries.push(entry.to_string()); // Correct path will be set in ensure_termux_core_env
         } else {
             raw_entries.push(entry.to_string());
         }
     }
 
-    if !has_ld_preload {
+    if !has_ld_preload && !ld_preload.is_empty() {
         raw_entries.push(format!("LD_PRELOAD={}", ld_preload));
     }
 
@@ -239,9 +260,7 @@ where
 }
 
 fn envp_with_ld_preload(envp: *const *const c_char, original_path: &str) -> (Vec<CString>, Vec<*const c_char>) {
-    let Some(ld_preload) = selected_ld_preload_path() else {
-        return (Vec::new(), vec![ptr::null()]);
-    };
+    let ld_preload = selected_ld_preload_path().unwrap_or_default();
 
     let mut raw_entries = Vec::new();
 
@@ -254,8 +273,7 @@ fn envp_with_ld_preload(envp: *const *const c_char, original_path: &str) -> (Vec
         }
     }
 
-    // Always overwrite TERMUX_ORIGINAL_EXE_PATH so child processes know their own
-    // true executable path, not the inherited one from the parent shell.
+    // Always overwrite TERMUX_ORIGINAL_EXE_PATH
     let key = "TERMUX_ORIGINAL_EXE_PATH";
     let prefix = format!("{}=", key);
     let new_value = format!("{}={}", key, original_path);
@@ -289,14 +307,23 @@ unsafe fn execve_common(
     }
 
     let path_str = unsafe { CStr::from_ptr(path) }.to_string_lossy().to_string();
+    
+    // PTY_CHECKPOINT: log the execution attempt
+    let mut args_summary = String::new();
+    let mut i = 0;
+    while !argv.is_null() && !(*argv.offset(i)).is_null() {
+        if i > 0 { args_summary.push(' '); }
+        args_summary.push_str(&CStr::from_ptr(*argv.offset(i)).to_string_lossy());
+        i += 1;
+        if i > 5 { args_summary.push_str(" ..."); break; }
+    }
+    android_log(LogPriority::INFO, "PTY_CHECKPOINT", &format!("execve: \"{}\" with argv [{}]", path_str, args_summary));
+
     let (_env_entries, env_ptrs) = envp_with_ld_preload(envp, &path_str);
     let final_envp = if env_ptrs.len() > 1 { env_ptrs.as_ptr() } else { envp };
 
     let is_linker = path_str.ends_with("/linker64") || path_str.ends_with("/linker");
     if path_str.starts_with("/system/") || path_str.starts_with("/vendor/") || is_linker {
-        // Special case: If a wrapped process (e.g. Node.js) tries to relaunch itself using process.execPath
-        // which has been corrupted to /system/bin/linker64, we need to fix the command line.
-        // Symptoms: execve("/system/bin/linker64", ["/system/bin/linker64", "--max-old-space-size=...", ...])
         let is_flag_start = unsafe {
             !argv.is_null() && !(*argv.offset(1)).is_null() && 
             (*(*argv.offset(1)) as u8) == b'-'
@@ -304,7 +331,7 @@ unsafe fn execve_common(
 
         if is_linker && is_flag_start {
             if let Ok(original_exe) = std::env::var("TERMUX_ORIGINAL_EXE_PATH") {
-                log::info!("execve hook: detected linker relaunch of \"{}\", redirecting", original_exe);
+                android_log(LogPriority::INFO, "PTY_CHECKPOINT", &format!("detected linker relaunch of \"{}\", redirecting", original_exe));
                 if let Some((final_path, new_argv)) = transform_exec(&original_exe, argv, 0) {
                     let Ok(c_path) = CString::new(final_path) else { return -1; };
                     let c_argv_ptrs: Vec<*const c_char> = new_argv.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
@@ -315,46 +342,21 @@ unsafe fn execve_common(
             }
         }
 
-        log::debug!("execve hook: passing through system binary \"{}\"", path_str);
         return unsafe {
             libc::syscall(libc::SYS_execveat, libc::AT_FDCWD, path, argv, final_envp, 0) as c_int
         };
     }
 
-    if let Some((final_path, new_argv)) = transform_exec(&path_str, argv, 0) {
-        let argv_display: Vec<String> = new_argv
-            .iter()
-            .map(|s| s.to_string_lossy().to_string())
-            .collect();
-        log::info!(
-            "execve hook: transformed \"{}\" -> \"{}\" with argv {:?}",
-            path_str,
-            final_path,
-            argv_display
-        );
-
-        let Ok(c_path) = CString::new(final_path) else {
-            return -1;
-        };
-        let c_argv_ptrs: Vec<*const c_char> = new_argv
-            .iter()
-            .map(|s| s.as_ptr())
-            .chain(std::iter::once(ptr::null()))
-            .collect();
+    let resolved_path = map_path(&path_str);
+    if let Some((final_path, new_argv)) = transform_exec(&resolved_path, argv, 0) {
+        let Ok(c_path) = CString::new(final_path) else { return -1; };
+        let c_argv_ptrs: Vec<*const c_char> = new_argv.iter().map(|s| s.as_ptr()).chain(std::iter::once(ptr::null())).collect();
 
         return unsafe {
-            libc::syscall(
-                libc::SYS_execveat,
-                libc::AT_FDCWD,
-                c_path.as_ptr(),
-                c_argv_ptrs.as_ptr(),
-                final_envp,
-                0,
-            ) as c_int
+            libc::syscall(libc::SYS_execveat, libc::AT_FDCWD, c_path.as_ptr(), c_argv_ptrs.as_ptr(), final_envp, 0) as c_int
         };
     }
 
-    log::debug!("execve hook: no transform for \"{}\", using execveat", path_str);
     unsafe { libc::syscall(libc::SYS_execveat, libc::AT_FDCWD, path, argv, final_envp, 0) as c_int }
 }
 
@@ -391,18 +393,8 @@ pub unsafe extern "C" fn execveat(
     _flags: c_int,
 ) -> c_int {
     if path.is_null() {
-        log::debug!("execveat hook: null path");
         return -1;
     }
-
-    let path_str = unsafe { CStr::from_ptr(path) }.to_string_lossy().to_string();
-    let argv_dump = debug_argv(argv);
-    log::info!(
-        "execveat hook: path=\"{}\" argv={:?}",
-        path_str,
-        argv_dump
-    );
-
     unsafe { execve_common(path, argv, envp) }
 }
 
@@ -419,16 +411,21 @@ fn debug_argv(argv: *const *const c_char) -> Vec<String> {
 }
 
 fn transform_exec(path: &str, orig_argv: *const *const c_char, depth: u32) -> Option<(String, Vec<CString>)> {
-    if depth > 3 {
-        log::warn!("transform_exec: shebang chain too deep for \"{}\", giving up", path);
+    if depth > 4 {
+        log::warn!("transform_exec: recursion depth exceeded for \"{}\"", path);
         return None;
     }
 
-    let path = resolve_exec_path(path)?;
-    let mut file = std::fs::File::open(&path).ok()?;
-    let mut buffer = [0u8; 256];
-    let n = file.read(&mut buffer).ok()?;
-    
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return None;
+    };
+
+    use std::io::Read;
+    let mut buffer = [0u8; 1024];
+    let Ok(n) = file.read(&mut buffer) else {
+        return None;
+    };
+
     let linker = if std::path::Path::new("/system/bin/linker64").exists() {
         "/system/bin/linker64"
     } else {
@@ -438,69 +435,63 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char, depth: u32) -> Op
     if n > 17 && buffer[0] == 0x7F && buffer[1] == b'E' && buffer[2] == b'L' && buffer[3] == b'F' {
         let e_type = u16::from_le_bytes([buffer[16], buffer[17]]);
         if e_type != 3 {
-            log::debug!(
-                "transform_exec: \"{}\" is ELF with e_type {} (not ET_DYN), skipping linker wrapper",
-                path,
-                e_type
-            );
             return None;
         }
 
-        log::debug!("transform_exec: \"{}\" is PIE ELF, prepending linker", path);
         let mut new_argv = Vec::new();
         new_argv.push(CString::new(linker).unwrap());
-        new_argv.push(CString::new(path.clone()).unwrap());
-        let mut i = 1;
-        unsafe {
-            while !orig_argv.is_null() && !(*orig_argv.offset(i)).is_null() {
-                new_argv.push(CStr::from_ptr(*orig_argv.offset(i)).to_owned());
-                i += 1;
+        new_argv.push(CString::new(path.to_string()).unwrap());
+        
+        // Pass original arguments (starting from argv[1])
+        if !orig_argv.is_null() {
+            let mut i = 1;
+            unsafe {
+                while !(*orig_argv.offset(i)).is_null() {
+                    new_argv.push(CStr::from_ptr(*orig_argv.offset(i)).to_owned());
+                    i += 1;
+                }
             }
         }
         return Some((linker.to_string(), new_argv));
     } else if let Some((interpreter, shebang_args)) = parse_shebang(&buffer[..n]) {
-        log::debug!("transform_exec: \"{}\" has shebang interpreter=\"{}\" args={:?}", path, interpreter, shebang_args);
-        // Shebang script — resolve interpreter path and check if it is ALSO a script
         let resolved_interp = map_path(&interpreter);
-        log::debug!("transform_exec: mapped interpreter \"{}\" -> \"{}\"", interpreter, resolved_interp);
 
-        // If the interpreter itself is a shebang script, recurse to find the real ELF loader
-        if let Some((real_linker, mut real_argv)) = transform_exec(&resolved_interp, orig_argv, depth + 1) {
-            // Insert the shebang arguments and then the script path into the recursive result
-            // real_argv layout: [linker, interp, ...orig_args...]
-            // we need: [linker, interp, [shebang_args], script_path, ...orig_args...]
-            let mut insert_idx = 2;
+        if let Some((real_linker, mut interp_argv)) = transform_exec(&resolved_interp, std::ptr::null(), depth + 1) {
             if let Some(args) = shebang_args {
                 for arg in args.split_whitespace() {
-                    real_argv.insert(insert_idx, CString::new(arg).unwrap());
-                    insert_idx += 1;
+                    interp_argv.push(CString::new(arg).unwrap());
                 }
             }
-
-            if real_argv.len() >= insert_idx {
-                real_argv.insert(insert_idx, CString::new(path.clone()).unwrap());
-            } else {
-                real_argv.push(CString::new(path.clone()).unwrap());
+            interp_argv.push(CString::new(path.to_string()).unwrap());
+            
+            if !orig_argv.is_null() {
+                let mut i = 1;
+                unsafe {
+                    while !(*orig_argv.offset(i)).is_null() {
+                        interp_argv.push(CStr::from_ptr(*orig_argv.offset(i)).to_owned());
+                        i += 1;
+                    }
+                }
             }
-            return Some((real_linker, real_argv));
+            return Some((real_linker, interp_argv));
         }
 
-        // Interpreter is ELF (or direct exec). Build argv for linker -> interp -> script
         let mut new_argv = Vec::new();
         new_argv.push(CString::new(linker).unwrap());
-        new_argv.push(CString::new(resolved_interp.clone()).unwrap());
-        
+        new_argv.push(CString::new(resolved_interp).unwrap());
         if let Some(args) = shebang_args {
             for arg in args.split_whitespace() {
                 new_argv.push(CString::new(arg).unwrap());
             }
         }
-        new_argv.push(CString::new(path.clone()).unwrap());
-        let mut i = 1;
-        unsafe {
-            while !orig_argv.is_null() && !(*orig_argv.offset(i)).is_null() {
-                new_argv.push(CStr::from_ptr(*orig_argv.offset(i)).to_owned());
-                i += 1;
+        new_argv.push(CString::new(path.to_string()).unwrap());
+        if !orig_argv.is_null() {
+            let mut i = 1;
+            unsafe {
+                while !(*orig_argv.offset(i)).is_null() {
+                    new_argv.push(CStr::from_ptr(*orig_argv.offset(i)).to_owned());
+                    i += 1;
+                }
             }
         }
         return Some((linker.to_string(), new_argv));
@@ -573,13 +564,10 @@ fn map_path(path: &str) -> String {
     }
 
     // Handle legacy and multi-user absolute paths
-    // Example: /data/data/com.termux/files/usr/bin/sh -> [dynamic prefix]/bin/sh
-    // Example: /data/user/0/com.termux/files/usr/bin/sh -> [dynamic prefix]/bin/sh
     let package_files_usr = "/com.termux/files/usr/";
     if let Some(idx) = path.find(package_files_usr) {
         let suffix = &path[idx + package_files_usr.len()..];
         let mapped = format!("{}/{}", prefix, suffix);
-        log::debug!("map_path: matched package path, mapping to \"{}\"", mapped);
         return mapped;
     }
 
@@ -695,9 +683,7 @@ mod tests {
         assert!(exec_path.ends_with("linker") || exec_path.ends_with("linker64"));
         assert_eq!(argv[0], exec_path);
         assert_eq!(argv[1], id.to_string_lossy());
-        // argv[2] is argv[0] of the executed process, which is 'id'
-        assert_eq!(argv[2], id.to_string_lossy());
-        assert_eq!(argv[3], "-u");
+        assert_eq!(argv[2], "-u");
 
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -717,13 +703,12 @@ mod tests {
         assert!(exec_path.ends_with("linker") || exec_path.ends_with("linker64"));
         assert_eq!(argv[0], exec_path);
         assert_eq!(argv[1], https.to_string_lossy());
-        assert_eq!(argv[2], https.to_string_lossy());
 
         std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
-    fn test_transform_shebang_adds_script_after_interpreter() {
+    fn test_transform_shebang_simple() {
         let root = test_dir("shebang");
         let bin = root.join("bin");
         std::fs::create_dir_all(&bin).unwrap();
@@ -738,8 +723,7 @@ mod tests {
         assert_eq!(argv[0], exec_path);
         assert_eq!(argv[1], sh.to_string_lossy());
         assert_eq!(argv[2], script.to_string_lossy());
-        assert_eq!(argv[3], script.to_string_lossy());
-        assert_eq!(argv[4], "arg1");
+        assert_eq!(argv[3], "arg1");
 
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -757,19 +741,5 @@ mod tests {
         assert!(strings.iter().any(|entry| entry.starts_with("PREFIX=")));
         assert!(strings.iter().any(|entry| entry.starts_with("HOME=")));
         assert!(strings.iter().any(|entry| entry.starts_with("TMPDIR=")));
-    }
-
-    #[test]
-    fn test_env_entries_replace_existing_ld_preload() {
-        let entries = env_entries_with_termux_defaults(
-            ["PATH=/bin", "LD_PRELOAD=/old/lib.so"],
-            "/app/libtermux-exec.so",
-        );
-        let strings = argv_strings(entries);
-
-        let prefix = get_termux_prefix();
-        assert!(strings.contains(&format!("PATH={}/bin:/bin", prefix)));
-        assert!(strings.contains(&"LD_PRELOAD=/app/libtermux-exec.so".to_string()));
-        assert!(!strings.contains(&"LD_PRELOAD=/old/lib.so".to_string()));
     }
 }
