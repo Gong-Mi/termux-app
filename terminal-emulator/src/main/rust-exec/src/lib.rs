@@ -10,8 +10,6 @@ use std::sync::atomic::Ordering;
 #[cfg(target_os = "android")]
 static LOGGER_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
-use crate::utils::{LogPriority, android_log};
-
 unsafe extern "C" {
     static mut environ: *mut *mut c_char;
 }
@@ -741,5 +739,42 @@ mod tests {
         assert!(strings.iter().any(|entry| entry.starts_with("PREFIX=")));
         assert!(strings.iter().any(|entry| entry.starts_with("HOME=")));
         assert!(strings.iter().any(|entry| entry.starts_with("TMPDIR=")));
+    }
+}
+
+pub enum LogPriority {
+    VERBOSE = 2,
+    DEBUG = 3,
+    INFO = 4,
+    WARN = 5,
+    ERROR = 6,
+    FATAL = 7,
+}
+
+#[cfg(target_os = "android")]
+unsafe extern "C" {
+    fn __android_log_print(prio: i32, tag: *const libc::c_char, fmt: *const libc::c_char, ...);
+}
+
+pub fn android_log(prio: LogPriority, tag: &str, msg: &str) {
+    #[cfg(target_os = "android")]
+    {
+        let tag_c = CString::new(tag).unwrap();
+        let msg_c = CString::new(msg).unwrap();
+        unsafe {
+            __android_log_print(prio as i32, tag_c.as_ptr(), msg_c.as_ptr());
+        }
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
+        let prefix = match prio {
+            LogPriority::FATAL => "F",
+            LogPriority::ERROR => "E",
+            LogPriority::WARN => "W",
+            LogPriority::INFO => "I",
+            _ => "D",
+        };
+        println!("[{}] {}: {}", prefix, tag, msg);
     }
 }
