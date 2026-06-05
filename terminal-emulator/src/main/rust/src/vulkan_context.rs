@@ -14,6 +14,7 @@ pub struct VulkanContext {
     pub pipeline_cache: ash_vk::PipelineCache,
     pub image_available_semaphore: ash_vk::Semaphore,
     pub render_finished_semaphore: ash_vk::Semaphore,
+    pub in_flight_fence: ash_vk::Fence,
     pub swapchain: ash_vk::SwapchainKHR,
     pub swapchain_images: Vec<ash_vk::Image>,
     pub surface: ash_vk::SurfaceKHR,
@@ -231,6 +232,17 @@ impl VulkanContext {
         let image_available_semaphore = image_available_semaphore.unwrap();
         let render_finished_semaphore = render_finished_semaphore.unwrap();
 
+        let fence_info = ash_vk::FenceCreateInfo {
+            flags: ash_vk::FenceCreateFlags::SIGNALED,
+            ..Default::default()
+        };
+        let in_flight_fence = unsafe { device.create_fence(&fence_info, None) };
+        if in_flight_fence.is_err() {
+            android_log(LogPriority::ERROR, "VulkanContext::new: create_fence failed");
+            return None;
+        }
+        let in_flight_fence = in_flight_fence.unwrap();
+
         let entry_ptr = entry.clone();
         let instance_ptr = instance.clone();
         let instance_raw = instance.handle().as_raw();
@@ -286,6 +298,7 @@ impl VulkanContext {
             pipeline_cache,
             image_available_semaphore,
             render_finished_semaphore,
+            in_flight_fence,
             swapchain: ash_vk::SwapchainKHR::null(),
             swapchain_images: vec![],
             surface,
@@ -401,6 +414,14 @@ impl VulkanContext {
         }
 
         unsafe {
+            // 等待上一帧完成，防止覆盖正在渲染的帧
+            let _ = self.device.wait_for_fences(
+                &[self.in_flight_fence],
+                true,
+                1_000_000_000
+            );
+            let _ = self.device.reset_fences(&[self.in_flight_fence]);
+
             // 严禁使用 u64::MAX。在系统进入后台或 Surface 失效时，
             // MAX 会导致线程永久挂起。改为 100ms 超时。
             match self.swapchain_loader.acquire_next_image(
@@ -538,6 +559,7 @@ impl Drop for VulkanContext {
             self.device.destroy_pipeline_cache(self.pipeline_cache, None);
             self.device.destroy_semaphore(self.image_available_semaphore, None);
             self.device.destroy_semaphore(self.render_finished_semaphore, None);
+            self.device.destroy_fence(self.in_flight_fence, None);
             
             // 3. 销毁交换链。
             if self.swapchain != ash_vk::SwapchainKHR::null() {

@@ -258,6 +258,25 @@ fn spawn_render_thread(engine_ptr: jlong) {
                     ctx_skia.flush_and_submit();
                 }
 
+                // Signal render_finished_semaphore after GPU work is complete
+                let signal_semaphore_info = ash::vk::SubmitInfo {
+                    wait_semaphore_count: 0,
+                    p_wait_semaphores: std::ptr::null(),
+                    p_wait_dst_stage_mask: std::ptr::null(),
+                    command_buffer_count: 0,
+                    p_command_buffers: std::ptr::null(),
+                    signal_semaphore_count: 1,
+                    p_signal_semaphores: &ctx.render_finished_semaphore,
+                    ..Default::default()
+                };
+                unsafe {
+                    let _ = ctx.device.queue_submit(
+                        ctx.queue,
+                        &[signal_semaphore_info],
+                        ctx.in_flight_fence
+                    );
+                }
+
                 // 4. 呈现图像
                 // 关键点：在呈现前再次检查运行状态，防止向已销毁的 surface 提交
                 if !RENDER_THREAD_RUNNING.load(Ordering::SeqCst) {
@@ -269,8 +288,8 @@ fn spawn_render_thread(engine_ptr: jlong) {
                 }
 
                 let present_info = ash::vk::PresentInfoKHR {
-                    wait_semaphore_count: 0,
-                    p_wait_semaphores: std::ptr::null(),
+                    wait_semaphore_count: 1,
+                    p_wait_semaphores: &ctx.render_finished_semaphore,
                     swapchain_count: 1,
                     p_swapchains: &ctx.swapchain,
                     p_image_indices: &image_index,
