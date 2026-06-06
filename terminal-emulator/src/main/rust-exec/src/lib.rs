@@ -292,6 +292,24 @@ unsafe fn execve_common(path: *const c_char, argv: *const *const c_char, envp: *
     unsafe { execve_common(p, a, e) }
 }
 
+fn is_app_private_path(path: &str) -> bool {
+    path.contains("/com.termux/files/")
+}
+
+fn push_original_args(n_argv: &mut Vec<CString>, orig_argv: *const *const c_char) {
+    if orig_argv.is_null() {
+        return;
+    }
+
+    let mut i = 1;
+    unsafe {
+        while !(*orig_argv.offset(i)).is_null() {
+            n_argv.push(CStr::from_ptr(*orig_argv.offset(i)).to_owned());
+            i += 1;
+        }
+    }
+}
+
 fn transform_exec(path: &str, orig_argv: *const *const c_char, c_envs: &[CString], depth: u32) -> Option<(String, Vec<CString>)> {
     if depth > 4 { return None; }
     let abs_path = resolve_exec_path(path, c_envs)?;
@@ -302,31 +320,24 @@ fn transform_exec(path: &str, orig_argv: *const *const c_char, c_envs: &[CString
 
     if n > 17 && buf[0] == 0x7F && buf[1] == b'E' && buf[2] == b'L' && buf[3] == b'F' {
         if u16::from_le_bytes([buf[16], buf[17]]) != 3 { return None; }
+        if !is_app_private_path(&abs_path) { return None; }
+
         let mut n_argv = vec![CString::new(linker).unwrap(), CString::new(abs_path).unwrap()];
-        if !orig_argv.is_null() {
-            let mut i = 1;
-            unsafe { while !(*orig_argv.offset(i)).is_null() { n_argv.push(CStr::from_ptr(*orig_argv.offset(i)).to_owned()); i += 1; } }
-        }
+        push_original_args(&mut n_argv, orig_argv);
         Some((linker.to_string(), n_argv))
     } else if let Some((interp, s_args)) = parse_shebang(&buf[..n]) {
         let res_interp = map_path(&interp);
         if let Some((r_linker, mut i_argv)) = transform_exec(&res_interp, std::ptr::null(), c_envs, depth + 1) {
             if let Some(args) = s_args { for arg in args.split_whitespace() { i_argv.push(CString::new(arg).unwrap()); } }
             i_argv.push(CString::new(abs_path).unwrap());
-            if !orig_argv.is_null() {
-                let mut i = 1;
-                unsafe { while !(*orig_argv.offset(i)).is_null() { i_argv.push(CStr::from_ptr(*orig_argv.offset(i)).to_owned()); i += 1; } }
-            }
+            push_original_args(&mut i_argv, orig_argv);
             Some((r_linker, i_argv))
         } else {
-            let mut n_argv = vec![CString::new(linker).unwrap(), CString::new(res_interp).unwrap()];
+            let mut n_argv = vec![CString::new(res_interp.clone()).unwrap()];
             if let Some(args) = s_args { for arg in args.split_whitespace() { n_argv.push(CString::new(arg).unwrap()); } }
             n_argv.push(CString::new(abs_path).unwrap());
-            if !orig_argv.is_null() {
-                let mut i = 1;
-                unsafe { while !(*orig_argv.offset(i)).is_null() { n_argv.push(CStr::from_ptr(*orig_argv.offset(i)).to_owned()); i += 1; } }
-            }
-            Some((linker.to_string(), n_argv))
+            push_original_args(&mut n_argv, orig_argv);
+            Some((res_interp, n_argv))
         }
     } else { None }
 }
@@ -338,6 +349,60 @@ fn parse_shebang(buf: &[u8]) -> Option<(String, Option<String>)> {
     let tokens: Vec<&str> = line.trim().split_whitespace().collect();
     if tokens.is_empty() { return None; }
     Some((tokens[0].to_string(), if tokens.len() > 1 { Some(tokens[1..].join(" ")) } else { None }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transform_exec_does_not_wrap_system_shell_elf() {
+        if !std::path::Path::new("/system/bin/sh").exists() {
+            eprintln!("/system/bin/sh not present on this host; skipping Android-specific assertion");
+            return;
+        }
+
+        let transformed = transform_exec("/system/bin/sh", std::ptr::null(), &[], 0);
+
+        assert!(
+            transformed.is_none(),
+            "system/root ELF paths must keep system-shell exec semantics and not be rewritten through linker64; got {:?}",
+            transformed.map(|(path, argv)| (
+                path,
+                argv.iter()
+                    .map(|arg| arg.to_string_lossy().into_owned())
+                    .collect::<Vec<_>>()
+            ))
+        );
+    }
+
+    #[test]
+    fn transform_exec_wraps_app_private_et_dyn_elf() {
+        let fake_elf = "/data/data/com.termux/files/home/tmp-termux-exec-fake-elf";
+        let mut bytes = vec![0u8; 64];
+        bytes[0] = 0x7f;
+        bytes[1] = b'E';
+        bytes[2] = b'L';
+        bytes[3] = b'F';
+        bytes[16] = 3;
+        bytes[17] = 0;
+        std::fs::write(fake_elf, bytes).unwrap();
+
+        let transformed = transform_exec(fake_elf, std::ptr::null(), &[], 0)
+            .map(|(path, argv)| {
+                (
+                    path,
+                    argv.iter()
+                        .map(|arg| arg.to_string_lossy().into_owned())
+                        .collect::<Vec<_>>(),
+                )
+            });
+
+        let _ = std::fs::remove_file(fake_elf);
+        let (path, argv) = transformed.expect("app-private ET_DYN ELF should be linker-wrapped");
+        assert!(path.ends_with("/linker64") || path.ends_with("/linker"));
+        assert_eq!(argv[1], fake_elf);
+    }
 }
 
 pub enum LogPriority { VERBOSE = 2, DEBUG = 3, INFO = 4, WARN = 5, ERROR = 6, FATAL = 7 }

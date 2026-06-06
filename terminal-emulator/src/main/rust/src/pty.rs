@@ -82,7 +82,17 @@ pub unsafe fn create_subprocess(
         }
     }
 
-    match create_subprocess_with_data(cmd_str, cwd_str, argv, session_env_vars, rows, cols, cw, ch, is_failsafe) {
+    match create_subprocess_with_data(
+        cmd_str,
+        cwd_str,
+        argv,
+        session_env_vars,
+        rows,
+        cols,
+        cw,
+        ch,
+        is_failsafe,
+    ) {
         Ok((fd, pid)) => {
             let pid_val = [pid as jint];
             let j_pid_array = unsafe { JIntArray::from_raw(process_id_array) };
@@ -126,7 +136,8 @@ pub fn parse_shebang(buffer: &[u8]) -> Option<(String, Option<String>)> {
 pub fn map_interpreter(interp: &str, normalize: &dyn Fn(String) -> String) -> String {
     let mut termux_prefix = crate::get_termux_prefix();
     if termux_prefix.starts_with("/data/data/com.termux/") {
-        let user_prefix = termux_prefix.replacen("/data/data/com.termux", "/data/user/0/com.termux", 1);
+        let user_prefix =
+            termux_prefix.replacen("/data/data/com.termux", "/data/user/0/com.termux", 1);
         if std::path::Path::new(&user_prefix).exists() {
             termux_prefix = user_prefix;
         }
@@ -136,9 +147,7 @@ pub fn map_interpreter(interp: &str, normalize: &dyn Fn(String) -> String) -> St
     } else if interp.starts_with("/bin/") || interp.starts_with("/usr/bin/") {
         let binary = interp.rsplit('/').next().unwrap_or("sh");
         format!("{}/bin/{}", termux_prefix, binary)
-    } else if interp.starts_with("/data/data/com.termux/")
-        || interp.starts_with("/data/user/")
-    {
+    } else if interp.starts_with("/data/data/com.termux/") || interp.starts_with("/data/user/") {
         normalize(interp.to_string())
     } else {
         interp.to_string()
@@ -160,71 +169,15 @@ fn is_elf_file(path: &str) -> bool {
 fn resolve_executable(
     cmd: String,
     argv: Vec<String>,
-    termux_prefix: &str,
-    normalize_path: &dyn Fn(String) -> String,
-    depth: usize,
+    _termux_prefix: &str,
+    _normalize_path: &dyn Fn(String) -> String,
+    _depth: usize,
 ) -> (String, Vec<String>) {
-    if depth > 4 {
-        android_log(
-            LogPriority::WARN,
-            &format!("[PTY] Shebang chain too deep, using command as-is: {}", cmd),
-        );
-        return (cmd, argv);
-    }
-
-    let Ok(mut file) = std::fs::File::open(&cmd) else {
-        return (cmd, argv);
-    };
-
-    use std::io::Read;
-    let mut buffer = [0u8; 4096];
-    let Ok(n) = file.read(&mut buffer) else {
-        return (cmd, argv);
-    };
-
-    if n > 4 && buffer[0] == 0x7F && buffer[1] == b'E' && buffer[2] == b'L' && buffer[3] == b'F' {
-        return (cmd, argv);
-    }
-
-    if let Some((raw_interpreter, shebang_args)) = parse_shebang(&buffer[..n]) {
-        let interpreter = map_interpreter(&raw_interpreter, normalize_path);
-        let mut new_argv = Vec::new();
-        if !argv.is_empty() {
-            new_argv.push(argv[0].clone());
-        }
-        if let Some(ref args) = shebang_args {
-            new_argv.extend(args.split_whitespace().map(|arg| arg.to_string()));
-        }
-        new_argv.push(cmd.clone());
-        if argv.len() > 1 {
-            new_argv.extend(argv[1..].iter().cloned());
-        }
-
-        android_log(
-            LogPriority::INFO,
-            &format!(
-                "[PTY] Shebang detected: interpreter={}, args={:?}, script={}, new_argv={:?}",
-                interpreter, shebang_args, cmd, new_argv
-            ),
-        );
-
-        return resolve_executable(interpreter, new_argv, termux_prefix, normalize_path, depth + 1);
-    }
-
-    let interpreter = format!("{}/bin/sh", termux_prefix);
-    let mut new_argv = Vec::new();
-    if !argv.is_empty() {
-        new_argv.push(argv[0].clone());
-    }
-    new_argv.push(cmd.clone());
-    if argv.len() > 1 {
-        new_argv.extend(argv[1..].iter().cloned());
-    }
-    android_log(
-        LogPriority::INFO,
-        &format!("[PTY] No shebang/ELF, defaulting to shell: {}", interpreter),
-    );
-    resolve_executable(interpreter, new_argv, termux_prefix, normalize_path, depth + 1)
+    // Keep the PTY launcher close to upstream termux.c: it chooses the initial
+    // command and environment, then execs it. Shebang resolution and nested
+    // execve chains belong to libtermux-exec via LD_PRELOAD so scripts such as
+    // su can exec system/root binaries without a stale first-hop rewrite.
+    (cmd, argv)
 }
 
 pub fn create_subprocess_with_data(
@@ -306,7 +259,8 @@ pub fn create_subprocess_with_data(
     // 环境变量由 Rust 层完全自主构建，不再接收/修补 Java 层传递的 envp。
     // 这消除了 Java ↔ Native 之间的“中间状态”不一致。
     // ------------------------------------------------------------------
-    let env_list = crate::env_builder::build_termux_environment(&cwd_str, is_failsafe, &session_env_vars);
+    let env_list =
+        crate::env_builder::build_termux_environment(&cwd_str, is_failsafe, &session_env_vars);
 
     // 二次清洗环境变量：确保即使 env_builder 漏掉某些系统变量，这里也会进行路径归一化
     let c_envs: Vec<CString> = env_list
@@ -573,7 +527,11 @@ pub fn create_subprocess_with_data(
                 libc::write(2, buf.as_ptr() as *const _, len);
 
                 // Fallback to /system/bin/sh as last resort
-                libc::execve(fallback_cmd.as_ptr(), fallback_args.as_ptr(), ptr_env.as_ptr());
+                libc::execve(
+                    fallback_cmd.as_ptr(),
+                    fallback_args.as_ptr(),
+                    ptr_env.as_ptr(),
+                );
                 libc::_exit(1);
             }
             Err(_) => Err(()),
@@ -875,12 +833,31 @@ mod tests {
     fn get_expected_prefix() -> String {
         let mut prefix = crate::get_termux_prefix();
         if prefix.starts_with("/data/data/com.termux/") {
-            let user_prefix = prefix.replacen("/data/data/com.termux", "/data/user/0/com.termux", 1);
+            let user_prefix =
+                prefix.replacen("/data/data/com.termux", "/data/user/0/com.termux", 1);
             if std::path::Path::new(&user_prefix).exists() {
                 prefix = user_prefix;
             }
         }
         prefix
+    }
+
+    #[test]
+    fn pty_resolve_executable_does_not_rewrite_shebang_scripts() {
+        let script_path = "/data/data/com.termux/files/home/tmp-pty-rust-test-script";
+        std::fs::write(script_path, b"#!/system/bin/sh\necho ok\n").unwrap();
+
+        let argv = vec![script_path.to_string(), "arg1".to_string()];
+        let resolved = resolve_executable(
+            script_path.to_string(),
+            argv.clone(),
+            "/data/data/com.termux/files/usr",
+            &noop_normalize,
+            0,
+        );
+
+        let _ = std::fs::remove_file(script_path);
+        assert_eq!(resolved, (script_path.to_string(), argv));
     }
 
     #[test]
