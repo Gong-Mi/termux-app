@@ -84,8 +84,12 @@ public class TermuxPreferences {
         int fontSize = getFontSize();
 
         fontSize += (increase ? 1 : -1) * 2;
-        fontSize = Math.max(minFontSize, Math.min(fontSize, maxFontSize));
+        return setFontSize(fontSize);
+    }
 
+    public int setFontSize(int fontSize) {
+        fontSize = Math.max(minFontSize, Math.min(fontSize, maxFontSize));
+        if (fontSize % 2 == 1) fontSize += 1;
         prefs.edit().putInt(fontSizePrefName(), fontSize).apply();
         return fontSize;
     }

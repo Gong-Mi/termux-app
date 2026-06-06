@@ -54,10 +54,23 @@ public final class TermuxTerminalViewClient implements TerminalViewClient {
 
     @Override
     public float onScale(float scale) {
+        // Keep pinch-to-zoom responsive by letting TerminalView/Rust apply only visual scale
+        // while the fingers are moving. Committing font size during each scale event changes
+        // cols/rows and forces full scrollback reflow on long terminal histories.
+        return scale;
+    }
+
+    @Override
+    public float onScaleEnd(float scale) {
         if (scale < 0.9f || scale > 1.1f) {
-            boolean increase = scale > 1.f;
-            changeFontSize(increase);
-            return 1.0f;
+            int currentFontSize = mActivity.mPreferences.getFontSize();
+            int newFontSize = Math.round((currentFontSize * scale) / 2.0f) * 2;
+            newFontSize = mActivity.mPreferences.setFontSize(newFontSize);
+            if (newFontSize != currentFontSize) {
+                Log.i(LOG_TAG, "Pinch zoom commit: scale=" + scale + ", fontSize=" + currentFontSize + " -> " + newFontSize);
+                mActivity.getTerminalView().setTextSize(newFontSize);
+                return 1.0f;
+            }
         }
         return scale;
     }

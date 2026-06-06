@@ -248,7 +248,19 @@ class TerminalView @JvmOverloads constructor(
             override fun onScale(focusX: Float, focusY: Float, scale: Float): Boolean {
                 if (mEmulator == null || isSelectingText()) return true
                 mScaleFactor *= scale
+                // During the gesture, only apply cheap visual scaling in Rust.
+                // Do not commit font size here: committing font size changes cols/rows and
+                // triggers full terminal reflow when columns change, which is very expensive
+                // for long scrollback buffers. The real resize is deferred to onScaleEnd().
                 mScaleFactor = mClient?.onScale(mScaleFactor) ?: mScaleFactor
+                updateRenderParamsToRust()
+                invalidate()
+                return true
+            }
+
+            override fun onScaleEnd(focusX: Float, focusY: Float): Boolean {
+                if (mEmulator == null || isSelectingText()) return true
+                mScaleFactor = mClient?.onScaleEnd(mScaleFactor) ?: mScaleFactor
                 updateRenderParamsToRust()
                 invalidate()
                 return true

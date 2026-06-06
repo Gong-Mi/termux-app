@@ -17,6 +17,7 @@ class GestureAndScaleRecognizer(
         fun onScroll(e2: MotionEvent, dx: Float, dy: Float): Boolean
         fun onFling(e: MotionEvent, velocityX: Float, velocityY: Float): Boolean
         fun onScale(focusX: Float, focusY: Float, scale: Float): Boolean
+        fun onScaleEnd(focusX: Float, focusY: Float): Boolean
         fun onDown(x: Float, y: Float): Boolean
         fun onUp(e: MotionEvent): Boolean
         fun onLongPress(e: MotionEvent)
@@ -64,6 +65,10 @@ class GestureAndScaleRecognizer(
 
             override fun onScale(detector: ScaleGestureDetector): Boolean {
                 return mListener.onScale(detector.focusX, detector.focusY, detector.scaleFactor)
+            }
+
+            override fun onScaleEnd(detector: ScaleGestureDetector) {
+                mListener.onScaleEnd(detector.focusX, detector.focusY)
             }
         })
         mScaleDetector.isQuickScaleEnabled = false

@@ -9,8 +9,11 @@ import com.termux.terminal.TerminalSession
  */
 interface TerminalViewClient {
 
-    /** Callback function on scale events. */
+    /** Callback function on in-progress scale events. */
     fun onScale(scale: Float): Float
+
+    /** Callback function when a scale gesture ends and can be committed. */
+    fun onScaleEnd(scale: Float): Float
 
     /** On a single tap on the terminal if terminal mouse reporting not enabled. */
     fun onSingleTapUp(e: MotionEvent)
