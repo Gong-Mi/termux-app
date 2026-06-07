@@ -863,10 +863,19 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
             windowInsetsController.hide(WindowInsetsCompat.Type.systemBars());
             windowInsetsController.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
         } else {
-            rootView.setFitsSystemWindows(true);
+            // Do not let ViewRoot apply implicit system-window padding to the
+            // root hierarchy. TerminalView is a SurfaceView backed by a
+            // separate SurfaceFlinger layer; mixing fitsSystemWindows with the
+            // translucent/edge-to-edge window makes the Surface layer start at
+            // the status-bar inset (for example y=150) while the Java overlays
+            // and IME still use window coordinates. Keep the root in one
+            // explicit coordinate space and let WindowInsets drive only the
+            // fullscreen rounded-corner/IME padding path in TermuxFullscreen.
+            rootView.setFitsSystemWindows(false);
             getWindow().clearFlags(flags);
             windowInsetsController.show(WindowInsetsCompat.Type.systemBars());
         }
+        rootView.requestApplyInsets();
     }
 
     /**

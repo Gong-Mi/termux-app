@@ -35,6 +35,11 @@ public class TermuxFullscreen {
             var bottomPadding = Math.max(imeHeight, TermuxFullscreen.calculatePadding(radiusBottomLeft, radiusBottomRight, bottomMargin));
             rootView.setPadding(0, topPadding, 0, bottomPadding);
         } else {
+            // Non-fullscreen Termux already runs edge-to-edge/translucent so the
+            // terminal root must stay at the window origin. Applying either
+            // fitsSystemWindows or manual status-bar padding here moves the
+            // SurfaceView's independent SurfaceFlinger layer down while the
+            // Java view/selection/IME coordinate space remains window-based.
             rootView.setPadding(0, 0, 0, 0);
         }
     }
