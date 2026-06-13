@@ -13,37 +13,77 @@ public class TermuxFullscreen {
 
     private static final boolean CORNERS_API = (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S);
 
+    private static native int[] nativeCalculatePadding(
+        boolean fullscreen,
+        int statusBarTop, int imeBottom,
+        int cornerTopLeft, int cornerTopRight,
+        int cornerBottomRight, int cornerBottomLeft,
+        int windowTopMargin, int windowBottomMargin
+    );
+
+    static {
+        try {
+            System.loadLibrary("termux_rust");
+        } catch (UnsatisfiedLinkError e) {
+            android.util.Log.w("TermuxFullscreen", "libtermux_rust not loaded yet, deferring to runtime");
+        }
+    }
+
     public static void updatePadding(TermuxActivity activity, WindowInsets insets) {
         var rootView = activity.findViewById(R.id.activity_termux_root_relative_layout);
-        if (activity.mPreferences.isFullscreen()) {
-            var radiusTopLeft = cornerRadius(insets, 0);
-            var radiusTopRight = cornerRadius(insets, 1);
-            var radiusBottomRight = cornerRadius(insets, 2);
-            var radiusBottomLeft = cornerRadius(insets, 3);
+        boolean fullscreen = activity.mPreferences.isFullscreen();
 
+        int statusBarTop = insets.getInsets(WindowInsets.Type.statusBars()).top;
+        int imeBottom = insets.getInsets(WindowInsets.Type.ime()).bottom;
+
+        int cornerTL = cornerRadius(insets, 0);
+        int cornerTR = cornerRadius(insets, 1);
+        int cornerBR = cornerRadius(insets, 2);
+        int cornerBL = cornerRadius(insets, 3);
+
+        int topMargin = 0, bottomMargin = 0;
+        if (fullscreen) {
             var windowManager = activity.getSystemService(WindowManager.class);
             var windowBounds = windowManager.getCurrentWindowMetrics().getBounds();
             int[] location = {0, 0};
             rootView.getLocationInWindow(location);
+            topMargin = location[1] - windowBounds.top;
+            bottomMargin = Math.max(0, windowBounds.bottom - rootView.getBottom());
+        }
 
-            int topMargin = location[1] - windowBounds.top;
-            // Do not go below 0, see https://github.com/termux-play-store/termux-apps/issues/62:
-            int bottomMargin = Math.max(0, windowBounds.bottom - rootView.getBottom());
+        int[] padding;
+        try {
+            padding = nativeCalculatePadding(
+                fullscreen,
+                statusBarTop, imeBottom,
+                cornerTL, cornerTR, cornerBR, cornerBL,
+                topMargin, bottomMargin
+            );
+        } catch (UnsatisfiedLinkError e) {
+            // Fallback: native lib not yet loaded, compute in Java
+            padding = fallbackCalculatePadding(
+                fullscreen, statusBarTop, imeBottom,
+                cornerTL, cornerTR, cornerBR, cornerBL,
+                topMargin, bottomMargin
+            );
+        }
+        rootView.setPadding(padding[0], padding[1], padding[2], padding[3]);
+    }
 
-            int imeHeight = insets.getInsets(WindowInsets.Type.ime()).bottom;
-            var topPadding = TermuxFullscreen.calculatePadding(radiusTopLeft, radiusTopRight, topMargin);
-            var bottomPadding = Math.max(imeHeight, TermuxFullscreen.calculatePadding(radiusBottomLeft, radiusBottomRight, bottomMargin));
-            rootView.setPadding(0, topPadding, 0, bottomPadding);
+    private static int[] fallbackCalculatePadding(
+        boolean fullscreen,
+        int statusBarTop, int imeBottom,
+        int cornerTL, int cornerTR, int cornerBR, int cornerBL,
+        int topMargin, int bottomMargin
+    ) {
+        if (fullscreen) {
+            int topPadding = Math.max(statusBarTop,
+                Math.max(Math.max(cornerTL, cornerTR) - topMargin, 0));
+            int bottomPadding = Math.max(imeBottom,
+                Math.max(Math.max(cornerBL, cornerBR) - bottomMargin, 0));
+            return new int[]{0, topPadding, 0, bottomPadding};
         } else {
-            int imeHeight = insets.getInsets(WindowInsets.Type.ime()).bottom;
-            // Non-fullscreen Termux already runs edge-to-edge/translucent so the
-            // terminal root must stay at the window origin. Do not apply a top
-            // system-bar padding here, because that moves the SurfaceView's
-            // independent SurfaceFlinger layer down while Java overlays stay in
-            // window coordinates. The bottom IME inset is different: it keeps
-            // the extra-keys ViewPager aligned above the soft keyboard and
-            // shrinks the terminal area that remains touchable.
-            rootView.setPadding(0, 0, 0, imeHeight);
+            return new int[]{0, 0, 0, imeBottom};
         }
     }
 
@@ -54,10 +94,6 @@ public class TermuxFullscreen {
         } else {
             return 0;
         }
-    }
-
-    private static int calculatePadding(int radius1, int radius2, int margin) {
-        return Math.max(Math.max(radius1, radius2) - margin, 0);
     }
 
 }

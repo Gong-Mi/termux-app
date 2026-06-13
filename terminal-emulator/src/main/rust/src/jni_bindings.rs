@@ -1951,7 +1951,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
                             }
                             android_log(
                                 LogPriority::INFO,
-                                &format!("[TRACE_SESSION] TERMUX_PREFIX from env_vars: {}", prefix_str),
+                                &format!(
+                                    "[TRACE_SESSION] TERMUX_PREFIX from env_vars: {}",
+                                    prefix_str
+                                ),
                             );
                             // 不再 break，因为我们需要收集所有的环境变量
                         }
@@ -2462,6 +2465,47 @@ fn init_android_cache_dir(vm: &jni::JavaVM) {
         LogPriority::INFO,
         &format!("Auto-detected pipeline cache path: {}", cache_file),
     );
+}
+
+/// JNI: TermuxFullscreen.nativeCalculatePadding()
+/// 接收 Java 层 inset 原始数据，计算 root view padding，返回 int[4] {left, top, right, bottom}.
+/// 全 Rust 化 step 1：将 padding 计算逻辑移入 Rust，Java 只负责采集 raw insets 和 setPadding.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_app_TermuxFullscreen_nativeCalculatePadding(
+    env: JNIEnv,
+    _class: JClass,
+    fullscreen: jint,
+    status_bar_top: jint,
+    ime_bottom: jint,
+    corner_tl: jint,
+    corner_tr: jint,
+    corner_br: jint,
+    corner_bl: jint,
+    window_top_margin: jint,
+    window_bottom_margin: jint,
+) -> jni::sys::jintArray {
+    let top_padding: jint;
+    let bottom_padding: jint;
+
+    if fullscreen != 0 {
+        let corner_top = core::cmp::max(corner_tl, corner_tr) - window_top_margin;
+        let corner_top_pad = if corner_top > 0 { corner_top } else { 0 };
+        top_padding = core::cmp::max(status_bar_top, corner_top_pad);
+
+        let corner_bottom = core::cmp::max(corner_br, corner_bl) - window_bottom_margin;
+        let corner_bottom_pad = if corner_bottom > 0 { corner_bottom } else { 0 };
+        bottom_padding = core::cmp::max(ime_bottom, corner_bottom_pad);
+    } else {
+        top_padding = 0;
+        bottom_padding = ime_bottom;
+    }
+
+    let padding = [0i32, top_padding, 0i32, bottom_padding];
+    let result = env.new_int_array(4)
+        .expect("nativeCalculatePadding: failed to create int array");
+    env.set_int_array_region(&result, 0, &padding)
+        .expect("nativeCalculatePadding: failed to set int array region");
+    result.into_raw()
 }
 
 #[unsafe(no_mangle)]

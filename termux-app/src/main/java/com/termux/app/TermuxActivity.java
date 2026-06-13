@@ -849,15 +849,15 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
 
     void applyFullscreenSetting(boolean doFullscreen) {
         var rootView = findViewById(R.id.activity_termux_root_relative_layout);
-        //var rootView = getWindow().getDecorView();
         var windowInsetsController = WindowCompat.getInsetsController(getWindow(), rootView);
-        var flags = WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS;
 
         if (doFullscreen) {
             var imm = getSystemService(InputMethodManager.class);
             imm.hideSoftInputFromWindow(rootView.getWindowToken(), 0);
 
-            getWindow().setFlags(flags, flags);
+            // Modern edge-to-edge: no FLAG_LAYOUT_NO_LIMITS.
+            // WindowInsets drive correct padding via TermuxFullscreen.updatePadding(),
+            // which now accounts for statusBar top in fullscreen mode.
             rootView.setFitsSystemWindows(false);
 
             windowInsetsController.hide(WindowInsetsCompat.Type.systemBars());
