@@ -857,19 +857,10 @@ class TerminalView @JvmOverloads constructor(
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         updateSize()
-        // 同步通知 Rust 渲染层 Surface 尺寸变化。
-        // SurfaceView 在 IME 弹出/收起等场景下，surfaceChanged 可能不会被调用或延迟调用，
-        // 因此必须在 onSizeChanged 中直接通知，确保 swapchain 尺寸始终与 View 尺寸同步。
-        // 与 surfaceChanged 共享 mLastSurfaceWidth/Height，避免重复调用 nativeOnSizeChanged。
-        if (w > 0 && h > 0 && (w != mLastSurfaceWidth || h != mLastSurfaceHeight)) {
-            mLastSurfaceWidth = w
-            mLastSurfaceHeight = h
-            try {
-                nativeOnSizeChanged(w, h)
-            } catch (e: Exception) {
-                Log.e("TerminalView-Surface", "!!! onSizeChanged nativeOnSizeChanged: ${e.message}", e)
-            }
-        }
+        // 不再调用 nativeOnSizeChanged。
+        // swapchain 尺寸唯一由 surfaceChanged 中的 Surface buffer 维度决定，
+        // 而非 View 布局尺寸。SurfaceView 的 Surface buffer 和 View 布局可能不同，
+        // 混用两者会导致渲染被 SurfaceFlinger 缩放（terminal 像被拉伸的图片）。
     }
 
     fun updateSize() {
@@ -896,12 +887,16 @@ class TerminalView @JvmOverloads constructor(
     }
 
     private fun updateSizeInternal() {
-        val viewWidth = width
-        val viewHeight = height
+        // 使用 Surface buffer 尺寸（与 swapchain extent 一致）计算 terminal 行列数。
+        // View 布局尺寸可能与 Surface buffer 尺寸不同（SurfaceView 的 Surface 层
+        // 由系统分配，其像素维度不必然等于 View 的 layout 尺寸），用错会导致
+        // terminal columns/rows 与实际渲染区域不匹配。
+        val surfaceWidth = if (mLastSurfaceWidth > 0) mLastSurfaceWidth else width
+        val surfaceHeight = if (mLastSurfaceHeight > 0) mLastSurfaceHeight else height
         val session = mTermSession
-        if (viewWidth == 0 || viewHeight == 0 || session == null) return
-        val newColumns = Math.max(4, (viewWidth / getFontWidth()).toInt())
-        val newRows = Math.max(4, ((viewHeight - getFontLineSpacingAndAscent()) / getFontLineSpacing()).toInt())
+        if (surfaceWidth == 0 || surfaceHeight == 0 || session == null) return
+        val newColumns = Math.max(4, (surfaceWidth / getFontWidth()).toInt())
+        val newRows = Math.max(4, ((surfaceHeight - getFontLineSpacingAndAscent()) / getFontLineSpacing()).toInt())
         val cellWidth = getFontWidth().toInt()
         val cellHeight = getFontLineSpacing().toInt()
 
@@ -995,7 +990,10 @@ class TerminalView @JvmOverloads constructor(
         }
         mLastSurfaceWidth = width
         mLastSurfaceHeight = height
-        try { nativeOnSizeChanged(width, height) }
+        try {
+            nativeOnSizeChanged(width, height)
+            updateSize()
+        }
         catch (e: Exception) { Log.e("TerminalView-Surface", "!!! surfaceChanged: ${e.message}", e) }
     }
 
