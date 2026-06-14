@@ -247,11 +247,6 @@ class TerminalView @JvmOverloads constructor(
 
             override fun onScale(focusX: Float, focusY: Float, scale: Float): Boolean {
                 if (mEmulator == null || isSelectingText()) return true
-                mScaleFactor *= scale
-                // During the gesture, only apply cheap visual scaling in Rust.
-                // Do not commit font size here: committing font size changes cols/rows and
-                // triggers full terminal reflow when columns change, which is very expensive
-                // for long scrollback buffers. The real resize is deferred to onScaleEnd().
                 mScaleFactor = mClient?.onScale(mScaleFactor) ?: mScaleFactor
                 updateRenderParamsToRust()
                 invalidate()
@@ -856,11 +851,15 @@ class TerminalView @JvmOverloads constructor(
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        // 核心修复：强制 Surface buffer 尺寸与 View 布局尺寸同步。
+        // 在某些系统（如 MIUI/HyperOS）上，IME 弹出或 Activity 切换时，系统可能不会自动
+        // 更新 SurfaceView 的 Surface 尺寸，导致 surfaceChanged 不被调用，产生黑屏或
+        // 渲染尺寸错位。通过显式调用 setFixedSize，我们强制系统分配与布局一致的 Buffer，
+        // 从而触发 surfaceChanged 并确保渲染 1:1 匹配（无拉伸/模糊）。
+        if (w > 0 && h > 0) {
+            holder.setFixedSize(w, h)
+        }
         updateSize()
-        // 不再调用 nativeOnSizeChanged。
-        // swapchain 尺寸唯一由 surfaceChanged 中的 Surface buffer 维度决定，
-        // 而非 View 布局尺寸。SurfaceView 的 Surface buffer 和 View 布局可能不同，
-        // 混用两者会导致渲染被 SurfaceFlinger 缩放（terminal 像被拉伸的图片）。
     }
 
     fun updateSize() {
@@ -1073,7 +1072,8 @@ class TerminalView @JvmOverloads constructor(
         val bitmap = mSixelBitmap
         if (bitmap != null && !bitmap.isRecycled) {
             canvas.save()
-            canvas.scale(mScaleFactor, mScaleFactor)
+            // Visual scale layer removed — font size is committed during gesture.
+            // canvas.scale(mScaleFactor, mScaleFactor)
             val pixelX = mSixelStartX * getFontWidth()
             val pixelY = (mSixelStartY - mTopRow) * getFontLineSpacing() + getFontLineSpacingAndAscent()
             canvas.drawBitmap(bitmap, pixelX, pixelY, mSixelPaint)

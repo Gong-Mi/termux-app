@@ -545,7 +545,8 @@ impl TerminalRenderer {
         };
 
         canvas.save();
-        canvas.scale((scale, scale));
+        // Visual scale layer removed — scale=1.0 during gesture.
+        // canvas.scale((scale, scale));
 
         // 背景清屏
         let bg_color_4f = palette_4f[257];
@@ -735,7 +736,8 @@ impl TerminalRenderer {
         canvas.clear(Color::new(bg_color));
 
         canvas.save();
-        canvas.scale((scale, scale));
+        // Visual scale layer removed — scale=1.0.
+        // canvas.scale((scale, scale));
 
         // 重新启用平移以支持平滑的像素级滚动（子行滚动）
         // 我们只平移 scroll_offset 相对于行高的余数部分
