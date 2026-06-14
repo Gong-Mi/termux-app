@@ -30,7 +30,10 @@ unsafe extern "C" fn hooked_vk_create_pipeline_cache(
     let cache = HOOKED_PIPELINE_CACHE.load(Ordering::SeqCst);
     android_log(
         LogPriority::INFO,
-        &format!("hooked_vk_create_pipeline_cache: HOOKED_PIPELINE_CACHE={:#x}", cache),
+        &format!(
+            "hooked_vk_create_pipeline_cache: HOOKED_PIPELINE_CACHE={:#x}",
+            cache
+        ),
     );
     if cache != 0 {
         unsafe {
@@ -56,7 +59,10 @@ unsafe extern "C" fn hooked_vk_destroy_pipeline_cache(
     let hooked = HOOKED_PIPELINE_CACHE.load(Ordering::SeqCst);
     android_log(
         LogPriority::INFO,
-        &format!("hooked_vk_destroy_pipeline_cache: pipeline_cache={:#x}, HOOKED_PIPELINE_CACHE={:#x}", pipeline_cache, hooked),
+        &format!(
+            "hooked_vk_destroy_pipeline_cache: pipeline_cache={:#x}, HOOKED_PIPELINE_CACHE={:#x}",
+            pipeline_cache, hooked
+        ),
     );
     if pipeline_cache == hooked && hooked != 0 {
         // Ignore: lifetime managed by VulkanContext::drop
@@ -667,7 +673,8 @@ impl VulkanContext {
         // 缓存 Vulkan 二级命令缓冲，减少命令构建开销
         context_options.max_cached_vulkan_secondary_command_buffers = 64;
 
-        let context = skia_safe::gpu::direct_contexts::make_vulkan(&backend_context, Some(&context_options));
+        let context =
+            skia_safe::gpu::direct_contexts::make_vulkan(&backend_context, Some(&context_options));
         if context.is_none() {
             android_log(
                 LogPriority::ERROR,
@@ -846,7 +853,7 @@ impl VulkanContext {
                 image_extent: self.extent,
                 image_array_layers: 1,
                 image_usage: ash_vk::ImageUsageFlags::COLOR_ATTACHMENT,
-                pre_transform: caps.current_transform,
+                pre_transform: ash_vk::SurfaceTransformFlagsKHR::IDENTITY,
                 composite_alpha: ash_vk::CompositeAlphaFlagsKHR::OPAQUE,
                 present_mode,
                 clipped: ash_vk::TRUE,
