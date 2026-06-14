@@ -832,28 +832,11 @@ impl VulkanContext {
                 return false;
             }
 
-            let actual_extent = if caps.current_extent.width != u32::MAX {
-                // 固定大小：驱动指定，需根据 transform 调整到 identity 方向
-                if caps.current_transform.intersects(
-                    ash_vk::SurfaceTransformFlagsKHR::ROTATE_90
-                        | ash_vk::SurfaceTransformFlagsKHR::ROTATE_270,
-                ) {
-                    ash_vk::Extent2D {
-                        width: caps.current_extent.height.max(64),
-                        height: caps.current_extent.width.max(64),
-                    }
-                } else {
-                    ash_vk::Extent2D {
-                        width: caps.current_extent.width.max(64),
-                        height: caps.current_extent.height.max(64),
-                    }
-                }
-            } else {
-                // 自由大小：使用传入的尺寸，钳位
-                ash_vk::Extent2D {
-                    width: width.max(64).min(7680),
-                    height: height.max(64).min(7680),
-                }
+            // pre_transform=IDENTITY 下 caps.current_extent 不可靠（各厂商驱动不一致）。
+            // 始终使用 Java onSizeChanged 传入的 view 尺寸，这是唯一准确的来源。
+            let actual_extent = ash_vk::Extent2D {
+                width: width.max(64).min(7680),
+                height: height.max(64).min(7680),
             };
             self.extent = actual_extent;
 
@@ -1035,22 +1018,10 @@ impl VulkanContext {
                 return false;
             }
         };
-        // 使用 IDENTITY preTransform 时，current_extent 可能是旋转后的尺寸。
-        // 按 Android 官方建议：transform 为 90/270 时交换宽高得到 identity extent。
-        self.extent = if caps.current_transform.intersects(
-            ash_vk::SurfaceTransformFlagsKHR::ROTATE_90
-                | ash_vk::SurfaceTransformFlagsKHR::ROTATE_270,
-        ) {
-            ash_vk::Extent2D {
-                width: caps.current_extent.height.max(64),
-                height: caps.current_extent.width.max(64),
-            }
-        } else {
-            ash_vk::Extent2D {
-                width: caps.current_extent.width.max(64),
-                height: caps.current_extent.height.max(64),
-            }
-        };
+        // pre_transform=IDENTITY 下 caps.current_extent 不可靠。
+        // 用已有的 self.extent（来自 recreate_swapchain 的 Java 尺寸），只做钳位。
+        self.extent.width = self.extent.width.max(64).min(7680);
+        self.extent.height = self.extent.height.max(64).min(7680);
 
         // 6. 重新创建 swapchain
         let swapchain_ok = self.recreate_swapchain(self.extent.width, self.extent.height);
