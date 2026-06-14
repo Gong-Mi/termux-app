@@ -832,11 +832,17 @@ impl VulkanContext {
                 return false;
             }
 
-            // pre_transform=IDENTITY 下 caps.current_extent 不可靠（各厂商驱动不一致）。
-            // 始终使用 Java onSizeChanged 传入的 view 尺寸，这是唯一准确的来源。
-            let actual_extent = ash_vk::Extent2D {
-                width: width.max(64).min(7680),
-                height: height.max(64).min(7680),
+            // caps.current_transform 与 display 方向一致时 current_extent 可靠。
+            let actual_extent = if caps.current_extent.width != u32::MAX {
+                ash_vk::Extent2D {
+                    width: caps.current_extent.width.max(64),
+                    height: caps.current_extent.height.max(64),
+                }
+            } else {
+                ash_vk::Extent2D {
+                    width: width.max(64).min(7680),
+                    height: height.max(64).min(7680),
+                }
             };
             self.extent = actual_extent;
 
@@ -854,7 +860,7 @@ impl VulkanContext {
                 image_extent: self.extent,
                 image_array_layers: 1,
                 image_usage: ash_vk::ImageUsageFlags::COLOR_ATTACHMENT,
-                pre_transform: ash_vk::SurfaceTransformFlagsKHR::IDENTITY,
+                pre_transform: caps.current_transform,
                 composite_alpha: ash_vk::CompositeAlphaFlagsKHR::OPAQUE,
                 present_mode,
                 clipped: ash_vk::TRUE,
@@ -1018,10 +1024,11 @@ impl VulkanContext {
                 return false;
             }
         };
-        // pre_transform=IDENTITY 下 caps.current_extent 不可靠。
-        // 用已有的 self.extent（来自 recreate_swapchain 的 Java 尺寸），只做钳位。
-        self.extent.width = self.extent.width.max(64).min(7680);
-        self.extent.height = self.extent.height.max(64).min(7680);
+        // caps.current_transform 与 display 方向一致时 current_extent 可靠。
+        self.extent = ash_vk::Extent2D {
+            width: caps.current_extent.width.max(64),
+            height: caps.current_extent.height.max(64),
+        };
 
         // 6. 重新创建 swapchain
         let swapchain_ok = self.recreate_swapchain(self.extent.width, self.extent.height);

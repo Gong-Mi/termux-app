@@ -886,6 +886,13 @@ class TerminalView @JvmOverloads constructor(
     /** 由 TermuxActivity.onConfigurationChanged 调用，触发 SurfaceView 重新布局 */
     fun notifyConfigurationChanged() {
         requestLayout()
+        // 强制 SurfaceView 重建 surface（和 surfaceDestroyed workaround 同样手法）
+        // 这样 ANativeWindow 会更新到新方向，Vulkan surface capabilities 返回正确的 transform/extent
+        try {
+            onConfigurationChanged(resources.configuration)
+        } catch (e: Exception) {
+            Log.w("TerminalView-Surface", "notifyConfigurationChanged: onConfigurationChanged failed: ${e.message}")
+        }
     }
 
     private fun updateSizeInternal() {
