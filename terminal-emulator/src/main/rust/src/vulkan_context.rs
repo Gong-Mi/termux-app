@@ -833,9 +833,17 @@ impl VulkanContext {
             }
 
             let actual_extent = if caps.current_extent.width != u32::MAX {
-                caps.current_extent
+                // 固定大小：驱动指定，但需钳位最小值
+                ash_vk::Extent2D {
+                    width: caps.current_extent.width.max(64),
+                    height: caps.current_extent.height.max(64),
+                }
             } else {
-                ash_vk::Extent2D { width, height }
+                // 自由大小：使用传入的尺寸，但钳位
+                ash_vk::Extent2D {
+                    width: width.max(64),
+                    height: height.max(64),
+                }
             };
             self.extent = actual_extent;
 

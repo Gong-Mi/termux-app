@@ -883,11 +883,9 @@ class TerminalView @JvmOverloads constructor(
         updateSizeInternal()
     }
 
-    /** 由 TermuxActivity.onConfigurationChanged 调用，触发 SurfaceView surface 重建 */
+    /** 由 TermuxActivity.onConfigurationChanged 调用，触发 SurfaceView 重新布局 */
     fun notifyConfigurationChanged() {
         requestLayout()
-        // 强制 SurfaceView 重新评估 surface，和 surfaceDestroyed workaround 同样手法
-        onConfigurationChanged(resources.configuration)
     }
 
     private fun updateSizeInternal() {
