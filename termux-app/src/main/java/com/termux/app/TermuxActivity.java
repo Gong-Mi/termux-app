@@ -872,7 +872,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
             // explicit coordinate space and let WindowInsets drive only the
             // fullscreen rounded-corner/IME padding path in TermuxFullscreen.
             rootView.setFitsSystemWindows(false);
-            getWindow().clearFlags(flags);
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
             windowInsetsController.show(WindowInsetsCompat.Type.systemBars());
         }
         rootView.requestApplyInsets();
