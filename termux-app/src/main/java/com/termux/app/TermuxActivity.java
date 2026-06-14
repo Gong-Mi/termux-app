@@ -939,4 +939,16 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         return sb.toString();
     }
 
+    @Override
+    public void onConfigurationChanged(@NonNull android.content.res.Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        // configChanges 声明了 orientation|screenSize，Activity 不会被重建。
+        // 需要手动触发布局更新，确保 TerminalView 重新计算列数和行数。
+        var root = findViewById(R.id.activity_termux_root_relative_layout);
+        if (root != null) {
+            root.requestLayout();
+        }
+        getWindow().getDecorView().requestApplyInsets();
+    }
+
 }
