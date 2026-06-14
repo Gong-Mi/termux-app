@@ -83,7 +83,7 @@ public class TermuxFullscreen {
                 Math.max(Math.max(cornerBL, cornerBR) - bottomMargin, 0));
             return new int[]{0, topPadding, 0, bottomPadding};
         } else {
-            return new int[]{0, 0, 0, imeBottom};
+            return new int[]{0, statusBarTop, 0, imeBottom};
         }
     }
 

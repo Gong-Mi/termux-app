@@ -2496,7 +2496,7 @@ pub extern "system" fn Java_com_termux_app_TermuxFullscreen_nativeCalculatePaddi
         let corner_bottom_pad = if corner_bottom > 0 { corner_bottom } else { 0 };
         bottom_padding = core::cmp::max(ime_bottom, corner_bottom_pad);
     } else {
-        top_padding = 0;
+        top_padding = status_bar_top;
         bottom_padding = ime_bottom;
     }
 
