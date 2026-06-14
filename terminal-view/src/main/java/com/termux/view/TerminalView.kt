@@ -883,6 +883,13 @@ class TerminalView @JvmOverloads constructor(
         updateSizeInternal()
     }
 
+    /** 由 TermuxActivity.onConfigurationChanged 调用，触发 SurfaceView surface 重建 */
+    fun notifyConfigurationChanged() {
+        requestLayout()
+        // 强制 SurfaceView 重新评估 surface，和 surfaceDestroyed workaround 同样手法
+        onConfigurationChanged(resources.configuration)
+    }
+
     private fun updateSizeInternal() {
         val viewWidth = width
         val viewHeight = height
@@ -1007,12 +1014,18 @@ class TerminalView @JvmOverloads constructor(
                 val parentView = parent as? android.view.ViewGroup
                 val lp = layoutParams
                 if (parentView != null && lp != null) {
+                    // Preserve DrawerLayout child order. TerminalView is expected to stay below
+                    // left_drawer in activity_termux.xml. Re-attaching with addView(this, lp)
+                    // appends it as the last child, causing the SurfaceView to sit above the
+                    // drawer and intercept/occlude drawer button touches.
+                    val originalIndex = parentView.indexOfChild(this).coerceAtLeast(0)
                     parentView.removeView(this)
                     mSurfaceRecreateHandler.postDelayed({
                         if (!mSurfaceRecreatePending) return@postDelayed
-                        parentView.addView(this, lp)
+                        val safeIndex = originalIndex.coerceAtMost(parentView.childCount)
+                        parentView.addView(this, safeIndex, lp)
                         parentView.requestLayout()
-                        Log.i("TerminalView-Surface", "Re-attached to parent to force surface recreation")
+                        Log.i("TerminalView-Surface", "Re-attached to parent at index=$safeIndex to force surface recreation")
                     }, 200)
                 } else {
                     // fallback: toggle visibility

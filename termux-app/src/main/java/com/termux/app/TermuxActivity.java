@@ -949,8 +949,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         // SurfaceView 需要额外触发 updateSurface() 来适配新尺寸
         if (mTerminalView != null) {
             mTerminalView.requestLayout();
-            // 触发 surface 重新评估（和 surfaceDestroyed workaround 同样手法）
-            mTerminalView.onConfigurationChanged(newConfig);
+            mTerminalView.notifyConfigurationChanged();
         }
         getWindow().getDecorView().requestApplyInsets();
     }
