@@ -900,16 +900,18 @@ class TerminalView @JvmOverloads constructor(
         val viewHeight = height
         val session = mTermSession
         if (viewWidth == 0 || viewHeight == 0 || session == null) return
-        val newColumns = Math.max(4, (viewWidth / (getFontWidth() * mScaleFactor)).toInt())
-        val newRows = Math.max(4, ((viewHeight / mScaleFactor - getFontLineSpacingAndAscent()) / getFontLineSpacing()).toInt())
+        val newColumns = Math.max(4, (viewWidth / getFontWidth()).toInt())
+        val newRows = Math.max(4, ((viewHeight - getFontLineSpacingAndAscent()) / getFontLineSpacing()).toInt())
+        val cellWidth = getFontWidth().toInt()
+        val cellHeight = getFontLineSpacing().toInt()
 
         if (!session.isEngineInitialized()) {
-            session.updateSize(newColumns, newRows, (getFontWidth() * mScaleFactor).toInt(), (getFontLineSpacing() * mScaleFactor).toInt())
+            session.updateSize(newColumns, newRows, cellWidth, cellHeight)
             return
         }
         val emu = mEmulator
         if (emu == null || newColumns != emu.getCols() || newRows != emu.getRows()) {
-            session.updateSize(newColumns, newRows, (getFontWidth() * mScaleFactor).toInt(), (getFontLineSpacing() * mScaleFactor).toInt())
+            session.updateSize(newColumns, newRows, cellWidth, cellHeight)
             mEmulator = session.mEmulator
             mClient?.onEmulatorSet()
             // 光标闪烁状态已由 Rust 渲染线程自主管理，无需 Java 定时器
