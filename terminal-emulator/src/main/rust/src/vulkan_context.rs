@@ -833,16 +833,26 @@ impl VulkanContext {
             }
 
             let actual_extent = if caps.current_extent.width != u32::MAX {
-                // 固定大小：驱动指定，但需钳位最小值
-                ash_vk::Extent2D {
-                    width: caps.current_extent.width.max(64),
-                    height: caps.current_extent.height.max(64),
+                // 固定大小：驱动指定，需根据 transform 调整到 identity 方向
+                if caps.current_transform.intersects(
+                    ash_vk::SurfaceTransformFlagsKHR::ROTATE_90
+                        | ash_vk::SurfaceTransformFlagsKHR::ROTATE_270,
+                ) {
+                    ash_vk::Extent2D {
+                        width: caps.current_extent.height.max(64),
+                        height: caps.current_extent.width.max(64),
+                    }
+                } else {
+                    ash_vk::Extent2D {
+                        width: caps.current_extent.width.max(64),
+                        height: caps.current_extent.height.max(64),
+                    }
                 }
             } else {
-                // 自由大小：使用传入的尺寸，但钳位
+                // 自由大小：使用传入的尺寸，钳位
                 ash_vk::Extent2D {
-                    width: width.max(64),
-                    height: height.max(64),
+                    width: width.max(64).min(7680),
+                    height: height.max(64).min(7680),
                 }
             };
             self.extent = actual_extent;
@@ -1025,7 +1035,22 @@ impl VulkanContext {
                 return false;
             }
         };
-        self.extent = caps.current_extent;
+        // 使用 IDENTITY preTransform 时，current_extent 可能是旋转后的尺寸。
+        // 按 Android 官方建议：transform 为 90/270 时交换宽高得到 identity extent。
+        self.extent = if caps.current_transform.intersects(
+            ash_vk::SurfaceTransformFlagsKHR::ROTATE_90
+                | ash_vk::SurfaceTransformFlagsKHR::ROTATE_270,
+        ) {
+            ash_vk::Extent2D {
+                width: caps.current_extent.height.max(64),
+                height: caps.current_extent.width.max(64),
+            }
+        } else {
+            ash_vk::Extent2D {
+                width: caps.current_extent.width.max(64),
+                height: caps.current_extent.height.max(64),
+            }
+        };
 
         // 6. 重新创建 swapchain
         let swapchain_ok = self.recreate_swapchain(self.extent.width, self.extent.height);
