@@ -21,6 +21,11 @@ static ENGINE_POINTER: Mutex<jlong> = Mutex::new(0);
 static SURFACE_READY: AtomicBool = AtomicBool::new(false);
 static ENGINE_READY: AtomicBool = AtomicBool::new(false);
 
+/// Display rotation (0/1/2/3 matching Surface.ROTATION_*).
+/// Used by Vulkan swapchain to set the correct preTransform on MIUI where
+/// VkSurfaceCapabilitiesKHR.currentTransform may always report IDENTITY.
+static DISPLAY_ROTATION: Mutex<i32> = Mutex::new(0);
+
 /// 渲染参数（合并为一个 struct，避免 8 个独立 Mutex 的锁竞争）
 #[derive(Clone, Copy, Debug)]
 pub struct RenderParams {
@@ -197,6 +202,23 @@ fn spawn_render_thread(engine_ptr: jlong) {
             let mut frame_count: u64 = 0;
 
             while RENDER_THREAD_RUNNING.load(Ordering::SeqCst) {
+                // Event-driven rendering: do not redraw merely because park_timeout expired.
+                // The old loop woke every 500ms, then continued into a full canvas.clear() +
+                // present even when SCREEN_DIRTY was still false. On SurfaceView/Vulkan this
+                // creates an idle 2Hz full-surface repaint, which is visible as screen flicker
+                // on some Android/HWC combinations and also produced misleading ~500ms
+                // "SLOW FRAME" logs. Only real requests (PTY output, resize, scroll,
+                // selection, font/params changes) should present a new frame.
+                if !SCREEN_DIRTY.swap(false, Ordering::SeqCst) {
+                    std::thread::park_timeout(std::time::Duration::from_millis(500));
+                    if !RENDER_THREAD_RUNNING.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    if !SCREEN_DIRTY.swap(false, Ordering::SeqCst) {
+                        continue;
+                    }
+                }
+
                 let frame_start = std::time::Instant::now();
 
                 // 1. 检查是否需要重建 swapchain
@@ -502,6 +524,14 @@ pub fn get_render_font_size() -> &'static Mutex<f32> {
 
 pub fn get_surface_size_changed() -> &'static AtomicBool {
     &SURFACE_SIZE_CHANGED
+}
+
+pub fn set_display_rotation(rotation: i32) {
+    *DISPLAY_ROTATION.lock().unwrap() = rotation;
+}
+
+pub fn get_display_rotation() -> i32 {
+    *DISPLAY_ROTATION.lock().unwrap()
 }
 
 pub fn get_surface_new_width() -> &'static Mutex<u32> {

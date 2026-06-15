@@ -67,8 +67,18 @@ fn convert_rgba8_to_rgba10_vectorized(src: &[Pixel8], dst: &mut [Pixel10Packed])
 #[test]
 fn test_color_space_conversion_correctness() {
     let src = vec![
-        Pixel8 { r: 255, g: 0, b: 128, a: 255 },
-        Pixel8 { r: 0, g: 255, b: 0, a: 64 },
+        Pixel8 {
+            r: 255,
+            g: 0,
+            b: 128,
+            a: 255,
+        },
+        Pixel8 {
+            r: 0,
+            g: 255,
+            b: 0,
+            a: 64,
+        },
     ];
     let mut dst_scalar = vec![0u32; 2];
     let mut dst_vector = vec![0u32; 2];
@@ -79,15 +89,38 @@ fn test_color_space_conversion_correctness() {
     // 验证标量与向量化加速算法的精度与输出一致性
     for i in 0..src.len() {
         let diff_r = ((dst_scalar[i] & 0x3FF) as i32 - (dst_vector[i] & 0x3FF) as i32).abs();
-        let diff_g = (((dst_scalar[i] >> 10) & 0x3FF) as i32 - ((dst_vector[i] >> 10) & 0x3FF) as i32).abs();
-        let diff_b = (((dst_scalar[i] >> 20) & 0x3FF) as i32 - ((dst_vector[i] >> 20) & 0x3FF) as i32).abs();
-        let diff_a = (((dst_scalar[i] >> 30) & 0x3) as i32 - ((dst_vector[i] >> 30) & 0x3) as i32).abs();
+        let diff_g =
+            (((dst_scalar[i] >> 10) & 0x3FF) as i32 - ((dst_vector[i] >> 10) & 0x3FF) as i32).abs();
+        let diff_b =
+            (((dst_scalar[i] >> 20) & 0x3FF) as i32 - ((dst_vector[i] >> 20) & 0x3FF) as i32).abs();
+        let diff_a =
+            (((dst_scalar[i] >> 30) & 0x3) as i32 - ((dst_vector[i] >> 30) & 0x3) as i32).abs();
 
         // 允许位移乘加有极微小的 1-LSB 精度差，但绝不能发生大跨度溢出
-        assert!(diff_r <= 1, "R channel mismatch: scalar={:#x}, vector={:#x}", dst_scalar[i], dst_vector[i]);
-        assert!(diff_g <= 1, "G channel mismatch: scalar={:#x}, vector={:#x}", dst_scalar[i], dst_vector[i]);
-        assert!(diff_b <= 1, "B channel mismatch: scalar={:#x}, vector={:#x}", dst_scalar[i], dst_vector[i]);
-        assert!(diff_a == 0, "Alpha channel mismatch: scalar={:#x}, vector={:#x}", dst_scalar[i], dst_vector[i]);
+        assert!(
+            diff_r <= 1,
+            "R channel mismatch: scalar={:#x}, vector={:#x}",
+            dst_scalar[i],
+            dst_vector[i]
+        );
+        assert!(
+            diff_g <= 1,
+            "G channel mismatch: scalar={:#x}, vector={:#x}",
+            dst_scalar[i],
+            dst_vector[i]
+        );
+        assert!(
+            diff_b <= 1,
+            "B channel mismatch: scalar={:#x}, vector={:#x}",
+            dst_scalar[i],
+            dst_vector[i]
+        );
+        assert!(
+            diff_a == 0,
+            "Alpha channel mismatch: scalar={:#x}, vector={:#x}",
+            dst_scalar[i],
+            dst_vector[i]
+        );
     }
     println!("精度一致性校验：✅ PASS");
 }
@@ -98,7 +131,15 @@ fn benchmark_hdr_rgba10_conversion() {
 
     // 模拟全屏终端的高精度位图缓冲数据量 (例如 2400x1200 = 2,880,000 像素)
     let size = 2400 * 1200;
-    let src_data = vec![Pixel8 { r: 128, g: 64, b: 192, a: 255 }; size];
+    let src_data = vec![
+        Pixel8 {
+            r: 128,
+            g: 64,
+            b: 192,
+            a: 255
+        };
+        size
+    ];
     let mut dst_scalar = vec![0u32; size];
     let mut dst_vector = vec![0u32; size];
 

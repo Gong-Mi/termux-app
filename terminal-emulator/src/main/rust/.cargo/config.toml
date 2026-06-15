@@ -9,16 +9,21 @@ protocol = "sparse"
 #
 rustflags = [
     "-C", "link-arg=-Wl,-z,max-page-size=16384",
+    "-C", "link-arg=-L/data/data/com.termux/files/usr/lib",
+    "-C", "link-arg=--sysroot=/data/data/com.termux/files",
     "-L", "native=./.cargo/linker-hacks",
     "-l", "c++_shared",
 ]
 
 # Android ARM64 特定配置
 [target.aarch64-linux-android]
+linker = "/data/user/0/com.termux/files/home/termux-app/terminal-emulator/src/main/rust/.cargo/linker-wrapper.sh"
 # 允许编译器生成 SVE/SVE2 指令，并配合运行时分发进行动态选择。
 # 保留 NEON 为基准指令集。
 rustflags = [
     "-C", "link-arg=-Wl,-z,max-page-size=16384",
+    "-C", "link-arg=-L/data/data/com.termux/files/usr/lib",
+    "-C", "link-arg=--sysroot=/data/data/com.termux/files",
     "-C", "target-feature=+neon",
     "-L", "native=./.cargo/linker-hacks",
     "-l", "c++_shared",

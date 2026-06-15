@@ -1464,12 +1464,28 @@ fn test_dcs_sequence_framework() {
     assert_eq!(color_1.b, 0, "Color 1 Blue should be 0");
 
     // 验证像素数据
-    assert_eq!(decoder.pixel_data.len(), 6, "Sixel pixel data should have 6 rows");
+    assert_eq!(
+        decoder.pixel_data.len(),
+        6,
+        "Sixel pixel data should have 6 rows"
+    );
     for row in 0..6 {
-        assert!(decoder.pixel_data[row].len() >= 2, "Row {} should have at least 2 columns", row);
+        assert!(
+            decoder.pixel_data[row].len() >= 2,
+            "Row {} should have at least 2 columns",
+            row
+        );
         // 像素值为 color_index + 1
-        assert_eq!(decoder.pixel_data[row][0], 1, "Pixel at {},0 should be Color 0", row);
-        assert_eq!(decoder.pixel_data[row][1], 1, "Pixel at {},1 should be Color 0", row);
+        assert_eq!(
+            decoder.pixel_data[row][0], 1,
+            "Pixel at {},0 should be Color 0",
+            row
+        );
+        assert_eq!(
+            decoder.pixel_data[row][1], 1,
+            "Pixel at {},1 should be Color 0",
+            row
+        );
     }
 }
 

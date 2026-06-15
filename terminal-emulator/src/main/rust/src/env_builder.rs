@@ -18,7 +18,11 @@ use crate::utils::{LogPriority, android_log};
 ///
 /// # 返回
 /// 可直接用于 `clearenv()` + `putenv()` 的 `CString` 向量。
-pub fn build_termux_environment(cwd: &str, is_failsafe: bool, session_env_vars: &[String]) -> Vec<CString> {
+pub fn build_termux_environment(
+    cwd: &str,
+    is_failsafe: bool,
+    session_env_vars: &[String],
+) -> Vec<CString> {
     let mut env = HashMap::new();
 
     // ------------------------------------------------------------------
@@ -120,7 +124,10 @@ pub fn build_termux_environment(cwd: &str, is_failsafe: bool, session_env_vars: 
             found_ld_preload_path = Some(fixed_exec_lib.clone());
             android_log(
                 LogPriority::INFO,
-                &format!("[env_builder] Using fixed exec path for LD_PRELOAD: {}", fixed_exec_lib),
+                &format!(
+                    "[env_builder] Using fixed exec path for LD_PRELOAD: {}",
+                    fixed_exec_lib
+                ),
             );
         }
 

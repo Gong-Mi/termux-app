@@ -833,6 +833,22 @@ impl VulkanContext {
             }
 
             // caps.current_transform 与 display 方向一致时 current_extent 可靠。
+            // 但在 MIUI/HyperOS 上，current_transform 可能始终为 IDENTITY
+            // （因为 MIUI 在 HWC 层做旋转，不通知 Vulkan surface）。
+            // 使用 Java 端 DisplayListener 报告的旋转方向来修正 preTransform。
+            let display_rotation = crate::render_thread::get_display_rotation();
+            let pre_transform = if display_rotation == 1 {
+                ash_vk::SurfaceTransformFlagsKHR::ROTATE_90
+            } else if display_rotation == 3 {
+                ash_vk::SurfaceTransformFlagsKHR::ROTATE_270
+            } else {
+                caps.current_transform
+            };
+            android_log(
+                LogPriority::INFO,
+                &format!("Vulkan: display_rotation={}, current_transform={:?}, pre_transform={:?}",
+                    display_rotation, caps.current_transform, pre_transform),
+            );
             let actual_extent = if caps.current_extent.width != u32::MAX {
                 ash_vk::Extent2D {
                     width: caps.current_extent.width.max(64),
@@ -860,7 +876,7 @@ impl VulkanContext {
                 image_extent: self.extent,
                 image_array_layers: 1,
                 image_usage: ash_vk::ImageUsageFlags::COLOR_ATTACHMENT,
-                pre_transform: caps.current_transform,
+                pre_transform,
                 composite_alpha: ash_vk::CompositeAlphaFlagsKHR::OPAQUE,
                 present_mode,
                 clipped: ash_vk::TRUE,

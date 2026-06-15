@@ -1,0 +1,15 @@
+查看方式：
+  logcat -s "PTY_CHECKPOINT" -v raw
+  ──────────────────────────────────────────────────────────────────────────────────────────
+  ⚠️ 已知限制（重要）
+  由于彻底移除了 libtermux-exec.so 的 LD_PRELOAD，Rust 代码只在创建初始 session 时执行一次 s
+  hebang/linker 处理。之后 shell（bash）内部运行的命令（如 ls、gemini、node）不再经过 Rust P
+  TY 代码。
+  这意味着：
+  • ✅ 初始 shell（bash）能正常启动
+  • ⚠️ 在 bash 里直接运行 /data/data/.../bin/xxx 时，如果该文件是 ELF，可能会遇到 W^X 限制（
+    为没有 libtermux-exec.so 去拦截 execvp 并注入 linker）
+  如何缓解：
+  1. 如果你启动的是 $PREFIX/bin/login（而不是直接 bash），login 脚本通常会自己设置 LD_PRELOA
+     再 exec bash，这样从 bash 开始 libtermux-exec.so 会重新接管
+  2. 或者你可以手动在 ~/.bashrc 中设置 export LD_PRELOAD=$PREFIX/lib/libtermux-exec.so

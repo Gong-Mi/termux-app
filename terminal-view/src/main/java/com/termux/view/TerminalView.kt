@@ -69,6 +69,7 @@ class TerminalView @JvmOverloads constructor(
         selX1: Int, selY1: Int, selX2: Int, selY2: Int, selActive: Boolean
     )
     external fun nativeOnSizeChanged(width: Int, height: Int)
+    external fun nativeSetDisplayRotation(rotation: Int)
     external fun nativeSetFontSize(fontSize: Float)
     external fun nativeSetFontPath(path: String)
     external fun nativeGetFontMetrics(metrics: FloatArray)
@@ -893,6 +894,10 @@ class TerminalView @JvmOverloads constructor(
         } catch (e: Exception) {
             Log.w("TerminalView-Surface", "notifyConfigurationChanged: onConfigurationChanged failed: ${e.message}")
         }
+        // Notify native layer of the current display rotation for Vulkan preTransform.
+        val wm = context.getSystemService(android.content.Context.WINDOW_SERVICE) as? android.view.WindowManager
+        val rotation = wm?.defaultDisplay?.rotation ?: 0
+        nativeSetDisplayRotation(rotation)
         // On MIUI/HyperOS, requestLayout() + onConfigurationChanged may not trigger
         // onSizeChanged because the view dimensions remain the same (MIUI uses surface
         // transforms instead of re-laying out the view). Force a direct size notification

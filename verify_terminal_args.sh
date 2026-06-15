@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/data/data/com.termux/files/usr/bin/bash
 # verify_terminal_args.sh
 set -euo pipefail
 
@@ -35,14 +35,16 @@ adb shell chmod 755 "$REMOTE_TMP"
 # 4. 执行多组“极限”参数测试
 echo "[*] Running Argument Interpretation Tests..."
 
+# 预先将程序拷贝到 App 私有目录，解决 run-as 对 /data/local/tmp 的权限限制
+# 使用更加鲁棒的引号处理
+adb shell "run-as $PACKAGE sh -c 'cp $REMOTE_TMP ./verify_args_test && chmod 700 ./verify_args_test'"
+
 run_test() {
     local title="$1"
     shift
     echo -e "\n>>> TEST: $title"
-    # 使用 adb shell run-as 模拟在 Termux 进程空间内执行
-    # 注意：这里我们故意不使用双引号包裹所有的参数，
-    # 模拟从 Java/Rust 直接调用 execve 的效果。
-    adb shell run-as "$PACKAGE" "$REMOTE_TMP" "$@"
+    # 使用 ./verify_args_test 执行私有目录下的副本
+    adb shell run-as "$PACKAGE" ./verify_args_test "$@"
 }
 
 # 测试 A：普通空格

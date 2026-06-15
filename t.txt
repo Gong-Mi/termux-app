@@ -1,14 +1,11 @@
-/data/data/com.termux/files/usr/bin/coreutils: invalid option -- 'f'
-Try '/data/data/com.termux/files/usr/bin/coreutils --help' for more information.
-/data/data/com.termux/files/usr/bin/coreutils: invalid option -- 'p'
-Try '/data/data/com.termux/files/usr/bin/coreutils --help' for more information.
-Try '/data/data/com.termux/files/usr/bin/coreutils --help' for more information.
-~ $ id
-Try '/data/data/com.termux/files/usr/bin/coreutils --help' for more information.
-~ $ id
-Try '/data/data/com.termux/files/usr/bin/coreutils --help' for more information.
-~ $ ls
-Try '/data/data/com.termux/files/usr/bin/coreutils --help' for more information.
+su
+Accessed denied
+selfchecker: checker "remold.linker64" detects sig5
+
+Trap                       su
+~ $ su
+Accessed denied
+selfchecker: checker "remold.linker64" detects sig5
+
+Trap                       su
 ~ $
-
-

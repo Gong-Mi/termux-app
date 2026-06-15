@@ -5,7 +5,6 @@ pub mod scalar;
 // pub mod sve2;
 
 use crate::pixel::Pixel8;
-use crate::cpu_features;
 
 /// Convert RGBA8 pixels to packed 10‑bit format.
 /// Dynamically dispatches to SVE2 implementation when available.

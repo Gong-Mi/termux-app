@@ -53,9 +53,8 @@ mod tests {
     #[cfg(target_os = "android")]
     fn analyze_exceptions_android() {
         // Path is relative to the project root; adjust if needed for CI.
-        let db_path = PathBuf::from(
-            "terminal-emulator/src/main/rust/tests/calibration_production.db",
-        );
+        let db_path =
+            PathBuf::from("terminal-emulator/src/main/rust/tests/calibration_production.db");
         // In case the file is missing, the test will fail with a clear error.
         run_analysis(&db_path).expect("Failed to analyze glyph exceptions on Android");
     }
@@ -64,8 +63,6 @@ mod tests {
     #[test]
     #[cfg(not(target_os = "android"))]
     fn analyze_exceptions_skip() {
-        println!(
-            "Skipping analyze_exceptions test: only relevant on Android local environment."
-        );
+        println!("Skipping analyze_exceptions test: only relevant on Android local environment.");
     }
 }

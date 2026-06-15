@@ -328,6 +328,21 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeOnSizeChanged(
     render_thread::notify_size_change(width as u32, height as u32);
 }
 
+/// 设置当前显示旋转方向 (from Surface.ROTATION_*)
+/// 用于 Vulkan swapchain preTransform，解决 MIUI 上 currentTransform 始终为 IDENTITY 的问题
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetDisplayRotation(
+    _env: JNIEnv,
+    _obj: JObject,
+    rotation: jint,
+) {
+    android_log(
+        LogPriority::INFO,
+        &format!("nativeSetDisplayRotation: {}", rotation),
+    );
+    render_thread::set_display_rotation(rotation);
+}
+
 /// 设置引擎指针
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetEnginePointer(

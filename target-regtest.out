@@ -1,0 +1,60 @@
+REGTEST_START
+uid=uid=10693(u0_a693) gid=10693(u0_a693) groups=10693(u0_a693) context=u:r:magisk:s0
+PREFIX=/data/data/com.termux/files/usr
+HOME=/data/data/com.termux/files/home
+PATH=/data/data/com.termux/files/usr/bin:/system/bin:/system/xbin
+LD_PRELOAD=/data/data/com.termux/files/usr/lib/libtermux-exec.so
+/data/data/com.termux/files/usr/bin/bash
+/data/data/com.termux/files/usr/bin/sh
+/data/data/com.termux/files/usr/bin/env
+/data/data/com.termux/files/usr/bin/pkg
+/data/data/com.termux/files/usr/bin/apt
+/data/data/com.termux/files/usr/bin/python
+
+## bash_login
+bash-login-ok
+PASS:bash_login
+
+## dash_sh
+sh-ok
+PASS:dash_sh
+
+## system_sh
+system-sh-ok
+PASS:system_sh
+
+## toybox
+PASS:toybox
+
+## env_exec
+PASS:env_exec
+
+## nested_bash
+nested-sh-ok
+nested-system-sh-ok
+PASS:nested_bash
+
+## python_child
+python-ok
+child-sh-ok
+system-child-ok
+PASS:python_child
+
+## shebang
+shebang-ok
+shebang-system-child-ok
+PASS:shebang
+
+## env_shebang
+env-shebang-python-ok
+PASS:env_shebang
+
+## apt_version
+apt 2.8.1 (aarch64)
+PASS:apt_version
+
+## pkg_help
+Unknown command: '--help' (run 'pkg help' for usage information)
+FAIL:pkg_help rc=1
+REGTEST_FAIL_COUNT=1
+REGTEST_END
