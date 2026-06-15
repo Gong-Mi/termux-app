@@ -57,26 +57,29 @@ public final class TermuxTerminalViewClient implements TerminalViewClient {
 
     @Override
     public float onScale(float scale) {
-        // Accumulate the relative scale across the entire gesture.
+        // Accumulate relative scale across the gesture.
         mAccumulatedScale *= scale;
 
-        // Compute target font size from the accumulated scale.
-        int currentFontSize = mActivity.mPreferences.getFontSize();
-        int newFontSize = Math.round((currentFontSize * mAccumulatedScale) / 2.0f) * 2;
-        if (newFontSize < 6) newFontSize = 6;
-        if (newFontSize > 64) newFontSize = 64;
-        newFontSize = mActivity.mPreferences.setFontSize(newFontSize);
-        if (newFontSize != currentFontSize) {
-            Log.i(LOG_TAG, "Pinch zoom: scale=" + mAccumulatedScale + ", fontSize=" + currentFontSize + " -> " + newFontSize);
-            mActivity.getTerminalView().setTextSize(newFontSize);
+        // When accumulated scale crosses a threshold, bump font size in the right direction.
+        if (Math.abs(mAccumulatedScale - 1.0f) > 0.12f) {
+            int currentFontSize = mActivity.mPreferences.getFontSize();
+            int newFontSize = currentFontSize + (mAccumulatedScale > 1.0f ? 2 : -2);
+            if (newFontSize < 6) newFontSize = 6;
+            if (newFontSize > 64) newFontSize = 64;
+            newFontSize = mActivity.mPreferences.setFontSize(newFontSize);
+            if (newFontSize != currentFontSize) {
+                Log.i(LOG_TAG, "Pinch zoom: dir=" + (mAccumulatedScale > 1.0f ? "+" : "-")
+                    + ", fontSize=" + currentFontSize + " -> " + newFontSize);
+                mActivity.getTerminalView().setTextSize(newFontSize);
+            }
+            // Reset accumulator after each committed change.
+            mAccumulatedScale = 1.0f;
         }
-        // Return 1.0 to prevent TerminalView from applying additional visual scaling.
         return 1.0f;
     }
 
     @Override
     public float onScaleEnd(float scale) {
-        // Reset accumulator for next gesture.
         mAccumulatedScale = 1.0f;
         return 1.0f;
     }
