@@ -10,7 +10,6 @@ protocol = "sparse"
 rustflags = [
     "-C", "link-arg=-Wl,-z,max-page-size=16384",
     "-C", "link-arg=-L/data/data/com.termux/files/usr/lib",
-    "-C", "link-arg=--sysroot=/data/data/com.termux/files",
     "-L", "native=./.cargo/linker-hacks",
     "-l", "c++_shared",
 ]
@@ -23,7 +22,6 @@ linker = "/data/user/0/com.termux/files/home/termux-app/terminal-emulator/src/ma
 rustflags = [
     "-C", "link-arg=-Wl,-z,max-page-size=16384",
     "-C", "link-arg=-L/data/data/com.termux/files/usr/lib",
-    "-C", "link-arg=--sysroot=/data/data/com.termux/files",
     "-C", "target-feature=+neon",
     "-L", "native=./.cargo/linker-hacks",
     "-l", "c++_shared",
