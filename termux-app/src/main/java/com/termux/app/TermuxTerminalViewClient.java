@@ -34,6 +34,9 @@ public final class TermuxTerminalViewClient implements TerminalViewClient {
     /** Keeping track of the special keys acting as Ctrl and Fn for the soft keyboard and other hardware keys. */
     boolean mVirtualControlKeyDown, mVirtualFnKeyDown;
 
+    /** Accumulated pinch scale across MOVE events in the current gesture. */
+    private float mAccumulatedScale = 1.0f;
+
     private static final String LOG_TAG = "TermuxTerminalViewClient";
 
     public TermuxTerminalViewClient(@NonNull TermuxActivity activity, TermuxTerminalSessionActivityClient termuxTerminalSessionActivityClient) {
@@ -54,22 +57,27 @@ public final class TermuxTerminalViewClient implements TerminalViewClient {
 
     @Override
     public float onScale(float scale) {
-        // Directly commit font size change on every scale event.
-        // No visual scale layer — each gesture event triggers a real resize/reflow.
+        // Accumulate the relative scale across the entire gesture.
+        mAccumulatedScale *= scale;
+
+        // Compute target font size from the accumulated scale.
         int currentFontSize = mActivity.mPreferences.getFontSize();
-        int newFontSize = Math.round((currentFontSize * scale) / 2.0f) * 2;
+        int newFontSize = Math.round((currentFontSize * mAccumulatedScale) / 2.0f) * 2;
         if (newFontSize < 6) newFontSize = 6;
         if (newFontSize > 64) newFontSize = 64;
         newFontSize = mActivity.mPreferences.setFontSize(newFontSize);
         if (newFontSize != currentFontSize) {
+            Log.i(LOG_TAG, "Pinch zoom: scale=" + mAccumulatedScale + ", fontSize=" + currentFontSize + " -> " + newFontSize);
             mActivity.getTerminalView().setTextSize(newFontSize);
         }
+        // Return 1.0 to prevent TerminalView from applying additional visual scaling.
         return 1.0f;
     }
 
     @Override
     public float onScaleEnd(float scale) {
-        // No visual scale to commit — already applied during gesture.
+        // Reset accumulator for next gesture.
+        mAccumulatedScale = 1.0f;
         return 1.0f;
     }
 

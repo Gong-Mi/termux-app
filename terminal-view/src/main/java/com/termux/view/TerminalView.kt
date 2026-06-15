@@ -247,7 +247,9 @@ class TerminalView @JvmOverloads constructor(
 
             override fun onScale(focusX: Float, focusY: Float, scale: Float): Boolean {
                 if (mEmulator == null || isSelectingText()) return true
-                mScaleFactor = mClient?.onScale(mScaleFactor) ?: mScaleFactor
+                // No visual scale layer: pass the raw gesture scale directly to the client,
+                // which commits font size + reflow on each MOVE event.
+                mScaleFactor = mClient?.onScale(scale) ?: mScaleFactor
                 updateRenderParamsToRust()
                 invalidate()
                 return true
