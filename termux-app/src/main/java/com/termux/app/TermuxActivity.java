@@ -235,6 +235,10 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
                     if (newRotation != mLastRotation) {
                         mLastRotation = newRotation;
                         Log.i(TermuxConstants.LOG_TAG, "Display rotation changed: " + mLastRotation + " -> " + newRotation);
+                        // Directly signal TerminalView to update its layout, swapchain, and
+                        // terminal dimensions. We cannot rely solely on requestLayout() because
+                        // the View dimensions may not change (MIUI applies surface transforms),
+                        // and onSizeChanged would not fire.
                         if (mTerminalView != null) {
                             mTerminalView.requestLayout();
                             mTerminalView.notifyConfigurationChanged();

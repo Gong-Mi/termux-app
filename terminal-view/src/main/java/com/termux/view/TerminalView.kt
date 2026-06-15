@@ -893,6 +893,18 @@ class TerminalView @JvmOverloads constructor(
         } catch (e: Exception) {
             Log.w("TerminalView-Surface", "notifyConfigurationChanged: onConfigurationChanged failed: ${e.message}")
         }
+        // On MIUI/HyperOS, requestLayout() + onConfigurationChanged may not trigger
+        // onSizeChanged because the view dimensions remain the same (MIUI uses surface
+        // transforms instead of re-laying out the view). Force a direct size notification
+        // so the Vulkan swapchain and terminal dimensions are always updated.
+        val vw = width
+        val vh = height
+        if (vw > 0 && vh > 0) {
+            mLastSurfaceWidth = vw
+            mLastSurfaceHeight = vh
+            nativeOnSizeChanged(vw, vh)
+            updateSize()
+        }
     }
 
     private fun updateSizeInternal() {
