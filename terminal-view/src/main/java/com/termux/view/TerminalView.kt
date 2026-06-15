@@ -861,6 +861,10 @@ class TerminalView @JvmOverloads constructor(
         if (w > 0 && h > 0) {
             holder.setFixedSize(w, h)
         }
+        // Fallback: notify native of potential size change directly.
+        // On Android 16 (API 36), surfaceChanged may not fire during rotation,
+        // so the Vulkan swapchain would never be resized.
+        nativeOnSizeChanged(w, h)
         updateSize()
     }
 
