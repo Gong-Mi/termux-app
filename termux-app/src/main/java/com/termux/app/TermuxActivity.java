@@ -28,6 +28,8 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowManager;
+import android.hardware.display.DisplayManager;
+import android.view.Display;
 import android.view.autofill.AutofillManager;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
@@ -113,6 +115,7 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
      * The {@link TerminalView} shown in  {@link TermuxActivity} that displays the terminal.
      */
     TerminalView mTerminalView;
+    DisplayManager.DisplayListener mDisplayRotationListener;
 
     /**
      * The {@link TerminalViewClient} interface implementation to allow for communication between
@@ -216,6 +219,33 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
         mTerminalView.setTextSize(mPreferences.getFontSize());
 
         mTermuxTerminalSessionActivityClient.onCreate();
+
+        // MIUI/HyperOS workaround: onConfigurationChanged is NOT called during rotation
+        // due to MIUI's "Allow fixed rotation for not collecting" mechanism.
+        // Use DisplayListener to detect rotation directly.
+        DisplayManager dm = (DisplayManager) getSystemService(DISPLAY_SERVICE);
+        if (dm != null) {
+            mDisplayRotationListener = new DisplayManager.DisplayListener() {
+                private int mLastRotation = getDisplay().getRotation();
+
+                @Override
+                public void onDisplayChanged(int displayId) {
+                    if (displayId != Display.DEFAULT_DISPLAY) return;
+                    int newRotation = TermuxActivity.this.getDisplay().getRotation();
+                    if (newRotation != mLastRotation) {
+                        mLastRotation = newRotation;
+                        Log.i(TermuxConstants.LOG_TAG, "Display rotation changed: " + mLastRotation + " -> " + newRotation);
+                        if (mTerminalView != null) {
+                            mTerminalView.requestLayout();
+                            mTerminalView.notifyConfigurationChanged();
+                        }
+                    }
+                }
+                @Override public void onDisplayAdded(int id) {}
+                @Override public void onDisplayRemoved(int id) {}
+            };
+            dm.registerDisplayListener(mDisplayRotationListener, null);
+        }
 
         setTerminalToolbarView(savedInstanceState);
 
@@ -387,6 +417,12 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     @Override
     public void onDestroy() {
         super.onDestroy();
+
+        if (mDisplayRotationListener != null) {
+            DisplayManager dm = (DisplayManager) getSystemService(DISPLAY_SERVICE);
+            if (dm != null) dm.unregisterDisplayListener(mDisplayRotationListener);
+            mDisplayRotationListener = null;
+        }
 
         if (mTermuxService != null) {
             // Do not leave service and session clients with references to activity.
