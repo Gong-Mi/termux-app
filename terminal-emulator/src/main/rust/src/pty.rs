@@ -277,15 +277,19 @@ pub fn create_subprocess_with_data(
                 // Keep exec interception, but only advertise it when the
                 // library is actually present. Preserve an explicitly supplied
                 // LD_PRELOAD rather than overwriting it.
-                let termux_exec_path = format!("{}/lib/libtermux-exec.so", termux_prefix);
+                let exec_path_string = format!("{}/lib/libtermux-exec.so", termux_prefix);
+                let exec_path = std::path::Path::new(&exec_path_string);
+                let termux_exec_path = exec_path
+                    .canonicalize()
+                    .unwrap_or_else(|_| exec_path.to_path_buf())
+                    .to_string_lossy()
+                    .into_owned();
                 let has_nonempty_ld_preload = final_envp.iter().any(|s| {
                     s.strip_prefix("LD_PRELOAD=")
                         .map(|value| !value.is_empty())
                         .unwrap_or(false)
                 });
-                if !has_nonempty_ld_preload
-                    && std::path::Path::new(&termux_exec_path).exists()
-                {
+                if !has_nonempty_ld_preload {
                     if let Some(pos) = final_envp.iter().position(|s| s.starts_with("LD_PRELOAD=")) {
                         final_envp[pos] = format!("LD_PRELOAD={}", termux_exec_path);
                     } else {
