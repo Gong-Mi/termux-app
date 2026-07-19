@@ -37,7 +37,7 @@ class RustAndroidPlugin implements Plugin<Project> {
                     // 指定输出文件
                     outputs.file("${cargoTargetDir}/${rustArch}/release/lib${extension.libName}.so")
 
-                    commandLine 'cargo', 'ndk', '-t', abi, '-P', extension.minSdkVersion.toString(), 'build', '--release'
+                    commandLine 'cargo', 'ndk', '-t', abi, '--platform', extension.minSdkVersion.toString(), 'build', '--release'
 
                     doFirst {
                         println "Compiling Rust for ABI: ${abi}..."
