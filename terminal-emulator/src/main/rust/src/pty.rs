@@ -251,7 +251,6 @@ pub fn create_subprocess_with_data(
 
                 // 1. 强制纠正核心变量
                 let termux_bin = format!("{}/bin", termux_prefix);
-                let termux_lib = format!("{}/lib", termux_prefix);
 
                 // PATH 清洗与注入
                 if let Some(pos) = final_envp.iter().position(|s| s.starts_with("PATH=")) {
@@ -270,16 +269,18 @@ pub fn create_subprocess_with_data(
                     final_envp.push(format!("PATH={}:/system/bin:/system/xbin", termux_bin));
                 }
 
-                // LD_LIBRARY_PATH 强力注入
-                if let Some(pos) = final_envp.iter().position(|s| s.starts_with("LD_LIBRARY_PATH=")) {
-                    final_envp[pos] = format!("LD_LIBRARY_PATH={}", termux_lib);
-                } else {
-                    final_envp.push(format!("LD_LIBRARY_PATH={}", termux_lib));
-                }
+                // Do not force LD_LIBRARY_PATH for Termux child processes.
+                // Modern Termux binaries use DT_RUNPATH; injecting $PREFIX/lib
+                // globally can override Android/Termux library resolution and
+                // break APT methods, curl, Python, and other subprocesses.
 
-                // 2. LD_PRELOAD
+                // Keep exec interception, but only advertise it when the
+                // library is actually present. Preserve an explicitly supplied
+                // LD_PRELOAD rather than overwriting it.
                 let termux_exec_path = format!("{}/lib/libtermux-exec.so", termux_prefix);
-                if !final_envp.iter().any(|s| s.starts_with("LD_PRELOAD=")) {
+                if !final_envp.iter().any(|s| s.starts_with("LD_PRELOAD="))
+                    && std::path::Path::new(&termux_exec_path).exists()
+                {
                     final_envp.push(format!("LD_PRELOAD={}", termux_exec_path));
                 }
 
