@@ -1,8 +1,8 @@
+use crate::engine::state::ScreenState;
+use crate::terminal::colors::*;
+use crate::terminal::style::*;
 /// SGR (Select Graphic Rendition) 颜色处理
 use crate::vte_parser::Params;
-use crate::terminal::style::*;
-use crate::terminal::colors::*;
-use crate::engine::state::ScreenState;
 
 impl ScreenState {
     pub fn handle_sgr(&mut self, params: &Params) {
@@ -32,7 +32,10 @@ impl ScreenState {
                 8 => self.effect |= EFFECT_INVISIBLE,
                 9 => self.effect |= EFFECT_STRIKETHROUGH,
                 21 => self.effect |= EFFECT_UNDERLINE,
-                22 => { self.effect &= !EFFECT_BOLD; self.effect &= !EFFECT_DIM; }
+                22 => {
+                    self.effect &= !EFFECT_BOLD;
+                    self.effect &= !EFFECT_DIM;
+                }
                 23 => self.effect &= !EFFECT_ITALIC,
                 24 => self.effect &= !EFFECT_UNDERLINE,
                 25 => self.effect &= !EFFECT_BLINK,
@@ -129,7 +132,7 @@ mod tests {
         // CSI 38;1;32m
         let params = create_params(&[38, 1, 32]);
         state.handle_sgr(&params);
-        
+
         // 期望：38 因为不符合真彩色/256色格式被跳过，1 应该被解析为加粗，32 为绿色
         assert_ne!(state.effect & EFFECT_BOLD, 0, "Bold flag should be set");
         assert_eq!(state.fore_color, 2, "Foreground should be green (32-30)");
@@ -142,7 +145,7 @@ mod tests {
         // 这是一个标准的多参数序列
         let params = create_params(&[1, 38, 5, 42, 4]);
         state.handle_sgr(&params);
-        
+
         assert_ne!(state.effect & EFFECT_BOLD, 0, "Should be bold");
         assert_eq!(state.fore_color, 42, "Should be color 42");
         assert_ne!(state.effect & EFFECT_UNDERLINE, 0, "Should be underlined");

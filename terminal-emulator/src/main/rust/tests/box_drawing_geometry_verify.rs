@@ -17,10 +17,18 @@ mod tests {
     #[test]
     fn verify_box_drawing_connectivity() {
         // 定义一个标准的单元格 (例如 10x20 像素)
-        let cell = Cell { x: 100.0, y_top: 200.0, w: 10.0, h: 20.0 };
+        let cell = Cell {
+            x: 100.0,
+            y_top: 200.0,
+            w: 10.0,
+            h: 20.0,
+        };
         let (cx, cy) = cell.center();
 
-        println!("Cell Bounds: x={}, y_top={}, w={}, h={}", cell.x, cell.y_top, cell.w, cell.h);
+        println!(
+            "Cell Bounds: x={}, y_top={}, w={}, h={}",
+            cell.x, cell.y_top, cell.w, cell.h
+        );
         println!("Expected Center (Connection Point): cx={}, cy={}", cx, cy);
 
         // 验证 0x256D (╭) 的路径点
@@ -45,7 +53,10 @@ mod tests {
         // 它必须正好穿过中心线 cx
         let vertical_line_x = cell.x + cell.w / 2.0;
         assert_eq!(vertical_line_x, cx, "垂直线必须与中心 X 轴重合");
-        
-        println!("SUCCESS: All box drawing elements converge at ({}, {})", cx, cy);
+
+        println!(
+            "SUCCESS: All box drawing elements converge at ({}, {})",
+            cx, cy
+        );
     }
 }

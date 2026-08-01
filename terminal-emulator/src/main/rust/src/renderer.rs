@@ -1,9 +1,11 @@
 #![allow(dead_code)]
-use skia_safe::{Canvas, Paint, Color, Font, Rect, PaintStyle, FontMgr, FontStyle, TextBlob, TextBlobBuilder};
-use std::sync::Arc;
-use std::collections::HashMap;
-use crate::terminal::style::*;
 use crate::terminal::colors::{COLOR_INDEX_CURSOR, NUM_INDEXED_COLORS};
+use crate::terminal::style::*;
+use skia_safe::{
+    Canvas, Color, Font, FontMgr, FontStyle, Paint, PaintStyle, Rect, TextBlob, TextBlobBuilder,
+};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 /// 带有代际标记的缓存实体，用于实现 LRU-Gen (分代缓存)
 pub struct GenerationalEntry<T> {
@@ -46,7 +48,11 @@ impl RenderFrame {
         top_row: i32,
     ) -> Self {
         let state = &engine.state;
-        let screen = if state.use_alternate_buffer { &state.alt_screen } else { &state.main_screen };
+        let screen = if state.use_alternate_buffer {
+            &state.alt_screen
+        } else {
+            &state.main_screen
+        };
 
         let mut row_data = Vec::with_capacity(rows);
         let start_row = -(screen.active_transcript_rows as i32);
@@ -74,7 +80,9 @@ impl RenderFrame {
             cursor_y: state.cursor.y,
             cursor_style: state.cursor.style,
             cursor_enabled: state.cursor.should_be_visible(state.cursor_enabled),
-            reverse_video: state.modes.is_enabled(crate::terminal::modes::DECSET_BIT_REVERSE_VIDEO),
+            reverse_video: state
+                .modes
+                .is_enabled(crate::terminal::modes::DECSET_BIT_REVERSE_VIDEO),
             top_row,
             row_data,
         }
@@ -128,12 +136,29 @@ impl FontCache {
             })
         });
 
-        let tf_mono = custom_typeface.clone().or_else(|| font_mgr.match_family_style("monospace", FontStyle::normal())).expect("monospace font");
-        let tf_bold = custom_typeface.as_ref().map(|tf| tf.clone()).or_else(|| font_mgr.match_family_style("monospace", FontStyle::bold())).unwrap_or_else(|| tf_mono.clone());
-        let tf_italic = font_mgr.match_family_style("monospace", FontStyle::italic()).unwrap_or_else(|| tf_mono.clone());
-        let tf_bold_italic = font_mgr.match_family_style("monospace", FontStyle::bold_italic()).unwrap_or_else(|| tf_mono.clone());
-        let tf_fallback = custom_typeface.clone().or_else(|| font_mgr.match_family_style("sans-serif", FontStyle::normal())).unwrap_or_else(|| tf_mono.clone());
-        let tf_fallback_bold = custom_typeface.clone().or_else(|| font_mgr.match_family_style("sans-serif", FontStyle::bold())).unwrap_or_else(|| tf_mono.clone());
+        let tf_mono = custom_typeface
+            .clone()
+            .or_else(|| font_mgr.match_family_style("monospace", FontStyle::normal()))
+            .expect("monospace font");
+        let tf_bold = custom_typeface
+            .as_ref()
+            .map(|tf| tf.clone())
+            .or_else(|| font_mgr.match_family_style("monospace", FontStyle::bold()))
+            .unwrap_or_else(|| tf_mono.clone());
+        let tf_italic = font_mgr
+            .match_family_style("monospace", FontStyle::italic())
+            .unwrap_or_else(|| tf_mono.clone());
+        let tf_bold_italic = font_mgr
+            .match_family_style("monospace", FontStyle::bold_italic())
+            .unwrap_or_else(|| tf_mono.clone());
+        let tf_fallback = custom_typeface
+            .clone()
+            .or_else(|| font_mgr.match_family_style("sans-serif", FontStyle::normal()))
+            .unwrap_or_else(|| tf_mono.clone());
+        let tf_fallback_bold = custom_typeface
+            .clone()
+            .or_else(|| font_mgr.match_family_style("sans-serif", FontStyle::bold()))
+            .unwrap_or_else(|| tf_mono.clone());
 
         let build_font = |tf: &skia_safe::Typeface| {
             let mut f = Font::new(tf.clone(), Some(font_size));
@@ -201,14 +226,22 @@ impl FontCache {
 
         let primary_font = self.get_font_by_index(primary_type);
         let mut glyphs = [0u16; 1];
-        primary_font.typeface().unichars_to_glyphs(&[ucs as i32], &mut glyphs);
-        if glyphs[0] != 0 { return (primary_type, false); }
+        primary_font
+            .typeface()
+            .unichars_to_glyphs(&[ucs as i32], &mut glyphs);
+        if glyphs[0] != 0 {
+            return (primary_type, false);
+        }
 
         // 尝试 fallback
         let fallback_type = if bold { 5 } else { 4 }; // FallbackBold or Fallback
         let fallback_font = self.get_font_by_index(fallback_type);
-        fallback_font.typeface().unichars_to_glyphs(&[ucs as i32], &mut glyphs);
-        if glyphs[0] != 0 { return (fallback_type, false); }
+        fallback_font
+            .typeface()
+            .unichars_to_glyphs(&[ucs as i32], &mut glyphs);
+        if glyphs[0] != 0 {
+            return (fallback_type, false);
+        }
 
         // 需要动态匹配（这种情况较少，标记为 fallback）
         (fallback_type, true)
@@ -216,12 +249,16 @@ impl FontCache {
 
     fn get_font_for_char(&self, ch: char, bold: bool, italic: bool) -> (Font, bool) {
         let ucs = ch as u32;
-        
+
         // 1. 检查主字体
         let primary = self.get_font(bold, italic, false);
         let mut glyphs = [0u16; 1];
-        primary.typeface().unichars_to_glyphs(&[ucs as i32], &mut glyphs);
-        if glyphs[0] != 0 { return (primary.clone(), false); }
+        primary
+            .typeface()
+            .unichars_to_glyphs(&[ucs as i32], &mut glyphs);
+        if glyphs[0] != 0 {
+            return (primary.clone(), false);
+        }
 
         // 2. 检查动态缓存
         {
@@ -232,25 +269,46 @@ impl FontCache {
         }
 
         // 3. 检查基础 fallback (sans-serif)
-        let fallback = if bold { &self.font_fallback_bold } else { &self.font_fallback };
-        fallback.typeface().unichars_to_glyphs(&[ucs as i32], &mut glyphs);
-        if glyphs[0] != 0 { return (fallback.clone(), true); }
+        let fallback = if bold {
+            &self.font_fallback_bold
+        } else {
+            &self.font_fallback
+        };
+        fallback
+            .typeface()
+            .unichars_to_glyphs(&[ucs as i32], &mut glyphs);
+        if glyphs[0] != 0 {
+            return (fallback.clone(), true);
+        }
 
         // 4. 系统动态匹配 (核心：不再硬编码名字)
         let style = if bold {
-            if italic { FontStyle::bold_italic() } else { FontStyle::bold() }
+            if italic {
+                FontStyle::bold_italic()
+            } else {
+                FontStyle::bold()
+            }
         } else {
-            if italic { FontStyle::italic() } else { FontStyle::normal() }
+            if italic {
+                FontStyle::italic()
+            } else {
+                FontStyle::normal()
+            }
         };
-        
-        if let Some(tf) = self.font_mgr.match_family_style_character("monospace", style, &[], ucs as i32) {
+
+        if let Some(tf) =
+            self.font_mgr
+                .match_family_style_character("monospace", style, &[], ucs as i32)
+        {
             let mut matched_font = Font::new(tf, Some(self.font_mono.size()));
             matched_font.set_edging(skia_safe::font::Edging::SubpixelAntiAlias);
             matched_font.set_subpixel(true);
-            
+
             // 写入缓存
             let mut cache = self.dynamic_fonts.write().unwrap();
-            if cache.len() > 500 { cache.clear(); }
+            if cache.len() > 500 {
+                cache.clear();
+            }
             cache.insert(ucs, matched_font.clone());
             return (matched_font, true);
         }
@@ -294,7 +352,9 @@ impl GlyphCache {
             for i in 0..4 {
                 if self.typeface_ids[i] == tf_id {
                     let g = self.ascii[i][ucs as usize];
-                    if g != 0 { return g; }
+                    if g != 0 {
+                        return g;
+                    }
                     let mut glyphs = [0u16; 1];
                     tf.unichars_to_glyphs(&[ucs as i32], &mut glyphs);
                     self.ascii[i][ucs as usize] = glyphs[0];
@@ -304,10 +364,14 @@ impl GlyphCache {
         }
 
         let key = ((tf_id as u64) << 32) | (ucs as u64);
-        if let Some(&g) = self.map.get(&key) { return g; }
+        if let Some(&g) = self.map.get(&key) {
+            return g;
+        }
         let mut glyphs = [0u16; 1];
         tf.unichars_to_glyphs(&[ucs as i32], &mut glyphs);
-        if self.map.len() > 8192 { self.map.clear(); }
+        if self.map.len() > 8192 {
+            self.map.clear();
+        }
         self.map.insert(key, glyphs[0]);
         glyphs[0]
     }
@@ -347,9 +411,9 @@ pub struct TerminalRenderer {
     recorder: skia_safe::PictureRecorder,
     glyph_cache: GlyphCache,
     // === 优化：预分配缓冲区，避免热路径中的分配 ===
-    text_blob_builder: TextBlobBuilder,           // 重用 TextBlobBuilder
-    group_chars_buf: Vec<(char, f32)>,           // 字符分组缓冲区
-    row_selection_buf: Vec<bool>,                // 选区缓冲区
+    text_blob_builder: TextBlobBuilder, // 重用 TextBlobBuilder
+    group_chars_buf: Vec<(char, f32)>,  // 字符分组缓冲区
+    row_selection_buf: Vec<bool>,       // 选区缓冲区
     // === TextBlob 缓存：避免每帧重新创建相同的 blob ===
     text_blob_cache: HashMap<u64, GenerationalEntry<TextBlob>>, // (hash, style) -> TextBlob
     pub current_generation: u32,
@@ -406,7 +470,13 @@ impl TerminalRenderer {
     }
 
     pub fn set_selection(&mut self, x1: i32, y1: i32, x2: i32, y2: i32) {
-        self.selection = SelectionBounds { x1, y1, x2, y2, active: true };
+        self.selection = SelectionBounds {
+            x1,
+            y1,
+            x2,
+            y2,
+            active: true,
+        };
     }
 
     pub fn clear_selection(&mut self) {
@@ -419,13 +489,27 @@ impl TerminalRenderer {
 
     #[inline]
     pub fn is_cell_selected(&self, col: i32, row: i32) -> bool {
-        if !self.selection.active { return false; }
+        if !self.selection.active {
+            return false;
+        }
         let s = &self.selection;
-        let (sy, sx, ey, ex) = if s.y1 < s.y2 || (s.y1 == s.y2 && s.x1 <= s.x2) { (s.y1, s.x1, s.y2, s.x2) } else { (s.y2, s.x2, s.y1, s.x1) };
-        if row < sy || row > ey { return false; }
-        if row == sy && row == ey { return col >= sx && col <= ex; }
-        if row == sy { return col >= sx; }
-        if row == ey { return col <= ex; }
+        let (sy, sx, ey, ex) = if s.y1 < s.y2 || (s.y1 == s.y2 && s.x1 <= s.x2) {
+            (s.y1, s.x1, s.y2, s.x2)
+        } else {
+            (s.y2, s.x2, s.y1, s.x1)
+        };
+        if row < sy || row > ey {
+            return false;
+        }
+        if row == sy && row == ey {
+            return col >= sx && col <= ex;
+        }
+        if row == sy {
+            return col >= sx;
+        }
+        if row == ey {
+            return col <= ex;
+        }
         true
     }
 
@@ -438,7 +522,9 @@ impl TerminalRenderer {
     }
 
     #[inline]
-    pub fn reverse_colors(fg: usize, bg: usize) -> (usize, usize) { (bg, fg) }
+    pub fn reverse_colors(fg: usize, bg: usize) -> (usize, usize) {
+        (bg, fg)
+    }
 
     /// 推进代际，通常在渲染一定帧数后调用
     pub fn advance_generation(&mut self) {
@@ -449,12 +535,17 @@ impl TerminalRenderer {
     pub fn evict_cold_assets(&mut self, max_age: u32) {
         let current = self.current_generation;
         // 移除那些太久没被访问的数据 (代差超过 max_age)
-        self.text_blob_cache.retain(|_, entry| {
-            current.wrapping_sub(entry.last_generation) <= max_age
-        });
+        self.text_blob_cache
+            .retain(|_, entry| current.wrapping_sub(entry.last_generation) <= max_age);
     }
 
-    pub fn draw_frame(&mut self, canvas: &Canvas, frame: &RenderFrame, _scale: f32, _scroll_offset: f32) {
+    pub fn draw_frame(
+        &mut self,
+        canvas: &Canvas,
+        frame: &RenderFrame,
+        _scale: f32,
+        _scroll_offset: f32,
+    ) {
         let start_time = std::time::Instant::now();
         // 定期推进代际 (例如每 60 帧推进一代)
         self.frame_count = self.frame_count.wrapping_add(1);
@@ -473,7 +564,9 @@ impl TerminalRenderer {
         canvas.reset_matrix();
         canvas.clear(Color::new(palette[257]));
 
-        if self.row_cache.len() < frame.rows { self.row_cache.resize_with(frame.rows, || None); }
+        if self.row_cache.len() < frame.rows {
+            self.row_cache.resize_with(frame.rows, || None);
+        }
 
         let rows = frame.rows;
         let cols = frame.cols;
@@ -495,7 +588,9 @@ impl TerminalRenderer {
             let sel_bounds = &self.selection;
             let sel_active = sel_bounds.active;
             let (sy, sx, ey, ex) = if sel_active {
-                if sel_bounds.y1 < sel_bounds.y2 || (sel_bounds.y1 == sel_bounds.y2 && sel_bounds.x1 <= sel_bounds.x2) {
+                if sel_bounds.y1 < sel_bounds.y2
+                    || (sel_bounds.y1 == sel_bounds.y2 && sel_bounds.x1 <= sel_bounds.x2)
+                {
                     (sel_bounds.y1, sel_bounds.x1, sel_bounds.y2, sel_bounds.x2)
                 } else {
                     (sel_bounds.y2, sel_bounds.x2, sel_bounds.y1, sel_bounds.x1)
@@ -507,24 +602,31 @@ impl TerminalRenderer {
             // 计算当前行的选区哈希
             let row_sel_hash = if !sel_active || absolute_row < sy || absolute_row > ey {
                 0u64
-            } else if (absolute_row > sy && absolute_row < ey) 
+            } else if (absolute_row > sy && absolute_row < ey)
                 || (absolute_row == sy && sx == 0 && absolute_row < ey)
                 || (absolute_row == ey && ex >= cols as i32 - 1 && absolute_row > sy)
-                || (absolute_row == sy && absolute_row == ey && sx == 0 && ex >= cols as i32 - 1) 
+                || (absolute_row == sy && absolute_row == ey && sx == 0 && ex >= cols as i32 - 1)
             {
                 u64::MAX // 整行选中
             } else {
                 // 部分选中：对列范围进行哈希
                 use std::hash::{Hash, Hasher};
                 let mut h = std::collections::hash_map::DefaultHasher::new();
-                if absolute_row == sy { sx.hash(&mut h); }
-                if absolute_row == ey { ex.hash(&mut h); }
+                if absolute_row == sy {
+                    sx.hash(&mut h);
+                }
+                if absolute_row == ey {
+                    ex.hash(&mut h);
+                }
                 h.finish()
             };
 
             // 行缓存命中
             if let Some(ref entry) = self.row_cache[r as usize] {
-                if entry.hash == row_h && entry.palette_hash == palette_h && entry.selection_hash == row_sel_hash {
+                if entry.hash == row_h
+                    && entry.palette_hash == palette_h
+                    && entry.selection_hash == row_sel_hash
+                {
                     canvas.draw_picture(&entry.picture, None, None);
                     continue;
                 }
@@ -541,14 +643,18 @@ impl TerminalRenderer {
                 sel_paint.set_style(PaintStyle::Fill);
 
                 let start_x = if absolute_row == sy { sx } else { 0 };
-                let end_x = if absolute_row == ey { ex } else { cols as i32 - 1 };
-                
+                let end_x = if absolute_row == ey {
+                    ex
+                } else {
+                    cols as i32 - 1
+                };
+
                 if start_x <= end_x {
                     let rect = Rect::new(
                         start_x as f32 * self.font_width,
                         r as f32 * self.font_height,
                         (end_x + 1) as f32 * self.font_width,
-                        (r + 1) as f32 * self.font_height
+                        (r + 1) as f32 * self.font_height,
                     );
                     canvas.draw_rect(rect, &sel_paint);
                 }
@@ -576,7 +682,12 @@ impl TerminalRenderer {
                 }
             }
 
-            let row_rect = Rect::from_xywh(0.0, r as f32 * self.font_height, cols as f32 * self.font_width, self.font_height);
+            let row_rect = Rect::from_xywh(
+                0.0,
+                r as f32 * self.font_height,
+                cols as f32 * self.font_width,
+                self.font_height,
+            );
             let font_w = self.font_width;
             let font_h = self.font_height;
             let f_cache = &self.font_cache;
@@ -593,13 +704,19 @@ impl TerminalRenderer {
 
             let mut c = 0;
             while c < cols {
-                if c >= row_text.len() { break; }
+                if c >= row_text.len() {
+                    break;
+                }
                 let start_c = c;
                 let style = row_styles[c];
                 let effect = decode_effect(style);
                 if (effect & EFFECT_INVISIBLE) != 0 {
                     let ch = row_text[c];
-                    c += if ch == '\0' { 1 } else { char_wc_width(ch as u32) };
+                    c += if ch == '\0' {
+                        1
+                    } else {
+                        char_wc_width(ch as u32)
+                    };
                     continue;
                 }
 
@@ -617,18 +734,34 @@ impl TerminalRenderer {
                         }
                         run_cells += 1; // 每一列无论是否有占位符都计入单元格计数
                         c += 1;
-                    } else { break; }
+                    } else {
+                        break;
+                    }
                 }
 
                 if !r_buf.is_empty() {
                     // 优化：直接传递 &r_buf，避免 drain().collect() 创建新 String
                     let run_text = r_buf.as_str();
                     Self::draw_run_optimized(
-                        recording_canvas, run_text, start_c as f32 * font_w, y_base,
-                        run_cells as f32 * font_w, f_cache, g_cache,
-                        p_mut, bg_p_mut, u_p_mut, s_p_mut, font_w, font_h,
-                        style, palette, global_reverse, sel,
-                        &mut self.text_blob_builder, &mut self.group_chars_buf,
+                        recording_canvas,
+                        run_text,
+                        start_c as f32 * font_w,
+                        y_base,
+                        run_cells as f32 * font_w,
+                        f_cache,
+                        g_cache,
+                        p_mut,
+                        bg_p_mut,
+                        u_p_mut,
+                        s_p_mut,
+                        font_w,
+                        font_h,
+                        style,
+                        palette,
+                        global_reverse,
+                        sel,
+                        &mut self.text_blob_builder,
+                        &mut self.group_chars_buf,
                         &mut self.text_blob_cache,
                         self.current_generation,
                     );
@@ -649,13 +782,14 @@ impl TerminalRenderer {
 
         // 光标绘制
         if frame.cursor_enabled {
-            self.cursor_paint.set_color(Color::new(palette[COLOR_INDEX_CURSOR]));
+            self.cursor_paint
+                .set_color(Color::new(palette[COLOR_INDEX_CURSOR]));
             // 修复: 考虑滚动偏移 (top_row)
             let visual_y = frame.cursor_y - frame.top_row;
             if visual_y >= 0 && visual_y < frame.rows as i32 {
                 let cx = frame.cursor_x as f32 * self.font_width;
                 let cy = visual_y as f32 * self.font_height;
-                
+
                 // 修复: 考虑宽字符宽度
                 let mut cursor_width = self.font_width;
                 if let Some(row) = frame.row_data.get(visual_y as usize) {
@@ -673,38 +807,80 @@ impl TerminalRenderer {
                 };
 
                 // 改进: 使用 Difference 混合模式，使光标下的文字可见
-                let old_blend = self.cursor_paint.blend_mode_or(skia_safe::BlendMode::SrcOver);
-                self.cursor_paint.set_blend_mode(skia_safe::BlendMode::Difference);
+                let old_blend = self
+                    .cursor_paint
+                    .blend_mode_or(skia_safe::BlendMode::SrcOver);
+                self.cursor_paint
+                    .set_blend_mode(skia_safe::BlendMode::Difference);
                 canvas.draw_rect(rect, &self.cursor_paint);
                 self.cursor_paint.set_blend_mode(old_blend);
             }
         }
-        
+
         crate::utils::METRICS.record_render(start_time.elapsed());
         crate::utils::METRICS.try_report();
     }
 
-    fn draw_run_static(canvas: &Canvas, text: &str, x: f32, y_base: f32, expected_width: f32, font_cache: &FontCache, glyph_cache: &mut GlyphCache, paint: &mut Paint, bg_paint: &mut Paint, underline_paint: &mut Paint, strikethrough_paint: &mut Paint, font_width: f32, font_height: f32, style: u64, palette: &[u32; NUM_INDEXED_COLORS], global_reverse: bool, is_selected: bool) {
+    fn draw_run_static(
+        canvas: &Canvas,
+        text: &str,
+        x: f32,
+        y_base: f32,
+        expected_width: f32,
+        font_cache: &FontCache,
+        glyph_cache: &mut GlyphCache,
+        paint: &mut Paint,
+        bg_paint: &mut Paint,
+        underline_paint: &mut Paint,
+        strikethrough_paint: &mut Paint,
+        font_width: f32,
+        font_height: f32,
+        style: u64,
+        palette: &[u32; NUM_INDEXED_COLORS],
+        global_reverse: bool,
+        is_selected: bool,
+    ) {
         let effect = decode_effect(style);
         let mut fg_idx = decode_fore_color(style) as usize;
         let mut bg_idx = decode_back_color(style) as usize;
-        let (fg_tc, bg_tc) = ((effect & STYLE_TRUECOLOR_FG) != 0, (effect & STYLE_TRUECOLOR_BG) != 0);
+        let (fg_tc, bg_tc) = (
+            (effect & STYLE_TRUECOLOR_FG) != 0,
+            (effect & STYLE_TRUECOLOR_BG) != 0,
+        );
         let bold = (effect & EFFECT_BOLD) != 0;
-        if bold && !fg_tc && fg_idx < 8 { fg_idx += 8; }
+        if bold && !fg_tc && fg_idx < 8 {
+            fg_idx += 8;
+        }
         let mut do_reverse = global_reverse != ((effect & EFFECT_REVERSE) != 0);
-        if is_selected { do_reverse = !do_reverse; }
+        if is_selected {
+            do_reverse = !do_reverse;
+        }
         let (mut fg_tc_final, mut bg_tc_final) = (fg_tc, bg_tc);
         if do_reverse {
             let (nf, nb) = Self::reverse_colors(fg_idx, bg_idx);
-            fg_idx = nf; bg_idx = nb;
+            fg_idx = nf;
+            bg_idx = nb;
             std::mem::swap(&mut fg_tc_final, &mut bg_tc_final);
         }
-        let mut fg_color_val = if fg_tc_final { fg_idx as u32 } else { palette[fg_idx.min(258)] };
-        if (effect & EFFECT_DIM) != 0 { fg_color_val = Self::apply_dim(fg_color_val); }
-        let bg_color_val = if bg_tc_final { bg_idx as u32 } else { palette[bg_idx.min(258)] };
+        let mut fg_color_val = if fg_tc_final {
+            fg_idx as u32
+        } else {
+            palette[fg_idx.min(258)]
+        };
+        if (effect & EFFECT_DIM) != 0 {
+            fg_color_val = Self::apply_dim(fg_color_val);
+        }
+        let bg_color_val = if bg_tc_final {
+            bg_idx as u32
+        } else {
+            palette[bg_idx.min(258)]
+        };
         if bg_tc_final || bg_idx != 257 {
             bg_paint.set_color(Color::new(bg_color_val));
-            canvas.draw_rect(Rect::from_xywh(x, y_base - font_height, expected_width, font_height), bg_paint);
+            canvas.draw_rect(
+                Rect::from_xywh(x, y_base - font_height, expected_width, font_height),
+                bg_paint,
+            );
         }
         let fg_color = Color::new(fg_color_val);
         paint.set_color(fg_color);
@@ -718,18 +894,40 @@ impl TerminalRenderer {
         let mut group_font: Option<Font> = None;
 
         for ch in text.chars() {
-            if ch == '\0' { continue; }
+            if ch == '\0' {
+                continue;
+            }
             let logic_w = char_wc_width(ch as u32) as f32 * font_width;
 
             if is_special_render_char(ch) {
                 // 先刷新 TextBlob
                 if !group_chars.is_empty() {
                     if let Some(font) = group_font.take() {
-                        Self::flush_text_group_blob(&mut builder, &mut group_chars, &font, glyph_cache);
+                        Self::flush_text_group_blob(
+                            &mut builder,
+                            &mut group_chars,
+                            &font,
+                            glyph_cache,
+                        );
                     }
                 }
                 // 绘制块元素（直接在 recording canvas 上）：修复坐标偏移
-                Self::draw_block_char_blob(canvas, ch, current_x, x, y_base, logic_w, font_height, fg_color_val, bg_color_val, bg_paint, paint, font_cache, &mut builder, glyph_cache);
+                Self::draw_block_char_blob(
+                    canvas,
+                    ch,
+                    current_x,
+                    x,
+                    y_base,
+                    logic_w,
+                    font_height,
+                    fg_color_val,
+                    bg_color_val,
+                    bg_paint,
+                    paint,
+                    font_cache,
+                    &mut builder,
+                    glyph_cache,
+                );
                 current_x += logic_w;
                 continue;
             }
@@ -740,7 +938,12 @@ impl TerminalRenderer {
             // 如果字体切换，先刷新当前组
             if let Some(ref prev_font) = group_font {
                 if font_id != prev_font.typeface().unique_id() {
-                    Self::flush_text_group_blob(&mut builder, &mut group_chars, prev_font, glyph_cache);
+                    Self::flush_text_group_blob(
+                        &mut builder,
+                        &mut group_chars,
+                        prev_font,
+                        glyph_cache,
+                    );
                 }
             }
 
@@ -765,11 +968,19 @@ impl TerminalRenderer {
         // 特效绘制
         if (effect & EFFECT_UNDERLINE) != 0 {
             underline_paint.set_color(fg_color);
-            canvas.draw_line((x, y_base - 2.0), (x + expected_width, y_base - 2.0), underline_paint);
+            canvas.draw_line(
+                (x, y_base - 2.0),
+                (x + expected_width, y_base - 2.0),
+                underline_paint,
+            );
         }
         if (effect & EFFECT_STRIKETHROUGH) != 0 {
             strikethrough_paint.set_color(fg_color);
-            canvas.draw_line((x, y_base - font_height * 0.5), (x + expected_width, y_base - font_height * 0.5), strikethrough_paint);
+            canvas.draw_line(
+                (x, y_base - font_height * 0.5),
+                (x + expected_width, y_base - font_height * 0.5),
+                strikethrough_paint,
+            );
         }
     }
 
@@ -800,23 +1011,44 @@ impl TerminalRenderer {
         let effect = decode_effect(style);
         let mut fg_idx = decode_fore_color(style) as usize;
         let mut bg_idx = decode_back_color(style) as usize;
-        let (fg_tc, bg_tc) = ((effect & STYLE_TRUECOLOR_FG) != 0, (effect & STYLE_TRUECOLOR_BG) != 0);
+        let (fg_tc, bg_tc) = (
+            (effect & STYLE_TRUECOLOR_FG) != 0,
+            (effect & STYLE_TRUECOLOR_BG) != 0,
+        );
         let bold = (effect & EFFECT_BOLD) != 0;
-        if bold && !fg_tc && fg_idx < 8 { fg_idx += 8; }
+        if bold && !fg_tc && fg_idx < 8 {
+            fg_idx += 8;
+        }
         let mut do_reverse = global_reverse != ((effect & EFFECT_REVERSE) != 0);
-        if is_selected { do_reverse = !do_reverse; }
+        if is_selected {
+            do_reverse = !do_reverse;
+        }
         let (mut fg_tc_final, mut bg_tc_final) = (fg_tc, bg_tc);
         if do_reverse {
             let (nf, nb) = Self::reverse_colors(fg_idx, bg_idx);
-            fg_idx = nf; bg_idx = nb;
+            fg_idx = nf;
+            bg_idx = nb;
             std::mem::swap(&mut fg_tc_final, &mut bg_tc_final);
         }
-        let mut fg_color_val = if fg_tc_final { fg_idx as u32 } else { palette[fg_idx.min(258)] };
-        if (effect & EFFECT_DIM) != 0 { fg_color_val = Self::apply_dim(fg_color_val); }
-        let bg_color_val = if bg_tc_final { bg_idx as u32 } else { palette[bg_idx.min(258)] };
+        let mut fg_color_val = if fg_tc_final {
+            fg_idx as u32
+        } else {
+            palette[fg_idx.min(258)]
+        };
+        if (effect & EFFECT_DIM) != 0 {
+            fg_color_val = Self::apply_dim(fg_color_val);
+        }
+        let bg_color_val = if bg_tc_final {
+            bg_idx as u32
+        } else {
+            palette[bg_idx.min(258)]
+        };
         if bg_tc_final || bg_idx != 257 {
             bg_paint.set_color(Color::new(bg_color_val));
-            canvas.draw_rect(Rect::from_xywh(x, y_base - font_height, expected_width, font_height), bg_paint);
+            canvas.draw_rect(
+                Rect::from_xywh(x, y_base - font_height, expected_width, font_height),
+                bg_paint,
+            );
         }
         let fg_color = Color::new(fg_color_val);
         paint.set_color(fg_color);
@@ -837,14 +1069,31 @@ impl TerminalRenderer {
             // 热数据命中：更新代际
             entry.last_generation = current_generation;
             canvas.draw_text_blob(&entry.data, (x, blob_y), paint);
-            
+
             // 关键修复：即使缓存命中，也要重新绘制直接绘制在 Canvas 上的块元素
             let mut current_x = x;
             for ch in text.chars() {
-                if ch == '\0' { continue; }
+                if ch == '\0' {
+                    continue;
+                }
                 let logic_w = crate::wcwidth::wcwidth(ch as u32) as f32 * font_width;
                 if is_block_element(ch) {
-                    Self::draw_block_char_blob(canvas, ch, current_x, x, y_base, logic_w, font_height, fg_color_val, bg_color_val, bg_paint, paint, font_cache, builder, glyph_cache);
+                    Self::draw_block_char_blob(
+                        canvas,
+                        ch,
+                        current_x,
+                        x,
+                        y_base,
+                        logic_w,
+                        font_height,
+                        fg_color_val,
+                        bg_color_val,
+                        bg_paint,
+                        paint,
+                        font_cache,
+                        builder,
+                        glyph_cache,
+                    );
                 }
                 current_x += logic_w;
             }
@@ -857,7 +1106,9 @@ impl TerminalRenderer {
             let mut current_group_font: Option<Font> = None;
 
             for ch in text.chars() {
-                if ch == '\0' { continue; }
+                if ch == '\0' {
+                    continue;
+                }
                 let logic_w = crate::wcwidth::wcwidth(ch as u32) as f32 * font_width;
 
                 if is_special_render_char(ch) {
@@ -868,7 +1119,22 @@ impl TerminalRenderer {
                         }
                     }
                     // 绘制块元素：使用绝对坐标 current_x 修复错位
-                    Self::draw_block_char_blob(canvas, ch, current_x, x, y_base, logic_w, font_height, fg_color_val, bg_color_val, bg_paint, paint, font_cache, builder, glyph_cache);
+                    Self::draw_block_char_blob(
+                        canvas,
+                        ch,
+                        current_x,
+                        x,
+                        y_base,
+                        logic_w,
+                        font_height,
+                        fg_color_val,
+                        bg_color_val,
+                        bg_paint,
+                        paint,
+                        font_cache,
+                        builder,
+                        glyph_cache,
+                    );
                     current_x += logic_w;
                     continue;
                 }
@@ -903,15 +1169,19 @@ impl TerminalRenderer {
                     // 性能优化：放宽代际保留限制。
                     // 之前仅保留 2 代 (约 2 秒) 太过激进，导致静止画面或微小滚动时显存频繁释放。
                     // 改为保留 30 代 (约 30 秒)，并在内存压力大时才进行深度清理。
-                    blob_cache.retain(|_, entry| current_generation.wrapping_sub(entry.last_generation) <= 30);
-
+                    blob_cache.retain(|_, entry| {
+                        current_generation.wrapping_sub(entry.last_generation) <= 30
+                    });
                 }
                 // 缓存生成的 blob
                 if blob_cache.len() < 3000 {
-                    blob_cache.insert(cache_key, GenerationalEntry {
-                        data: blob,
-                        last_generation: current_generation,
-                    });
+                    blob_cache.insert(
+                        cache_key,
+                        GenerationalEntry {
+                            data: blob,
+                            last_generation: current_generation,
+                        },
+                    );
                 }
             }
         }
@@ -919,17 +1189,32 @@ impl TerminalRenderer {
         // 特效绘制
         if (effect & EFFECT_UNDERLINE) != 0 {
             underline_paint.set_color(fg_color);
-            canvas.draw_line((x, y_base - 2.0), (x + expected_width, y_base - 2.0), underline_paint);
+            canvas.draw_line(
+                (x, y_base - 2.0),
+                (x + expected_width, y_base - 2.0),
+                underline_paint,
+            );
         }
         if (effect & EFFECT_STRIKETHROUGH) != 0 {
             strikethrough_paint.set_color(fg_color);
-            canvas.draw_line((x, y_base - font_height * 0.5), (x + expected_width, y_base - font_height * 0.5), strikethrough_paint);
+            canvas.draw_line(
+                (x, y_base - font_height * 0.5),
+                (x + expected_width, y_base - font_height * 0.5),
+                strikethrough_paint,
+            );
         }
     }
 
     /// 将一组相同字体的字符刷新到 TextBlob
-    fn flush_text_group_blob(builder: &mut TextBlobBuilder, chars: &mut Vec<(char, f32)>, font: &Font, glyph_cache: &mut GlyphCache) {
-        if chars.is_empty() { return; }
+    fn flush_text_group_blob(
+        builder: &mut TextBlobBuilder,
+        chars: &mut Vec<(char, f32)>,
+        font: &Font,
+        glyph_cache: &mut GlyphCache,
+    ) {
+        if chars.is_empty() {
+            return;
+        }
         let count = chars.len();
         let (run_glyphs, run_pos) = builder.alloc_run_pos_h(font, count, 0.0, None);
         for (i, (ch, rel_x)) in chars.iter().enumerate() {
@@ -943,8 +1228,8 @@ impl TerminalRenderer {
     fn draw_block_char_blob(
         canvas: &Canvas,
         ch: char,
-        abs_x: f32,      // 绝对坐标 (用于直接 draw_rect)
-        run_x: f32,      // 运行起始坐标 (用于 TextBlob 相对位移)
+        abs_x: f32, // 绝对坐标 (用于直接 draw_rect)
+        run_x: f32, // 运行起始坐标 (用于 TextBlob 相对位移)
         y_base: f32,
         cell_w: f32,
         cell_h: f32,
@@ -962,17 +1247,31 @@ impl TerminalRenderer {
         // 象限块 (Quadrant blocks)
         // 关键修复：显式绘制背景色象限，确保无缝对接
         let q_mask: u8 = match ch as u32 {
-            0x2596 => 0b0100, 0x2597 => 0b1000, 0x2598 => 0b0001, 0x259D => 0b0010,
-            0x2599 => 0b1101, 0x259A => 0b1001, 0x259E => 0b0110, 0x259B => 0b0111,
-            0x259C => 0b1011, 0x259F => 0b1110, _ => 0,
+            0x2596 => 0b0100,
+            0x2597 => 0b1000,
+            0x2598 => 0b0001,
+            0x259D => 0b0010,
+            0x2599 => 0b1101,
+            0x259A => 0b1001,
+            0x259E => 0b0110,
+            0x259B => 0b0111,
+            0x259C => 0b1011,
+            0x259F => 0b1110,
+            _ => 0,
         };
         if q_mask != 0 {
             let (hw, hh) = (cell_w / 2.0, cell_h / 2.0);
             let quads = [
-                (x,            y_top,         hw, hh, (q_mask & 0b0001) != 0), // TL
-                (x + hw,       y_top,         cell_w - hw, hh, (q_mask & 0b0010) != 0), // TR
-                (x,            y_top + hh,    hw, cell_h - hh, (q_mask & 0b0100) != 0), // BL
-                (x + hw,       y_top + hh,    cell_w - hw, cell_h - hh, (q_mask & 0b1000) != 0), // BR
+                (x, y_top, hw, hh, (q_mask & 0b0001) != 0), // TL
+                (x + hw, y_top, cell_w - hw, hh, (q_mask & 0b0010) != 0), // TR
+                (x, y_top + hh, hw, cell_h - hh, (q_mask & 0b0100) != 0), // BL
+                (
+                    x + hw,
+                    y_top + hh,
+                    cell_w - hw,
+                    cell_h - hh,
+                    (q_mask & 0b1000) != 0,
+                ), // BR
             ];
             for (qx, qy, qw, qh, fill) in quads {
                 bg_paint.set_color(Color::new(if fill { fg_color } else { bg_color }));
@@ -1000,35 +1299,54 @@ impl TerminalRenderer {
             bg_paint.set_color(Color::new(fg_color));
             canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, fh), bg_paint);
             bg_paint.set_color(Color::new(bg_color));
-            canvas.draw_rect(Rect::from_xywh(x, y_top + fh, cell_w, cell_h - fh), bg_paint);
+            canvas.draw_rect(
+                Rect::from_xywh(x, y_top + fh, cell_w, cell_h - fh),
+                bg_paint,
+            );
             return;
         }
 
         // 垂直分数块 (下)
         if let Some(n) = match ch as u32 {
-            0x2581 => Some(1), 0x2582 => Some(2), 0x2583 => Some(3),
+            0x2581 => Some(1),
+            0x2582 => Some(2),
+            0x2583 => Some(3),
             0x2584 => Some(4), // 1/2
-            0x2585 => Some(5), 0x2586 => Some(6), 0x2587 => Some(7), _ => None,
+            0x2585 => Some(5),
+            0x2586 => Some(6),
+            0x2587 => Some(7),
+            _ => None,
         } {
             let fh = cell_h * n as f32 / 8.0;
             bg_paint.set_color(Color::new(bg_color));
             canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w, cell_h - fh), bg_paint);
             bg_paint.set_color(Color::new(fg_color));
-            canvas.draw_rect(Rect::from_xywh(x, y_top + cell_h - fh, cell_w, fh), bg_paint);
+            canvas.draw_rect(
+                Rect::from_xywh(x, y_top + cell_h - fh, cell_w, fh),
+                bg_paint,
+            );
             return;
         }
 
         // 水平分数块 (左)
         if let Some(n) = match ch as u32 {
-            0x258F => Some(1), 0x258E => Some(2), 0x258D => Some(3),
+            0x258F => Some(1),
+            0x258E => Some(2),
+            0x258D => Some(3),
             0x258C => Some(4), // 1/2
-            0x258B => Some(5), 0x258A => Some(6), 0x2589 => Some(7), _ => None,
+            0x258B => Some(5),
+            0x258A => Some(6),
+            0x2589 => Some(7),
+            _ => None,
         } {
             let fw = cell_w * n as f32 / 8.0;
             bg_paint.set_color(Color::new(fg_color));
             canvas.draw_rect(Rect::from_xywh(x, y_top, fw, cell_h), bg_paint);
             bg_paint.set_color(Color::new(bg_color));
-            canvas.draw_rect(Rect::from_xywh(x + fw, y_top, cell_w - fw, cell_h), bg_paint);
+            canvas.draw_rect(
+                Rect::from_xywh(x + fw, y_top, cell_w - fw, cell_h),
+                bg_paint,
+            );
             return;
         }
 
@@ -1042,13 +1360,20 @@ impl TerminalRenderer {
             bg_paint.set_color(Color::new(bg_color));
             canvas.draw_rect(Rect::from_xywh(x, y_top, cell_w - fw, cell_h), bg_paint);
             bg_paint.set_color(Color::new(fg_color));
-            canvas.draw_rect(Rect::from_xywh(x + cell_w - fw, y_top, fw, cell_h), bg_paint);
+            canvas.draw_rect(
+                Rect::from_xywh(x + cell_w - fw, y_top, fw, cell_h),
+                bg_paint,
+            );
             return;
         }
 
         // 阴影块
         if matches!(ch as u32, 0x2591..=0x2593) {
-            let d = match ch as u32 { 0x2591 => 0.25, 0x2592 => 0.50, _ => 0.75 };
+            let d = match ch as u32 {
+                0x2591 => 0.25,
+                0x2592 => 0.50,
+                _ => 0.75,
+            };
             // 背景已经在 draw_run_optimized 中画过了，不再重复绘制
             Self::draw_shade_pattern_blob(canvas, x, y_top, cell_w, cell_h, fg_color, d, bg_paint);
             return;
@@ -1059,21 +1384,25 @@ impl TerminalRenderer {
             bg_paint.set_color(Color::new(fg_color));
             bg_paint.set_stroke_width(1.0);
             let (cx, cy) = (x + cell_w / 2.0, y_top + cell_h / 2.0);
-            
+
             match ch as u32 {
-                0x256D => { // ╭
+                0x256D => {
+                    // ╭
                     canvas.draw_line((cx, y_top + cell_h), (cx, cy), bg_paint);
                     canvas.draw_line((cx, cy), (x + cell_w, cy), bg_paint);
                 }
-                0x256E => { // ╮
+                0x256E => {
+                    // ╮
                     canvas.draw_line((cx, y_top + cell_h), (cx, cy), bg_paint);
                     canvas.draw_line((cx, cy), (x, cy), bg_paint);
                 }
-                0x256F => { // ╯
+                0x256F => {
+                    // ╯
                     canvas.draw_line((cx, y_top), (cx, cy), bg_paint);
                     canvas.draw_line((cx, cy), (x, cy), bg_paint);
                 }
-                0x2570 => { // ╰
+                0x2570 => {
+                    // ╰
                     canvas.draw_line((cx, y_top), (cx, cy), bg_paint);
                     canvas.draw_line((cx, cy), (x + cell_w, cy), bg_paint);
                 }
@@ -1089,21 +1418,25 @@ impl TerminalRenderer {
             bg_paint.set_color(Color::new(fg_color));
             bg_paint.set_stroke_width(1.0);
             let (cx, cy) = (x + cell_w / 2.0, y_top + cell_h / 2.0);
-            
+
             match ch as u32 {
-                0x256D => { // ╭
+                0x256D => {
+                    // ╭
                     canvas.draw_line((cx, y_top + cell_h), (cx, cy), bg_paint);
                     canvas.draw_line((cx, cy), (x + cell_w, cy), bg_paint);
                 }
-                0x256E => { // ╮
+                0x256E => {
+                    // ╮
                     canvas.draw_line((cx, y_top + cell_h), (cx, cy), bg_paint);
                     canvas.draw_line((cx, cy), (x, cy), bg_paint);
                 }
-                0x256F => { // ╯
+                0x256F => {
+                    // ╯
                     canvas.draw_line((cx, y_top), (cx, cy), bg_paint);
                     canvas.draw_line((cx, cy), (x, cy), bg_paint);
                 }
-                0x2570 => { // ╰
+                0x2570 => {
+                    // ╰
                     canvas.draw_line((cx, y_top), (cx, cy), bg_paint);
                     canvas.draw_line((cx, cy), (x + cell_w, cy), bg_paint);
                 }
@@ -1116,13 +1449,19 @@ impl TerminalRenderer {
         // 盒绘图 - 水平线
         if ch as u32 == 0x2500 {
             bg_paint.set_color(Color::new(fg_color));
-            canvas.draw_rect(Rect::from_xywh(x, y_top + cell_h / 2.0 - 0.5, cell_w, 1.0), bg_paint);
+            canvas.draw_rect(
+                Rect::from_xywh(x, y_top + cell_h / 2.0 - 0.5, cell_w, 1.0),
+                bg_paint,
+            );
             return;
         }
         // 盒绘图 - 垂直线
         if ch as u32 == 0x2502 {
             bg_paint.set_color(Color::new(fg_color));
-            canvas.draw_rect(Rect::from_xywh(x + cell_w / 2.0 - 0.5, y_top, 1.0, cell_h), bg_paint);
+            canvas.draw_rect(
+                Rect::from_xywh(x + cell_w / 2.0 - 0.5, y_top, 1.0, cell_h),
+                bg_paint,
+            );
             return;
         }
 
@@ -1134,7 +1473,16 @@ impl TerminalRenderer {
     }
 
     /// 绘制阴影图案
-    fn draw_shade_pattern_blob(canvas: &Canvas, x: f32, y: f32, w: f32, h: f32, color: u32, density: f32, bg_paint: &mut Paint) {
+    fn draw_shade_pattern_blob(
+        canvas: &Canvas,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        color: u32,
+        density: f32,
+        bg_paint: &mut Paint,
+    ) {
         bg_paint.set_color(Color::new(color));
         let step = 2.0;
         let mut row = 0.0f32;
@@ -1145,14 +1493,16 @@ impl TerminalRenderer {
                 if ((col / step).floor() as i32 + (row / step).floor() as i32) % 2 == 0
                     && (density > 0.4 || (col / step).floor() as i32 % 3 != 0)
                 {
-                    canvas.draw_rect(Rect::from_xywh(x + col, y + row, step.min(w - col), step.min(h - row)), bg_paint);
+                    canvas.draw_rect(
+                        Rect::from_xywh(x + col, y + row, step.min(w - col), step.min(h - row)),
+                        bg_paint,
+                    );
                 }
                 col += step;
             }
             row += step;
         }
     }
-
 }
 
 #[cfg(test)]
@@ -1161,16 +1511,28 @@ mod tests {
     use std::time::Instant;
 
     #[test]
-    fn test_font_metrics_calculation() { let renderer = TerminalRenderer::new(&[], 12.0, None); assert!(renderer.font_width > 0.0); assert!(renderer.font_height > 0.0); }
+    fn test_font_metrics_calculation() {
+        let renderer = TerminalRenderer::new(&[], 12.0, None);
+        assert!(renderer.font_width > 0.0);
+        assert!(renderer.font_height > 0.0);
+    }
     #[test]
-    fn test_dim_color() { let white = 0xffffffff; let dimmed = TerminalRenderer::apply_dim(white); assert_eq!((dimmed >> 16) & 0xFF, 170); }
+    fn test_dim_color() {
+        let white = 0xffffffff;
+        let dimmed = TerminalRenderer::apply_dim(white);
+        assert_eq!((dimmed >> 16) & 0xFF, 170);
+    }
     #[test]
-    fn test_selection_bounds() { let mut renderer = TerminalRenderer::new(&[], 12.0, None); renderer.set_selection(2, 1, 5, 3); assert!(renderer.is_cell_selected(3, 2)); }
+    fn test_selection_bounds() {
+        let mut renderer = TerminalRenderer::new(&[], 12.0, None);
+        renderer.set_selection(2, 1, 5, 3);
+        assert!(renderer.is_cell_selected(3, 2));
+    }
 
     #[test]
     fn test_cursor_visibility_logic() {
         let mut engine = crate::engine::TerminalEngine::new(0, 80, 24, 100, 10, 20);
-        
+
         // 1. 默认状态：光标启用，不闪烁 -> 应可见
         engine.state.cursor_enabled = true;
         engine.state.cursor.blinking_enabled = false;
@@ -1200,7 +1562,12 @@ mod tests {
         // 1. 初始化引擎和渲染器
         let mut engine = crate::engine::TerminalEngine::new(0, 80, 24, 100, 10, 20);
         let mut renderer = TerminalRenderer::new(&[], 12.0, None);
-        let mut surface = skia_safe::surfaces::raster(&skia_safe::ImageInfo::new_n32_premul((800, 600), None), None, None).unwrap();
+        let mut surface = skia_safe::surfaces::raster(
+            &skia_safe::ImageInfo::new_n32_premul((800, 600), None),
+            None,
+            None,
+        )
+        .unwrap();
         let canvas = surface.canvas();
 
         // 填充一行测试数据
@@ -1217,7 +1584,7 @@ mod tests {
         let pic_no_sel = renderer.row_cache[0].as_ref().unwrap().picture.unique_id();
 
         // 3. 第二次绘制：设置选区（选中第一行的前两个字符）
-        renderer.set_selection(0, 0, 1, 0); 
+        renderer.set_selection(0, 0, 1, 0);
         let frame = RenderFrame::from_engine(&engine, 24, 80, 0); // 重新生成帧
         renderer.draw_frame(canvas, &frame, 1.0, 0.0);
 
@@ -1228,42 +1595,58 @@ mod tests {
         assert!(pic_with_sel != pic_no_sel, "选区变化后必须重新记录 picture");
 
         // 4. 第三次绘制：选区跨行（第一行变为全选，因为它从 0 开始且不是最后一行）
-        renderer.set_selection(0, 0, 10, 1); 
-        let frame = RenderFrame::from_engine(&engine, 24, 80, 0); 
+        renderer.set_selection(0, 0, 10, 1);
+        let frame = RenderFrame::from_engine(&engine, 24, 80, 0);
         renderer.draw_frame(canvas, &frame, 1.0, 0.0);
 
         let hash_full_sel = renderer.row_cache[0].as_ref().unwrap().selection_hash;
         assert_eq!(hash_full_sel, u64::MAX, "整行选中时 hash 应为 u64::MAX");
-        
+
         // 校验第二行（部分选中）
         let hash_part_sel = renderer.row_cache[1].as_ref().unwrap().selection_hash;
-        assert!(hash_part_sel != 0 && hash_part_sel != u64::MAX, "第二行应为部分选中哈希");
+        assert!(
+            hash_part_sel != 0 && hash_part_sel != u64::MAX,
+            "第二行应为部分选中哈希"
+        );
     }
 
     #[test]
     fn test_block_element_rendering_logic() {
         let renderer = TerminalRenderer::new(&[], 12.0, None);
-        let mut surface = skia_safe::surfaces::raster(&skia_safe::ImageInfo::new_n32_premul((100, 100), None), None, None).unwrap();
+        let mut surface = skia_safe::surfaces::raster(
+            &skia_safe::ImageInfo::new_n32_premul((100, 100), None),
+            None,
+            None,
+        )
+        .unwrap();
         let canvas = surface.canvas();
-        
+
         let bg_color = 0xff0000ff;
         let fg_color = 0xffff0000;
         let mut bg_paint = Paint::default();
         let mut fg_paint = Paint::default();
-        
+
         canvas.clear(Color::BLUE);
-        
+
         let mut builder = TextBlobBuilder::new();
         let mut glyph_cache = GlyphCache::new();
-        
+
         // 更新签名：传入 abs_x 和 run_x
         TerminalRenderer::draw_block_char_blob(
-            canvas, 
-            '\u{259D}', 
-            10.0, 0.0, 10.0, 10.0, 10.0, 
-            fg_color, bg_color, 
-            &mut bg_paint, &mut fg_paint, 
-            &renderer.font_cache, &mut builder, &mut glyph_cache
+            canvas,
+            '\u{259D}',
+            10.0,
+            0.0,
+            10.0,
+            10.0,
+            10.0,
+            fg_color,
+            bg_color,
+            &mut bg_paint,
+            &mut fg_paint,
+            &renderer.font_cache,
+            &mut builder,
+            &mut glyph_cache,
         );
     }
 
@@ -1289,12 +1672,15 @@ mod tests {
         let run_start_x = 100.0;
         let char_offset_in_run = 20.0;
         let current_x = run_start_x + char_offset_in_run;
-        
+
         // 如果我们像旧代码那样传入 current_x - run_start_x (即 20.0) 给 draw_rect，
         // 那么字符会出现在屏幕 20.0 处，而不是预期的 120.0 处。这正是用户反馈的“错位”。
         // 现在的逻辑传入 abs_x = current_x = 120.0。
-        let abs_x_passed_to_draw = current_x; 
-        assert_eq!(abs_x_passed_to_draw, 120.0, "块元素必须使用绝对屏幕坐标绘制以防止错位");
+        let abs_x_passed_to_draw = current_x;
+        assert_eq!(
+            abs_x_passed_to_draw, 120.0,
+            "块元素必须使用绝对屏幕坐标绘制以防止错位"
+        );
     }
 
     #[test]
@@ -1307,7 +1693,10 @@ mod tests {
             let tf = font.typeface();
             let mut glyphs = [0u16; 1];
             tf.unichars_to_glyphs(&[ch as i32], &mut glyphs);
-            println!("Char: {}, Fallback: {}, Glyph ID: {}", ch, is_fallback, glyphs[0]);
+            println!(
+                "Char: {}, Fallback: {}, Glyph ID: {}",
+                ch, is_fallback, glyphs[0]
+            );
             assert!(glyphs[0] != 0, "Character {} resulted in TOFU!", ch);
         }
     }

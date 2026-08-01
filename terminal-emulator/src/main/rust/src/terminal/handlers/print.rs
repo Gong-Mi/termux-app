@@ -1,6 +1,6 @@
 use crate::engine::ScreenState;
-use crate::utils::map_line_drawing;
 use crate::terminal::modes;
+use crate::utils::map_line_drawing;
 
 pub fn handle_print(state: &mut ScreenState, c: char) {
     handle_print_internal(state, c);
@@ -22,8 +22,8 @@ pub fn handle_print_str(state: &mut ScreenState, s: &str) {
 fn handle_print_internal(state: &mut ScreenState, c: char) {
     // 1. 字符映射
     let c = if (c as u32) >= 0x20 && (c as u32) <= 0x7E {
-        if (state.use_line_drawing_uses_g0 && state.use_line_drawing_g0) ||
-            (!state.use_line_drawing_uses_g0 && state.use_line_drawing_g1)
+        if (state.use_line_drawing_uses_g0 && state.use_line_drawing_g0)
+            || (!state.use_line_drawing_uses_g0 && state.use_line_drawing_g1)
         {
             map_line_drawing(c as u8)
         } else {
@@ -44,7 +44,7 @@ fn handle_print_internal(state: &mut ScreenState, c: char) {
     if state.auto_wrap() {
         let columns = state.cols;
         let mut wrap_needed = state.cursor.about_to_wrap;
-        
+
         // 核心修复：宽字符在最后一列时必须提前换行
         if char_width == 2 && state.cursor.x >= columns - 1 {
             wrap_needed = true;
@@ -90,7 +90,7 @@ fn handle_print_internal(state: &mut ScreenState, c: char) {
         let screen = state.get_current_screen_mut();
         let y_internal = screen.internal_row(y);
         let row = &mut screen.buffer[y_internal];
-        
+
         // 如果是宽字符，且会超出右边界，则不打印（或截断）
         if char_width == 2 && (x as i32) >= right_margin - 1 {
             // 在 Java 版中，这会强制触发换行，我们这里的逻辑已在上方处理
@@ -127,4 +127,3 @@ fn handle_print_internal(state: &mut ScreenState, c: char) {
         state.cursor.about_to_wrap = false;
     }
 }
-
