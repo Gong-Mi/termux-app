@@ -1,12 +1,12 @@
+use jni::sys::jlong;
 /// 渲染线程管理
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
-use jni::sys::jlong;
 
-use crate::utils::{android_log, LogPriority};
 use crate::engine::TerminalContext;
+use crate::renderer::{RenderFrame, TerminalRenderer};
+use crate::utils::{LogPriority, android_log};
 use crate::vulkan_context::VulkanContext;
-use crate::renderer::{TerminalRenderer, RenderFrame};
 use once_cell::sync::OnceCell;
 
 static VULKAN_CONTEXT: OnceCell<Mutex<Option<VulkanContext>>> = OnceCell::new();
@@ -83,30 +83,56 @@ pub fn try_start_render_thread() {
     let surface_ready = SURFACE_READY.load(Ordering::SeqCst);
     let engine_ready = ENGINE_READY.load(Ordering::SeqCst);
 
-    android_log(LogPriority::DEBUG, &format!(
-        "try_start_render_thread: surface_ready={}, engine_ready={}, already_running={}",
-        surface_ready, engine_ready, RENDER_THREAD_RUNNING.load(Ordering::SeqCst)
-    ));
+    android_log(
+        LogPriority::DEBUG,
+        &format!(
+            "try_start_render_thread: surface_ready={}, engine_ready={}, already_running={}",
+            surface_ready,
+            engine_ready,
+            RENDER_THREAD_RUNNING.load(Ordering::SeqCst)
+        ),
+    );
 
     if surface_ready && engine_ready {
         let engine_ptr = *ENGINE_POINTER.lock().unwrap();
         if engine_ptr != 0 && !RENDER_THREAD_RUNNING.load(Ordering::SeqCst) {
-            android_log(LogPriority::INFO, &format!("try_start_render_thread: Both conditions met, starting render thread with engine={}", engine_ptr));
+            android_log(
+                LogPriority::INFO,
+                &format!(
+                    "try_start_render_thread: Both conditions met, starting render thread with engine={}",
+                    engine_ptr
+                ),
+            );
             spawn_render_thread(engine_ptr);
         } else if engine_ptr == 0 {
-            android_log(LogPriority::ERROR, "try_start_render_thread: engine_ptr is 0, cannot start render thread");
+            android_log(
+                LogPriority::ERROR,
+                "try_start_render_thread: engine_ptr is 0, cannot start render thread",
+            );
         } else {
-            android_log(LogPriority::DEBUG, "try_start_render_thread: Render thread already running, skipping");
+            android_log(
+                LogPriority::DEBUG,
+                "try_start_render_thread: Render thread already running, skipping",
+            );
         }
     } else {
-        android_log(LogPriority::DEBUG, "try_start_render_thread: Waiting for both surface and engine to be ready");
+        android_log(
+            LogPriority::DEBUG,
+            "try_start_render_thread: Waiting for both surface and engine to be ready",
+        );
     }
 }
 
 /// 实际启动渲染线程的内部函数
 fn spawn_render_thread(engine_ptr: jlong) {
     RENDER_THREAD_RUNNING.store(true, Ordering::SeqCst);
-    android_log(LogPriority::INFO, &format!("spawn_render_thread: Starting Vulkan render thread (engine={})", engine_ptr));
+    android_log(
+        LogPriority::INFO,
+        &format!(
+            "spawn_render_thread: Starting Vulkan render thread (engine={})",
+            engine_ptr
+        ),
+    );
 
     let handle = std::thread::Builder::new()
         .name("VulkanRender".to_string())
@@ -120,7 +146,10 @@ fn spawn_render_thread(engine_ptr: jlong) {
                 // 0. 核心检查：如果 Surface 没准备好，渲染线程必须进入高效睡眠
                 if !SURFACE_READY.load(Ordering::SeqCst) {
                     if frame_count % 60 == 0 {
-                        android_log(LogPriority::DEBUG, "RenderThread: Surface not ready, parking...");
+                        android_log(
+                            LogPriority::DEBUG,
+                            "RenderThread: Surface not ready, parking...",
+                        );
                     }
                     std::thread::park(); // 永久等待，直到 nativeSetSurface(Some) 调用 unpark
                     continue;
@@ -135,9 +164,13 @@ fn spawn_render_thread(engine_ptr: jlong) {
                         if let Ok(mut ctx_guard) = ctx_mutex.try_lock() {
                             if let Some(ctx) = ctx_guard.as_mut() {
                                 let ok = ctx.recreate_swapchain(new_width, new_height);
-                                android_log(LogPriority::INFO, &format!(
-                                    "Render: Swapchain recreated {}x{} success={}", new_width, new_height, ok
-                                ));
+                                android_log(
+                                    LogPriority::INFO,
+                                    &format!(
+                                        "Render: Swapchain recreated {}x{} success={}",
+                                        new_width, new_height, ok
+                                    ),
+                                );
                                 SURFACE_SIZE_CHANGED.store(false, Ordering::SeqCst);
                                 request_render();
                             }
@@ -163,7 +196,10 @@ fn spawn_render_thread(engine_ptr: jlong) {
                     Ok(g) => g,
                     Err(_) => {
                         if frame_count % 60 == 0 {
-                            android_log(LogPriority::DEBUG, "RenderThread: VULKAN_CONTEXT lock contention, sleeping...");
+                            android_log(
+                                LogPriority::DEBUG,
+                                "RenderThread: VULKAN_CONTEXT lock contention, sleeping...",
+                            );
                         }
                         std::thread::sleep(std::time::Duration::from_millis(8));
                         continue;
@@ -173,7 +209,10 @@ fn spawn_render_thread(engine_ptr: jlong) {
                 let ctx = match ctx_guard.as_mut() {
                     Some(c) => c,
                     None => {
-                        android_log(LogPriority::WARN, "RenderThread: VULKAN_CONTEXT is None, breaking loop");
+                        android_log(
+                            LogPriority::WARN,
+                            "RenderThread: VULKAN_CONTEXT is None, breaking loop",
+                        );
                         RENDER_THREAD_RUNNING.store(false, Ordering::SeqCst);
                         break;
                     }
@@ -197,13 +236,21 @@ fn spawn_render_thread(engine_ptr: jlong) {
                         Ok(e) => e,
                         Err(_) => {
                             if frame_count % 60 == 0 {
-                                android_log(LogPriority::DEBUG, "RenderThread: Engine lock busy, frame skipped");
+                                android_log(
+                                    LogPriority::DEBUG,
+                                    "RenderThread: Engine lock busy, frame skipped",
+                                );
                             }
                             std::thread::sleep(std::time::Duration::from_millis(2));
                             continue;
                         }
                     };
-                    RenderFrame::from_engine(&engine, engine.state.rows as usize, engine.state.cols as usize, top_row)
+                    RenderFrame::from_engine(
+                        &engine,
+                        engine.state.rows as usize,
+                        engine.state.cols as usize,
+                        top_row,
+                    )
                 };
 
                 let step_start = std::time::Instant::now();
@@ -237,17 +284,26 @@ fn spawn_render_thread(engine_ptr: jlong) {
 
                 let font_size = *RENDER_FONT_SIZE.lock().unwrap();
                 let font_path = crate::render_thread::get_render_font_path();
-                let needs_recreate = renderer_guard.as_ref().map_or(true, |r| {
+                let needs_recreate = renderer_guard.as_ref().is_none_or(|r| {
                     (r.font_size - font_size).abs() > 0.1 || r.font_path != font_path
                 });
                 if needs_recreate {
-                    android_log(LogPriority::DEBUG, "RenderThread: Recreating TerminalRenderer");
-                    *renderer_guard = Some(TerminalRenderer::new(&[], font_size, font_path.as_deref()));
+                    android_log(
+                        LogPriority::DEBUG,
+                        "RenderThread: Recreating TerminalRenderer",
+                    );
+                    *renderer_guard =
+                        Some(TerminalRenderer::new(&[], font_size, font_path.as_deref()));
                 }
 
                 if let Some(renderer) = renderer_guard.as_mut() {
                     if params.sel_active {
-                        renderer.set_selection(params.sel_x1, params.sel_y1, params.sel_x2, params.sel_y2);
+                        renderer.set_selection(
+                            params.sel_x1,
+                            params.sel_y1,
+                            params.sel_x2,
+                            params.sel_y2,
+                        );
                     } else {
                         renderer.clear_selection();
                     }
@@ -273,7 +329,7 @@ fn spawn_render_thread(engine_ptr: jlong) {
                     let _ = ctx.device.queue_submit(
                         ctx.queue,
                         &[signal_semaphore_info],
-                        ctx.in_flight_fence
+                        ctx.in_flight_fence,
                     );
                 }
 
@@ -283,7 +339,10 @@ fn spawn_render_thread(engine_ptr: jlong) {
                     break;
                 }
                 if !SURFACE_READY.load(Ordering::SeqCst) {
-                    android_log(LogPriority::WARN, "RenderThread: Surface invalidated before present, dropping frame");
+                    android_log(
+                        LogPriority::WARN,
+                        "RenderThread: Surface invalidated before present, dropping frame",
+                    );
                     continue;
                 }
 
@@ -296,24 +355,39 @@ fn spawn_render_thread(engine_ptr: jlong) {
                     ..Default::default()
                 };
 
-                let present_result = unsafe {
-                    ctx.swapchain_loader.queue_present(ctx.queue, &present_info)
-                };
-                
+                let present_result =
+                    unsafe { ctx.swapchain_loader.queue_present(ctx.queue, &present_info) };
+
                 if let Err(e) = present_result {
-                    android_log(LogPriority::ERROR, &format!("CRITICAL: queue_present FAILED: {:?}. Stopping render loop.", e));
+                    android_log(
+                        LogPriority::ERROR,
+                        &format!(
+                            "CRITICAL: queue_present FAILED: {:?}. Stopping render loop.",
+                            e
+                        ),
+                    );
                     RENDER_THREAD_RUNNING.store(false, Ordering::SeqCst);
                     break;
                 }
 
                 if frame_count % 300 == 0 {
-                    android_log(LogPriority::INFO, &format!("RenderThread: Frame {} completed, lat={:?}", frame_count, step_start.elapsed()));
+                    android_log(
+                        LogPriority::INFO,
+                        &format!(
+                            "RenderThread: Frame {} completed, lat={:?}",
+                            frame_count,
+                            step_start.elapsed()
+                        ),
+                    );
                 }
 
                 frame_count += 1;
             }
-            android_log(LogPriority::INFO, &format!("Render thread stopped after {} frames", frame_count));
-            
+            android_log(
+                LogPriority::INFO,
+                &format!("Render thread stopped after {} frames", frame_count),
+            );
+
             // 线程退出前彻底清除标志
             SURFACE_READY.store(false, Ordering::SeqCst);
             RENDER_THREAD_RUNNING.store(false, Ordering::SeqCst);

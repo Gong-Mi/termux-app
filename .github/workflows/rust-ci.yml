@@ -68,7 +68,10 @@ jobs:
       
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
-      
+
+      - name: Install native libraries for test linking
+        run: sudo apt-get update && sudo apt-get install -y libfreetype-dev libfontconfig-dev
+
       - name: Cache Cargo
         uses: actions/cache@v4
         with:
@@ -77,7 +80,7 @@ jobs:
             ~/.cargo/git
             terminal-emulator/src/main/rust/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('terminal-emulator/src/main/rust/Cargo.lock') }}
-      
+
       - name: Run Tests
         run: |
           cd terminal-emulator/src/main/rust
@@ -97,9 +100,9 @@ jobs:
     strategy:
       matrix:
         target:
+          # 64-bit only: armv7/i686 dropped (skia-bindings needs API 26+ and
+          # no 32-bit device is a maintenance target anymore).
           - aarch64-linux-android
-          - armv7-linux-androideabi
-          - i686-linux-android
           - x86_64-linux-android
     
     steps:
@@ -125,7 +128,7 @@ jobs:
       - name: Build for ${{ matrix.target }}
         run: |
           cd terminal-emulator/src/main/rust
-          cargo ndk -t ${{ matrix.target == 'aarch64-linux-android' && 'arm64-v8a' || matrix.target == 'armv7-linux-androideabi' && 'armeabi-v7a' || matrix.target == 'i686-linux-android' && 'x86' || 'x86_64' }} -p 24 build --release
+          cargo ndk -t ${{ matrix.target == 'aarch64-linux-android' && 'arm64-v8a' || matrix.target == 'armv7-linux-androideabi' && 'armeabi-v7a' || matrix.target == 'i686-linux-android' && 'x86' || 'x86_64' }} -p 26 build --release
         
         env:
           CARGO_TARGET_${{ matrix.target == 'aarch64-linux-android' && 'AARCH64' || matrix.target == 'armv7-linux-androideabi' && 'ARMV7' || matrix.target == 'i686-linux-android' && 'I686' || 'X86_64' }}_LINKER: clang
@@ -134,6 +137,9 @@ jobs:
   arm64-native-test:
     name: Native ARM64 Tests
     runs-on: ubuntu-24.04-arm64
+    # Hard cap: this job previously hung until the 24h run limit on every
+    # execution; a timeout surfaces partial logs instead of a silent cancel.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
       
