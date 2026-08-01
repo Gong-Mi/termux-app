@@ -97,9 +97,9 @@ jobs:
     strategy:
       matrix:
         target:
+          # 64-bit only: armv7/i686 dropped (skia-bindings needs API 26+ and
+          # no 32-bit device is a maintenance target anymore).
           - aarch64-linux-android
-          - armv7-linux-androideabi
-          - i686-linux-android
           - x86_64-linux-android
     
     steps:
