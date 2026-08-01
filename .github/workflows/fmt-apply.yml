@@ -1,0 +1,41 @@
+name: Apply rustfmt
+
+# One-shot formatting workflow: run manually when the Rustfmt gate drifts.
+# Applies `cargo fmt` to the Rust tree and pushes the result back to the
+# triggering branch.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fmt:
+    name: cargo fmt + push
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Apply rustfmt
+        run: |
+          cd terminal-emulator/src/main/rust
+          cargo fmt
+
+      - name: Commit and push if changed
+        run: |
+          if git diff --quiet; then
+            echo "already formatted"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add terminal-emulator/src/main/rust
+          git commit -m "style: apply cargo fmt (automated)"
+          git push

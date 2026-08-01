@@ -403,6 +403,9 @@ impl Parser {
         
         // 处理特殊控制字符 (C0 控制字符集)
         // 根据 VT100/Xterm 规范，这些字符在大多数状态下应立即执行且不中断序列
+        // Note: specific C0 arms take precedence over the catch-all
+        // 0x00..=0x1F range below; the overlap is intentional.
+        #[allow(clippy::match_overlapping_arm)]
         match byte {
             0x00 => return, // NUL - 忽略
             0x07 | 0x08 | 0x09 | 0x0A | 0x0B | 0x0D | 0x0E | 0x0F => {

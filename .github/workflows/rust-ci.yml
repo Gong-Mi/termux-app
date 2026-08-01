@@ -68,7 +68,10 @@ jobs:
       
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
-      
+
+      - name: Install native libraries for test linking
+        run: sudo apt-get update && sudo apt-get install -y libfreetype-dev libfontconfig-dev
+
       - name: Cache Cargo
         uses: actions/cache@v4
         with:
@@ -77,7 +80,7 @@ jobs:
             ~/.cargo/git
             terminal-emulator/src/main/rust/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('terminal-emulator/src/main/rust/Cargo.lock') }}
-      
+
       - name: Run Tests
         run: |
           cd terminal-emulator/src/main/rust
