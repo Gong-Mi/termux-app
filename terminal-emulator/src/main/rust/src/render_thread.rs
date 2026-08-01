@@ -284,7 +284,7 @@ fn spawn_render_thread(engine_ptr: jlong) {
 
                 let font_size = *RENDER_FONT_SIZE.lock().unwrap();
                 let font_path = crate::render_thread::get_render_font_path();
-                let needs_recreate = renderer_guard.as_ref().map_or(true, |r| {
+                let needs_recreate = renderer_guard.as_ref().is_none_or(|r| {
                     (r.font_size - font_size).abs() > 0.1 || r.font_path != font_path
                 });
                 if needs_recreate {

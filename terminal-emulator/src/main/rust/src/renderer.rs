@@ -141,8 +141,7 @@ impl FontCache {
             .or_else(|| font_mgr.match_family_style("monospace", FontStyle::normal()))
             .expect("monospace font");
         let tf_bold = custom_typeface
-            .as_ref()
-            .map(|tf| tf.clone())
+            .clone()
             .or_else(|| font_mgr.match_family_style("monospace", FontStyle::bold()))
             .unwrap_or_else(|| tf_mono.clone());
         let tf_italic = font_mgr

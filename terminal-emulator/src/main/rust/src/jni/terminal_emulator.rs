@@ -1021,6 +1021,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_updateColors(
                     env.call_method(&entry_set_obj, "iterator", "()Ljava/util/Iterator;", &[])
                 {
                     if let Ok(iter_obj) = iterator.l() {
+                        // Multiple nested break conditions; while-let would
+                        // obscure the control flow here.
+                        #[allow(clippy::while_let_loop)]
                         loop {
                             if let Ok(has_next) = env.call_method(&iter_obj, "hasNext", "()Z", &[])
                             {
