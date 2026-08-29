@@ -72,8 +72,8 @@ jobs:
         run: |
           {
             echo "### Rust correctness"
-            echo "- headSha: \\`${GITHUB_SHA}\\`"
-            echo "- command: \\`bash ./scripts/run-rust-tests.sh ${{ matrix.tier }}\\`"
+            printf '%s\n' "- headSha: \`${GITHUB_SHA}\`"
+            printf '%s\n' "- command: \`bash ./scripts/run-rust-tests.sh ${{ matrix.tier }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
   manual:
@@ -92,6 +92,6 @@ jobs:
         run: |
           {
             echo "### Rust correctness"
-            echo "- headSha: \\`${GITHUB_SHA}\\`"
-            echo "- command: \\`bash ./scripts/run-rust-tests.sh ${{ inputs.tier }}\\`"
+            printf '%s\n' "- headSha: \`${GITHUB_SHA}\`"
+            printf '%s\n' "- command: \`bash ./scripts/run-rust-tests.sh ${{ inputs.tier }}\`"
           } >> "$GITHUB_STEP_SUMMARY"

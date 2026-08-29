@@ -91,6 +91,7 @@ jobs:
       - name: Install API 36 x86_64 emulator image
         run: |
           set -euo pipefail
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
           sdkmanager "platform-tools" "emulator" "platforms;android-${ANDROID_API}" "system-images;android-${ANDROID_API};google_apis;x86_64"
           yes | sdkmanager --licenses >/dev/null || true
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
@@ -153,7 +154,7 @@ jobs:
         run: |
           {
             echo '### Android emulator experiment'
-            echo "- headSha: \\`${GITHUB_SHA}\\`"
+            printf '%s\n' "- headSha: \`${GITHUB_SHA}\`"
             echo "- emulator: API ${ANDROID_API}, x86_64, SwiftShader"
             echo '- claim boundary: install/cold-start/crash-free only; not physical GPU evidence'
           } >> "$GITHUB_STEP_SUMMARY"
