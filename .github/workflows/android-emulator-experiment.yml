@@ -106,25 +106,33 @@ jobs:
         env:
           ANDROID_AVD_HOME: /home/runner/.android/avd
         run: |
-          set -euo pipefail
+          set -euxo pipefail
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
           mkdir -p "$ANDROID_AVD_HOME"
-          echo no | avdmanager create avd \
+          echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd \
             --force \
             --name termux-experiment \
             --package "system-images;android-${ANDROID_API};google_apis;x86_64" \
             --device pixel_5
-          emulator -avd termux-experiment \
-            -no-window -no-audio -no-boot-anim \
-            -gpu swiftshader_indirect -accel off \
+          test -f "$ANDROID_AVD_HOME/termux-experiment.ini"
+          nohup "$ANDROID_HOME/emulator/emulator" -avd termux-experiment \
+            -gpu swiftshader_indirect -no-window -no-audio -no-boot-anim \
+            -no-snapshot -wipe-data -memory 3072 -cores 3 \
             > emulator.log 2>&1 &
           EMULATOR_PID=$!
           printf '%s\n' "$EMULATOR_PID" > emulator.pid
-          adb wait-for-device
-          for _ in $(seq 1 120); do
-            if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then
+          for i in $(seq 1 15); do
+            sleep 60
+            boot=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
+            echo "[boot-wait minute $i] sys.boot_completed='$boot'"
+            if [ "$boot" = "1" ]; then
               break
             fi
-            sleep 2
+            if ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
+              printf '%s\n' 'Emulator process exited before Android boot completed' >&2
+              tail -100 emulator.log >&2 || true
+              exit 43
+            fi
           done
           test "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1"
           adb shell wm size
