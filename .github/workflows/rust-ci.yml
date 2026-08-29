@@ -9,13 +9,14 @@ on:
       - master
       - feature/rust-integration
     paths:
-      - 'terminal-emulator/src/main/rust/**'
       - '.github/workflows/rust-ci.yml'
+      - 'terminal-emulator/src/main/rust/**'
   pull_request:
     branches:
       - master
       - feature/rust-integration
     paths:
+      - '.github/workflows/rust-ci.yml'
       - 'terminal-emulator/src/main/rust/**'
   workflow_dispatch:
 
@@ -80,8 +81,7 @@ jobs:
       
       - name: Run Tests
         run: |
-          cd terminal-emulator/src/main/rust
-          cargo test --test consistency -- --test-threads=1
+          bash ./scripts/run-rust-tests.sh core
       
       - name: Upload Test Results
         if: always()
@@ -142,9 +142,8 @@ jobs:
       
       - name: Run Native ARM Tests
         run: |
-          cd terminal-emulator/src/main/rust
-          # 由于是原生 ARM 环境，直接跑测试即可
-          cargo test --test consistency -- --test-threads=1
+          # The native runner uses the same explicit correctness tier.
+          bash ./scripts/run-rust-tests.sh core
 
   # 文档检查
   doc:
