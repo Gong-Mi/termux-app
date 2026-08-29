@@ -1,23 +1,6 @@
 name: Rust correctness tiers
 
-on:
-  push:
-    branches:
-      - master
-      - feature/rust-integration
-      - refactor/**
-    paths:
-      - 'terminal-emulator/src/main/rust/**'
-      - 'terminal-emulator/src/main/rust/Cargo.toml'
-      - 'terminal-emulator/src/main/rust/Cargo.lock'
-      - 'scripts/run-rust-tests.sh'
-      - 'TESTING.md'
-      - '.github/workflows/rust-quality.yml'
-      - '.github/workflows/rust-ci.yml'
-      - '.github/workflows/run_tests.yml'
-      - '.github/workflows/compare-engines.yml'
-      - 'buildSrc/**'
-      - 'terminal-emulator/build.gradle*'
+"on":
   pull_request:
     branches:
       - master

@@ -1,19 +1,6 @@
 name: Android emulator experiment
 
 "on":
-  push:
-    branches:
-      - feature/rust-integration
-      - refactor/**
-    paths:
-      - 'app/**'
-      - 'terminal-emulator/**'
-      - 'terminal-view/**'
-      - 'termux-shared/**'
-      - 'buildSrc/**'
-      - 'gradle/**'
-      - '*.gradle*'
-      - '.github/workflows/android-emulator-experiment.yml'
   pull_request:
     branches:
       - feature/rust-integration
