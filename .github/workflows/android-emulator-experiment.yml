@@ -68,7 +68,7 @@ jobs:
       - name: Install emulator build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libfreetype6-dev libfontconfig1-dev
+          sudo apt-get install -y ninja-build libfreetype6-dev libfontconfig1-dev libpulse0
           unzip scripts/gn-linux-amd64.zip -d /tmp/gn-bin
           sudo install -m 0755 /tmp/gn-bin/gn /usr/local/bin/gn
           gn --version
