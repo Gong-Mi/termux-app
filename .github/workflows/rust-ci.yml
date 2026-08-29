@@ -54,6 +54,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+
+      - name: Install native test libraries
+        run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
       
       - name: Run Clippy
         run: |
@@ -69,6 +72,9 @@ jobs:
       
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install native test libraries
+        run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
       
       - name: Cache Cargo
         uses: actions/cache@v4
@@ -139,6 +145,9 @@ jobs:
       
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install native test libraries
+        run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
       
       - name: Run Native ARM Tests
         run: |
@@ -154,6 +163,9 @@ jobs:
       
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install native test libraries
+        run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
       
       - name: Build Documentation
         run: |

@@ -43,6 +43,9 @@ jobs:
           shared-key: "termux-rust-engine"
           target-dir: false
 
+      - name: Install native test libraries
+        run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
+
       # ========== Java Performance Test (Master Branch) ==========
       - name: Checkout Master for Java Baseline
         uses: actions/checkout@v6

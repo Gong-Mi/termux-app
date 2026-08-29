@@ -58,6 +58,9 @@ jobs:
             cargo install cargo-ndk --version 3.5.0
           fi
 
+      - name: Install native test libraries
+        run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
+
       - name: Build Rust Libraries
         run: |
           cd terminal-emulator/src/main/rust

@@ -56,6 +56,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
+      - name: Install native test libraries
+        run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
       - uses: actions/cache@v4
         with:
           path: |
@@ -81,6 +83,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
+      - name: Install native test libraries
+        run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
       - name: Run selected tier
         run: bash ./scripts/run-rust-tests.sh "${{ inputs.tier }}"
       - name: Record exact verification
