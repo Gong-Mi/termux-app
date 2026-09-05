@@ -1,14 +1,7 @@
 name: Engine Comparison (Java vs Rust)
 
+# Comparative benchmarks are opt-in, not a per-commit correctness gate.
 on:
-  push:
-    branches:
-      - master
-      - feature/rust-integration
-  pull_request:
-    branches:
-      - master
-      - feature/rust-integration
   workflow_dispatch:
 
 env:
@@ -16,10 +9,15 @@ env:
   ANDROID_NDK_VERSION: 29.0.14206865
   RUST_TOOLCHAIN: stable
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   performance:
     name: ⚡ Performance Benchmark
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
@@ -196,6 +194,7 @@ jobs:
   consistency:
     name: 🛡️ Logic Consistency Test
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
@@ -220,6 +219,7 @@ jobs:
   branch-consistency:
     name: 🔀 Branch Consistency Check
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout Feature Branch
         uses: actions/checkout@v6

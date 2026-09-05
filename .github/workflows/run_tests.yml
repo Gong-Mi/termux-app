@@ -19,6 +19,10 @@ on:
       - 'art/**'
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -71,11 +75,12 @@ jobs:
           mkdir -p ../jniLibs/arm64-v8a
           cp target/aarch64-linux-android/release/libtermux_rust.so ../jniLibs/arm64-v8a/
 
-      - name: Run Rust Tests
-        run: |
-          cd terminal-emulator/src/main/rust
-          # 运行 Rust 原生一致性测试
-          cargo test --test consistency -- --test-threads=1
+      # Automatic Rust correctness is owned by rust-quality.yml/core.
+      # Retain standalone/legacy execution where that workflow is not triggered.
+      - name: Run standalone Rust consistency
+        if: github.event_name == 'workflow_dispatch' || github.base_ref == 'android-10' || github.ref == 'refs/heads/android-10'
+        working-directory: terminal-emulator/src/main/rust
+        run: cargo test --locked --test consistency -- --test-threads=1
 
       - name: Cache Gradle Wrapper
         uses: actions/cache@v4

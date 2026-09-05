@@ -1,6 +1,22 @@
 name: Rust correctness tiers
 
 "on":
+  push:
+    branches:
+      - master
+      - feature/rust-integration
+    paths:
+      - 'terminal-emulator/src/main/rust/**'
+      - 'terminal-emulator/src/main/rust/Cargo.toml'
+      - 'terminal-emulator/src/main/rust/Cargo.lock'
+      - 'scripts/run-rust-tests.sh'
+      - 'TESTING.md'
+      - '.github/workflows/rust-quality.yml'
+      - '.github/workflows/rust-ci.yml'
+      - '.github/workflows/run_tests.yml'
+      - '.github/workflows/compare-engines.yml'
+      - 'buildSrc/**'
+      - 'terminal-emulator/build.gradle*'
   pull_request:
     branches:
       - master
@@ -49,6 +65,7 @@ jobs:
     name: Rust correctness (${{ matrix.tier }})
     if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -80,6 +97,7 @@ jobs:
     name: Manual selected tier
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable

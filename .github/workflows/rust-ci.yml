@@ -25,11 +25,16 @@ env:
   RUST_BACKTRACE: 1
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # Rust 代码格式检查
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
       
@@ -47,6 +52,7 @@ jobs:
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
       
@@ -63,44 +69,15 @@ jobs:
           cd terminal-emulator/src/main/rust
           cargo clippy --all-targets --all-features -- -D warnings
 
-  # Rust 单元测试
-  test:
-    name: Native x86_64 Tests
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v6
-      
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install native test libraries
-        run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
-      
-      - name: Cache Cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            terminal-emulator/src/main/rust/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('terminal-emulator/src/main/rust/Cargo.lock') }}
-      
-      - name: Run Tests
-        run: |
-          bash ./scripts/run-rust-tests.sh core
-      
-      - name: Upload Test Results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: rust-test-results
-          path: terminal-emulator/src/main/rust/target/cargo_target_dir/debug/deps/*.d
+  # Host correctness is owned by rust-quality.yml on PR and push.
 
   # Android 交叉编译检查
   android-build:
     name: Android Build
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
+      fail-fast: false
       matrix:
         target:
           - aarch64-linux-android
@@ -137,13 +114,14 @@ jobs:
           CARGO_TARGET_${{ matrix.target == 'aarch64-linux-android' && 'AARCH64' || matrix.target == 'armv7-linux-androideabi' && 'ARMV7' || matrix.target == 'i686-linux-android' && 'I686' || 'X86_64' }}_LINKER: clang
 
   # Native ARM64 acceptance is deferred while ARM runners are unavailable.
-  # The x86_64 test job above already runs the same core tier; do not duplicate it.
+  # The x86_64 rust-quality.yml jobs own host correctness; do not duplicate them.
   # Android ARM cross-compilation remains in android-build (not native execution).
 
   # 文档检查
   doc:
     name: Documentation
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
       

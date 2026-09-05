@@ -17,9 +17,14 @@ env:
   FORCE_SKIA_BUILD: 1
   SKIA_NATIVE_API_LEVEL: 35
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
