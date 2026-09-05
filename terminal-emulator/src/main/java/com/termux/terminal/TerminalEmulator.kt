@@ -8,16 +8,29 @@ package com.termux.terminal
  *
  * @see RustTerminal 集中管理的 JNI 调用封装
  */
-class TerminalEmulator(
-    session: TerminalOutput?,
-    columns: Int,
-    rows: Int,
-    cellWidthPixels: Int,
-    cellHeightPixels: Int,
-    transcriptRows: Int?,
-    ptyFd: Int,
-    client: TerminalSessionClient
-) {
+class TerminalEmulator {
+
+    constructor(
+        session: TerminalOutput?,
+        columns: Int,
+        rows: Int,
+        cellWidthPixels: Int,
+        cellHeightPixels: Int,
+        transcriptRows: Int?,
+        ptyFd: Int,
+        client: TerminalSessionClient
+    ) {
+        mRustCallback = RustEngineCallback(client)
+        if (session is TerminalSession) mRustCallback.setSession(session)
+        mEnginePtr = RustTerminal.createEngine(
+            columns, rows, cellWidthPixels, cellHeightPixels,
+            transcriptRows ?: DEFAULT_TERMINAL_TRANSCRIPT_ROWS,
+            mRustCallback
+        )
+        if (mEnginePtr != 0L && ptyFd != -1) {
+            RustTerminal.startIoThread(mEnginePtr, ptyFd)
+        }
+    }
 
     @JvmOverloads
     constructor(
@@ -25,25 +38,10 @@ class TerminalEmulator(
         enginePtr: Long,
         ptyFd: Int,
         callback: RustEngineCallback
-    ) : this(null, 0, 0, 0, 0, null, 0, object : TerminalSessionClient {
-        override fun onTextChanged(changedSession: TerminalSession) {}
-        override fun onTitleChanged(changedSession: TerminalSession) {}
-        override fun onSessionFinished(finishedSession: TerminalSession) {}
-        override fun onCopyTextToClipboard(session: TerminalSession, text: String) {}
-        override fun onPasteTextFromClipboard(session: TerminalSession?) {}
-        override fun onBell(session: TerminalSession) {}
-        override fun onColorsChanged(session: TerminalSession) {}
-        override fun onTerminalCursorStateChange(state: Boolean) {}
-        override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}
-        override fun getTerminalCursorStyle(): Int? = null
-        override fun logError(tag: String, message: String) {}
-        override fun logWarn(tag: String, message: String) {}
-        override fun logInfo(tag: String, message: String) {}
-        override fun logDebug(tag: String, message: String) {}
-        override fun logVerbose(tag: String, message: String) {}
-        override fun logStackTraceWithMessage(tag: String, message: String, e: Exception?) {}
-        override fun logStackTrace(tag: String, e: Exception?) {}
-    }) {
+    ) {
+        // The async native creator already owns PTY IO. Adoption must not create
+        // another engine or transfer this descriptor to a second reader.
+        mRustCallback = callback
         if (session != null) callback.setSession(session)
         mEnginePtr = enginePtr
     }
@@ -67,19 +65,7 @@ class TerminalEmulator(
 
     @Volatile
     private var mEnginePtr: Long = 0
-    private val mRustCallback: RustEngineCallback = RustEngineCallback(client)
-
-    init {
-        if (session is TerminalSession) mRustCallback.setSession(session)
-        mEnginePtr = RustTerminal.createEngine(
-            columns, rows, cellWidthPixels, cellHeightPixels,
-            transcriptRows ?: DEFAULT_TERMINAL_TRANSCRIPT_ROWS,
-            mRustCallback
-        )
-        if (mEnginePtr != 0L && ptyFd != -1) {
-            RustTerminal.startIoThread(mEnginePtr, ptyFd)
-        }
-    }
+    private val mRustCallback: RustEngineCallback
 
     // --- 数据输入 ---
     fun append(batch: ByteArray, length: Int) {
