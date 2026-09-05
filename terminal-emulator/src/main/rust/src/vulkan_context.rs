@@ -5,6 +5,31 @@ use ash::{Device, Entry, Instance, vk as ash_vk};
 use skia_safe::{ColorType, Surface as SkSurface, gpu::DirectContext, gpu::vk};
 use std::ffi::CStr;
 
+fn skia_max_api_version(created: u32) -> u32 {
+    #[cfg(all(feature = "skia-api-experiment", target_os = "android"))]
+    {
+        // Android PROP_VALUE_MAX is 92, including the terminating NUL.
+        unsafe extern "C" {
+            fn __system_property_get(
+                name: *const std::ffi::c_char,
+                value: *mut std::ffi::c_char,
+            ) -> i32;
+        }
+        let mut value = [0 as std::ffi::c_char; 92];
+        let length = unsafe {
+            __system_property_get(c"debug.termux.skia_api_cap".as_ptr(), value.as_mut_ptr())
+        };
+        let property = if length > 0 {
+            unsafe { CStr::from_ptr(value.as_ptr()) }.to_str().ok()
+        } else {
+            None
+        };
+        crate::skia_api_contract::max_api_version(created, true, property)
+    }
+    #[cfg(not(all(feature = "skia-api-experiment", target_os = "android")))]
+    crate::skia_api_contract::max_api_version(created, false, None)
+}
+
 pub struct VulkanContext {
     pub entry: Entry,
     // 依赖对象最先声明，以便最先销毁
@@ -79,7 +104,8 @@ impl VulkanContext {
             android_log(LogPriority::INFO, "Vulkan: VK_EXT_debug_utils enabled");
         }
 
-        // 尝试使用 1.1，如果失败则回退到 1.0 (增强 Adreno 兼容性)
+        // Retain the successful ApplicationInfo version, not the loader/device maximum.
+        // Skia m145 requires 1.1; the legacy 1.0 fallback is rejected before Skia.
         let mut instance = None;
         for api_version in [ash_vk::API_VERSION_1_1, ash_vk::API_VERSION_1_0] {
             let app_info = ash_vk::ApplicationInfo {
@@ -99,7 +125,7 @@ impl VulkanContext {
 
             match unsafe { entry.create_instance(&create_info, None) } {
                 Ok(inst) => {
-                    instance = Some(inst);
+                    instance = Some((inst, api_version));
                     let ver_str = if api_version == ash_vk::API_VERSION_1_1 {
                         "1.1"
                     } else {
@@ -123,7 +149,7 @@ impl VulkanContext {
             }
         }
 
-        let instance = if let Some(inst) = instance {
+        let (instance, created_api_version) = if let Some(inst) = instance {
             inst
         } else {
             android_log(
@@ -132,6 +158,30 @@ impl VulkanContext {
             );
             return None;
         };
+
+        let loader_api_version = match unsafe { entry.try_enumerate_instance_version() } {
+            Ok(version) => version.unwrap_or(ash_vk::API_VERSION_1_0),
+            Err(error) => {
+                android_log(
+                    LogPriority::ERROR,
+                    &format!("SKIA_API_REJECT: loader query failed: {error:?}"),
+                );
+                unsafe { instance.destroy_instance(None) };
+                return None;
+            }
+        };
+        if !crate::skia_api_contract::supported(
+            created_api_version,
+            loader_api_version,
+            ash_vk::API_VERSION_1_1,
+        ) {
+            android_log(
+                LogPriority::ERROR,
+                "SKIA_API_REJECT: instance/loader requires Vulkan 1.1",
+            );
+            unsafe { instance.destroy_instance(None) };
+            return None;
+        }
 
         let surface_loader = ash::khr::surface::Instance::new(&entry, &instance);
         let android_surface_loader = ash::khr::android_surface::Instance::new(&entry, &instance);
@@ -239,6 +289,29 @@ impl VulkanContext {
             }
         };
 
+        let physical_api_version =
+            unsafe { instance.get_physical_device_properties(pdevice) }.api_version;
+        android_log(
+            LogPriority::INFO,
+            &format!(
+                "SKIA_API_VERSIONS: loader={loader_api_version} physical={physical_api_version} created={created_api_version}"
+            ),
+        );
+        if !crate::skia_api_contract::supported(
+            created_api_version,
+            loader_api_version,
+            physical_api_version,
+        ) {
+            android_log(
+                LogPriority::ERROR,
+                "SKIA_API_REJECT: physical device requires Vulkan 1.1",
+            );
+            unsafe {
+                surface_loader.destroy_surface(surface, None);
+                instance.destroy_instance(None);
+            }
+            return None;
+        }
         let queue_family_index = selected_queue_family;
 
         // 设备级扩展
@@ -370,31 +443,31 @@ impl VulkanContext {
         let device_raw = device.handle().as_raw();
 
         let get_proc = move |of: vk::GetProcOf| unsafe {
-            match of {
-                vk::GetProcOf::Instance(inst, name) => {
-                    let name_cstr = CStr::from_ptr(name);
-                    entry_ptr
-                        .get_instance_proc_addr(
-                            ash_vk::Instance::from_raw(inst as _),
-                            name_cstr.as_ptr(),
-                        )
-                        .map(|f| f as _)
-                        .unwrap_or(std::ptr::null())
-                }
-                vk::GetProcOf::Device(dev, name) => {
-                    let name_cstr = CStr::from_ptr(name);
-                    instance_ptr
-                        .get_device_proc_addr(
-                            ash_vk::Device::from_raw(dev as _),
-                            name_cstr.as_ptr(),
-                        )
-                        .map(|f| f as _)
-                        .unwrap_or(std::ptr::null())
-                }
+            let (scope, name, proc) = match of {
+                vk::GetProcOf::Instance(inst, name) => (
+                    "instance",
+                    name,
+                    entry_ptr.get_instance_proc_addr(ash_vk::Instance::from_raw(inst as _), name),
+                ),
+                vk::GetProcOf::Device(dev, name) => (
+                    "device",
+                    name,
+                    instance_ptr.get_device_proc_addr(ash_vk::Device::from_raw(dev as _), name),
+                ),
+            };
+            if proc.is_none() {
+                android_log(
+                    LogPriority::WARN,
+                    &format!(
+                        "SKIA_NULL_PROC: scope={scope} name={}",
+                        CStr::from_ptr(name).to_string_lossy()
+                    ),
+                );
             }
+            proc.map(|f| f as _).unwrap_or(std::ptr::null())
         };
 
-        let backend_context = unsafe {
+        let mut backend_context = unsafe {
             vk::BackendContext::new(
                 instance_raw as _,
                 pdevice.as_raw() as _,
@@ -404,6 +477,12 @@ impl VulkanContext {
             )
         };
 
+        let max_api_version = skia_max_api_version(created_api_version);
+        backend_context.set_max_api_version(max_api_version);
+        android_log(
+            LogPriority::INFO,
+            &format!("SKIA_API_CONTRACT: created={created_api_version} max={max_api_version}"),
+        );
         android_log(
             LogPriority::INFO,
             "VulkanContext::new: Creating Skia context with optimized options",
@@ -452,6 +531,21 @@ impl VulkanContext {
             queue,
             extent,
         };
+
+        // The probe runs on this real Vulkan DirectContext, before any swapchain drawing.
+        // Build feature, not debug_assertions: debug APKs also use cargo --release.
+        #[cfg(feature = "skia-api-experiment")]
+        if let Err(reason) =
+            crate::skia_backend_probe::draw_and_readback(ctx.context.as_mut().unwrap())
+        {
+            android_log(
+                LogPriority::ERROR,
+                &format!("SKIA_BACKEND_READBACK: FAIL {reason}"),
+            );
+            return None;
+        }
+        #[cfg(feature = "skia-api-experiment")]
+        android_log(LogPriority::INFO, "SKIA_BACKEND_READBACK: PASS");
 
         let swapchain_ok = ctx.recreate_swapchain(extent.width, extent.height);
         if !swapchain_ok {

@@ -49,6 +49,9 @@ pub mod jni;
 pub mod pty;
 pub mod render_thread;
 pub mod renderer;
+mod skia_api_contract;
+#[cfg(feature = "skia-api-experiment")]
+mod skia_backend_probe;
 pub mod terminal;
 pub mod utils;
 pub mod vte_parser;

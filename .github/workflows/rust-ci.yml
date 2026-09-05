@@ -14,6 +14,7 @@ on:
   pull_request:
     branches:
       - fix/engine-adoption
+      - fix/engine-handle-lifetime
       - master
       - feature/rust-integration
     paths:
@@ -69,6 +70,17 @@ jobs:
       - name: Install native test libraries
         run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
       
+      # Cache dependencies even while inherited lint failures keep this job red.
+      # Job ID keeps all-features Clippy separate from default-feature rustdoc.
+      - name: Cache Clippy dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: terminal-emulator/src/main/rust -> target
+          key: host-clippy-all-features
+          env-vars: CARGO CC CFLAGS CXX CMAKE RUST SKIA FORCE_SKIA ImageOS ImageVersion
+          cache-bin: "false"
+          cache-on-failure: "true"
+
       - name: Run Clippy
         run: |
           cd terminal-emulator/src/main/rust
@@ -101,16 +113,38 @@ jobs:
           targets: ${{ matrix.target }}
       
       - name: Install cargo-ndk
-        run: cargo install cargo-ndk --version 3.5.0
-      
-      - name: Cache Cargo
-        uses: actions/cache@v4
+        uses: taiki-e/install-action@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            terminal-emulator/src/main/rust/target
-          key: ${{ runner.os }}-cargo-android-${{ matrix.target }}-${{ hashFiles('terminal-emulator/src/main/rust/Cargo.lock') }}
+          tool: cargo-ndk@3.5.0
+
+      - name: Identify actual Android NDK
+        id: ndk
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+          ndk = os.environ.get("ANDROID_NDK_HOME") or os.environ.get("ANDROID_NDK_ROOT")
+          if not ndk:
+              raise SystemExit("Runner did not expose an Android NDK; cannot key native cache safely")
+          root = Path(ndk).resolve()
+          identity = hashlib.sha256((root / "source.properties").read_bytes()).hexdigest()
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"identity={identity}\n")
+          with open(os.environ["GITHUB_ENV"], "a") as output:
+              output.write(f"ANDROID_NDK_HOME={root}\n")
+          print((root / "source.properties").read_text())
+          PY
+
+      # rust-cache includes rustc identity and Cargo manifests/lock/config;
+      # additionally separate ABI, API, NDK, profile and native build environment.
+      - name: Cache Android dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: terminal-emulator/src/main/rust -> target
+          key: android-${{ matrix.target }}-api26-release-ndk-${{ steps.ndk.outputs.identity }}
+          env-vars: CARGO CC CFLAGS CXX CMAKE RUST ANDROID_NDK SKIA FORCE_SKIA ImageOS ImageVersion
+          cache-bin: "false"
       
       - name: Build for ${{ matrix.target }}
         run: |
@@ -143,6 +177,14 @@ jobs:
       - name: Install native test libraries
         run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
       
+      - name: Cache documentation dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: terminal-emulator/src/main/rust -> target
+          key: host-doc-default-features
+          env-vars: CARGO CC CFLAGS CXX CMAKE RUST SKIA FORCE_SKIA ImageOS ImageVersion
+          cache-bin: "false"
+
       - name: Build Documentation
         run: |
           cd terminal-emulator/src/main/rust

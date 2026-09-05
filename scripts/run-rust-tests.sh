@@ -9,10 +9,14 @@ run_tests() {
     local tier="$1"
     shift
     printf '\n== Rust test tier: %s ==\n' "$tier"
+    local -a targets=()
+    local test_name
     for test_name in "$@"; do
-        printf '\n-- %s --\n' "$test_name"
-        cargo test --locked --test "$test_name" -- --test-threads=1
+        targets+=(--test "$test_name")
     done
+    # Resolve/build the tier once, retaining explicit target selection. Cargo
+    # executes test binaries serially; a failing binary must not hide later ones.
+    cargo test --locked --no-fail-fast "${targets[@]}" -- --test-threads=1
 }
 
 cd "$RUST_DIR"

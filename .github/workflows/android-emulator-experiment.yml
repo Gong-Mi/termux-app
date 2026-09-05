@@ -4,6 +4,7 @@ name: Android emulator experiment
   pull_request:
     branches:
       - fix/engine-adoption
+      - fix/engine-handle-lifetime
       - feature/rust-integration
     paths:
       - 'app/**'
@@ -11,6 +12,12 @@ name: Android emulator experiment
       - 'terminal-view/**'
       - 'termux-shared/**'
       - 'buildSrc/**'
+      - 'scripts/verify-skia-api-ab.py'
+      - 'scripts/tests/test_verify_skia_api_ab.py'
+      - 'scripts/test-skia-experiment-wiring.py'
+      - 'scripts/verify-test-build-ci.py'
+      - 'scripts/tests/test_rust_test_runner.py'
+      - 'scripts/tests/rust-tier-targets.json'
       - 'gradle/**'
       - '*.gradle*'
       - '.github/workflows/android-emulator-experiment.yml'
@@ -78,6 +85,12 @@ jobs:
         with:
           targets: x86_64-linux-android
 
+      - name: Verify A/B oracle and API policy before building
+        run: |
+          python3 -m unittest discover -s scripts/tests -v
+          rustc --edition=2024 --test terminal-emulator/src/main/rust/src/skia_api_contract.rs -o /tmp/skia-api-policy
+          /tmp/skia-api-policy
+
       - name: Verify Android foreground-service manifest
         run: python3 scripts/verify-android-service-manifest.py
 
@@ -95,6 +108,36 @@ jobs:
           gn --version
           ninja --version
 
+      - name: Identify actual Android NDK
+        id: ndk
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+          ndk = os.environ.get("ANDROID_NDK_HOME") or os.environ.get("ANDROID_NDK_ROOT")
+          if not ndk:
+              raise SystemExit("Runner did not expose an Android NDK; cannot key native cache safely")
+          root = Path(ndk).resolve()
+          identity = hashlib.sha256((root / "source.properties").read_bytes()).hexdigest()
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"identity={identity}\n")
+          with open(os.environ["GITHUB_ENV"], "a") as output:
+              output.write(f"ANDROID_NDK_HOME={root}\n")
+          print((root / "source.properties").read_text())
+          PY
+
+      # Forced Skia source build, API35 and experimental feature must never
+      # share native outputs with rust-ci's default-feature API26 builds.
+      - name: Cache emulator native dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: terminal-emulator/src/main/rust -> target
+          key: emulator-x86_64-api26-skia35-release-skia-api-experiment-ndk-${{ steps.ndk.outputs.identity }}
+          env-vars: CARGO CC CFLAGS CXX CMAKE RUST ANDROID_NDK SKIA FORCE_SKIA ImageOS ImageVersion
+          cache-bin: "false"
+          cache-on-failure: "true"
+
       - name: Build debug APKs
         env:
           TERMUX_PACKAGE_VARIANT: ${{ env.PACKAGE_VARIANT }}
@@ -102,7 +145,17 @@ jobs:
           TERMUX_APK_VERSION_TAG: emulator-${{ github.sha }}
         run: |
           set -euo pipefail
-          ./gradlew assembleDebug --parallel --no-daemon --console=plain
+          python3 - <<'PY'
+          import subprocess
+          result = subprocess.run([
+              './gradlew', 'assembleRelease', '-PskiaApiExperiment=true',
+              '--dry-run', '--no-daemon', '--console=plain',
+          ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=300)
+          print(result.stdout)
+          if result.returncode == 0 or 'skiaApiExperiment is restricted to debuggable APK variants' not in result.stdout:
+              raise SystemExit('Experiment release guard was not exercised successfully')
+          PY
+          ./gradlew assembleDebug -PskiaApiExperiment=true --parallel --no-daemon --console=plain
           APK_DIR=app/build/outputs/apk/debug
           test -s "$APK_DIR/termux-app_emulator-${GITHUB_SHA}_x86_64.apk"
           sha256sum "$APK_DIR/termux-app_emulator-${GITHUB_SHA}_x86_64.apk" > apk.sha256
@@ -161,35 +214,23 @@ jobs:
           adb shell wm density
           adb shell getprop ro.build.version.sdk
 
-      - name: Install exact x86_64 APK and cold-start Termux
+      - name: Install exact APK and verify Skia API A/B
         run: |
           set -euo pipefail
           APK="app/build/outputs/apk/debug/termux-app_emulator-${GITHUB_SHA}_x86_64.apk"
           adb install -r "$APK"
-          adb shell am force-stop com.termux
-          adb logcat -c
-          adb shell monkey -p com.termux 1
-          sleep 15
           adb shell dumpsys package com.termux > package.txt
-          adb shell dumpsys activity activities > activities.txt
-          adb shell pidof com.termux > pid.txt || true
-          adb exec-out screencap -p > termux-startup.png
-          adb logcat -d -v threadtime > logcat.txt
-          if grep -Eiq 'FATAL EXCEPTION|AndroidRuntime.*FATAL|SIGSEGV|SIGABRT' logcat.txt; then
-            printf '%s\n' 'Fatal startup signal found in logcat' >&2
-            exit 1
-          fi
-          test -s pid.txt
-          grep -q 'com.termux' activities.txt
+          python3 scripts/verify-skia-api-ab.py --output skia-api-ab --require-baseline-failure
 
       - name: Record experiment evidence
         if: always()
         run: |
           {
             echo '### Android emulator experiment'
-            printf '%s\n' "- headSha: \`${GITHUB_SHA}\`"
+            printf '%s\n' "- headSha: \`$(git rev-parse HEAD)\`"
+            printf '%s\n' "- eventSha: \`${GITHUB_SHA}\`"
             echo "- emulator: API ${ANDROID_API}, x86_64, SwiftShader"
-            echo '- claim boundary: install/cold-start/crash-free only; not physical GPU evidence'
+            echo '- claim boundary: see skia-api-ab/summary.json for same-APK API-cap A/B, GPU readback and first-frame result; not physical GPU or sustained rendering evidence'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload emulator evidence
@@ -203,7 +244,4 @@ jobs:
             emulator.log
             emulator.pid
             package.txt
-            activities.txt
-            pid.txt
-            logcat.txt
-            termux-startup.png
+            skia-api-ab/

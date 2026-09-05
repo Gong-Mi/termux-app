@@ -10,6 +10,9 @@ name: Rust correctness tiers
       - 'terminal-emulator/src/main/rust/Cargo.toml'
       - 'terminal-emulator/src/main/rust/Cargo.lock'
       - 'scripts/run-rust-tests.sh'
+      - 'scripts/tests/test_rust_test_runner.py'
+      - 'scripts/tests/rust-tier-targets.json'
+      - 'scripts/verify-test-build-ci.py'
       - 'TESTING.md'
       - '.github/workflows/rust-quality.yml'
       - '.github/workflows/rust-ci.yml'
@@ -20,6 +23,7 @@ name: Rust correctness tiers
   pull_request:
     branches:
       - fix/engine-adoption
+      - fix/engine-handle-lifetime
       - master
       - feature/rust-integration
     paths:
@@ -27,6 +31,9 @@ name: Rust correctness tiers
       - 'terminal-emulator/src/main/rust/Cargo.toml'
       - 'terminal-emulator/src/main/rust/Cargo.lock'
       - 'scripts/run-rust-tests.sh'
+      - 'scripts/tests/test_rust_test_runner.py'
+      - 'scripts/tests/rust-tier-targets.json'
+      - 'scripts/verify-test-build-ci.py'
       - 'TESTING.md'
       - '.github/workflows/rust-quality.yml'
       - '.github/workflows/rust-ci.yml'
@@ -78,13 +85,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install native test libraries
         run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
-      - uses: actions/cache@v4
+      - name: Cache tier dependencies
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            terminal-emulator/src/main/rust/target
-          key: ${{ runner.os }}-rust-correctness-${{ hashFiles('terminal-emulator/src/main/rust/Cargo.lock') }}
+          workspaces: terminal-emulator/src/main/rust -> target
+          key: host-tier-${{ matrix.tier }}-default-features
+          env-vars: CARGO CC CFLAGS CXX CMAKE RUST SKIA FORCE_SKIA ImageOS ImageVersion
+          cache-bin: "false"
+          cache-on-failure: "true"
+      - name: Verify runner command and inventory contracts
+        run: python3 scripts/tests/test_rust_test_runner.py
       - name: Run explicit test tier
         run: bash ./scripts/run-rust-tests.sh "${{ matrix.tier }}"
       - name: Record exact verification
@@ -108,6 +118,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install native test libraries
         run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
+      - name: Cache tier dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: terminal-emulator/src/main/rust -> target
+          key: host-tier-${{ inputs.tier }}-default-features
+          env-vars: CARGO CC CFLAGS CXX CMAKE RUST SKIA FORCE_SKIA ImageOS ImageVersion
+          cache-bin: "false"
+          cache-on-failure: "true"
+      - name: Verify runner command and inventory contracts
+        run: python3 scripts/tests/test_rust_test_runner.py
       - name: Run selected tier
         run: bash ./scripts/run-rust-tests.sh "${{ inputs.tier }}"
       - name: Record exact verification
