@@ -1,7 +1,7 @@
+use crate::engine::events::TerminalEvent;
+use crate::engine::state::ScreenState;
 /// VTE Parser 的 Perform trait 实现
 use crate::vte_parser::{Params, Perform};
-use crate::engine::state::ScreenState;
-use crate::engine::events::TerminalEvent;
 
 pub struct PerformHandler<'a> {
     pub state: &'a mut ScreenState,

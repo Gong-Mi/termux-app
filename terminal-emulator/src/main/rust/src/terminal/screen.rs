@@ -1,5 +1,5 @@
+use crate::terminal::style::STYLE_NORMAL;
 use std::cmp::{max, min};
-use crate::terminal::style::{STYLE_NORMAL};
 
 #[derive(Clone)]
 pub struct TerminalRow {
@@ -103,10 +103,14 @@ impl TerminalRow {
             let c = self.text[cur_idx];
             let width = local_get_width(c as u32) as usize;
             if width > 0 {
-                if cur_col >= column { return cur_idx; }
+                if cur_col >= column {
+                    return cur_idx;
+                }
                 cur_col += width;
             } else {
-                if cur_col >= column { return cur_idx; }
+                if cur_col >= column {
+                    return cur_idx;
+                }
             }
             cur_idx += 1;
         }
@@ -115,18 +119,32 @@ impl TerminalRow {
 
     pub fn get_selected_text(&self, x1: usize, x2: usize) -> String {
         let cols = self.text.len();
-        if x1 >= cols { return String::new(); }
+        if x1 >= cols {
+            return String::new();
+        }
         let end = min(x2, cols);
         self.text[x1..end].iter().filter(|&&c| c != '\0').collect()
     }
 
     pub fn get_word_at(&self, column: usize) -> String {
         let cols = self.text.len();
-        if column >= cols { return String::new(); }
-        fn is_word(c: char) -> bool { c.is_alphanumeric() || c == '_' }
-        if !is_word(self.text[column]) { return String::new(); }
-        let mut s = column; while s > 0 && is_word(self.text[s-1]) { s -= 1; }
-        let mut e = column; while e + 1 < cols && is_word(self.text[e+1]) { e += 1; }
+        if column >= cols {
+            return String::new();
+        }
+        fn is_word(c: char) -> bool {
+            c.is_alphanumeric() || c == '_'
+        }
+        if !is_word(self.text[column]) {
+            return String::new();
+        }
+        let mut s = column;
+        while s > 0 && is_word(self.text[s - 1]) {
+            s -= 1;
+        }
+        let mut e = column;
+        while e + 1 < cols && is_word(self.text[e + 1]) {
+            e += 1;
+        }
         self.text[s..=e].iter().collect()
     }
 }
@@ -147,8 +165,16 @@ impl Screen {
     pub fn new(cols: i32, rows: i32, total_rows: i32) -> Self {
         let t_u = max(rows as usize, total_rows as usize);
         let mut b = Vec::with_capacity(t_u);
-        for _ in 0..t_u { b.push(TerminalRow::new(max(1, cols as usize))); }
-        Self { rows, cols, buffer: b, first_row: 0, active_transcript_rows: 0 }
+        for _ in 0..t_u {
+            b.push(TerminalRow::new(max(1, cols as usize)));
+        }
+        Self {
+            rows,
+            cols,
+            buffer: b,
+            first_row: 0,
+            active_transcript_rows: 0,
+        }
     }
 
     /// 动态调整历史记录大小
@@ -174,14 +200,17 @@ impl Screen {
                 self.first_row = 0;
             }
             self.buffer.truncate(new_total);
-            self.active_transcript_rows = min(self.active_transcript_rows, new_total - self.rows as usize);
+            self.active_transcript_rows =
+                min(self.active_transcript_rows, new_total - self.rows as usize);
         }
     }
 
     #[inline]
     pub fn internal_row(&self, row: i32) -> usize {
         let t = self.buffer.len() as i64;
-        if t == 0 { return 0; }
+        if t == 0 {
+            return 0;
+        }
         (((self.first_row as i64 + row as i64) % t + t) % t) as usize
     }
 
@@ -205,11 +234,19 @@ impl Screen {
         &mut self.buffer[idx]
     }
 
-    pub fn block_clear(&mut self, top: usize, left: usize, bottom: usize, right: usize, style: u64) {
+    pub fn block_clear(
+        &mut self,
+        top: usize,
+        left: usize,
+        bottom: usize,
+        right: usize,
+        style: u64,
+    ) {
         let cols = self.cols as usize;
         let rows = self.rows as usize;
         for row in top..min(bottom, rows) {
-            self.get_row_mut(row as i32).clear(left, min(right, cols), style);
+            self.get_row_mut(row as i32)
+                .clear(left, min(right, cols), style);
         }
     }
 
@@ -219,32 +256,44 @@ impl Screen {
         for y in first_y..self.rows {
             let row = self.get_row(y);
             res.push_str(&row.get_selected_text(0, row.get_space_used()));
-            if !row.line_wrap && y < self.rows - 1 { res.push('\n'); }
+            if !row.line_wrap && y < self.rows - 1 {
+                res.push('\n');
+            }
         }
         res
     }
 
     pub fn get_selected_text(&self, x1: i32, y1: i32, x2: i32, y2: i32) -> String {
         let mut res = String::new();
-        let (sy, sx, ey, ex) = if y1 < y2 || (y1 == y2 && x1 <= x2) { (y1, x1, y2, x2) } else { (y2, x2, y1, x1) };
+        let (sy, sx, ey, ex) = if y1 < y2 || (y1 == y2 && x1 <= x2) {
+            (y1, x1, y2, x2)
+        } else {
+            (y2, x2, y1, x1)
+        };
         for y in sy..=ey {
             let row = self.get_row(y);
             let s_x = if y == sy { max(0, sx) as usize } else { 0 };
-            let mut e_x = if y == ey { min(self.cols, ex + 1) as usize } else { self.cols as usize };
-            
+            let mut e_x = if y == ey {
+                min(self.cols, ex + 1) as usize
+            } else {
+                self.cols as usize
+            };
+
             // Trim trailing spaces for lines that don't wrap and aren't fully selected
             let space_used = row.get_space_used();
             if e_x > space_used && (!row.line_wrap || y == ey) {
                 e_x = space_used;
             }
-            
+
             if s_x < e_x {
                 let text = row.get_selected_text(s_x, e_x);
                 // Filter out the '\0' placeholder characters used for wide chars
                 let filtered: String = text.chars().filter(|&c| c != '\0').collect();
                 res.push_str(&filtered);
             }
-            if y < ey && !row.line_wrap { res.push('\n'); }
+            if y < ey && !row.line_wrap {
+                res.push('\n');
+            }
         }
         res
     }
@@ -254,15 +303,25 @@ impl Screen {
         match mode {
             0 => {
                 // Erase from cursor to end of screen (including current row from cursor)
-                self.get_row_mut(cursor_y).clear(cursor_x as usize, c, style);
-                for y in (cursor_y + 1)..self.rows { self.get_row_mut(y).clear(0, c, style); }
+                self.get_row_mut(cursor_y)
+                    .clear(cursor_x as usize, c, style);
+                for y in (cursor_y + 1)..self.rows {
+                    self.get_row_mut(y).clear(0, c, style);
+                }
             }
             1 => {
                 // Erase from start of screen to cursor (including current row up to cursor)
-                for y in 0..cursor_y { self.get_row_mut(y).clear(0, c, style); }
-                self.get_row_mut(cursor_y).clear(0, (cursor_x + 1) as usize, style);
+                for y in 0..cursor_y {
+                    self.get_row_mut(y).clear(0, c, style);
+                }
+                self.get_row_mut(cursor_y)
+                    .clear(0, (cursor_x + 1) as usize, style);
             }
-            2 => { for y in 0..self.rows { self.get_row_mut(y).clear(0, c, style); } }
+            2 => {
+                for y in 0..self.rows {
+                    self.get_row_mut(y).clear(0, c, style);
+                }
+            }
             3 => {
                 // CSI 3 J - 清除滚动历史 (Transcript)，保留屏幕上的可见内容
                 // 对齐 Java TerminalBuffer.clearTranscript() 和 xterm 的行为
@@ -276,7 +335,7 @@ impl Screen {
     pub fn clear_transcript(&mut self, style: u64) {
         let total_rows = self.buffer.len();
         let c = self.cols as usize;
-        
+
         if self.active_transcript_rows > 0 {
             // 清除逻辑：找到历史行的物理索引并清空，然后重置 active_transcript_rows
             if self.first_row < self.active_transcript_rows {
@@ -301,7 +360,7 @@ impl Screen {
     pub fn insert_lines(&mut self, cursor_y: i32, bottom: i32, n: i32, style: u64) {
         let to_insert = min(n, bottom - cursor_y);
         let to_move = (bottom - cursor_y) - to_insert;
-        
+
         if to_move > 0 {
             for i in (0..to_move).rev() {
                 let s = self.internal_row(cursor_y + i);
@@ -312,13 +371,15 @@ impl Screen {
                 std::mem::swap(&mut left[low], &mut right[0]);
             }
         }
-        for i in 0..to_insert { self.get_row_mut(cursor_y + i).clear_all(style); }
+        for i in 0..to_insert {
+            self.get_row_mut(cursor_y + i).clear_all(style);
+        }
     }
 
     pub fn delete_lines(&mut self, cursor_y: i32, bottom: i32, n: i32, style: u64) {
         let to_delete = min(n, bottom - cursor_y);
         let to_move = (bottom - cursor_y) - to_delete;
-        
+
         if to_move > 0 {
             for i in 0..to_move {
                 let s = self.internal_row(cursor_y + i + to_delete);
@@ -328,7 +389,9 @@ impl Screen {
                 std::mem::swap(&mut left[low], &mut right[0]);
             }
         }
-        for i in 0..to_delete { self.get_row_mut(bottom - i - 1).clear_all(style); }
+        for i in 0..to_delete {
+            self.get_row_mut(bottom - i - 1).clear_all(style);
+        }
     }
 
     pub fn scroll_up(&mut self, top: i32, bottom: i32, style: u64) {
@@ -384,13 +447,20 @@ impl Screen {
     /// - Uses `skipped_blank_lines` delay insertion mechanism like Java
     /// - Processes character by character with dynamic line wrapping
     /// - Properly handles cursor position tracking during reflow
-    /// 
+    ///
     /// ## Fast Path Optimization
-    /// 
+    ///
     /// When only rows change (columns unchanged) and new rows <= total rows,
     /// we use O(1) pointer adjustment instead of O(n) buffer rebuild.
     /// This matches Java's fast path behavior.
-    pub fn resize_with_reflow(&mut self, new_cols: i32, new_rows: i32, current_style: u64, cursor_x: i32, cursor_y: i32) -> (i32, i32) {
+    pub fn resize_with_reflow(
+        &mut self,
+        new_cols: i32,
+        new_rows: i32,
+        current_style: u64,
+        cursor_x: i32,
+        cursor_y: i32,
+    ) -> (i32, i32) {
         let old_cols = self.cols as usize;
         let old_total = self.buffer.len();
 
@@ -441,16 +511,23 @@ impl Screen {
         let max_transcript_rows = new_total_rows.saturating_sub(screen_rows);
 
         // 辅助闭包：获取当前 output_row 对应的 buffer 索引
-        let row_idx = |first_row: usize, row: usize, total: usize| -> usize {
-            (first_row + row) % total
-        };
+        let row_idx =
+            |first_row: usize, row: usize, total: usize| -> usize { (first_row + row) % total };
 
         // 辅助闭包：执行滚动（模拟 Java scrollDownOneLine）
-        let do_scroll = |first_row: &mut usize, active: &mut usize, sr: usize, style: u64, total: usize, max_active: usize, buf: &mut Vec<TerminalRow>| {
+        let do_scroll = |first_row: &mut usize,
+                         active: &mut usize,
+                         sr: usize,
+                         style: u64,
+                         total: usize,
+                         max_active: usize,
+                         buf: &mut Vec<TerminalRow>| {
             // Java: mScreenFirstRow = (mScreenFirstRow + 1) % mTotalRows;
             *first_row = (*first_row + 1) % total;
             // Java: if (mActiveTranscriptRows < mTotalRows - mScreenRows) mActiveTranscriptRows++;
-            if *active < max_active { *active += 1; }
+            if *active < max_active {
+                *active += 1;
+            }
             // 清空新底部行
             let bottom_idx = (*first_row + sr - 1) % total;
             buf[bottom_idx].clear_all(style);
@@ -485,7 +562,15 @@ impl Screen {
                         if cursor_placed && new_cursor_y > 0 {
                             new_cursor_y -= 1;
                         }
-                        do_scroll(&mut screen_first_row, &mut new_active_transcript_rows, screen_rows, current_style, new_total_rows, max_transcript_rows, &mut new_buffer);
+                        do_scroll(
+                            &mut screen_first_row,
+                            &mut new_active_transcript_rows,
+                            screen_rows,
+                            current_style,
+                            new_total_rows,
+                            max_transcript_rows,
+                            &mut new_buffer,
+                        );
                     } else {
                         output_row += 1;
                     }
@@ -512,11 +597,17 @@ impl Screen {
                 let c = old_line.text[i];
                 let code_point = c as u32;
                 let display_width = local_get_width(code_point);
-                
+
                 // 核心修复：宽字符原子性检测
                 // 如果当前是宽字符，检查下一个是否是 \0 占位符，并将它们作为一个整体处理
-                let is_atomic_pair = display_width == 2 && i + 1 < old_line.text.len() && old_line.text[i+1] == '\0';
-                let unit_width = if is_atomic_pair { 2 } else { display_width as usize };
+                let is_atomic_pair = display_width == 2
+                    && i + 1 < old_line.text.len()
+                    && old_line.text[i + 1] == '\0';
+                let unit_width = if is_atomic_pair {
+                    2
+                } else {
+                    display_width as usize
+                };
 
                 // Update style for this column
                 if display_width > 0 && current_old_col < old_cols {
@@ -529,13 +620,23 @@ impl Screen {
                     new_buffer[current_idx].line_wrap = true;
 
                     if output_row >= screen_rows - 1 {
-                        if cursor_placed && new_cursor_y > 0 { new_cursor_y -= 1; }
-                        do_scroll(&mut screen_first_row, &mut new_active_transcript_rows, screen_rows, current_style, new_total_rows, max_transcript_rows, &mut new_buffer);
+                        if cursor_placed && new_cursor_y > 0 {
+                            new_cursor_y -= 1;
+                        }
+                        do_scroll(
+                            &mut screen_first_row,
+                            &mut new_active_transcript_rows,
+                            screen_rows,
+                            current_style,
+                            new_total_rows,
+                            max_transcript_rows,
+                            &mut new_buffer,
+                        );
                     } else {
                         output_row += 1;
                     }
                     output_col = 0;
-                    
+
                     // 关键修复：被拆分出的新行应继承原行的 line_wrap 属性
                     let next_idx = row_idx(screen_first_row, output_row, new_total_rows);
                     new_buffer[next_idx].line_wrap = old_line.line_wrap;
@@ -546,7 +647,7 @@ impl Screen {
                     let idx = row_idx(screen_first_row, output_row, new_total_rows);
                     new_buffer[idx].text[output_col] = c;
                     new_buffer[idx].styles[output_col] = style_at_col;
-                    
+
                     if is_atomic_pair && output_col + 1 < n_cols {
                         new_buffer[idx].text[output_col + 1] = '\0';
                         new_buffer[idx].styles[output_col + 1] = style_at_col;
@@ -581,7 +682,15 @@ impl Screen {
                     if cursor_placed && new_cursor_y > 0 {
                         new_cursor_y -= 1;
                     }
-                    do_scroll(&mut screen_first_row, &mut new_active_transcript_rows, screen_rows, current_style, new_total_rows, max_transcript_rows, &mut new_buffer);
+                    do_scroll(
+                        &mut screen_first_row,
+                        &mut new_active_transcript_rows,
+                        screen_rows,
+                        current_style,
+                        new_total_rows,
+                        max_transcript_rows,
+                        &mut new_buffer,
+                    );
                 } else {
                     output_row += 1;
                 }
@@ -608,29 +717,35 @@ impl Screen {
     }
 
     /// Fast path resize: only rows change (columns unchanged)
-    /// 
+    ///
     /// This is O(1) pointer adjustment, matching Java's fast path behavior.
-    /// 
+    ///
     /// ## Parameters
     /// - `new_rows`: New number of visible rows
     /// - `cursor_x`, `cursor_y`: Current cursor position
     /// - `current_style`: Current text style for clearing blank lines
-    /// 
+    ///
     /// ## Returns
     /// - New cursor position (cursor_x, cursor_y)
-    /// 
+    ///
     /// ## Algorithm (matches Java TerminalBuffer.resize fast path)
     /// 1. Calculate `shift_down_of_top_row = old_rows - new_rows`
     /// 2. If shrinking (shift > 0), check if we can skip blank rows at bottom
     /// 3. If expanding (shift < 0), only move screen up if there's transcript
     /// 4. Adjust `first_row` pointer by shift amount
     /// 5. Update `active_transcript_rows` and cursor position
-    fn resize_rows_only(&mut self, new_rows: i32, cursor_x: i32, cursor_y: i32, current_style: u64) -> (i32, i32) {
+    fn resize_rows_only(
+        &mut self,
+        new_rows: i32,
+        cursor_x: i32,
+        cursor_y: i32,
+        current_style: u64,
+    ) -> (i32, i32) {
         let old_rows = self.rows as usize;
-        
+
         // Calculate shift: positive = shrinking, negative = expanding
         let mut shift_down_of_top_row = old_rows as i32 - new_rows as i32;
-        
+
         if shift_down_of_top_row > 0 && shift_down_of_top_row < old_rows as i32 {
             // Shrinking: check if we can skip blank rows at bottom below cursor
             for i in (1..old_rows).rev() {
@@ -653,7 +768,8 @@ impl Screen {
         } else if shift_down_of_top_row < 0 {
             // Expanding: only move screen up if there's transcript to show
             // Java logic: actualShift = max(shiftDownOfTopRow, -mActiveTranscriptRows)
-            let actual_shift = std::cmp::max(shift_down_of_top_row, -(self.active_transcript_rows as i32));
+            let actual_shift =
+                std::cmp::max(shift_down_of_top_row, -(self.active_transcript_rows as i32));
 
             if shift_down_of_top_row != actual_shift {
                 // The new lines revealed by resizing are not all from transcript.
@@ -661,17 +777,17 @@ impl Screen {
                 // Java: for (int i = 0; i < actualShift - shiftDownOfTopRow; i++)
                 //         allocateFullLineIfNecessary((mScreenFirstRow + mScreenRows + i) % mTotalRows).clear(currentStyle);
                 let blank_count = actual_shift - shift_down_of_top_row;
-                
+
                 // Calculate the position of new visible rows AFTER expansion
                 // The new rows will be at positions [old_rows, old_rows + 1, ..., new_rows - 1]
                 // In the ring buffer, these correspond to:
                 // (first_row + old_rows) % len, (first_row + old_rows + 1) % len, etc.
                 // But first_row will change! We need to calculate based on the NEW first_row.
-                
+
                 // After expansion, first_row will be: first_row + actual_shift
                 // The new visible rows start at: first_row + actual_shift + old_rows
                 // But we want to clear rows that will be at the bottom of the NEW screen
-                
+
                 // Actually, Java clears rows at the BOTTOM of the old screen area
                 // These are rows that will become visible but are not from transcript
                 for i in 0..blank_count {
@@ -683,17 +799,18 @@ impl Screen {
                 shift_down_of_top_row = actual_shift;
             }
         }
-        
+
         // Adjust first_row pointer (O(1) operation)
         // Matches Java: mScreenFirstRow = (mScreenFirstRow < 0) ? (mScreenFirstRow + mTotalRows) : (mScreenFirstRow % mTotalRows)
         let new_first_row = self.first_row as i32 + shift_down_of_top_row;
         self.first_row = if new_first_row < 0 {
             // Use modulo to handle large negative shifts (e.g., expanding from very small to very large)
-            ((new_first_row % self.buffer.len() as i32) + self.buffer.len() as i32) as usize % self.buffer.len()
+            ((new_first_row % self.buffer.len() as i32) + self.buffer.len() as i32) as usize
+                % self.buffer.len()
         } else {
             (new_first_row as usize) % self.buffer.len()
         };
-        
+
         // Update active_transcript_rows (matches Java: mActiveTranscriptRows = max(0, mActiveTranscriptRows + shiftDownOfTopRow))
         // shift_down_of_top_row > 0 means shrinking (more transcript rows)
         // shift_down_of_top_row < 0 means expanding (fewer transcript rows)
@@ -703,20 +820,21 @@ impl Screen {
             self.active_transcript_rows + shift_i32 as usize
         } else {
             // Expanding: decrease transcript rows (use saturating_sub for max(0, ...))
-            self.active_transcript_rows.saturating_sub((-shift_i32) as usize)
+            self.active_transcript_rows
+                .saturating_sub((-shift_i32) as usize)
         };
 
         // Ensure active_transcript_rows doesn't exceed max possible (matches Java constraint)
         // Java: mActiveTranscriptRows is implicitly limited by mTotalRows - mScreenRows
         let max_transcript_rows = self.buffer.len().saturating_sub(self.rows as usize);
         self.active_transcript_rows = self.active_transcript_rows.min(max_transcript_rows);
-        
+
         // Adjust cursor position
         let new_cursor_y = cursor_y - shift_i32;
-        
+
         // Update rows
         self.rows = new_rows;
-        
+
         (cursor_x, new_cursor_y)
     }
 }
@@ -768,8 +886,10 @@ mod tests {
     #[test]
     fn test_row_insert_spaces() {
         let mut r = TerminalRow::new(10);
-        r.text[0] = 'A'; r.styles[0] = 1;
-        r.text[2] = 'B'; r.styles[2] = 2;
+        r.text[0] = 'A';
+        r.styles[0] = 1;
+        r.text[2] = 'B';
+        r.styles[2] = 2;
 
         // Insert 2 spaces at column 1 with style 99
         r.insert_spaces(1, 2, 99);

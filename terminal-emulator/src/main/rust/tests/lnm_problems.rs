@@ -2,13 +2,18 @@
 // 运行：cargo test --test lnm_problems -- --nocapture
 
 use termux_rust::TerminalEngine;
-use termux_rust::terminal::modes::{MODE_LNM, MODE_INSERT, DECSET_BIT_ORIGIN_MODE, DECSET_BIT_AUTOWRAP};
+use termux_rust::terminal::modes::{
+    DECSET_BIT_AUTOWRAP, DECSET_BIT_ORIGIN_MODE, MODE_INSERT, MODE_LNM,
+};
 
 fn get_row_text(engine: &TerminalEngine, row: i32) -> String {
     let cols = engine.state.cols as usize;
     let mut text = vec![0u16; cols];
     engine.state.copy_row_text(row, &mut text);
-    String::from_utf16_lossy(&text).replace('\0', " ").trim_end().to_string()
+    String::from_utf16_lossy(&text)
+        .replace('\0', " ")
+        .trim_end()
+        .to_string()
 }
 
 // =============================================================================
@@ -84,16 +89,21 @@ fn test_decstr_does_not_reset_lnm_bug() {
     // 如果 DECSTR 正确重置了 LNM，x 应该保持在 6
     // 如果 DECSTR 没有重置 LNM，x 会回到 0 (bug!)
     if x_after_lf == 0 {
-        println!("❌ BUG CONFIRMED: DECSTR did NOT reset LNM! x={}", x_after_lf);
+        println!(
+            "❌ BUG CONFIRMED: DECSTR did NOT reset LNM! x={}",
+            x_after_lf
+        );
         println!("   After soft reset, LNM should be OFF, but LF still resets column to 0.");
     } else {
         println!("✅ DECSTR correctly resets LNM. x={}", x_after_lf);
     }
 
     // 断言：如果这个测试失败了，说明 bug 存在
-    assert_eq!(x_after_lf, 6,
+    assert_eq!(
+        x_after_lf, 6,
         "BUG: DECSTR soft reset should disable LNM, but LNM is still active (x={} instead of 6)",
-        x_after_lf);
+        x_after_lf
+    );
 }
 
 // =============================================================================
@@ -118,9 +128,15 @@ fn test_lnm_private_mode_compatibility() {
     let x_after_lf = engine.state.cursor.x;
 
     // Intentional compatibility extension introduced in f72dd5ad, not ANSI syntax.
-    assert_eq!(x_after_lf, 0, "Private LNM alias should enable newline mode");
+    assert_eq!(
+        x_after_lf, 0,
+        "Private LNM alias should enable newline mode"
+    );
     engine.process_bytes(b"\x1b[?20lABCDEFGHIJ\n");
-    assert_eq!(engine.state.cursor.x, 10, "Private LNM alias should disable newline mode");
+    assert_eq!(
+        engine.state.cursor.x, 10,
+        "Private LNM alias should disable newline mode"
+    );
 }
 
 // =============================================================================
@@ -162,7 +178,11 @@ fn test_lnm_affects_vt_and_ff() {
     let x_after_vt = engine.state.cursor.x;
     assert!(y_after_vt > 2, "VT should increment y (got {})", y_after_vt);
     // LNM 开启时 VT 应该重置 x 到 left_margin
-    assert_eq!(x_after_vt, 0, "VT with LNM: x resets to 0 (got {})", x_after_vt);
+    assert_eq!(
+        x_after_vt, 0,
+        "VT with LNM: x resets to 0 (got {})",
+        x_after_vt
+    );
 
     engine.process_bytes(b"YZ");
     let x_after_yz = engine.state.cursor.x;
@@ -170,12 +190,23 @@ fn test_lnm_affects_vt_and_ff() {
     engine.process_bytes(b"\x0c"); // FF
     let y_after_ff = engine.state.cursor.y;
     let x_after_ff = engine.state.cursor.x;
-    assert!(y_after_ff > y_after_vt, "FF should increment y (before={}, after={})", y_after_vt, y_after_ff);
+    assert!(
+        y_after_ff > y_after_vt,
+        "FF should increment y (before={}, after={})",
+        y_after_vt,
+        y_after_ff
+    );
     // LNM 开启时 FF 应该重置 x 到 left_margin
-    assert_eq!(x_after_ff, 0, "FF with LNM: x resets to 0 (got {})", x_after_ff);
+    assert_eq!(
+        x_after_ff, 0,
+        "FF with LNM: x resets to 0 (got {})",
+        x_after_ff
+    );
 
-    println!("✅ LNM correctly affects VT and FF (x_before={}, x_after_vt={}, x_after_yz={}, x_after_ff={})",
-        x_before, x_after_vt, x_after_yz, x_after_ff);
+    println!(
+        "✅ LNM correctly affects VT and FF (x_before={}, x_after_vt={}, x_after_yz={}, x_after_ff={})",
+        x_before, x_after_vt, x_after_yz, x_after_ff
+    );
 
     println!("✅ LNM correctly affects VT and FF");
 }
@@ -189,16 +220,28 @@ fn test_decstr_soft_reset_mode_effects() {
     let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 启用多种模式
-    engine.process_bytes(b"\x1b[?1h");   // application cursor keys (DECSET 1)
-    engine.process_bytes(b"\x1b[?6h");   // origin mode (DECSET 6)
-    engine.process_bytes(b"\x1b[20h");   // LNM (mode 20)
+    engine.process_bytes(b"\x1b[?1h"); // application cursor keys (DECSET 1)
+    engine.process_bytes(b"\x1b[?6h"); // origin mode (DECSET 6)
+    engine.process_bytes(b"\x1b[20h"); // LNM (mode 20)
     engine.process_bytes(b"\x1b[?2004h"); // bracketed paste (DECSET 2004)
 
     // 验证都生效了
-    assert!(engine.state.application_cursor_keys, "App cursor keys should be ON before DECSTR");
-    assert!(engine.state.modes.is_enabled(DECSET_BIT_ORIGIN_MODE), "ORIGIN_MODE should be ON before DECSTR");
-    assert!(engine.state.modes.is_enabled(MODE_LNM), "LNM should be ON before DECSTR");
-    assert!(engine.state.bracketed_paste, "Bracketed paste should be ON before DECSTR");
+    assert!(
+        engine.state.application_cursor_keys,
+        "App cursor keys should be ON before DECSTR"
+    );
+    assert!(
+        engine.state.modes.is_enabled(DECSET_BIT_ORIGIN_MODE),
+        "ORIGIN_MODE should be ON before DECSTR"
+    );
+    assert!(
+        engine.state.modes.is_enabled(MODE_LNM),
+        "LNM should be ON before DECSTR"
+    );
+    assert!(
+        engine.state.bracketed_paste,
+        "Bracketed paste should be ON before DECSTR"
+    );
 
     // DECSTR 软复位
     engine.process_bytes(b"\x1b[!p");
@@ -212,10 +255,14 @@ fn test_decstr_soft_reset_mode_effects() {
     // - 光标可见 ✓
 
     // 已知正确的：
-    assert!(!engine.state.modes.is_enabled(DECSET_BIT_ORIGIN_MODE),
-        "DECSTR should reset ORIGIN_MODE (DECSET 6)");
-    assert!(engine.state.modes.is_enabled(DECSET_BIT_AUTOWRAP),
-        "DECSTR should set AUTOWRAP (DECSET 7)");
+    assert!(
+        !engine.state.modes.is_enabled(DECSET_BIT_ORIGIN_MODE),
+        "DECSTR should reset ORIGIN_MODE (DECSET 6)"
+    );
+    assert!(
+        engine.state.modes.is_enabled(DECSET_BIT_AUTOWRAP),
+        "DECSTR should set AUTOWRAP (DECSET 7)"
+    );
 
     // 已知 Bug：
     let lnm_reset = !engine.state.modes.is_enabled(MODE_LNM);
@@ -233,12 +280,18 @@ fn test_decstr_soft_reset_mode_effects() {
     }
 
     // 这些断言会失败，展示 bug：
-    assert!(lnm_reset,
-        "DECSTR should reset LNM (mode 20) - BUG CONFIRMED IF THIS FAILS");
-    assert!(bracketed_reset,
-        "DECSTR should reset BRACKETED_PASTE (DECSET 2004) - BUG CONFIRMED IF THIS FAILS");
-    assert!(cursor_reset,
-        "DECSTR should reset application cursor keys (DECSET 1) - BUG CONFIRMED IF THIS FAILS");
+    assert!(
+        lnm_reset,
+        "DECSTR should reset LNM (mode 20) - BUG CONFIRMED IF THIS FAILS"
+    );
+    assert!(
+        bracketed_reset,
+        "DECSTR should reset BRACKETED_PASTE (DECSET 2004) - BUG CONFIRMED IF THIS FAILS"
+    );
+    assert!(
+        cursor_reset,
+        "DECSTR should reset application cursor keys (DECSET 1) - BUG CONFIRMED IF THIS FAILS"
+    );
 
     println!("✅ DECSTR soft reset correctly resets all modes");
 }
@@ -264,7 +317,10 @@ fn test_insert_mode_actually_works() {
     engine.process_bytes(b"\x1b[4h");
 
     // 验证 MODE_INSERT 被设置了
-    assert!(engine.state.modes.is_enabled(MODE_INSERT), "MODE_INSERT should be set");
+    assert!(
+        engine.state.modes.is_enabled(MODE_INSERT),
+        "MODE_INSERT should be set"
+    );
 
     // 输入一个字符
     engine.process_bytes(b"X");
@@ -281,7 +337,11 @@ fn test_insert_mode_actually_works() {
     assert_eq!(row0, "ABXCDEFGHIJ", "Insert must shift existing text");
     engine.process_bytes(b"\x1b[4lY");
     assert!(!engine.state.modes.is_enabled(MODE_INSERT));
-    assert_eq!(get_row_text(&engine, 0), "ABXYDEFGHIJ", "Reset must restore overwrite mode");
+    assert_eq!(
+        get_row_text(&engine, 0),
+        "ABXYDEFGHIJ",
+        "Reset must restore overwrite mode"
+    );
 }
 
 // =============================================================================
@@ -296,7 +356,7 @@ fn test_lnm_with_origin_mode() {
     engine.process_bytes(b"\x1b[2;10r");
 
     // 验证 margins 设置正确
-    assert_eq!(engine.state.top_margin, 1);  // 0-indexed
+    assert_eq!(engine.state.top_margin, 1); // 0-indexed
     assert_eq!(engine.state.bottom_margin, 10); // 0-indexed
 
     // 启用 origin mode
@@ -315,10 +375,17 @@ fn test_lnm_with_origin_mode() {
 
     engine.process_bytes(b"\n");
     // LNM: \n 应该回到 left_margin (0)
-    assert_eq!(engine.state.cursor.x, 0, "LNM: x should reset to 0 even with origin mode");
+    assert_eq!(
+        engine.state.cursor.x, 0,
+        "LNM: x should reset to 0 even with origin mode"
+    );
     // y 应该递增
-    assert!(engine.state.cursor.y > cursor_y_before || engine.state.cursor.y == cursor_y_before,
-        "LF: y should change (before={}, after={})", cursor_y_before, engine.state.cursor.y);
+    assert!(
+        engine.state.cursor.y > cursor_y_before || engine.state.cursor.y == cursor_y_before,
+        "LF: y should change (before={}, after={})",
+        cursor_y_before,
+        engine.state.cursor.y
+    );
 
     println!("✅ LNM works with origin mode");
 }

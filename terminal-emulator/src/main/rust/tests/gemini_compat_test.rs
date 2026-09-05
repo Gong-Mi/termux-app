@@ -1,8 +1,8 @@
 // Protocol contracts for sequences used by Gemini CLI.
 // EL and DA references: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
 // These are engine tests, not evidence of a full Gemini application session.
-use termux_rust::terminal::style::EFFECT_UNDERLINE;
 use termux_rust::TerminalEngine;
+use termux_rust::terminal::style::EFFECT_UNDERLINE;
 
 fn get_screen_as_text(engine: &TerminalEngine) -> Vec<String> {
     (0..engine.state.rows)

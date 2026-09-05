@@ -1,13 +1,12 @@
+use std::os::fd::FromRawFd;
 /// 终端引擎和上下文管理
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::os::fd::FromRawFd;
 
-
-use crate::vte_parser::Parser;
-use crate::engine::state::ScreenState;
 use crate::engine::events::TerminalEvent;
 use crate::engine::perform_handler::PerformHandler;
+use crate::engine::state::ScreenState;
+use crate::vte_parser::Parser;
 
 /// 终端引擎 - 主结构体
 pub struct TerminalEngine {
@@ -18,7 +17,10 @@ pub struct TerminalEngine {
 
 impl Drop for TerminalEngine {
     fn drop(&mut self) {
-        crate::utils::android_log(crate::utils::LogPriority::INFO, "TerminalEngine: Dropping engine and releasing resources");
+        crate::utils::android_log(
+            crate::utils::LogPriority::INFO,
+            "TerminalEngine: Dropping engine and releasing resources",
+        );
     }
 }
 
@@ -36,7 +38,10 @@ impl TerminalEngine {
     }
 
     pub fn process_bytes(&mut self, data: &[u8]) {
-        let mut handler = PerformHandler { state: &mut self.state, events: &mut self.events };
+        let mut handler = PerformHandler {
+            state: &mut self.state,
+            events: &mut self.events,
+        };
         self.parser.advance(&mut handler, data);
         self.state.sync_screen_to_flat_buffer();
         if !self.state.shared_buffer_ptr.0.is_null() {
@@ -60,7 +65,9 @@ impl TerminalEngine {
     pub fn notify_screen_updated(&self) {
         if let Some(obj) = &self.state.java_callback_obj {
             if let Some(vm) = crate::JAVA_VM.get() {
-                let env_res = vm.get_env().or_else(|_| vm.attach_current_thread_as_daemon());
+                let env_res = vm
+                    .get_env()
+                    .or_else(|_| vm.attach_current_thread_as_daemon());
                 if let Ok(env) = env_res {
                     let mut env: jni::JNIEnv = env;
                     let _ = env.call_method(obj.as_obj(), "onScreenUpdated", "()V", &[]);
@@ -88,14 +95,20 @@ impl TerminalContext {
 
     pub fn start_io_thread(context: std::sync::Arc<Self>, dup_fd: i32) {
         std::thread::spawn(move || {
-            crate::utils::android_log(crate::utils::LogPriority::INFO, "CHECKPOINT: IO Thread STARTing [ARCH_REWRITE]");
+            crate::utils::android_log(
+                crate::utils::LogPriority::INFO,
+                "CHECKPOINT: IO Thread STARTing [ARCH_REWRITE]",
+            );
             let mut buffer = [0u8; 8192];
             let mut pty_file = unsafe { std::fs::File::from_raw_fd(dup_fd) };
 
             let vm = match crate::JAVA_VM.get() {
                 Some(v) => v,
                 None => {
-                    crate::utils::android_log(crate::utils::LogPriority::ERROR, "IO Thread: JAVA_VM not initialized");
+                    crate::utils::android_log(
+                        crate::utils::LogPriority::ERROR,
+                        "IO Thread: JAVA_VM not initialized",
+                    );
                     return;
                 }
             };
@@ -103,12 +116,18 @@ impl TerminalContext {
             let mut env = match vm.attach_current_thread_as_daemon() {
                 Ok(g) => g,
                 Err(e) => {
-                    crate::utils::android_log(crate::utils::LogPriority::ERROR, &format!("IO Thread: Failed to attach: {:?}", e));
+                    crate::utils::android_log(
+                        crate::utils::LogPriority::ERROR,
+                        &format!("IO Thread: Failed to attach: {:?}", e),
+                    );
                     return;
                 }
             };
 
-            crate::utils::android_log(crate::utils::LogPriority::DEBUG, "IO Thread: Attached and running");
+            crate::utils::android_log(
+                crate::utils::LogPriority::DEBUG,
+                "IO Thread: Attached and running",
+            );
 
             while context.running.load(Ordering::Relaxed) {
                 let read_res = std::io::Read::read(&mut pty_file, &mut buffer);
@@ -118,22 +137,29 @@ impl TerminalContext {
                         std::thread::sleep(std::time::Duration::from_millis(100));
                         let retry_res = std::io::Read::read(&mut pty_file, &mut buffer);
                         if let Ok(0) = retry_res {
-                            crate::utils::android_log(crate::utils::LogPriority::WARN, "[IO_THREAD] Permanent EOF from PTY. Exiting.");
+                            crate::utils::android_log(
+                                crate::utils::LogPriority::WARN,
+                                "[IO_THREAD] Permanent EOF from PTY. Exiting.",
+                            );
                             break;
                         }
                         continue;
-                    },
+                    }
                     Ok(n) => {
                         let (events, pending_responses, callback_obj) = {
                             let mut engine = match context.lock.write() {
                                 Ok(g) => g,
                                 Err(poisoned) => {
-                                    crate::utils::android_log(crate::utils::LogPriority::ERROR, "IO Thread: TerminalEngine lock poisoned! Recovering...");
+                                    crate::utils::android_log(
+                                        crate::utils::LogPriority::ERROR,
+                                        "IO Thread: TerminalEngine lock poisoned! Recovering...",
+                                    );
                                     poisoned.into_inner()
                                 }
                             };
                             engine.process_bytes(&buffer[..n]);
-                            let resps = std::mem::replace(&mut engine.state.pending_responses, Vec::new());
+                            let resps =
+                                std::mem::replace(&mut engine.state.pending_responses, Vec::new());
                             let cb = engine.state.java_callback_obj.clone();
                             (engine.take_events(), resps, cb)
                         };
@@ -142,7 +168,13 @@ impl TerminalContext {
                         for resp in pending_responses {
                             let r: String = resp;
                             if current_pty_fd != -1 {
-                                unsafe { libc::write(current_pty_fd, r.as_ptr() as *const libc::c_void, r.len()); }
+                                unsafe {
+                                    libc::write(
+                                        current_pty_fd,
+                                        r.as_ptr() as *const libc::c_void,
+                                        r.len(),
+                                    );
+                                }
                             }
                         }
 
@@ -152,7 +184,12 @@ impl TerminalContext {
                                     crate::render_thread::request_render();
                                     // 必须通知 Java 层屏幕已更新，否则 ScrollBar 和选区不会刷新
                                     if let Some(obj) = &callback_obj {
-                                        let _ = env.call_method(obj.as_obj(), "onScreenUpdated", "()V", &[]);
+                                        let _ = env.call_method(
+                                            obj.as_obj(),
+                                            "onScreenUpdated",
+                                            "()V",
+                                            &[],
+                                        );
                                     }
                                 }
                                 _ => {}
@@ -180,11 +217,14 @@ impl TerminalContext {
                                 });
                             }
                         }
-                    },
+                    }
                     Err(_) => break,
                 }
             }
-            crate::utils::android_log(crate::utils::LogPriority::INFO, "CHECKPOINT: IO Thread EXITing (normal) [ARCH_REWRITE]");
+            crate::utils::android_log(
+                crate::utils::LogPriority::INFO,
+                "CHECKPOINT: IO Thread EXITing (normal) [ARCH_REWRITE]",
+            );
         });
     }
 }

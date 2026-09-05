@@ -1,15 +1,19 @@
 use jni::JNIEnv;
 use jni::objects::{JClass, JString};
-use jni::sys::{jint, jboolean, jstring};
+use jni::sys::{jboolean, jint, jstring};
 
-use crate::utils::{android_log, LogPriority};
+use crate::utils::{LogPriority, android_log};
 
 // ============================================================================
 // WcWidth.java - Unicode 字符宽度计算
 // ============================================================================
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_termux_terminal_WcWidth_widthRust(_env: JNIEnv, _class: JClass, ucs: jint) -> jint {
+pub extern "system" fn Java_com_termux_terminal_WcWidth_widthRust(
+    _env: JNIEnv,
+    _class: JClass,
+    ucs: jint,
+) -> jint {
     crate::utils::get_char_width(ucs as u32) as jint
 }
 
@@ -76,12 +80,18 @@ pub extern "system" fn JNI_OnLoad(vm: jni::JavaVM, _reserved: std::ffi::c_void) 
             fn android_fdsan_set_error_level(new_level: i32) -> i32;
         }
         android_fdsan_set_error_level(0); // 0 = ANDROID_FDSAN_ERROR_LEVEL_DISABLED
-        android_log(LogPriority::INFO, "STABILITY: fdsan error level set to DISABLED in parent process");
+        android_log(
+            LogPriority::INFO,
+            "STABILITY: fdsan error level set to DISABLED in parent process",
+        );
     }
 
     let result = crate::JAVA_VM.set(vm);
     match result {
-        Ok(()) => android_log(LogPriority::INFO, "JNI_OnLoad: Termux- library loaded successfully"),
+        Ok(()) => android_log(
+            LogPriority::INFO,
+            "JNI_OnLoad: Termux- library loaded successfully",
+        ),
         Err(_) => android_log(LogPriority::WARN, "JNI_OnLoad: JAVA_VM was already set"),
     }
     jni::sys::JNI_VERSION_1_6
