@@ -46,6 +46,24 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify KVM access before building
+        run: |
+          set -euo pipefail
+          if [ ! -c /dev/kvm ]; then
+            printf '%s\n' '::error::KVM device missing; this experiment requires hardware acceleration.' >&2
+            exit 1
+          fi
+          # GitHub-hosted ephemeral runner: grant its existing primary group access.
+          # Do not run the emulator as root or open KVM to every user.
+          sudo chgrp "$(id -gn)" /dev/kvm
+          sudo chmod g+rw /dev/kvm
+          python3 - <<'PY'
+          import os
+          fd = os.open('/dev/kvm', os.O_RDWR | os.O_CLOEXEC)
+          os.close(fd)
+          print('KVM device opened read/write as the unprivileged runner')
+          PY
+
       - name: Set up Java 21
         uses: actions/setup-java@v5
         with:
