@@ -102,8 +102,14 @@ impl TerminalContext {
         }
     }
 
-    pub fn with_process(engine: TerminalEngine, process: Arc<crate::process_owner::ProcessOwner>) -> Self {
-        Self { process: Some(process), ..Self::new(engine) }
+    pub fn with_process(
+        engine: TerminalEngine,
+        process: Arc<crate::process_owner::ProcessOwner>,
+    ) -> Self {
+        Self {
+            process: Some(process),
+            ..Self::new(engine)
+        }
     }
 
     /// Transfer an owned descriptor exactly once. Repeated start is rejected;
@@ -164,7 +170,11 @@ impl TerminalContext {
 
     pub fn submit_input(&self, bytes: &[u8]) -> Result<(), SubmitError> {
         // Process exit revokes new input without truncating reader tail/drain.
-        if self.process.as_ref().is_some_and(|owner| !owner.is_running()) {
+        if self
+            .process
+            .as_ref()
+            .is_some_and(|owner| !owner.is_running())
+        {
             return Err(SubmitError::Closed);
         }
         let slot = self.io.lock().unwrap_or_else(|e| e.into_inner());

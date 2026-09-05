@@ -1442,7 +1442,9 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
             );
             let coordinator = SessionCoordinator::get();
             let session_id = session_id as usize;
-            if !coordinator.has_session(session_id) { return; }
+            if !coordinator.has_session(session_id) {
+                return;
+            }
 
             let pty_res = crate::pty::create_subprocess_with_data(
                 cmd_str, cwd_str, argv, envp, rows, cols, cw, ch,
@@ -1471,7 +1473,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
             let process = match coordinator.bind_pty_child(session_id, pid) {
                 Ok(process) => process,
                 Err(error) => {
-                    android_log(LogPriority::ERROR, &format!("async child bind rejected: {error}"));
+                    android_log(
+                        LogPriority::ERROR,
+                        &format!("async child bind rejected: {error}"),
+                    );
                     // bind_pty_child owns rejection cleanup. Re-claiming this
                     // numeric PID here after cleanup could target a reused PID.
                     return;

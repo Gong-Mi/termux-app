@@ -14,10 +14,20 @@ fn zombie(pid: i32) {
     let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
     loop {
         let rc = unsafe {
-            libc::waitid(libc::P_PID, pid as libc::id_t, &mut info, libc::WEXITED | libc::WNOWAIT)
+            libc::waitid(
+                libc::P_PID,
+                pid as libc::id_t,
+                &mut info,
+                libc::WEXITED | libc::WNOWAIT,
+            )
         };
-        if rc == 0 { return; }
-        assert_eq!(std::io::Error::last_os_error().raw_os_error(), Some(libc::EINTR));
+        if rc == 0 {
+            return;
+        }
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::EINTR)
+        );
     }
 }
 
@@ -36,36 +46,61 @@ fn exit_before_claim_is_retained() {
 
 #[test]
 fn running_exit_and_multiple_waiters_share_status() {
-    for fallback in [false, true] { multiple_waiters(fallback); }
+    for fallback in [false, true] {
+        multiple_waiters(fallback);
+    }
 }
 
 fn multiple_waiters(fallback: bool) {
-    let mut c = Command::new("sh").args(["-c", "read line; exit 23"])
-        .stdin(std::process::Stdio::piped()).spawn().unwrap();
-    let owner = if fallback { ProcessOwner::claim_fallback(c.id() as i32) }
-        else { ProcessOwner::claim(c.id() as i32) }.unwrap();
+    let mut c = Command::new("sh")
+        .args(["-c", "read line; exit 23"])
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let owner = if fallback {
+        ProcessOwner::claim_fallback(c.id() as i32)
+    } else {
+        ProcessOwner::claim(c.id() as i32)
+    }
+    .unwrap();
     assert!(owner.is_running());
     assert_eq!(owner.outcome(), None);
     let barrier = Arc::new(Barrier::new(5));
-    let workers: Vec<_> = (0..4).map(|_| {
-        let o = owner.clone();
-        let b = barrier.clone();
-        thread::spawn(move || { b.wait(); o.wait() })
-    }).collect();
+    let workers: Vec<_> = (0..4)
+        .map(|_| {
+            let o = owner.clone();
+            let b = barrier.clone();
+            thread::spawn(move || {
+                b.wait();
+                o.wait()
+            })
+        })
+        .collect();
     barrier.wait();
     drop(c.stdin.take());
-    for worker in workers { assert_eq!(worker.join().unwrap(), ExitOutcome::Exited(23)); }
+    for worker in workers {
+        assert_eq!(worker.join().unwrap(), ExitOutcome::Exited(23));
+    }
     assert!(!owner.terminate().unwrap());
 }
 
 #[test]
 fn signal_status_and_forced_fallback() {
     for fallback in [false, true] {
-        let mut c = Command::new("sh").args(["-c", "read line"])
-            .stdin(std::process::Stdio::piped()).spawn().unwrap();
-        let owner = if fallback { ProcessOwner::claim_fallback(c.id() as i32) }
-            else { ProcessOwner::claim(c.id() as i32) }.unwrap();
-        if fallback { assert!(!owner.has_pidfd()); }
+        let mut c = Command::new("sh")
+            .args(["-c", "read line"])
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let owner = if fallback {
+            ProcessOwner::claim_fallback(c.id() as i32)
+        } else {
+            ProcessOwner::claim(c.id() as i32)
+        }
+        .unwrap();
+        if fallback {
+            assert!(!owner.has_pidfd());
+        }
         assert!(owner.terminate().unwrap());
         assert_eq!(owner.wait(), ExitOutcome::Exited(-libc::SIGKILL));
         assert!(!owner.terminate().unwrap());
@@ -77,15 +112,34 @@ fn signal_status_and_forced_fallback() {
 fn concurrent_exit_wait_and_terminate_keep_one_outcome() {
     for fallback in [false, true] {
         for _ in 0..24 {
-            let mut c = Command::new("sh").args(["-c", "read line; exit 17"])
-                .stdin(std::process::Stdio::piped()).spawn().unwrap();
-            let owner = if fallback { ProcessOwner::claim_fallback(c.id() as i32) }
-                else { ProcessOwner::claim(c.id() as i32) }.unwrap();
+            let mut c = Command::new("sh")
+                .args(["-c", "read line; exit 17"])
+                .stdin(std::process::Stdio::piped())
+                .spawn()
+                .unwrap();
+            let owner = if fallback {
+                ProcessOwner::claim_fallback(c.id() as i32)
+            } else {
+                ProcessOwner::claim(c.id() as i32)
+            }
+            .unwrap();
             let barrier = Arc::new(Barrier::new(3));
-            let waiter = { let o = owner.clone(); let b = barrier.clone();
-                thread::spawn(move || { b.wait(); o.wait() }) };
-            let killer = { let o = owner.clone(); let b = barrier.clone();
-                thread::spawn(move || { b.wait(); o.terminate() }) };
+            let waiter = {
+                let o = owner.clone();
+                let b = barrier.clone();
+                thread::spawn(move || {
+                    b.wait();
+                    o.wait()
+                })
+            };
+            let killer = {
+                let o = owner.clone();
+                let b = barrier.clone();
+                thread::spawn(move || {
+                    b.wait();
+                    o.terminate()
+                })
+            };
             barrier.wait();
             drop(c.stdin.take());
             let killed = killer.join().unwrap();
@@ -94,7 +148,10 @@ fn concurrent_exit_wait_and_terminate_keep_one_outcome() {
                 assert_eq!(error.raw_os_error(), Some(libc::ESRCH));
             }
             let outcome = waiter.join().unwrap();
-            assert!(matches!(outcome, ExitOutcome::Exited(17) | ExitOutcome::Exited(-9)));
+            assert!(matches!(
+                outcome,
+                ExitOutcome::Exited(17) | ExitOutcome::Exited(-9)
+            ));
             assert_eq!(owner.wait(), outcome);
             assert!(!owner.terminate().unwrap());
         }
@@ -112,10 +169,17 @@ fn invalid_and_nonchild_pids_are_rejected() {
 #[test]
 fn external_reap_becomes_lost_without_signaling() {
     for fallback in [false, true] {
-        let mut c = Command::new("sh").args(["-c", "read line; exit 0"])
-            .stdin(std::process::Stdio::piped()).spawn().unwrap();
-        let owner = if fallback { ProcessOwner::claim_fallback(c.id() as i32) }
-            else { ProcessOwner::claim(c.id() as i32) }.unwrap();
+        let mut c = Command::new("sh")
+            .args(["-c", "read line; exit 0"])
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let owner = if fallback {
+            ProcessOwner::claim_fallback(c.id() as i32)
+        } else {
+            ProcessOwner::claim(c.id() as i32)
+        }
+        .unwrap();
         drop(c.stdin.take());
         c.wait().unwrap(); // Deliberately violate coordinator's sole-reaper contract.
         assert!(!owner.terminate().unwrap());
@@ -125,8 +189,11 @@ fn external_reap_becomes_lost_without_signaling() {
 
 #[test]
 fn terminate_refreshes_exit_before_signaling() {
-    let mut c = Command::new("sh").args(["-c", "read line; exit 19"])
-        .stdin(std::process::Stdio::piped()).spawn().unwrap();
+    let mut c = Command::new("sh")
+        .args(["-c", "read line; exit 19"])
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
     let owner = ProcessOwner::claim_fallback(c.id() as i32).unwrap();
     drop(c.stdin.take());
     zombie(c.id() as i32);

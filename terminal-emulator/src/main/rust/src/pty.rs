@@ -697,8 +697,12 @@ pub fn set_pty_window_size(fd: jint, rows: jint, cols: jint, cell_width: jint, c
 pub(crate) fn record_managed_child_exit() {
     let mut count = ACTIVE_CHILD_COUNT.load(Ordering::SeqCst);
     loop {
-        match ACTIVE_CHILD_COUNT.compare_exchange_weak(count, count.saturating_sub(1).max(0),
-            Ordering::SeqCst, Ordering::SeqCst) {
+        match ACTIVE_CHILD_COUNT.compare_exchange_weak(
+            count,
+            count.saturating_sub(1).max(0),
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        ) {
             Ok(_) => return,
             Err(observed) => count = observed,
         }
@@ -706,7 +710,9 @@ pub(crate) fn record_managed_child_exit() {
 }
 
 pub fn wait_for(pid: jint) -> jint {
-    if pid <= 0 { return -1; }
+    if pid <= 0 {
+        return -1;
+    }
     if let Some(owner) = crate::coordinator::managed_process_for_pid(pid) {
         return match owner.wait() {
             crate::process_owner::ExitOutcome::Exited(code) => code,
@@ -718,7 +724,9 @@ pub fn wait_for(pid: jint) -> jint {
         let mut status = 0;
         let result = unsafe { libc::waitpid(pid, &mut status, 0) };
         if result < 0 {
-            if std::io::Error::last_os_error().raw_os_error() == Some(libc::EINTR) { continue; }
+            if std::io::Error::last_os_error().raw_os_error() == Some(libc::EINTR) {
+                continue;
+            }
             return -1;
         }
         if libc::WIFEXITED(status) {
