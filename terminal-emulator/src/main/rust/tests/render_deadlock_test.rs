@@ -304,7 +304,11 @@ fn test_frame_backpressure_simulation() {
         assert_eq!(active, expected_in_flight);
         assert_eq!(finished, expected_completed);
         assert!(active <= SWAPCHAIN_IMAGES);
-        assert_eq!(submitted, finished + active, "frame accounting must balance");
+        assert_eq!(
+            submitted,
+            finished + active,
+            "frame accounting must balance"
+        );
     };
 
     for _ in 0..SWAPCHAIN_IMAGES {
@@ -320,13 +324,18 @@ fn test_frame_backpressure_simulation() {
 
         let (release, worker) = workers.pop_front().unwrap();
         release.send(()).unwrap();
-        worker.join().expect("completion worker must exit successfully");
+        worker
+            .join()
+            .expect("completion worker must exit successfully");
         assert_state(frames_submitted, round + 1, SWAPCHAIN_IMAGES - 1);
 
         workers.push_back(try_submit().expect("one completion must free one slot"));
         frames_submitted += 1;
         assert_state(frames_submitted, round + 1, SWAPCHAIN_IMAGES);
-        assert!(try_submit().is_none(), "only one replacement may be admitted");
+        assert!(
+            try_submit().is_none(),
+            "only one replacement may be admitted"
+        );
         frames_blocked += 1;
         assert_state(frames_submitted, round + 1, SWAPCHAIN_IMAGES);
     }
@@ -335,7 +344,9 @@ fn test_frame_backpressure_simulation() {
     let mut expected_completed = REFILL_ROUNDS;
     while let Some((release, worker)) = workers.pop_front() {
         release.send(()).unwrap();
-        worker.join().expect("completion worker must exit successfully");
+        worker
+            .join()
+            .expect("completion worker must exit successfully");
         expected_completed += 1;
         assert_state(frames_submitted, expected_completed, workers.len());
     }
