@@ -101,7 +101,7 @@ impl TerminalRow {
         let mut cur_idx = 0;
         while cur_idx < self.text.len() {
             let c = self.text[cur_idx];
-            let width = local_get_width(c as u32) as usize;
+            let width = local_get_width(c as u32);
             if width > 0 {
                 if cur_col >= column {
                     return cur_idx;
@@ -219,7 +219,7 @@ impl Screen {
     pub fn get_row(&self, row: i32) -> &TerminalRow {
         // Bounds checking: row must be in [-active_transcript_rows, rows-1]
         let min_row = -(self.active_transcript_rows as i32);
-        let max_row = self.rows as i32 - 1;
+        let max_row = self.rows - 1;
         let clamped_row = row.max(min_row).min(max_row);
         &self.buffer[self.internal_row(clamped_row)]
     }
@@ -228,7 +228,7 @@ impl Screen {
     pub fn get_row_mut(&mut self, row: i32) -> &mut TerminalRow {
         // Bounds checking: row must be in [-active_transcript_rows, rows-1]
         let min_row = -(self.active_transcript_rows as i32);
-        let max_row = self.rows as i32 - 1;
+        let max_row = self.rows - 1;
         let clamped_row = row.max(min_row).min(max_row);
         let idx = self.internal_row(clamped_row);
         &mut self.buffer[idx]
@@ -606,7 +606,7 @@ impl Screen {
                 let unit_width = if is_atomic_pair {
                     2
                 } else {
-                    display_width as usize
+                    display_width
                 };
 
                 // Update style for this column
@@ -669,8 +669,8 @@ impl Screen {
                 } else {
                     i += 1;
                     if display_width > 0 {
-                        current_old_col += display_width as usize;
-                        output_col += display_width as usize;
+                        current_old_col += display_width;
+                        output_col += display_width;
                     }
                 }
             }
@@ -744,7 +744,7 @@ impl Screen {
         let old_rows = self.rows as usize;
 
         // Calculate shift: positive = shrinking, negative = expanding
-        let mut shift_down_of_top_row = old_rows as i32 - new_rows as i32;
+        let mut shift_down_of_top_row = old_rows as i32 - new_rows;
 
         if shift_down_of_top_row > 0 && shift_down_of_top_row < old_rows as i32 {
             // Shrinking: check if we can skip blank rows at bottom below cursor

@@ -247,14 +247,14 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
         'r' => {
             // DECSTBM - Set Top and Bottom Margins (默认 top=1, bottom=rows)
             let top = params.get_arg0(1);
-            let bottom = params.get_arg1(state.rows as i32);
+            let bottom = params.get_arg1(state.rows);
             state.set_margins(top, bottom);
         }
         's' => {
             if state.leftright_margin_mode() {
                 // DECSLRM - Set Left and Right Margins (默认 left=1, right=cols)
                 let left = params.get_arg0(1);
-                let right = params.get_arg1(state.cols as i32);
+                let right = params.get_arg1(state.cols);
                 state.set_left_right_margins(left, right);
             } else {
                 state.save_cursor();
