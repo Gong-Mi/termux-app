@@ -92,9 +92,8 @@ class TerminalSession(
         if (mEmulator == null && mSessionState == SessionState.IDLE) {
             initializeEmulator(columns, rows, cellWidthPixels, cellHeightPixels)
         } else if (mSessionState == SessionState.READY && mEmulator != null) {
-            if (JNI.sNativeLibrariesLoaded && mTerminalFileDescriptor != -1) {
-                runCatching { JNI.setPtyWindowSize(mTerminalFileDescriptor, rows, columns, cellWidthPixels, cellHeightPixels) }
-            }
+            // Native resize routes the ioctl to the live IO owner. Never use a
+            // cached raw descriptor after a concurrent worker close/reuse.
             mEmulator?.takeIf { it.isAlive() }?.resize(columns, rows, cellWidthPixels, cellHeightPixels)
         }
     }
@@ -158,7 +157,11 @@ class TerminalSession(
         if (mSessionState != SessionState.READY || mEmulator == null) return
         val ptr = mEmulator!!.getNativePointer()
         if (ptr != 0L) {
-            RustTerminal.processInput(ptr, data, offset, count)
+            val status = RustTerminal.tryProcessInput(ptr, data, offset, count)
+            if (status != RustTerminal.INPUT_ACCEPTED) {
+                mClient.logWarn(LOG_TAG, "PTY input rejected (status=$status, bytes=$count); input was not queued")
+                mClient.onBell(this)
+            }
         }
     }
 

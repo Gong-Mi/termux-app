@@ -2,7 +2,7 @@ use jni::JNIEnv;
 use jni::objects::{JClass, JObject, JString, JValue};
 use jni::sys::{jboolean, jbyteArray, jint, jintArray, jlong, jstring};
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::os::fd::{FromRawFd, OwnedFd};
 
 use crate::coordinator::SessionCoordinator;
 use crate::engine::{TerminalContext, TerminalEngine, TerminalEvent};
@@ -160,40 +160,39 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatch(
     }));
 }
 
-/// 处理用户输入（写回 PTY）
+/// Enqueue a complete input slice. 0=accepted, -1=closed, -2=full, -3=invalid.
+/// Acceptance is not delivery: explicit cancellation can discard pending bytes.
+fn enqueue_input(env: &JNIEnv, context: &TerminalContext, data: jbyteArray,
+    offset: jint, count: jint) -> jint {
+    if data.is_null() || offset < 0 || count < 0 { return -3; }
+    let j_array = unsafe { jni::objects::JByteArray::from_raw(data) };
+    let Ok(bytes) = env.convert_byte_array(&j_array) else { return -3; };
+    let Some(end) = (offset as usize).checked_add(count as usize) else { return -3; };
+    let Some(slice) = bytes.get(offset as usize..end) else { return -3; };
+    match context.submit_input(slice) {
+        Ok(()) => 0,
+        Err(crate::engine::io_runtime::SubmitError::Closed) => -1,
+        Err(crate::engine::io_runtime::SubmitError::Full) => -2,
+    }
+}
+
+/// Legacy JVM signature retained; rejection is logged, never a blocking write.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_processInput(
-    env: JNIEnv,
-    _class: JClass,
-    ptr: jlong,
-    data: jbyteArray,
-    offset: jint,
-    count: jint,
+    env: JNIEnv, _class: JClass, ptr: jlong, data: jbyteArray, offset: jint, count: jint,
 ) {
-    if ptr == 0 || data.is_null() {
-        return;
-    }
-    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
-        return;
-    };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else { return; };
+    let status = enqueue_input(&env, &context, data, offset, count);
+    if status != 0 { android_log(LogPriority::WARN, &format!("PTY input rejected: status={status}")); }
+}
 
-    let fd = context.pty_fd.load(Ordering::SeqCst);
-    if fd != -1 {
-        let j_array = unsafe { jni::objects::JByteArray::from_raw(data) };
-        if let Ok(bytes) = env.convert_byte_array(&j_array) {
-            let offset = offset as usize;
-            let count = count as usize;
-            if offset + count <= bytes.len() {
-                unsafe {
-                    libc::write(
-                        fd,
-                        bytes[offset..offset + count].as_ptr() as *const _,
-                        count,
-                    );
-                }
-            }
-        }
-    }
+/// Status-returning API for callers that must report bounded-queue rejection.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_tryProcessInput(
+    env: JNIEnv, _class: JClass, ptr: jlong, data: jbyteArray, offset: jint, count: jint,
+) -> jint {
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else { return -1; };
+    enqueue_input(&env, &context, data, offset, count)
 }
 
 /// 启动 IO 线程
@@ -210,7 +209,12 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_startIoThread(
     let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
         return;
     };
-    TerminalContext::start_io_thread(Arc::clone(&context), pty_fd);
+    if pty_fd < 0 { return; }
+    // Preserve the legacy startIoThread ownership-transfer contract.
+    let owned = unsafe { OwnedFd::from_raw_fd(pty_fd) };
+    if let Err(error) = TerminalContext::start_io_owned(Arc::clone(&context), owned) {
+        android_log(LogPriority::ERROR, &format!("startIoThread failed: {error}"));
+    }
 }
 
 /// 销毁引擎实例
@@ -279,8 +283,8 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_resize(
     ptr: jlong,
     cols: jint,
     rows: jint,
-    _cw: jint,
-    _ch: jint,
+    cw: jint,
+    ch: jint,
 ) {
     if ptr == 0 {
         return;
@@ -288,6 +292,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_resize(
     let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
         return;
     };
+    context.resize_pty(rows, cols, cw, ch);
     let (events, cb) = {
         let mut engine = crate::safe_write!(context.lock);
         engine.state.resize(cols, rows);
@@ -1424,6 +1429,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
                 }
             };
 
+            let owned = unsafe { OwnedFd::from_raw_fd(pty_fd) };
             coordinator.bind_pid(session_id, pid);
 
             crate::utils::android_log(
@@ -1439,8 +1445,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
             let context = Arc::new(TerminalContext::new(engine));
             let Some(context_handle) = crate::engine::ENGINE_HANDLES.insert(Arc::clone(&context))
             else {
-                // No handle was published and no reader owns a duplicate yet.
-                unsafe { libc::close(pty_fd) };
+                // The unpublished OwnedFd is closed by its destructor.
                 return;
             };
             let mut pending = PendingEngineDelivery {
@@ -1448,20 +1453,12 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
                 delivered: false,
             };
 
-            // 关键修复：必须存储 pty_fd，否则 processInput 无法写入输入
-            context.pty_fd.store(pty_fd as i32, Ordering::SeqCst);
-
-            crate::utils::android_log(
-                crate::utils::LogPriority::DEBUG,
-                "[TRACE_SESSION] 5.4. Starting IO thread",
-            );
-            // 使用 dup 确保 IO 线程持有独立的 FD 引用
-            let dup_fd = unsafe { libc::dup(pty_fd) };
-            if dup_fd < 0 {
-                android_log(LogPriority::ERROR, "createSessionAsync: dup failed");
+            // Transfer the original fd, not a duplicate. Java receives metadata
+            // only; production resize and input route through the live handle.
+            if let Err(error) = TerminalContext::start_io_owned(Arc::clone(&context), owned) {
+                android_log(LogPriority::ERROR, &format!("createSessionAsync IO start failed: {error}"));
                 return;
             }
-            TerminalContext::start_io_thread(Arc::clone(&context), dup_fd);
 
             if poll_delivery {
                 coordinator.set_engine_data(

@@ -90,6 +90,16 @@ speedup. `python3 scripts/verify-test-build-ci.py` validates these static contra
 6. Add the test name to `run-rust-tests.sh`; do not rely on directory discovery
    as the only registration mechanism.
 
+## PTY transport slice
+
+See [PTY IO lifecycle](docs/PTY_IO_LIFECYCLE.md). `pty_io_runtime` and
+`pty_context_integration` are registered in `lifecycle` and `all`; they exercise
+actual PTY/socket syscalls, production parsing, response queueing and background
+join. They do not validate process exit/UI completion or a physical GPU.
+`python3 scripts/verify-pty-io-boundary.py` guards the full production JNI/Kotlin
+fd handoff. Existing Kotlin/JNI handle tests also check input admission statuses
+and both legacy/status-returning input methods against a real shell.
+
 ## Engine ownership slice
 
 See [Engine handle ownership](docs/ENGINE_HANDLE_OWNERSHIP.md) for the token/lease

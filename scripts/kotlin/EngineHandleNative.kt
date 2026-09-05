@@ -94,7 +94,7 @@ fun main() {
     var ptyHandle = 0L
     try {
         val shell = if (java.io.File("/system/bin/sh").canExecute()) "/system/bin/sh" else "/bin/sh"
-        val command = "IFS= read -r value; printf '\\nreply:%s\\n' \"${'$'}value\""
+        val command = "IFS= read -r value; stty size; printf '\\nreply:%s\\n' \"${'$'}value\""
         val create = JNI::class.java.declaredMethods.single { it.name == "createSessionAsync" }
         create.invoke(null, sessionId, shell, System.getProperty("user.dir"),
             arrayOf(shell, "-c", command), arrayOf("PATH=/system/bin:/usr/bin:/bin", "LD_PRELOAD="),
@@ -109,8 +109,14 @@ fun main() {
         ptyHandle = data!![0]
         check(ptyHandle > 0 && RustTerminal.getCols(ptyHandle) == 80)
         check(JNI.pollEngineData(sessionId) == null) { "poll ownership delivered twice" }
+        RustTerminal.resize(ptyHandle, 81, 25, 8, 16)
+        check(RustTerminal.tryProcessInput(ptyHandle, byteArrayOf(1), -1, 1) == RustTerminal.INPUT_INVALID)
+        check(RustTerminal.tryProcessInput(ptyHandle, byteArrayOf(1), Int.MAX_VALUE, 1) == RustTerminal.INPUT_INVALID)
+        check(RustTerminal.tryProcessInput(ptyHandle, ByteArray(1024 * 1024 + 1), 0, 1024 * 1024 + 1) == RustTerminal.INPUT_FULL)
+        check(RustTerminal.tryProcessInput(ptyHandle, byteArrayOf(), 0, 0) == RustTerminal.INPUT_ACCEPTED)
         val input = "skipPAYLOAD\nignored".toByteArray(Charsets.UTF_8)
-        RustTerminal.processInput(ptyHandle, input, 4, 8)
+        check(RustTerminal.tryProcessInput(ptyHandle, input, 4, 3) == RustTerminal.INPUT_ACCEPTED)
+        RustTerminal.processInput(ptyHandle, input, 7, 5)
         var transcript = ""
         while (!transcript.contains("reply:PAYLOAD") && System.nanoTime() < deadline) {
             transcript = RustTerminal.getTranscriptText(ptyHandle)
@@ -118,6 +124,7 @@ fun main() {
         }
         check(transcript.contains("reply:PAYLOAD")) { "PTY offset/count/reader failed: $transcript" }
         check(!transcript.contains("skip") && !transcript.contains("ignored"))
+        check(transcript.contains("25 81")) { "handle-based PTY resize was not applied: $transcript" }
     } finally {
         if (ptyHandle != 0L) RustTerminal.destroyEngine(ptyHandle)
         JNI.unregisterSession(sessionId)

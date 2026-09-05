@@ -1,6 +1,7 @@
-use std::os::fd::FromRawFd;
 /// 终端引擎和上下文管理
-use std::sync::RwLock;
+use std::os::fd::OwnedFd;
+use std::sync::{Arc, Mutex, RwLock};
+use super::io_runtime::{IoRuntime, SubmitError};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::engine::events::TerminalEvent;
@@ -77,154 +78,142 @@ impl TerminalEngine {
     }
 }
 
-/// 终端上下文 - 线程安全的引擎包装
+/// Terminal memory and IO have separate lifetimes. The IO callback holds only a
+/// Weak reference; retaining a render lease does not keep a cancelled reader alive.
 pub struct TerminalContext {
     pub lock: RwLock<TerminalEngine>,
     pub running: AtomicBool,
-    pub pty_fd: std::sync::atomic::AtomicI32,
+    io: Mutex<Option<IoRuntime>>,
+    io_joined: AtomicBool,
 }
+
+/// Input budget is a policy limit, not a guarantee of eventual delivery.
+pub const INPUT_CAPACITY: usize = 1024 * 1024;
 
 impl TerminalContext {
     pub fn new(engine: TerminalEngine) -> Self {
         Self {
             lock: RwLock::new(engine),
             running: AtomicBool::new(true),
-            pty_fd: std::sync::atomic::AtomicI32::new(-1),
+            io: Mutex::new(None),
+            io_joined: AtomicBool::new(true),
         }
     }
 
-    pub fn start_io_thread(context: std::sync::Arc<Self>, dup_fd: i32) {
-        std::thread::spawn(move || {
-            crate::utils::android_log(
-                crate::utils::LogPriority::INFO,
-                "CHECKPOINT: IO Thread STARTing [ARCH_REWRITE]",
-            );
-            let mut buffer = [0u8; 8192];
-            let mut pty_file = unsafe { std::fs::File::from_raw_fd(dup_fd) };
-
-            let vm = match crate::JAVA_VM.get() {
-                Some(v) => v,
-                None => {
-                    crate::utils::android_log(
-                        crate::utils::LogPriority::ERROR,
-                        "IO Thread: JAVA_VM not initialized",
-                    );
-                    return;
-                }
+    /// Transfer an owned descriptor exactly once. Repeated start is rejected;
+    /// rejected descriptors are dropped, not leaked or allowed a second reader.
+    pub fn start_io_owned(context: Arc<Self>, fd: OwnedFd) -> std::io::Result<()> {
+        let mut slot = context.io.lock().unwrap_or_else(|e| e.into_inner());
+        if !context.running.load(Ordering::Acquire) || slot.is_some() {
+            return Err(std::io::Error::new(std::io::ErrorKind::AlreadyExists,
+                "IO already started or context revoked"));
+        }
+        let weak = Arc::downgrade(&context);
+        // A worker-local handoff between parse and notification phases. Never
+        // hold this lock while calling Java; replies enter FIFO before reentry.
+        let notifications = Arc::new(Mutex::new(None));
+        let publish = Arc::clone(&notifications);
+        let runtime = IoRuntime::start_with_callbacks(fd, INPUT_CAPACITY, move |bytes| {
+            let Some(context) = weak.upgrade() else { return Vec::new(); };
+            let (events, responses, callback) = {
+                let mut engine = context.lock.write().unwrap_or_else(|e| e.into_inner());
+                engine.process_bytes(bytes);
+                let responses = std::mem::take(&mut engine.state.pending_responses);
+                (engine.take_events(), responses, engine.state.java_callback_obj.clone())
             };
+            *publish.lock().unwrap_or_else(|e| e.into_inner()) = Some((events, callback));
+            responses.into_iter().map(String::into_bytes).collect()
+        }, move || {
+            let pending = notifications.lock().unwrap_or_else(|e| e.into_inner()).take();
+            if let Some((events, callback)) = pending { Self::dispatch_io_events(events, callback); }
+        }, |outcome| {
+            crate::utils::android_log(crate::utils::LogPriority::INFO,
+                &format!("PTY_IO_OUTCOME: {outcome:?}; accepted output may remain undelivered"));
+        })?;
+        context.io_joined.store(false, Ordering::Release);
+        *slot = Some(runtime);
+        Ok(())
+    }
 
-            let mut env = match vm.attach_current_thread_as_daemon() {
-                Ok(g) => g,
-                Err(e) => {
-                    crate::utils::android_log(
-                        crate::utils::LogPriority::ERROR,
-                        &format!("IO Thread: Failed to attach: {:?}", e),
-                    );
-                    return;
-                }
-            };
+    pub fn submit_input(&self, bytes: &[u8]) -> Result<(), SubmitError> {
+        let slot = self.io.lock().unwrap_or_else(|e| e.into_inner());
+        match slot.as_ref() {
+            Some(runtime) if self.running.load(Ordering::Acquire) => runtime.submit(bytes),
+            _ => Err(SubmitError::Closed),
+        }
+    }
 
-            crate::utils::android_log(
-                crate::utils::LogPriority::DEBUG,
-                "IO Thread: Attached and running",
-            );
+    pub fn resize_pty(&self, rows: i32, cols: i32, cw: i32, ch: i32) {
+        let slot = self.io.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(runtime) = slot.as_ref() {
+            let _ = runtime.resize(rows as u16, cols as u16,
+                cols.wrapping_mul(cw) as u16, rows.wrapping_mul(ch) as u16);
+        }
+    }
 
-            while context.running.load(Ordering::Relaxed) {
-                let read_res = std::io::Read::read(&mut pty_file, &mut buffer);
-                match read_res {
-                    Ok(0) => {
-                        // 抗抖动逻辑：可能是 execvp 切换瞬间，等待 100ms
-                        std::thread::sleep(std::time::Duration::from_millis(100));
-                        let retry_res = std::io::Read::read(&mut pty_file, &mut buffer);
-                        if let Ok(0) = retry_res {
-                            crate::utils::android_log(
-                                crate::utils::LogPriority::WARN,
-                                "[IO_THREAD] Permanent EOF from PTY. Exiting.",
-                            );
-                            break;
-                        }
-                        continue;
-                    }
-                    Ok(n) => {
-                        let (events, pending_responses, callback_obj) = {
-                            let mut engine = match context.lock.write() {
-                                Ok(g) => g,
-                                Err(poisoned) => {
-                                    crate::utils::android_log(
-                                        crate::utils::LogPriority::ERROR,
-                                        "IO Thread: TerminalEngine lock poisoned! Recovering...",
-                                    );
-                                    poisoned.into_inner()
-                                }
-                            };
-                            engine.process_bytes(&buffer[..n]);
-                            let resps =
-                                std::mem::replace(&mut engine.state.pending_responses, Vec::new());
-                            let cb = engine.state.java_callback_obj.clone();
-                            (engine.take_events(), resps, cb)
-                        };
-
-                        let current_pty_fd = context.pty_fd.load(Ordering::Relaxed);
-                        for resp in pending_responses {
-                            let r: String = resp;
-                            if current_pty_fd != -1 {
-                                unsafe {
-                                    libc::write(
-                                        current_pty_fd,
-                                        r.as_ptr() as *const libc::c_void,
-                                        r.len(),
-                                    );
-                                }
-                            }
-                        }
-
-                        for event in &events {
-                            match event {
-                                crate::engine::events::TerminalEvent::ScreenUpdated => {
-                                    crate::render_thread::request_render();
-                                    // 必须通知 Java 层屏幕已更新，否则 ScrollBar 和选区不会刷新
-                                    if let Some(obj) = &callback_obj {
-                                        let _ = env.call_method(
-                                            obj.as_obj(),
-                                            "onScreenUpdated",
-                                            "()V",
-                                            &[],
-                                        );
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-
-                        if let Some(obj) = callback_obj as Option<jni::objects::GlobalRef> {
-                            if !obj.as_obj().is_null() {
-                                let _ = env.with_local_frame(16, |env: &mut jni::JNIEnv| -> Result<(), jni::errors::Error> {
-                                    for event in events {
-                                        match event {
-                                            crate::engine::events::TerminalEvent::Bell => { let _ = env.call_method(obj.as_obj(), "onBell", "()V", &[]); }
-                                            crate::engine::events::TerminalEvent::ColorsChanged => { let _ = env.call_method(obj.as_obj(), "onColorsChanged", "()V", &[]); }
-                                            crate::engine::events::TerminalEvent::CopytoClipboard(text) => {
-                                                if let Ok(j_text) = env.new_string(&text) {
-                                                    let val = jni::objects::JValue::from(&j_text);
-                                                    let _ = env.call_method(obj.as_obj(), "onCopyTextToClipboard", "(Ljava/lang/String;)V", &[val]);
-                                                }
-                                            }
-                                            _ => {}
-                                        }
-                                        if env.exception_check().unwrap_or(false) { let _ = env.exception_clear(); }
-                                    }
-                                    Ok(())
-                                });
-                            }
-                        }
-                    }
-                    Err(_) => break,
-                }
+    /// Revoke admission and request cancellation without joining on the caller.
+    /// The reaper retains the context until the worker actually terminates.
+    /// A foreign callback may delay join; cancellation is not a bounded callback.
+    pub fn stop_io(context: &Arc<Self>) {
+        let runtime = {
+            let mut slot = context.io.lock().unwrap_or_else(|e| e.into_inner());
+            context.running.store(false, Ordering::Release);
+            let runtime = slot.take();
+            if let Some(runtime) = runtime.as_ref() { runtime.cancel(); }
+            runtime
+        };
+        if let Some(mut runtime) = runtime {
+            let context = Arc::clone(context);
+            if let Err(error) = std::thread::Builder::new().name("pty-io-reaper".into()).spawn(move || {
+                let outcome = runtime.join();
+                crate::utils::android_log(crate::utils::LogPriority::INFO,
+                    &format!("PTY_IO_STOPPED: {outcome:?}; cancellation is not full drain"));
+                context.io_joined.store(true, Ordering::Release);
+            }) {
+                // Spawn failure drops/cancels runtime. Do not claim join completed.
+                crate::utils::android_log(crate::utils::LogPriority::ERROR,
+                    &format!("PTY IO reaper spawn failed: {error}"));
             }
-            crate::utils::android_log(
-                crate::utils::LogPriority::INFO,
-                "CHECKPOINT: IO Thread EXITing (normal) [ARCH_REWRITE]",
-            );
+        }
+    }
+
+    /// True only after no worker was started or the background join completed.
+    pub fn io_is_joined(&self) -> bool { self.io_joined.load(Ordering::Acquire) }
+
+    fn dispatch_io_events(events: Vec<TerminalEvent>, callback: Option<jni::objects::GlobalRef>) {
+        if events.iter().any(|event| matches!(event, TerminalEvent::ScreenUpdated)) {
+            crate::render_thread::request_render();
+        }
+        let Some(obj) = callback else { return; };
+        let Some(vm) = crate::JAVA_VM.get() else { return; };
+        let Ok(mut env) = vm.get_env().or_else(|_| vm.attach_current_thread_as_daemon()) else {
+            crate::utils::android_log(crate::utils::LogPriority::ERROR, "PTY IO callback attach failed");
+            return;
+        };
+        // Preserve the old reader's two-pass ordering: screen notifications
+        // precede bell/color/clipboard delivery, regardless of parser event order.
+        for event in &events {
+            if matches!(event, TerminalEvent::ScreenUpdated) {
+                let _ = env.call_method(obj.as_obj(), "onScreenUpdated", "()V", &[]);
+            }
+        }
+        // Extending title/sixel/exit delivery belongs to separate event work.
+        let _ = env.with_local_frame(16, |env: &mut jni::JNIEnv| -> Result<(), jni::errors::Error> {
+            for event in events {
+                match event {
+                    TerminalEvent::Bell => { let _ = env.call_method(obj.as_obj(), "onBell", "()V", &[]); }
+                    TerminalEvent::ColorsChanged => { let _ = env.call_method(obj.as_obj(), "onColorsChanged", "()V", &[]); }
+                    TerminalEvent::CopytoClipboard(text) => {
+                        if let Ok(j_text) = env.new_string(&text) {
+                            let val = jni::objects::JValue::from(&j_text);
+                            let _ = env.call_method(obj.as_obj(), "onCopyTextToClipboard", "(Ljava/lang/String;)V", &[val]);
+                        }
+                    }
+                    _ => {}
+                }
+                if env.exception_check().unwrap_or(false) { let _ = env.exception_clear(); }
+            }
+            Ok(())
         });
     }
 }

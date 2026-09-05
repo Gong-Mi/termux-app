@@ -1,6 +1,7 @@
 //! Production global registry, real TerminalContext, fd ownership and RenderFrame.
 //! No fake JNI, Surface or GPU: JVM JNI coverage is a separate harness.
-use std::os::fd::{AsRawFd, IntoRawFd};
+use std::os::fd::AsRawFd;
+use std::time::{Duration, Instant};
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -22,9 +23,8 @@ fn real_context_revocation_preserves_in_flight_frame_and_forgets_delivery() {
     )));
     let weak = Arc::downgrade(&context);
     let (master, peer) = UnixStream::pair().unwrap();
-    let duplicate = master.try_clone().unwrap();
-    let fd = master.into_raw_fd();
-    context.pty_fd.store(fd, Ordering::SeqCst);
+    let fd = master.as_raw_fd();
+    TerminalContext::start_io_owned(Arc::clone(&context), master.into()).unwrap();
     let handle = ENGINE_HANDLES.insert(context).unwrap();
     coordinator.set_engine_data(
         session,
@@ -44,11 +44,10 @@ fn real_context_revocation_preserves_in_flight_frame_and_forgets_delivery() {
     assert!(!ENGINE_HANDLES.publish(handle));
     assert!(coordinator.take_engine_data(session).is_none());
     assert!(!lease.running.load(Ordering::SeqCst));
-    assert_eq!(lease.pty_fd.load(Ordering::SeqCst), -1);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !lease.io_is_joined() && Instant::now() < deadline { std::thread::yield_now(); }
+    assert!(lease.io_is_joined(), "silent reader did not terminate and join");
     assert_eq!(unsafe { libc::fcntl(fd, libc::F_GETFD) }, -1);
-    // Revocation is not reader cancellation: a duplicate remains independently
-    // owned. The test deliberately does not claim a blocked read was awakened.
-    assert!(unsafe { libc::fcntl(duplicate.as_raw_fd(), libc::F_GETFD) } >= 0);
     let frame = {
         let engine = lease.lock.read().unwrap();
         RenderFrame::from_engine(&engine, 24, 80, 0)
@@ -56,9 +55,9 @@ fn real_context_revocation_preserves_in_flight_frame_and_forgets_delivery() {
     drop(frame);
     assert!(weak.upgrade().is_some());
     drop(lease);
+    while weak.upgrade().is_some() && Instant::now() < deadline { std::thread::yield_now(); }
     assert!(weak.upgrade().is_none());
     destroy_engine(handle);
-    drop(duplicate);
     drop(peer);
     coordinator.unregister_session(session);
 

@@ -61,3 +61,43 @@ read may discard accepted bytes. No stale raw fd can close/write a recycled fd.
   and other test debts rather than weakening their assertions.
 
 At initial contract commit no implementation or runtime success is claimed.
+
+## Implemented local evidence (before exact-head CI)
+
+- Production runtime/context/JNI/Kotlin now use the owner handoff above. Normal
+  transport terminal reasons are logged immediately after fd closure; background
+  join remains a distinct completion event. Callback panic is observed by join.
+- Parsing, reply admission, and Java notifications are separate worker phases:
+  responses enter FIFO before callback reentrant input. Screen notifications
+  retain the old before-bell/color/clipboard ordering. This does NOT retain the
+  old blocking write-before-callback syscall timing; callback latency may still
+  delay queued transmission. No bounded foreign-callback completion claim.
+- Actual Rust runtime 12 tests, production context 4, global ownership integration
+  1 pass. Includes real PTY initial slave open, silent/write-saturated cancel,
+  large exact input/reply ordering, explicit full/overflow, callback cancellation
+  boundary/panic, isolated-process fd reuse, real resize, EOF and failed fd setup.
+- Real production Kotlin + JNI: 43 handle methods, invalid/revoked ownership,
+  actual shell input split across legacy/status methods, offset/count/invalid/full
+  statuses, and handle-based resize verified using child `stty size` all pass.
+  Constructor recording 3 adoption/12 creation cases and real native adoption,
+  parsing/resize/destroy pass. Host JVM is not ART/UI acceptance.
+- `cargo check --tests --locked --offline` passes for the test compilation surface;
+  pre-existing warnings remain. Python discovery 35 tests and both IO/handle
+  static boundary gates pass. CI wiring contracts pass.
+- core/regressions/terminal pass. lifecycle completes all targets but old
+  std-only `test_frame_backpressure_simulation` fails (submitted12/blocked13);
+  file unchanged from base, no assertion weakened. Initial broader run lacked
+  local libc++ linker search path; rerun with existing NDK r23 LIBRARY_PATH reached
+  real tests. Neither link setup failure nor this old oracle is a PTY regression.
+- Independent read-only review found no new blocker on repository's legitimate
+  production calls. Parent subsequently separated reply/notification ordering,
+  added immediate normal outcome observation, fd-setup failure test and real JNI
+  resize. Exact same raw fd must not be ownership-transferred twice: the legacy
+  API retains that precondition, distinct-owned-fd repeated starts are rejected.
+
+Not yet verified: deterministic EINTR/EAGAIN and spawn/reaper-failure injection;
+ART rejection UI, device lifecycle/GPU, whole process-exit/descendant-drain policy.
+Socket half-close is not a supported drain guarantee: EOF discards queued output
+by contract. Subagent's missing-module RED only proves initial interface absence;
+the full behavior suite is parent-executed integration/characterization, not
+fabricated retrospective TDD. Exact-head CI remains required after publication.

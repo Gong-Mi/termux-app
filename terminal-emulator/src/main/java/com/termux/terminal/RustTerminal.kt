@@ -21,6 +21,8 @@ object RustTerminal {
     @JvmStatic
     external fun destroyEngine(enginePtr: Long)
 
+    /** Transfers descriptor ownership once. Do not pass the same owned fd twice
+     * or keep using it directly after transfer; resize/input use the engine handle. */
     @JvmStatic
     external fun startIoThread(enginePtr: Long, ptyFd: Int)
 
@@ -31,6 +33,15 @@ object RustTerminal {
 
     @JvmStatic
     external fun processInput(enginePtr: Long, data: ByteArray, offset: Int, count: Int)
+
+    /** Queued, not delivered. Cancellation may discard queued data. */
+    const val INPUT_ACCEPTED = 0
+    const val INPUT_CLOSED = -1
+    const val INPUT_FULL = -2
+    const val INPUT_INVALID = -3
+
+    @JvmStatic
+    external fun tryProcessInput(enginePtr: Long, data: ByteArray, offset: Int, count: Int): Int
 
     @JvmStatic
     external fun processCodePoint(enginePtr: Long, codePoint: Int)
