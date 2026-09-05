@@ -1,0 +1,206 @@
+name: Android emulator experiment
+
+"on":
+  pull_request:
+    branches:
+      - feature/rust-integration
+    paths:
+      - 'app/**'
+      - 'terminal-emulator/**'
+      - 'terminal-view/**'
+      - 'termux-shared/**'
+      - 'buildSrc/**'
+      - 'gradle/**'
+      - '*.gradle*'
+      - '.github/workflows/android-emulator-experiment.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ANDROID_API: 36
+  ANDROID_ABI: x86_64
+  FAST_BUILD_ABI: x86_64
+  PACKAGE_VARIANT: apt-android-7
+  SKIA_BINDINGS_SKIP_LAYOUT_ASSERTIONS: 1
+  FORCE_SKIA_BUILD: 1
+  SKIA_NATIVE_API_LEVEL: 35
+  SKIA_USE_VULKAN: 1
+  SKIA_USE_GL: 0
+  CXXFLAGS: -DSK_TYPEFACE_FACTORY_FREETYPE
+  RUST_BACKTRACE: 1
+
+concurrency:
+  group: android-emulator-experiment-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  install-startup:
+    name: Build, install and cold-start x86_64 emulator
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify KVM access before building
+        run: |
+          set -euo pipefail
+          if [ ! -c /dev/kvm ]; then
+            printf '%s\n' '::error::KVM device missing; this experiment requires hardware acceleration.' >&2
+            exit 1
+          fi
+          # GitHub-hosted ephemeral runner: grant its existing primary group access.
+          # Do not run the emulator as root or open KVM to every user.
+          sudo chgrp "$(id -gn)" /dev/kvm
+          sudo chmod g+rw /dev/kvm
+          python3 - <<'PY'
+          import os
+          fd = os.open('/dev/kvm', os.O_RDWR | os.O_CLOEXEC)
+          os.close(fd)
+          print('KVM device opened read/write as the unprivileged runner')
+          PY
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Set up Rust and Android targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-linux-android
+
+      - name: Verify Android foreground-service manifest
+        run: python3 scripts/verify-android-service-manifest.py
+
+      - name: Install cargo-ndk
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk@3.5.0
+
+      - name: Install emulator build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libfreetype6-dev libfontconfig1-dev libpulse0
+          unzip scripts/gn-linux-amd64.zip -d /tmp/gn-bin
+          sudo install -m 0755 /tmp/gn-bin/gn /usr/local/bin/gn
+          gn --version
+          ninja --version
+
+      - name: Build debug APKs
+        env:
+          TERMUX_PACKAGE_VARIANT: ${{ env.PACKAGE_VARIANT }}
+          TERMUX_APP_VERSION_NAME: 0.118.0+${{ github.sha }}
+          TERMUX_APK_VERSION_TAG: emulator-${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ./gradlew assembleDebug --parallel --no-daemon --console=plain
+          APK_DIR=app/build/outputs/apk/debug
+          test -s "$APK_DIR/termux-app_emulator-${GITHUB_SHA}_x86_64.apk"
+          sha256sum "$APK_DIR/termux-app_emulator-${GITHUB_SHA}_x86_64.apk" > apk.sha256
+          printf 'headSha=%s\n' "$GITHUB_SHA" > source-identity.txt
+          printf 'apk=%s\n' "$APK_DIR/termux-app_emulator-${GITHUB_SHA}_x86_64.apk" >> source-identity.txt
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install API 36 x86_64 emulator image
+        run: |
+          set -euo pipefail
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
+          sdkmanager "platform-tools" "emulator" "platforms;android-${ANDROID_API}" "system-images;android-${ANDROID_API};google_apis;x86_64"
+          yes | sdkmanager --licenses >/dev/null || true
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/emulator" >> "$GITHUB_PATH"
+          adb version
+          emulator -version
+
+      - name: Create and boot emulator
+        env:
+          ANDROID_AVD_HOME: /home/runner/.android/avd
+        run: |
+          set -euxo pipefail
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd \
+            --force \
+            --name termux-experiment \
+            --package "system-images;android-${ANDROID_API};google_apis;x86_64" \
+            --device pixel_5
+          test -f "$ANDROID_AVD_HOME/termux-experiment.ini"
+          nohup "$ANDROID_HOME/emulator/emulator" -avd termux-experiment \
+            -gpu swiftshader_indirect -no-window -no-audio -no-boot-anim \
+            -no-snapshot -wipe-data -memory 3072 -cores 3 \
+            > emulator.log 2>&1 &
+          EMULATOR_PID=$!
+          printf '%s\n' "$EMULATOR_PID" > emulator.pid
+          for i in $(seq 1 15); do
+            sleep 60
+            boot=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
+            echo "[boot-wait minute $i] sys.boot_completed='$boot'"
+            if [ "$boot" = "1" ]; then
+              break
+            fi
+            if ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
+              printf '%s\n' 'Emulator process exited before Android boot completed' >&2
+              tail -100 emulator.log >&2 || true
+              exit 43
+            fi
+          done
+          test "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1"
+          adb shell wm size
+          adb shell wm density
+          adb shell getprop ro.build.version.sdk
+
+      - name: Install exact x86_64 APK and cold-start Termux
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/termux-app_emulator-${GITHUB_SHA}_x86_64.apk"
+          adb install -r "$APK"
+          adb shell am force-stop com.termux
+          adb logcat -c
+          adb shell monkey -p com.termux 1
+          sleep 15
+          adb shell dumpsys package com.termux > package.txt
+          adb shell dumpsys activity activities > activities.txt
+          adb shell pidof com.termux > pid.txt || true
+          adb exec-out screencap -p > termux-startup.png
+          adb logcat -d -v threadtime > logcat.txt
+          if grep -Eiq 'FATAL EXCEPTION|AndroidRuntime.*FATAL|SIGSEGV|SIGABRT' logcat.txt; then
+            printf '%s\n' 'Fatal startup signal found in logcat' >&2
+            exit 1
+          fi
+          test -s pid.txt
+          grep -q 'com.termux' activities.txt
+
+      - name: Record experiment evidence
+        if: always()
+        run: |
+          {
+            echo '### Android emulator experiment'
+            printf '%s\n' "- headSha: \`${GITHUB_SHA}\`"
+            echo "- emulator: API ${ANDROID_API}, x86_64, SwiftShader"
+            echo '- claim boundary: install/cold-start/crash-free only; not physical GPU evidence'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload emulator evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: android-emulator-experiment-${{ github.sha }}
+          path: |
+            apk.sha256
+            source-identity.txt
+            emulator.log
+            emulator.pid
+            package.txt
+            activities.txt
+            pid.txt
+            logcat.txt
+            termux-startup.png

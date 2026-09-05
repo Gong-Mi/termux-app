@@ -43,6 +43,10 @@ env:
   RUST_BACKTRACE: 1
   CARGO_TERM_COLOR: always
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   fast-build:
     name: Fast Build (arm64 only)
@@ -116,13 +120,12 @@ jobs:
             skia-fast-${{ runner.os }}-${{ env.SKIA_NATIVE_API_LEVEL }}-
             skia-fast-${{ runner.os }}-
 
-      # ================================
-      # 仅运行 Rust 测试（不编译 Skia）
-      # ================================
-      - name: Run Rust Tests
-        run: |
-          cd terminal-emulator/src/main/rust
-          cargo test --test consistency -- --test-threads=1
+      # Automatic Rust correctness is owned by rust-quality.yml/core.
+      # Retain standalone/legacy execution where that workflow is not triggered.
+      - name: Run standalone Rust consistency
+        if: github.event_name == 'workflow_dispatch'
+        working-directory: terminal-emulator/src/main/rust
+        run: cargo test --locked --test consistency -- --test-threads=1
 
       # ================================
       # Gradle 缓存

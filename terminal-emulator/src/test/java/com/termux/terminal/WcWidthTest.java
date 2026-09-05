@@ -4,9 +4,17 @@ import junit.framework.TestCase;
 
 public class WcWidthTest extends TestCase {
 
+	@Override
+	protected void setUp() {
+		assertTrue("WcWidth tests require the real termux_rust JNI library",
+			JNI.sNativeLibrariesLoaded);
+	}
+
 	private static void assertWidthIs(int expectedWidth, int codePoint) {
-		int wcWidth = WcWidth.width(codePoint);
-		assertEquals(expectedWidth, wcWidth);
+		String label = "U+" + Integer.toHexString(codePoint).toUpperCase(java.util.Locale.ROOT);
+		// The native entry point cannot silently use the Kotlin heuristic.
+		assertEquals(label + " native", expectedWidth, WcWidth.widthRust(codePoint));
+		assertEquals(label + " facade", expectedWidth, WcWidth.width(codePoint));
 	}
 
 	public void testPrintableAscii() {

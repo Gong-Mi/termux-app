@@ -1,0 +1,115 @@
+name: Rust correctness tiers
+
+"on":
+  push:
+    branches:
+      - master
+      - feature/rust-integration
+    paths:
+      - 'terminal-emulator/src/main/rust/**'
+      - 'terminal-emulator/src/main/rust/Cargo.toml'
+      - 'terminal-emulator/src/main/rust/Cargo.lock'
+      - 'scripts/run-rust-tests.sh'
+      - 'TESTING.md'
+      - '.github/workflows/rust-quality.yml'
+      - '.github/workflows/rust-ci.yml'
+      - '.github/workflows/run_tests.yml'
+      - '.github/workflows/compare-engines.yml'
+      - 'buildSrc/**'
+      - 'terminal-emulator/build.gradle*'
+  pull_request:
+    branches:
+      - master
+      - feature/rust-integration
+    paths:
+      - 'terminal-emulator/src/main/rust/**'
+      - 'terminal-emulator/src/main/rust/Cargo.toml'
+      - 'terminal-emulator/src/main/rust/Cargo.lock'
+      - 'scripts/run-rust-tests.sh'
+      - 'TESTING.md'
+      - '.github/workflows/rust-quality.yml'
+      - '.github/workflows/rust-ci.yml'
+      - '.github/workflows/run_tests.yml'
+      - '.github/workflows/compare-engines.yml'
+      - 'buildSrc/**'
+      - 'terminal-emulator/build.gradle*'
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: Rust test tier
+        required: true
+        default: core
+        type: choice
+        options:
+          - core
+          - regressions
+          - terminal
+          - lifecycle
+          - render
+          - perf
+          - all
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-correctness-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  correctness:
+    name: Rust correctness (${{ matrix.tier }})
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        tier: [core, regressions, terminal, lifecycle]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install native test libraries
+        run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            terminal-emulator/src/main/rust/target
+          key: ${{ runner.os }}-rust-correctness-${{ hashFiles('terminal-emulator/src/main/rust/Cargo.lock') }}
+      - name: Run explicit test tier
+        run: bash ./scripts/run-rust-tests.sh "${{ matrix.tier }}"
+      - name: Record exact verification
+        if: always()
+        run: |
+          {
+            echo "### Rust correctness"
+            printf '%s\n' "- headSha: \`${GITHUB_SHA}\`"
+            printf '%s\n' "- command: \`bash ./scripts/run-rust-tests.sh ${{ matrix.tier }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  manual:
+    name: Manual selected tier
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install native test libraries
+        run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
+      - name: Run selected tier
+        run: bash ./scripts/run-rust-tests.sh "${{ inputs.tier }}"
+      - name: Record exact verification
+        if: always()
+        run: |
+          {
+            echo "### Rust correctness"
+            printf '%s\n' "- headSha: \`${GITHUB_SHA}\`"
+            printf '%s\n' "- command: \`bash ./scripts/run-rust-tests.sh ${{ inputs.tier }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

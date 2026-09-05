@@ -73,7 +73,9 @@ impl FlatScreenBuffer {
     }
 
     pub unsafe fn sync_to_shared(&self, shared_ptr: *mut SharedScreenBuffer) {
-        if shared_ptr.is_null() { return; }
+        if shared_ptr.is_null() {
+            return;
+        }
         unsafe {
             let base_ptr = shared_ptr as *mut u8;
             std::ptr::write(base_ptr.add(4) as *mut u32, self.cols as u32);
@@ -85,8 +87,16 @@ impl FlatScreenBuffer {
 
             let cell_count = self.cols * self.rows;
             if cell_count > 0 {
-                std::ptr::copy_nonoverlapping(self.text_data.as_ptr(), base_ptr.add(16) as *mut u16, cell_count);
-                std::ptr::copy_nonoverlapping(self.style_data.as_ptr(), base_ptr.add(style_offset as usize) as *mut u64, cell_count);
+                std::ptr::copy_nonoverlapping(
+                    self.text_data.as_ptr(),
+                    base_ptr.add(16) as *mut u16,
+                    cell_count,
+                );
+                std::ptr::copy_nonoverlapping(
+                    self.style_data.as_ptr(),
+                    base_ptr.add(style_offset as usize) as *mut u64,
+                    cell_count,
+                );
             }
             let version_ptr = base_ptr.add(0) as *mut u32;
             let old_version = std::ptr::read(version_ptr);

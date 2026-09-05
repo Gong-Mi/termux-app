@@ -19,19 +19,19 @@ pub unsafe fn find_first_control_sve(data: &[u8]) -> usize {
                 "ptrue p0.b",                          // 设置全通谓词
                 "whilelt p0.b, {ptr}, {end}",          // 根据剩余长度生成谓词
                 "ld1b {{z0.b}}, p0/z, [{ptr}]",        // 谓词加载数据到 z0
-                
+
                 // 检查控制字符 (byte < 32)
                 "mov z1.b, #31",                       // 将 31 放入 z1
                 "cmphs p1.b, p0/z, z1.b, z0.b",        // p1 = (31 >= byte) 即 (byte <= 31)
-                
+
                 // 检查 DEL (127)
                 "mov z2.b, #127",                      // 将 127 放入 z2
                 "cmpeq p2.b, p0/z, z0.b, z2.b",        // p2 = (byte == 127)
-                
+
                 "orrs p1.b, p0/z, p1.b, p2.b",         // p1 = (byte <= 31) || (byte == 127)
                 "brkb p1.b, p0/z, p1.b",               // 找到第一个匹配位之前的连续位
                 "cntp {idx}, p0, p1.b",                // 统计前半部分纯文本长度
-                
+
                 ptr = in(reg) ptr,
                 end = in(reg) end,
                 idx = out(reg) first_ctrl_idx,
@@ -41,14 +41,14 @@ pub unsafe fn find_first_control_sve(data: &[u8]) -> usize {
 
         let len_processed: u64;
         unsafe {
-            asm!("cntp {lp}, p0, p0.b", lp = out(reg) len_processed); 
+            asm!("cntp {lp}, p0, p0.b", lp = out(reg) len_processed);
         }
 
         if first_ctrl_idx < len_processed {
             // 找到了控制字符，返回总偏移
             return (ptr as usize - start_ptr as usize) + (first_ctrl_idx as usize);
         }
-        
+
         // 全是纯文本，前进向量步长
         let vec_bytes: u64;
         unsafe {

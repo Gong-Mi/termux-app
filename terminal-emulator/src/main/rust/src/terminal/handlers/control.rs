@@ -1,5 +1,5 @@
-use std::cmp::{max};
 use crate::engine::ScreenState;
+use std::cmp::max;
 
 pub fn handle_control(state: &mut ScreenState, byte: u8) -> bool {
     match byte {

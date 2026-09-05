@@ -1,10 +1,8 @@
 // Skia 渲染管线测试 - 验证 Rust 渲染器的完整性和正确性
 // 运行：cargo test --test skia_render_test -- --nocapture
 
-use skia_safe::{
-    surfaces, Color, Paint, PaintStyle, Rect, Font, FontMgr, FontStyle,
-};
-use std::cmp::{min, max};
+use skia_safe::{Color, Font, FontMgr, FontStyle, Paint, PaintStyle, Rect, surfaces};
+use std::cmp::{max, min};
 
 // ============================================================
 // 辅助函数：从 pixmap 获取指定坐标的 ARGB 颜色
@@ -32,8 +30,8 @@ fn test_basic_background_clear() {
 
     let width = 200;
     let height = 100;
-    let mut surface = surfaces::raster_n32_premul((width, height))
-        .expect("Failed to create surface");
+    let mut surface =
+        surfaces::raster_n32_premul((width, height)).expect("Failed to create surface");
     let canvas = surface.canvas();
 
     // 模拟终端背景清屏 (黑色)
@@ -60,8 +58,8 @@ fn test_selection_highlight_rendering() {
 
     let width = 400;
     let height = 200;
-    let mut surface = surfaces::raster_n32_premul((width, height))
-        .expect("Failed to create surface");
+    let mut surface =
+        surfaces::raster_n32_premul((width, height)).expect("Failed to create surface");
     let canvas = surface.canvas();
 
     // 黑色背景
@@ -86,7 +84,11 @@ fn test_selection_highlight_rendering() {
 
     // 选区中心应该有颜色 (alpha 混合后不是纯黑)
     let sel_a = (sel_center >> 24) & 0xFF;
-    assert!(sel_a > 120, "Selection should have visible alpha: {}", sel_a);
+    assert!(
+        sel_a > 120,
+        "Selection should have visible alpha: {}",
+        sel_a
+    );
 
     println!("  ✅ 选区高亮渲染测试通过 (center={:#010X})", sel_center);
 }
@@ -110,8 +112,8 @@ fn test_bold_to_bright_color_mapping() {
     palette[6] = 0xFF00CDCD; // 青
     palette[7] = 0xFFE5E5E5; // 白
     // 亮色 8-15
-    palette[8]  = 0xFF7F7F7F; // 灰
-    palette[9]  = 0xFFFF0000; // 亮红
+    palette[8] = 0xFF7F7F7F; // 灰
+    palette[9] = 0xFFFF0000; // 亮红
     palette[10] = 0xFF00FF00; // 亮绿
     palette[11] = 0xFFFFFF00; // 亮黄
     palette[12] = 0xFF5C5CFF; // 亮蓝
@@ -140,7 +142,10 @@ fn test_bold_to_bright_color_mapping() {
     } else {
         fg_idx_normal
     };
-    assert_eq!(fg_idx_after, 11, "Bold yellow (3) should map to bright yellow (11)");
+    assert_eq!(
+        fg_idx_after, 11,
+        "Bold yellow (3) should map to bright yellow (11)"
+    );
 
     // 测试: 粗体 + 前景色 9 (亮红) → 不应映射 (>=8)
     let fg_idx_normal: usize = 9;
@@ -176,8 +181,8 @@ fn test_reverse_video_rendering() {
 
     let width = 200;
     let height = 50;
-    let mut surface = surfaces::raster_n32_premul((width, height))
-        .expect("Failed to create surface");
+    let mut surface =
+        surfaces::raster_n32_premul((width, height)).expect("Failed to create surface");
     let canvas = surface.canvas();
 
     // 正常: 白字黑底
@@ -202,7 +207,11 @@ fn test_reverse_video_rendering() {
     // 文字区域应该是黑色
     let text_pixel = get_pixel(&pixmap, 60, 25);
     let text_a = (text_pixel >> 24) & 0xFF;
-    assert!(text_a > 200, "Text area should be visible (alpha={})", text_a);
+    assert!(
+        text_a > 200,
+        "Text area should be visible (alpha={})",
+        text_a
+    );
 
     // 背景应该是白色
     let bg_pixel = get_pixel(&pixmap, 150, 25);
@@ -220,8 +229,8 @@ fn test_underline_strikethrough_rendering() {
 
     let width = 200;
     let height = 100;
-    let mut surface = surfaces::raster_n32_premul((width, height))
-        .expect("Failed to create surface");
+    let mut surface =
+        surfaces::raster_n32_premul((width, height)).expect("Failed to create surface");
     let canvas = surface.canvas();
 
     canvas.clear(Color::new(0xFF000000));
@@ -248,12 +257,20 @@ fn test_underline_strikethrough_rendering() {
     // 下划线位置应该有绿色像素
     let underline_pixel = get_pixel(&pixmap, 70, underline_y as i32);
     let underline_g = (underline_pixel >> 8) & 0xFF;
-    assert!(underline_g > 200, "Underline should have green component: {}", underline_g);
+    assert!(
+        underline_g > 200,
+        "Underline should have green component: {}",
+        underline_g
+    );
 
     // 删除线位置应该有绿色像素
     let strike_pixel = get_pixel(&pixmap, 70, strike_y as i32);
     let strike_g = (strike_pixel >> 8) & 0xFF;
-    assert!(strike_g > 200, "Strikethrough should have green component: {}", strike_g);
+    assert!(
+        strike_g > 200,
+        "Strikethrough should have green component: {}",
+        strike_g
+    );
 
     println!("  ✅ 下划线和删除线测试通过");
 }
@@ -267,8 +284,8 @@ fn test_cursor_shape_rendering() {
 
     let width = 300;
     let height = 100;
-    let mut surface = surfaces::raster_n32_premul((width, height))
-        .expect("Failed to create surface");
+    let mut surface =
+        surfaces::raster_n32_premul((width, height)).expect("Failed to create surface");
     let canvas = surface.canvas();
 
     canvas.clear(Color::new(0xFF000000));
@@ -284,12 +301,18 @@ fn test_cursor_shape_rendering() {
     // Block 光标 (style 0) - 全单元格填充
     let cx0 = 50.0;
     let cy0 = 10.0;
-    canvas.draw_rect(Rect::from_xywh(cx0, cy0, font_width, font_height), &cursor_paint);
+    canvas.draw_rect(
+        Rect::from_xywh(cx0, cy0, font_width, font_height),
+        &cursor_paint,
+    );
 
     // Underline 光标 (style 1) - 底部 2px
     let cx1 = 100.0;
     let cy1 = 40.0;
-    canvas.draw_rect(Rect::from_xywh(cx1, cy1 + font_height - 2.0, font_width, 2.0), &cursor_paint);
+    canvas.draw_rect(
+        Rect::from_xywh(cx1, cy1 + font_height - 2.0, font_width, 2.0),
+        &cursor_paint,
+    );
 
     // Bar 光标 (style 2) - 左侧 2px
     let cx2 = 150.0;
@@ -300,41 +323,86 @@ fn test_cursor_shape_rendering() {
 
     // Verify black background was cleared (sample far from all cursor rects)
     let bg_check = get_pixel(&pixmap, 10, 95);
-    println!("  Debug: bg_check at (10,95) = {:#010X} (expected 0xFF000000)", bg_check);
+    println!(
+        "  Debug: bg_check at (10,95) = {:#010X} (expected 0xFF000000)",
+        bg_check
+    );
 
     // Block 光标: 中心应该是白色
-    let block_center = get_pixel(&pixmap, (cx0 + font_width / 2.0) as i32, (cy0 + font_height / 2.0) as i32);
+    let block_center = get_pixel(
+        &pixmap,
+        (cx0 + font_width / 2.0) as i32,
+        (cy0 + font_height / 2.0) as i32,
+    );
     println!("  Debug: block_center at (55,20) = {:#010X}", block_center);
-    assert_eq!(block_center, 0xFFFFFFFF, "Block cursor center should be white");
+    assert_eq!(
+        block_center, 0xFFFFFFFF,
+        "Block cursor center should be white"
+    );
 
     // Sample a pixel that should definitely be black (far from all cursors)
     let bg_near_block = get_pixel(&pixmap, 70, 20);
-    println!("  Debug: bg_near_block at (70,20) = {:#010X}", bg_near_block);
-    assert_eq!(bg_near_block, 0xFF000000, "Area between cursors should be black");
+    println!(
+        "  Debug: bg_near_block at (70,20) = {:#010X}",
+        bg_near_block
+    );
+    assert_eq!(
+        bg_near_block, 0xFF000000,
+        "Area between cursors should be black"
+    );
 
     // Underline 光标: 底部应该有白色，上方区域应该没有
     // 下划线 rect: y = cy1+font_height-2.0 (58) 到 y = cy1+font_height (60), height=2
-    let underline_bottom = get_pixel(&pixmap, (cx1 + font_width / 2.0) as i32, (cy1 + font_height - 1.0) as i32); // y=59
-    let underline_above = get_pixel(&pixmap, (cx1 + font_width / 2.0) as i32, (cy1 + font_height - 5.0) as i32); // y=55, above the rect
+    let underline_bottom = get_pixel(
+        &pixmap,
+        (cx1 + font_width / 2.0) as i32,
+        (cy1 + font_height - 1.0) as i32,
+    ); // y=59
+    let underline_above = get_pixel(
+        &pixmap,
+        (cx1 + font_width / 2.0) as i32,
+        (cy1 + font_height - 5.0) as i32,
+    ); // y=55, above the rect
     let bottom_a = (underline_bottom >> 24) & 0xFF;
     let above_a = (underline_above >> 24) & 0xFF;
-    assert!(bottom_a > 200, "Underline bottom should be visible (alpha={})", bottom_a);
+    assert!(
+        bottom_a > 200,
+        "Underline bottom should be visible (alpha={})",
+        bottom_a
+    );
     // Note: raster Skia may fill the entire row with anti-aliasing; check that bottom is fully opaque
-    println!("    Underline: bottom alpha={}, above alpha={}", bottom_a, above_a);
+    println!(
+        "    Underline: bottom alpha={}, above alpha={}",
+        bottom_a, above_a
+    );
 
     // Bar 光标: 左侧应该有白色，右侧应该没有
     // Bar rect: Rect::from_xywh(150, 70, 2, 20) → covers x=150..151, y=70..89
-    let bar_left = get_pixel(&pixmap, 150, 80);   // inside rect
-    let bar_right = get_pixel(&pixmap, 152, 80);  // just outside rect
+    let bar_left = get_pixel(&pixmap, 150, 80); // inside rect
+    let bar_right = get_pixel(&pixmap, 152, 80); // just outside rect
     let bar_far_right = get_pixel(&pixmap, 160, 80); // far outside
     let left_a = (bar_left >> 24) & 0xFF;
     let far_right_color = bar_far_right;
-    println!("    Bar cursor: left(150,80)={:#010X}, right(152,80)={:#010X}, far_right(160,80)={:#010X}",
-             bar_left, bar_right, bar_far_right);
-    assert!(left_a > 200, "Bar left should be visible (alpha={})", left_a);
+    println!(
+        "    Bar cursor: left(150,80)={:#010X}, right(152,80)={:#010X}, far_right(160,80)={:#010X}",
+        bar_left, bar_right, bar_far_right
+    );
+    assert!(
+        left_a > 200,
+        "Bar left should be visible (alpha={})",
+        left_a
+    );
     // Bar is 2px wide at x=150..151. x=152 and beyond should be black (0xFF000000).
-    assert_eq!(bar_right, 0xFF000000, "Bar right edge (x=152) should be black, got {:#010X}", bar_right);
-    assert_eq!(far_right_color, 0xFF000000, "Bar far right (x=160) should be black, got {:#010X}", far_right_color);
+    assert_eq!(
+        bar_right, 0xFF000000,
+        "Bar right edge (x=152) should be black, got {:#010X}",
+        bar_right
+    );
+    assert_eq!(
+        far_right_color, 0xFF000000,
+        "Bar far right (x=160) should be black, got {:#010X}",
+        far_right_color
+    );
 
     println!("  ✅ 光标形状渲染测试通过");
 }
@@ -348,8 +416,8 @@ fn test_wide_char_canvas_scaling() {
 
     let width = 200;
     let height = 50;
-    let mut surface = surfaces::raster_n32_premul((width, height))
-        .expect("Failed to create surface");
+    let mut surface =
+        surfaces::raster_n32_premul((width, height)).expect("Failed to create surface");
     let canvas = surface.canvas();
 
     canvas.clear(Color::new(0xFF000000));
@@ -385,17 +453,33 @@ fn test_wide_char_canvas_scaling() {
 
     // 验证: 缩放后应该覆盖完整的 2 格宽度 (20px)
     let left_edge = get_pixel(&pixmap, (x + 1.0) as i32, (y_base - 10.0) as i32);
-    let right_edge = get_pixel(&pixmap, (x + expected_width as f32 - 2.0) as i32, (y_base - 10.0) as i32);
+    let right_edge = get_pixel(
+        &pixmap,
+        (x + expected_width as f32 - 2.0) as i32,
+        (y_base - 10.0) as i32,
+    );
 
     let left_r = (left_edge >> 16) & 0xFF;
     let right_r = (right_edge >> 16) & 0xFF;
 
-    assert!(left_r > 200, "Left edge should have red component: {}", left_r);
-    assert!(right_r > 200, "Right edge should have red component: {}", right_r);
+    assert!(
+        left_r > 200,
+        "Left edge should have red component: {}",
+        left_r
+    );
+    assert!(
+        right_r > 200,
+        "Right edge should have red component: {}",
+        right_r
+    );
 
     println!("  ✅ 宽字符 Canvas 缩放测试通过");
-    println!("    期望宽度: {}px, 测量宽度: {}px, 缩放系数: {:.3}",
-             expected_width, measured_width, expected_width / measured_width);
+    println!(
+        "    期望宽度: {}px, 测量宽度: {}px, 缩放系数: {:.3}",
+        expected_width,
+        measured_width,
+        expected_width / measured_width
+    );
 }
 
 // ============================================================
@@ -410,11 +494,43 @@ fn test_font_cache_variants() {
     // 测试字体变体创建
     let variants = [
         ("monospace", FontStyle::normal(), "normal"),
-        ("monospace", FontStyle::new(skia_safe::font_style::Weight::BOLD, skia_safe::font_style::Width::NORMAL, skia_safe::font_style::Slant::Upright), "bold"),
-        ("monospace", FontStyle::new(skia_safe::font_style::Weight::NORMAL, skia_safe::font_style::Width::NORMAL, skia_safe::font_style::Slant::Italic), "italic"),
-        ("monospace", FontStyle::new(skia_safe::font_style::Weight::BOLD, skia_safe::font_style::Width::NORMAL, skia_safe::font_style::Slant::Italic), "bold_italic"),
+        (
+            "monospace",
+            FontStyle::new(
+                skia_safe::font_style::Weight::BOLD,
+                skia_safe::font_style::Width::NORMAL,
+                skia_safe::font_style::Slant::Upright,
+            ),
+            "bold",
+        ),
+        (
+            "monospace",
+            FontStyle::new(
+                skia_safe::font_style::Weight::NORMAL,
+                skia_safe::font_style::Width::NORMAL,
+                skia_safe::font_style::Slant::Italic,
+            ),
+            "italic",
+        ),
+        (
+            "monospace",
+            FontStyle::new(
+                skia_safe::font_style::Weight::BOLD,
+                skia_safe::font_style::Width::NORMAL,
+                skia_safe::font_style::Slant::Italic,
+            ),
+            "bold_italic",
+        ),
         ("sans-serif", FontStyle::normal(), "fallback"),
-        ("sans-serif", FontStyle::new(skia_safe::font_style::Weight::BOLD, skia_safe::font_style::Width::NORMAL, skia_safe::font_style::Slant::Upright), "fallback_bold"),
+        (
+            "sans-serif",
+            FontStyle::new(
+                skia_safe::font_style::Weight::BOLD,
+                skia_safe::font_style::Width::NORMAL,
+                skia_safe::font_style::Slant::Upright,
+            ),
+            "fallback_bold",
+        ),
     ];
 
     for (family, style, label) in &variants {
@@ -444,8 +560,8 @@ fn test_full_frame_rendering_simulation() {
 
     let width = 400;
     let height = 200;
-    let mut surface = surfaces::raster_n32_premul((width, height))
-        .expect("Failed to create surface");
+    let mut surface =
+        surfaces::raster_n32_premul((width, height)).expect("Failed to create surface");
     let canvas = surface.canvas();
 
     // 模拟调色板
@@ -469,7 +585,10 @@ fn test_full_frame_rendering_simulation() {
     let mut bg_paint = Paint::default();
     bg_paint.set_style(PaintStyle::Fill);
     bg_paint.set_color(Color::new(0xFF000000));
-    canvas.draw_rect(Rect::from_xywh(0.0, y_base - font_height, 50.0, font_height), &bg_paint);
+    canvas.draw_rect(
+        Rect::from_xywh(0.0, y_base - font_height, 50.0, font_height),
+        &bg_paint,
+    );
 
     // 3. 粗体红色文字 (使用 Bold→Bright 映射)
     let mut text_paint = Paint::default();
@@ -492,13 +611,19 @@ fn test_full_frame_rendering_simulation() {
     cursor_paint.set_color(Color::new(0xFFFFFFFF));
     let cursor_x = 55.0;
     let cursor_y = y_base;
-    canvas.draw_rect(Rect::from_xywh(cursor_x, cursor_y, font_width, font_height), &cursor_paint);
+    canvas.draw_rect(
+        Rect::from_xywh(cursor_x, cursor_y, font_width, font_height),
+        &cursor_paint,
+    );
 
     // 5. 选区高亮
     let mut sel_paint = Paint::default();
     sel_paint.set_style(PaintStyle::Fill);
     sel_paint.set_color(Color::from_argb(128, 80, 120, 200));
-    canvas.draw_rect(Rect::from_xywh(70.0, y_base - font_height, 30.0, font_height), &sel_paint);
+    canvas.draw_rect(
+        Rect::from_xywh(70.0, y_base - font_height, 30.0, font_height),
+        &sel_paint,
+    );
 
     // 验证渲染结果
     let pixmap = surface.peek_pixels().expect("Failed to peek pixels");
@@ -514,7 +639,14 @@ fn test_full_frame_rendering_simulation() {
     let text_b = text_area & 0xFF;
     let text_a = (text_area >> 24) & 0xFF;
     // 亮红色 (palette[9] = 0xFFFF0000) 应该高红色分量
-    assert!(text_r > 200, "Text area should have red component: R={} G={} B={} A={:#010X}", text_r, text_g, text_b, text_area);
+    assert!(
+        text_r > 200,
+        "Text area should have red component: R={} G={} B={} A={:#010X}",
+        text_r,
+        text_g,
+        text_b,
+        text_area
+    );
 
     // 光标应该是白色
     let cursor = get_pixel(&pixmap, (cursor_x + 5.0) as i32, (cursor_y + 10.0) as i32);
@@ -544,26 +676,28 @@ fn test_concurrent_rendering() {
 
     let render_count = Arc::new(Mutex::new(0u32));
 
-    let handles: Vec<_> = (0..4).map(|i| {
-        let count = Arc::clone(&render_count);
-        thread::spawn(move || {
-            let width = 100;
-            let height = 50;
-            let mut surface = surfaces::raster_n32_premul((width, height))
-                .expect("Failed to create surface");
-            let canvas = surface.canvas();
-            canvas.clear(Color::BLACK);
+    let handles: Vec<_> = (0..4)
+        .map(|i| {
+            let count = Arc::clone(&render_count);
+            thread::spawn(move || {
+                let width = 100;
+                let height = 50;
+                let mut surface =
+                    surfaces::raster_n32_premul((width, height)).expect("Failed to create surface");
+                let canvas = surface.canvas();
+                canvas.clear(Color::BLACK);
 
-            let mut paint = Paint::default();
-            paint.set_color(Color::new(0xFFFF0000));
-            paint.set_style(PaintStyle::Fill);
-            canvas.draw_rect(Rect::from_xywh(10.0, 10.0, 80.0, 30.0), &paint);
+                let mut paint = Paint::default();
+                paint.set_color(Color::new(0xFFFF0000));
+                paint.set_style(PaintStyle::Fill);
+                canvas.draw_rect(Rect::from_xywh(10.0, 10.0, 80.0, 30.0), &paint);
 
-            let mut guard = count.lock().unwrap();
-            *guard += 1;
-            i
+                let mut guard = count.lock().unwrap();
+                *guard += 1;
+                i
+            })
         })
-    }).collect();
+        .collect();
 
     for h in handles {
         let _ = h.join();
@@ -577,10 +711,10 @@ fn test_concurrent_rendering() {
 
 #[test]
 fn test_cursor_rendering_visual_correctness() {
-    use termux_rust::renderer::{RenderFrame, TerminalRenderer};
+    use skia_safe::{Color, surfaces};
     use termux_rust::engine::TerminalEngine;
+    use termux_rust::renderer::{RenderFrame, TerminalRenderer};
     use termux_rust::terminal::style::STYLE_NORMAL;
-    use skia_safe::{surfaces, Color};
 
     let font_width = 10.0;
     let font_height = 20.0;
@@ -590,13 +724,13 @@ fn test_cursor_rendering_visual_correctness() {
     renderer.font_height = font_height;
 
     let mut engine = TerminalEngine::new(0, 80, 24, 1000, 10, 20);
-    
+
     // 场景：光标在第 2 行，但我们向上滚动了 5 行 (top_row = -5)
     // 视觉上，光标应该出现在屏幕的第 7 行 (index 7)
     engine.state.cursor.y = 2;
     engine.state.cursor.x = 0;
     engine.state.cursor_enabled = true;
-    
+
     // 在光标位置放一个宽字符
     let row = engine.state.main_screen.get_row_mut(2);
     row.text[0] = '你';
@@ -624,12 +758,24 @@ fn test_cursor_rendering_visual_correctness() {
 
     // 在 Difference 模式下，白色光标盖在黑色背景上是白色，盖在灰色文字上是反色
     // 只要不是背景色 (0xFF000000)，就说明光标渲染到了这里
-    assert_ne!(pixel_at_expected_y, 0xFF000000, "Cursor should be visible at scrolled position (Row 7)");
-    assert_eq!(pixel_at_wrong_y, 0xFF000000, "Cursor should NOT be at absolute position (Row 2) when scrolled");
+    assert_ne!(
+        pixel_at_expected_y, 0xFF000000,
+        "Cursor should be visible at scrolled position (Row 7)"
+    );
+    assert_eq!(
+        pixel_at_wrong_y, 0xFF000000,
+        "Cursor should NOT be at absolute position (Row 2) when scrolled"
+    );
 
     // --- 验证点 2: 宽字符宽度 ---
     // 检查第二个单元格 (x=15)。在修复后，这里也应该有光标像素
     let pixel_in_second_cell = get_pixel(&pixmap, 15, 150);
-    println!("  Pixel in second cell of wide char (15, 150): {:#010X}", pixel_in_second_cell);
-    assert_ne!(pixel_in_second_cell, 0xFF000000, "Cursor should cover both cells of a wide character");
+    println!(
+        "  Pixel in second cell of wide char (15, 150): {:#010X}",
+        pixel_in_second_cell
+    );
+    assert_ne!(
+        pixel_in_second_cell, 0xFF000000,
+        "Cursor should cover both cells of a wide character"
+    );
 }

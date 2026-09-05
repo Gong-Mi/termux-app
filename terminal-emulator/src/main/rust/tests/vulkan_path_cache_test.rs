@@ -31,7 +31,9 @@ fn test_cache_at_specified_location() {
 
     // 执行逻辑验证（使用临时路径以确保测试能跑通，但记录目标路径）
     let test_dir = std::env::temp_dir().join("vulkan_path_test");
-    if test_dir.exists() { fs::remove_dir_all(&test_dir).unwrap(); }
+    if test_dir.exists() {
+        fs::remove_dir_all(&test_dir).unwrap();
+    }
     fs::create_dir_all(&test_dir).unwrap();
     let test_path = test_dir.join("vulkan_pipeline_cache.bin");
 

@@ -1,11 +1,11 @@
 #![allow(unused_variables)]
-use std::sync::atomic::Ordering;
 use jni::JNIEnv;
-use jni::objects::{JObject, JString, JClass};
-use jni::sys::{jint, jlong, jfloat, jfloatArray, jboolean};
+use jni::objects::{JClass, JObject, JString};
+use jni::sys::{jboolean, jfloat, jfloatArray, jint, jlong};
+use std::sync::atomic::Ordering;
 
 #[cfg(target_os = "android")]
-use crate::utils::{android_log, LogPriority};
+use crate::utils::{LogPriority, android_log};
 #[cfg(target_os = "android")]
 use crate::vulkan_context::VulkanContext;
 
@@ -18,7 +18,10 @@ pub unsafe extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface
     #[cfg(target_os = "android")]
     {
         if surface.as_raw().is_null() {
-            android_log(LogPriority::WARN, "CHECKPOINT: nativeSetSurface(null) - Detaching surface");
+            android_log(
+                LogPriority::WARN,
+                "CHECKPOINT: nativeSetSurface(null) - Detaching surface",
+            );
             if let Some(mutex) = crate::render_thread::get_vulkan_context().get() {
                 if let Ok(mut guard) = mutex.lock() {
                     let ctx_opt: &mut Option<VulkanContext> = &mut *guard;
@@ -29,23 +32,36 @@ pub unsafe extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface
             }
             crate::render_thread::get_surface_ready().store(false, Ordering::SeqCst);
             // 唤醒线程，让其意识到 surface_ready 变为 false 并进入 park
-            if let Some(handle) = crate::render_thread::get_render_thread_handle().lock().unwrap().as_ref() {
+            if let Some(handle) = crate::render_thread::get_render_thread_handle()
+                .lock()
+                .unwrap()
+                .as_ref()
+            {
                 handle.thread().unpark();
             }
         } else {
-            android_log(LogPriority::DEBUG, "nativeSetSurface: Attaching new surface");
-            let window = unsafe { ndk_sys::ANativeWindow_fromSurface(env.get_native_interface(), surface.as_raw()) };
+            android_log(
+                LogPriority::DEBUG,
+                "nativeSetSurface: Attaching new surface",
+            );
+            let window = unsafe {
+                ndk_sys::ANativeWindow_fromSurface(env.get_native_interface(), surface.as_raw())
+            };
             if !window.is_null() {
                 let ctx_cell = crate::render_thread::get_vulkan_context();
                 if let Some(mutex) = ctx_cell.get() {
                     // 关键修复：不要直接 lock()，防止主线程死等挂掉的渲染线程导致 ANR
                     let mut locked = false;
-                    for _ in 0..10 { // 最多尝试 10 次 (共约 100ms)
+                    for _ in 0..10 {
+                        // 最多尝试 10 次 (共约 100ms)
                         if let Ok(mut guard) = mutex.try_lock() {
                             let ctx_opt: &mut Option<VulkanContext> = &mut *guard;
                             if let Some(ctx) = ctx_opt.as_mut() {
-                                unsafe { ctx.recreate_surface(window as _); }
-                            } else if let Some(new_ctx) = unsafe { VulkanContext::new(window as _) } {
+                                unsafe {
+                                    ctx.recreate_surface(window as _);
+                                }
+                            } else if let Some(new_ctx) = unsafe { VulkanContext::new(window as _) }
+                            {
                                 *ctx_opt = Some(new_ctx);
                             }
                             locked = true;
@@ -54,7 +70,10 @@ pub unsafe extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface
                         std::thread::sleep(std::time::Duration::from_millis(10));
                     }
                     if !locked {
-                        android_log(LogPriority::ERROR, "CRITICAL: nativeSetSurface failed to get lock! Render thread may be hung.");
+                        android_log(
+                            LogPriority::ERROR,
+                            "CRITICAL: nativeSetSurface failed to get lock! Render thread may be hung.",
+                        );
                     }
                 } else {
                     let _ = ctx_cell.get_or_init(|| {
@@ -64,13 +83,17 @@ pub unsafe extern "system" fn Java_com_termux_view_TerminalView_nativeSetSurface
                 }
                 crate::render_thread::get_surface_ready().store(true, Ordering::SeqCst);
                 // 唤醒线程，开始渲染新 surface
-                if let Some(handle) = crate::render_thread::get_render_thread_handle().lock().unwrap().as_ref() {
+                if let Some(handle) = crate::render_thread::get_render_thread_handle()
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                {
                     handle.thread().unpark();
                 }
             }
         }
     }
-    
+
     #[cfg(not(target_os = "android"))]
     {
         // CI 环境下的空实现
@@ -125,8 +148,12 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeOnSizeChanged(
     w: jint,
     h: jint,
 ) {
-    if let Ok(mut nw) = crate::render_thread::get_surface_new_width().lock() { *nw = w as u32; }
-    if let Ok(mut nh) = crate::render_thread::get_surface_new_height().lock() { *nh = h as u32; }
+    if let Ok(mut nw) = crate::render_thread::get_surface_new_width().lock() {
+        *nw = w as u32;
+    }
+    if let Ok(mut nh) = crate::render_thread::get_surface_new_height().lock() {
+        *nh = h as u32;
+    }
     crate::render_thread::get_surface_size_changed().store(true, Ordering::SeqCst);
 }
 
