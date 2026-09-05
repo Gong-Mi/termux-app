@@ -138,10 +138,11 @@ mod tests {
     impl Drop for LockProbe {
         fn drop(&mut self) {
             self.drops.fetch_add(1, Ordering::SeqCst);
-            if let Some(registry) = self.registry.upgrade() {
-                if registry.state.try_lock().is_ok() {
-                    self.unlocked_drops.fetch_add(1, Ordering::SeqCst);
-                }
+            let Some(registry) = self.registry.upgrade() else {
+                return;
+            };
+            if registry.state.try_lock().is_ok() {
+                self.unlocked_drops.fetch_add(1, Ordering::SeqCst);
             }
         }
     }
