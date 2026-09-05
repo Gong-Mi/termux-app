@@ -130,3 +130,11 @@ path = "tests/pty_io_runtime.rs"
 [[test]]
 name = "pty_context_integration"
 path = "tests/pty_context_integration.rs"
+
+[[test]]
+name = "process_owner"
+path = "tests/process_owner.rs"
+
+[[test]]
+name = "session_process_lifecycle"
+path = "tests/session_process_lifecycle.rs"

@@ -13,6 +13,7 @@ on:
       - 'terminal-emulator/src/main/rust/**'
   pull_request:
     branches:
+      - fix/pty-io-lifecycle
       - fix/engine-adoption
       - fix/engine-handle-lifetime
       - fix/skia-vulkan-api-contract
