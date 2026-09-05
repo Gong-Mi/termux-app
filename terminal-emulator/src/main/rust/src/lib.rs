@@ -49,14 +49,14 @@ pub mod jni;
 pub mod pty;
 pub mod render_thread;
 pub mod renderer;
+mod skia_api_contract;
+#[cfg(feature = "skia-api-experiment")]
+mod skia_backend_probe;
 pub mod terminal;
 pub mod utils;
 pub mod vte_parser;
 pub mod vte_sve;
 pub mod vulkan_context;
-mod skia_api_contract;
-#[cfg(feature = "skia-api-experiment")]
-mod skia_backend_probe;
 pub mod wcwidth;
 
 // 重新导出主要类型，保持向后兼容

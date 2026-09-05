@@ -10,7 +10,10 @@ fn skia_max_api_version(created: u32) -> u32 {
     {
         // Android PROP_VALUE_MAX is 92, including the terminating NUL.
         unsafe extern "C" {
-            fn __system_property_get(name: *const std::ffi::c_char, value: *mut std::ffi::c_char) -> i32;
+            fn __system_property_get(
+                name: *const std::ffi::c_char,
+                value: *mut std::ffi::c_char,
+            ) -> i32;
         }
         let mut value = [0 as std::ffi::c_char; 92];
         let length = unsafe {
@@ -159,13 +162,23 @@ impl VulkanContext {
         let loader_api_version = match unsafe { entry.try_enumerate_instance_version() } {
             Ok(version) => version.unwrap_or(ash_vk::API_VERSION_1_0),
             Err(error) => {
-                android_log(LogPriority::ERROR, &format!("SKIA_API_REJECT: loader query failed: {error:?}"));
+                android_log(
+                    LogPriority::ERROR,
+                    &format!("SKIA_API_REJECT: loader query failed: {error:?}"),
+                );
                 unsafe { instance.destroy_instance(None) };
                 return None;
             }
         };
-        if !crate::skia_api_contract::supported(created_api_version, loader_api_version, ash_vk::API_VERSION_1_1) {
-            android_log(LogPriority::ERROR, "SKIA_API_REJECT: instance/loader requires Vulkan 1.1");
+        if !crate::skia_api_contract::supported(
+            created_api_version,
+            loader_api_version,
+            ash_vk::API_VERSION_1_1,
+        ) {
+            android_log(
+                LogPriority::ERROR,
+                "SKIA_API_REJECT: instance/loader requires Vulkan 1.1",
+            );
             unsafe { instance.destroy_instance(None) };
             return None;
         }
@@ -276,10 +289,23 @@ impl VulkanContext {
             }
         };
 
-        let physical_api_version = unsafe { instance.get_physical_device_properties(pdevice) }.api_version;
-        android_log(LogPriority::INFO, &format!("SKIA_API_VERSIONS: loader={loader_api_version} physical={physical_api_version} created={created_api_version}"));
-        if !crate::skia_api_contract::supported(created_api_version, loader_api_version, physical_api_version) {
-            android_log(LogPriority::ERROR, "SKIA_API_REJECT: physical device requires Vulkan 1.1");
+        let physical_api_version =
+            unsafe { instance.get_physical_device_properties(pdevice) }.api_version;
+        android_log(
+            LogPriority::INFO,
+            &format!(
+                "SKIA_API_VERSIONS: loader={loader_api_version} physical={physical_api_version} created={created_api_version}"
+            ),
+        );
+        if !crate::skia_api_contract::supported(
+            created_api_version,
+            loader_api_version,
+            physical_api_version,
+        ) {
+            android_log(
+                LogPriority::ERROR,
+                "SKIA_API_REJECT: physical device requires Vulkan 1.1",
+            );
             unsafe {
                 surface_loader.destroy_surface(surface, None);
                 instance.destroy_instance(None);
@@ -419,18 +445,24 @@ impl VulkanContext {
         let get_proc = move |of: vk::GetProcOf| unsafe {
             let (scope, name, proc) = match of {
                 vk::GetProcOf::Instance(inst, name) => (
-                    "instance", name,
+                    "instance",
+                    name,
                     entry_ptr.get_instance_proc_addr(ash_vk::Instance::from_raw(inst as _), name),
                 ),
                 vk::GetProcOf::Device(dev, name) => (
-                    "device", name,
+                    "device",
+                    name,
                     instance_ptr.get_device_proc_addr(ash_vk::Device::from_raw(dev as _), name),
                 ),
             };
             if proc.is_none() {
-                android_log(LogPriority::WARN, &format!(
-                    "SKIA_NULL_PROC: scope={scope} name={}", CStr::from_ptr(name).to_string_lossy()
-                ));
+                android_log(
+                    LogPriority::WARN,
+                    &format!(
+                        "SKIA_NULL_PROC: scope={scope} name={}",
+                        CStr::from_ptr(name).to_string_lossy()
+                    ),
+                );
             }
             proc.map(|f| f as _).unwrap_or(std::ptr::null())
         };
@@ -447,7 +479,10 @@ impl VulkanContext {
 
         let max_api_version = skia_max_api_version(created_api_version);
         backend_context.set_max_api_version(max_api_version);
-        android_log(LogPriority::INFO, &format!("SKIA_API_CONTRACT: created={created_api_version} max={max_api_version}"));
+        android_log(
+            LogPriority::INFO,
+            &format!("SKIA_API_CONTRACT: created={created_api_version} max={max_api_version}"),
+        );
         android_log(
             LogPriority::INFO,
             "VulkanContext::new: Creating Skia context with optimized options",
@@ -500,8 +535,13 @@ impl VulkanContext {
         // The probe runs on this real Vulkan DirectContext, before any swapchain drawing.
         // Build feature, not debug_assertions: debug APKs also use cargo --release.
         #[cfg(feature = "skia-api-experiment")]
-        if let Err(reason) = crate::skia_backend_probe::draw_and_readback(ctx.context.as_mut().unwrap()) {
-            android_log(LogPriority::ERROR, &format!("SKIA_BACKEND_READBACK: FAIL {reason}"));
+        if let Err(reason) =
+            crate::skia_backend_probe::draw_and_readback(ctx.context.as_mut().unwrap())
+        {
+            android_log(
+                LogPriority::ERROR,
+                &format!("SKIA_BACKEND_READBACK: FAIL {reason}"),
+            );
             return None;
         }
         #[cfg(feature = "skia-api-experiment")]

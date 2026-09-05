@@ -2,11 +2,17 @@
 const VULKAN_1_1: u32 = (1 << 22) | (1 << 12);
 
 pub(crate) fn max_api_version(created: u32, experiment: bool, property: Option<&str>) -> u32 {
-    if experiment && property == Some("0") { 0 } else { created }
+    if experiment && property == Some("0") {
+        0
+    } else {
+        created
+    }
 }
 
 pub(crate) fn supported(created: u32, loader: u32, physical: u32) -> bool {
-    [created, loader, physical].into_iter().all(|v| v >= VULKAN_1_1)
+    [created, loader, physical]
+        .into_iter()
+        .all(|v| v >= VULKAN_1_1)
 }
 
 #[cfg(test)]

@@ -7,14 +7,23 @@ pub(crate) fn draw_and_readback(context: &mut gpu::DirectContext) -> Result<(), 
     }
     let info = ImageInfo::new((8, 8), ColorType::RGBA8888, AlphaType::Premul, None);
     let mut surface = gpu::surfaces::render_target(
-        context, gpu::Budgeted::Yes, &info, None,
-        gpu::SurfaceOrigin::TopLeft, None, false, false,
-    ).ok_or("GPU render target allocation failed")?;
+        context,
+        gpu::Budgeted::Yes,
+        &info,
+        None,
+        gpu::SurfaceOrigin::TopLeft,
+        None,
+        false,
+        false,
+    )
+    .ok_or("GPU render target allocation failed")?;
     surface.canvas().clear(Color::BLUE);
     let mut paint = Paint::default();
     paint.set_color(Color::RED);
     paint.set_anti_alias(false);
-    surface.canvas().draw_rect(Rect::from_xywh(2.0, 2.0, 4.0, 4.0), &paint);
+    surface
+        .canvas()
+        .draw_rect(Rect::from_xywh(2.0, 2.0, 4.0, 4.0), &paint);
     context.flush_and_submit();
     let mut pixels = [0u8; 8 * 8 * 4];
     // Ganesh readPixels synchronously transfers the GPU result to CPU memory.
