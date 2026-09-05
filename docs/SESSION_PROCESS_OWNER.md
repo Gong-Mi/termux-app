@@ -61,3 +61,35 @@ late unregister/bind/exit and pkg lock; pending terminate; real Kotlin/JNI shell
 termination/status/retained output; old IO/handle/constructor suites; complete
 correctness tiers and four ABI/emulator CI. Tests do not prove real PID-number
 reuse or arbitrary unmanaged third-party reapers safe.
+
+## Implementation map (C1 only)
+
+- `process_owner.rs`: claim/claim_fallback validate a positive waitable child;
+  wait_pidfd/refresh cache Exited or Lost; terminate refreshes under the same
+  mutex before signaling; wait releases that mutex before poll/condvar waits.
+  EPERM/EINVAL/ENOSYS from P_PIDFD waiting switch only the wait mechanism to
+  WNOHANG waitpid, retaining any pidfd for signaling. ECHILD is not downgraded.
+  No pidfd signal error falls back to raw kill.
+- `coordinator.rs`: Registry owns membership/pkg state/PID weak-owner lookup;
+  register_session allocates non-reused signed-JNI-compatible IDs;
+  bind_pid/bind_pty_child/bind_child reject duplicates before claim, retain
+  pre-bind termination, and start one known-child monitor. process_exited checks
+  owner identity before setting Finished; unregister_session removes membership
+  and revokes pending delivery. terminate_session never uses a Java PID.
+  process_status provides pending/running/exited/lost without a terminal kill PID.
+  set_engine_data/take_engine_data reject late poll publication and reclaim the
+  handle; push/UI acknowledgement remains a later delivery contract.
+  pkg acquire/release cannot resurrect Finished. managed_process_for_pid lets
+  legacy waitFor share an existing managed outcome instead of reaping twice.
+- `pty.rs`: managed async monitor decrements active-child accounting once;
+  generic bind_pid test children do not decrement it. Legacy unknown raw-PID
+  wait_for retains its inherited caller-ownership/accounting limitation.
+- `engine/context.rs`: with_process retains the owner; submit_input rejects a
+  cached known exit without cancelling reader tail. New process exit can race
+  with a call that already passed admission; accepted remains not delivered.
+- `jni/terminal_emulator.rs`: async create checks membership, transfers the child
+  to bind_pty_child once, and gives its owner to TerminalContext. Rejected bind
+  cleanup is not repeated using a numeric PID after owner release.
+- `JNI.kt`/coordinator JNI: terminateSession and getSessionProcessStatus added;
+  old descriptors retained. `TerminalSession.kt` stores mNativeSessionId and
+  routes finishIfRunning through it, not Os.kill(mShellPid).

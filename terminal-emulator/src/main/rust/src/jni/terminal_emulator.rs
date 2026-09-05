@@ -1442,6 +1442,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
             );
             let coordinator = SessionCoordinator::get();
             let session_id = session_id as usize;
+            if !coordinator.has_session(session_id) { return; }
 
             let pty_res = crate::pty::create_subprocess_with_data(
                 cmd_str, cwd_str, argv, envp, rows, cols, cw, ch,
@@ -1467,7 +1468,15 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
             };
 
             let owned = unsafe { OwnedFd::from_raw_fd(pty_fd) };
-            coordinator.bind_pid(session_id, pid);
+            let process = match coordinator.bind_pty_child(session_id, pid) {
+                Ok(process) => process,
+                Err(error) => {
+                    android_log(LogPriority::ERROR, &format!("async child bind rejected: {error}"));
+                    // bind_pty_child owns rejection cleanup. Re-claiming this
+                    // numeric PID here after cleanup could target a reused PID.
+                    return;
+                }
+            };
 
             crate::utils::android_log(
                 crate::utils::LogPriority::DEBUG,
@@ -1479,7 +1488,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
                 engine.state.java_callback_obj = Some(cb.clone());
             }
 
-            let context = Arc::new(TerminalContext::new(engine));
+            let context = Arc::new(TerminalContext::with_process(engine, process));
             let Some(context_handle) = crate::engine::ENGINE_HANDLES.insert(Arc::clone(&context))
             else {
                 // The unpublished OwnedFd is closed by its destructor.

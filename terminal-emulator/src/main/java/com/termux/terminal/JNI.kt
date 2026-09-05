@@ -61,6 +61,10 @@ internal object JNI {
     @JvmStatic external fun registerSession(): Int
     @JvmStatic external fun pollEngineData(sessionId: Int): LongArray?
     @JvmStatic external fun unregisterSession(sessionId: Int)
+    /** Stable session identity, never a UI-cached raw PID. Pending requests persist until bind. */
+    @JvmStatic external fun terminateSession(sessionId: Int): Boolean
+    /** [kind, pid, code]; kind: pending0/running1/exited2/lost3; null if unknown. */
+    @JvmStatic external fun getSessionProcessStatus(sessionId: Int): IntArray?
     @JvmStatic external fun tryAcquirePkgLock(sessionId: Int): Boolean
     @JvmStatic external fun releasePkgLock(sessionId: Int)
     @JvmStatic external fun isPkgLockHeld(): Boolean

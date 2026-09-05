@@ -5,8 +5,6 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Message
 import android.system.ErrnoException
-import android.system.Os
-import android.system.OsConstants
 import java.io.File
 import java.io.FileDescriptor
 import java.io.FileOutputStream
@@ -72,6 +70,7 @@ class TerminalSession(
 
     /** The file descriptor referencing the master half of a pseudo-terminal pair. */
     private var mTerminalFileDescriptor: Int = -1
+    @Volatile private var mNativeSessionId: Int = -1
 
     private val mRustCallback: RustEngineCallback = RustEngineCallback(client).also { it.setSession(this) }
 
@@ -110,6 +109,12 @@ class TerminalSession(
         mSessionState = SessionState.INITIALIZING
         if (JNI.sNativeLibrariesLoaded) {
             val sessionId = JNI.registerSession()
+            if (sessionId < 0) {
+                mSessionState = SessionState.IDLE
+                mClient.logError(LOG_TAG, "Native session ID allocation failed")
+                return
+            }
+            mNativeSessionId = sessionId
             android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 5. Calling JNI.createSessionAsync (SessionID=$sessionId)")
             
             JNI.createSessionAsync(
@@ -220,11 +225,16 @@ class TerminalSession(
         }
     }
 
-    /** Finish this terminal session by sending SIGKILL to the shell. */
+    /** Request termination through the native child owner, including pending bind.
+     * mShellPid remains a presentation value until completion delivery is migrated. */
     fun finishIfRunning() {
-        if (isRunning) {
-            runCatching { Os.kill(mShellPid, OsConstants.SIGKILL) }
-                .onFailure { e -> mClient.logWarn(LOG_TAG, "Failed sending SIGKILL: ${e.message}") }
+        val sessionId = mNativeSessionId
+        if (JNI.sNativeLibrariesLoaded && sessionId >= 0) {
+            runCatching { JNI.terminateSession(sessionId) }
+                .onSuccess { accepted ->
+                    if (!accepted) mClient.logVerbose(LOG_TAG, "Process already exited or session unavailable")
+                }
+                .onFailure { e -> mClient.logWarn(LOG_TAG, "Failed requesting process termination: ${e.message}") }
         }
     }
 
