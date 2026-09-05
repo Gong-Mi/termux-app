@@ -42,6 +42,8 @@
   "lifecycle": [
     "engine_handle_lifecycle",
     "engine_handle_integration",
+    "pty_io_runtime",
+    "pty_context_integration",
     "concurrency_lock_safety",
     "flat_buffer_test",
     "jni_boundary_safety",
@@ -87,6 +89,8 @@
     "crlf_test",
     "engine_handle_lifecycle",
     "engine_handle_integration",
+    "pty_io_runtime",
+    "pty_context_integration",
     "extended_features",
     "extreme_content_stress",
     "fix_verification",

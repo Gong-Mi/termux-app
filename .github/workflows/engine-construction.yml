@@ -2,12 +2,13 @@ name: Engine construction contract
 
 "on":
   pull_request:
-    branches: [fix/engine-handle-lifetime, fix/engine-adoption, refactor/test-normalization, feature/rust-integration]
+    branches: [fix/skia-vulkan-api-contract, fix/engine-handle-lifetime, fix/engine-adoption, refactor/test-normalization, feature/rust-integration]
     paths:
       - 'terminal-emulator/src/main/java/**'
       - 'terminal-emulator/src/main/rust/**'
       - 'scripts/kotlin/EngineHandleNative.kt'
       - 'scripts/verify-engine-handle-boundary.py'
+      - 'scripts/verify-pty-io-boundary.py'
       - 'scripts/kotlin/EmulatorConstruction*.kt'
       - 'scripts/verify-emulator-construction.py'
       - '.github/workflows/engine-construction.yml'
@@ -57,6 +58,7 @@ jobs:
       - name: Build actual JNI library and check ownership boundary
         run: |
           python3 scripts/verify-engine-handle-boundary.py
+          python3 scripts/verify-pty-io-boundary.py
           cd terminal-emulator/src/main/rust
           cargo build --locked --lib
       - name: Verify recording contract and real Kotlin JNI

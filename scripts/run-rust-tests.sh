@@ -70,6 +70,8 @@ case "$tier" in
         run_tests lifecycle \
             engine_handle_lifecycle \
             engine_handle_integration \
+            pty_io_runtime \
+            pty_context_integration \
             concurrency_lock_safety \
             flat_buffer_test \
             jni_boundary_safety \
@@ -112,6 +114,7 @@ case "$tier" in
             box_drawing_overlap_verify check_width clear_screen_test
             concurrency_lock_safety consistency content_overflow_test crlf_test
             engine_handle_lifecycle engine_handle_integration
+            pty_io_runtime pty_context_integration
             extended_features extreme_content_stress fix_verification
             flat_buffer_test font_calibration gemini_compat_test
             gemini_state_soak_test inverse_video_test jni_boundary_safety

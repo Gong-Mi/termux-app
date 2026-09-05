@@ -11,6 +11,7 @@ pub mod decset;
 /// - 终端事件枚举
 pub mod events;
 pub mod handles;
+pub mod io_runtime;
 pub mod key_event;
 pub mod perform_handler;
 pub mod sgr;
@@ -28,21 +29,12 @@ pub use state::ScreenState;
 pub static ENGINE_HANDLES: once_cell::sync::Lazy<handles::EngineHandles<TerminalContext>> =
     once_cell::sync::Lazy::new(handles::EngineHandles::new);
 
-/// Revoke new JNI/render leases atomically. Existing leases retain memory, but
-/// the legacy IO stop below is NOT proof of reader cancellation or queue drain.
+/// Revoke new JNI/render leases, then cancel IO and join off the caller thread.
+/// An in-flight foreign callback can delay completion; cancellation is not drain.
 pub fn destroy_engine(handle: i64) {
-    use std::sync::atomic::Ordering;
     let Some(context) = ENGINE_HANDLES.remove(handle) else {
         return;
     };
     crate::coordinator::discard_engine_data(handle);
-    context.running.store(false, Ordering::SeqCst);
-    let fd = context.pty_fd.swap(-1, Ordering::SeqCst);
-    if fd != -1 {
-        crate::utils::android_log(
-            crate::utils::LogPriority::INFO,
-            &format!("destroyEngine: Closing original PTY FD {fd}; reader stop not joined"),
-        );
-        unsafe { libc::close(fd) };
-    }
+    TerminalContext::stop_io(&context);
 }
