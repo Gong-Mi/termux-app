@@ -108,7 +108,10 @@ jobs:
       - name: Build for ${{ matrix.target }}
         run: |
           cd terminal-emulator/src/main/rust
-          cargo ndk -t ${{ matrix.target == 'aarch64-linux-android' && 'arm64-v8a' || matrix.target == 'armv7-linux-androideabi' && 'armeabi-v7a' || matrix.target == 'i686-linux-android' && 'x86' || 'x86_64' }} -p 24 build --release
+          # Match the existing gradle.properties minSdkVersion=26 and Skia 0.93.1's
+          # API 26 C++ build; API 24 here conflicts with Skia's __ANDROID_API__=26.
+          # Local contract: python3 scripts/verify-rust-android-ci.py (from repo root).
+          cargo ndk -t ${{ matrix.target == 'aarch64-linux-android' && 'arm64-v8a' || matrix.target == 'armv7-linux-androideabi' && 'armeabi-v7a' || matrix.target == 'i686-linux-android' && 'x86' || 'x86_64' }} -p 26 build --release
         
         env:
           CARGO_TARGET_${{ matrix.target == 'aarch64-linux-android' && 'AARCH64' || matrix.target == 'armv7-linux-androideabi' && 'ARMV7' || matrix.target == 'i686-linux-android' && 'I686' || 'X86_64' }}_LINKER: clang
