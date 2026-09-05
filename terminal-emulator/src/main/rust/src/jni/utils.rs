@@ -70,6 +70,7 @@ pub extern "system" fn JNI_OnLoad(vm: jni::JavaVM, _reserved: std::ffi::c_void) 
     // === 顶级稳定性修复：全局禁用 fdsan ===
     // 强制关闭当前进程（父 JVM）和所有未来子进程的 fdsan 错误报告。
     // 彻底解决 'attempted to close file descriptor 0, actually owned by unique_fd' 导致的自杀。
+    #[cfg(target_os = "android")]
     unsafe {
         unsafe extern "C" {
             fn android_fdsan_set_error_level(new_level: i32) -> i32;

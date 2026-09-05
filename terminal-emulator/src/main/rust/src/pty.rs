@@ -187,23 +187,28 @@ pub fn create_subprocess_with_data(
                 let pts = libc::open(c_devname.as_ptr(), libc::O_RDWR);
                 if pts < 0 { libc::_exit(1); }
 
-                // === 深度修复：彻底解除 fdsan 保护 ===
-                // We are already inside the child-side unsafe block. Keep the
-                // foreign declarations here, but do not add a redundant nested
-                // unsafe block around the calls.
-                //
-                // We directly clear FD 0, 1, 2 ownership tags in the child to
-                // avoid fdsan aborts when inherited JVM descriptors are reused.
-                unsafe extern "C" {
-                    fn android_fdsan_set_error_level(new_level: i32) -> i32;
-                    fn android_fdsan_exchange_owner_tag(fd: i32, expected_tag: u64, new_tag: u64);
+                // Android owns inherited descriptor tags; Linux hosts have no fdsan ABI.
+                // Keep the existing Android child policy unchanged.
+                #[cfg(target_os = "android")]
+                {
+                    // === 深度修复：彻底解除 fdsan 保护 ===
+                    // We are already inside the child-side unsafe block. Keep the
+                    // foreign declarations here, but do not add a redundant nested
+                    // unsafe block around the calls.
+                    //
+                    // We directly clear FD 0, 1, 2 ownership tags in the child to
+                    // avoid fdsan aborts when inherited JVM descriptors are reused.
+                    unsafe extern "C" {
+                        fn android_fdsan_set_error_level(new_level: i32) -> i32;
+                        fn android_fdsan_exchange_owner_tag(fd: i32, expected_tag: u64, new_tag: u64);
+                    }
+                    // 1. Disable fdsan reports in the child process.
+                    android_fdsan_set_error_level(0);
+                    // 2. Reset standard-stream tags (0 = FDSAN_OWNER_TAG_NONE).
+                    android_fdsan_exchange_owner_tag(0, u64::MAX, 0);
+                    android_fdsan_exchange_owner_tag(1, u64::MAX, 0);
+                    android_fdsan_exchange_owner_tag(2, u64::MAX, 0);
                 }
-                // 1. Disable fdsan reports in the child process.
-                android_fdsan_set_error_level(0);
-                // 2. Reset standard-stream tags (0 = FDSAN_OWNER_TAG_NONE).
-                android_fdsan_exchange_owner_tag(0, u64::MAX, 0);
-                android_fdsan_exchange_owner_tag(1, u64::MAX, 0);
-                android_fdsan_exchange_owner_tag(2, u64::MAX, 0);
 
                 // 3. Close inherited JVM descriptors that are not needed.
                 for i in 3..1024 {
