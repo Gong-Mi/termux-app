@@ -2,6 +2,7 @@
 // 运行：cargo test --test lnm_verify -- --nocapture
 
 use termux_rust::TerminalEngine;
+use termux_rust::terminal::modes::{MODE_INSERT, MODE_LNM};
 
 fn get_row_text(engine: &TerminalEngine, row: i32) -> String {
     let cols = engine.state.cols as usize;
@@ -20,13 +21,13 @@ fn test_decstr_resets_lnm() {
 
     // 启用 LNM
     engine.process_bytes(b"\x1b[20h");
-    assert!(engine.state.modes.is_enabled(1 << 13), "LNM should be ON");
+    assert!(engine.state.modes.is_enabled(MODE_LNM), "LNM should be ON");
 
     // DECSTR
     engine.process_bytes(b"\x1b[!p");
 
     // LNM 应该被重置
-    assert!(!engine.state.modes.is_enabled(1 << 13),
+    assert!(!engine.state.modes.is_enabled(MODE_LNM),
         "DECSTR should reset LNM");
 
     // 功能验证：\n 不应该重置 x
@@ -53,8 +54,8 @@ fn test_decstr_resets_all_modes() {
     // 确认都开了
     assert!(engine.state.application_cursor_keys);
     assert!(engine.state.modes.is_enabled(1 << 2));   // ORIGIN
-    assert!(engine.state.modes.is_enabled(1 << 13));  // LNM
-    assert!(engine.state.modes.is_enabled(1 << 12));  // INSERT
+    assert!(engine.state.modes.is_enabled(MODE_LNM));  // LNM
+    assert!(engine.state.modes.is_enabled(MODE_INSERT));  // INSERT
     assert!(engine.state.bracketed_paste);
 
     // DECSTR
@@ -63,8 +64,8 @@ fn test_decstr_resets_all_modes() {
     // 确认都关了
     assert!(!engine.state.application_cursor_keys, "DECSTR: app cursor keys");
     assert!(!engine.state.modes.is_enabled(1 << 2), "DECSTR: origin mode");
-    assert!(!engine.state.modes.is_enabled(1 << 13), "DECSTR: LNM");
-    assert!(!engine.state.modes.is_enabled(1 << 12), "DECSTR: insert mode");
+    assert!(!engine.state.modes.is_enabled(MODE_LNM), "DECSTR: LNM");
+    assert!(!engine.state.modes.is_enabled(MODE_INSERT), "DECSTR: insert mode");
     assert!(!engine.state.bracketed_paste, "DECSTR: bracketed paste");
     assert!(!engine.state.send_focus_events, "DECSTR: focus events");
     assert!(!engine.state.mouse_tracking, "DECSTR: mouse tracking");
@@ -117,7 +118,7 @@ fn test_lnm_private_mode_compatibility() {
     engine.process_bytes(b"\x1b[?20h");
 
     // 现在应该生效了（修复后）
-    assert!(engine.state.modes.is_enabled(1 << 13),
+    assert!(engine.state.modes.is_enabled(MODE_LNM),
         "CSI ? 20 h should enable LNM (compatibility mode)");
 
     engine.process_bytes(b"\n");
@@ -125,7 +126,7 @@ fn test_lnm_private_mode_compatibility() {
 
     // 关闭
     engine.process_bytes(b"\x1b[?20l");
-    assert!(!engine.state.modes.is_enabled(1 << 13));
+    assert!(!engine.state.modes.is_enabled(MODE_LNM));
 
     println!("✅ LNM private mode compatibility works");
 }
@@ -136,7 +137,7 @@ fn test_lnm_standard_mode() {
 
     // 标准 ANSI 模式: CSI 20 h
     engine.process_bytes(b"\x1b[20h");
-    assert!(engine.state.modes.is_enabled(1 << 13));
+    assert!(engine.state.modes.is_enabled(MODE_LNM));
 
     engine.process_bytes(b"ABCDEFGH");
     engine.process_bytes(b"\n");
@@ -144,7 +145,7 @@ fn test_lnm_standard_mode() {
 
     // 关闭
     engine.process_bytes(b"\x1b[20l");
-    assert!(!engine.state.modes.is_enabled(1 << 13));
+    assert!(!engine.state.modes.is_enabled(MODE_LNM));
 
     engine.process_bytes(b"XYZ");
     engine.process_bytes(b"\n");
@@ -240,7 +241,7 @@ fn test_insert_mode_single_char() {
 
     // 启用 Insert
     engine.process_bytes(b"\x1b[4h");
-    assert!(engine.state.modes.is_enabled(1 << 12));
+    assert!(engine.state.modes.is_enabled(MODE_INSERT));
 
     // 插入字符
     engine.process_bytes(b"X");
@@ -290,7 +291,7 @@ fn test_insert_mode_off_overwrites() {
 
     // 关闭 Insert (默认)
     engine.process_bytes(b"\x1b[4l");
-    assert!(!engine.state.modes.is_enabled(1 << 12));
+    assert!(!engine.state.modes.is_enabled(MODE_INSERT));
 
     // 写入字符 - 应该覆盖
     engine.process_bytes(b"X");
@@ -310,13 +311,13 @@ fn test_insert_mode_disabled_by_decstr() {
     // 写入 + 启用 Insert
     engine.process_bytes(b"ABCDEFGHIJ");
     engine.process_bytes(b"\x1b[4h");
-    assert!(engine.state.modes.is_enabled(1 << 12));
+    assert!(engine.state.modes.is_enabled(MODE_INSERT));
 
     // DECSTR
     engine.process_bytes(b"\x1b[!p");
 
     // Insert 应该被关闭
-    assert!(!engine.state.modes.is_enabled(1 << 12),
+    assert!(!engine.state.modes.is_enabled(MODE_INSERT),
         "DECSTR should reset insert mode");
 
     // 现在写入应该覆盖
@@ -364,7 +365,7 @@ fn test_lnm_survives_resize() {
 
     // 启用 LNM
     engine.process_bytes(b"\x1b[20h");
-    assert!(engine.state.modes.is_enabled(1 << 13));
+    assert!(engine.state.modes.is_enabled(MODE_LNM));
 
     // Resize 不应该影响 LNM
     // (resize 函数内部可能会改变 state，但不应重置模式)
@@ -406,8 +407,8 @@ fn test_decstr_full_cycle() {
     // 验证状态
     assert!(!engine.state.application_cursor_keys);
     assert!(!engine.state.modes.is_enabled(1 << 2));   // origin
-    assert!(!engine.state.modes.is_enabled(1 << 13));  // LNM
-    assert!(!engine.state.modes.is_enabled(1 << 12));  // insert
+    assert!(!engine.state.modes.is_enabled(MODE_LNM));  // LNM
+    assert!(!engine.state.modes.is_enabled(MODE_INSERT));  // insert
     assert!(!engine.state.bracketed_paste);
     assert!(!engine.state.mouse_tracking);
     assert!(!engine.state.sgr_mouse);
@@ -435,11 +436,11 @@ fn test_decstr_then_reenable_lnm() {
     // 启用 LNM
     engine.process_bytes(b"\x1b[20h");
     engine.process_bytes(b"\x1b[!p");
-    assert!(!engine.state.modes.is_enabled(1 << 13));
+    assert!(!engine.state.modes.is_enabled(MODE_LNM));
 
     // 重新启用 LNM
     engine.process_bytes(b"\x1b[20h");
-    assert!(engine.state.modes.is_enabled(1 << 13));
+    assert!(engine.state.modes.is_enabled(MODE_LNM));
 
     engine.process_bytes(b"ABCDEFGH");
     engine.process_bytes(b"\n");
@@ -577,7 +578,7 @@ fn test_full_terminal_session() {
     assert!(!engine.state.bracketed_paste);
     assert!(!engine.state.mouse_tracking);
     assert!(!engine.state.sgr_mouse);
-    assert!(!engine.state.modes.is_enabled(1 << 13)); // LNM
+    assert!(!engine.state.modes.is_enabled(MODE_LNM)); // LNM
 
     // 新 shell 提示符
     engine.process_bytes(b"\r\n$ ");
@@ -638,15 +639,15 @@ fn test_rapid_decstr_toggle() {
         engine.process_bytes(b"\x1b[?1h\x1b[?6h\x1b[20h\x1b[4h\x1b[?2004h");
 
         assert!(engine.state.application_cursor_keys);
-        assert!(engine.state.modes.is_enabled(1 << 13));
-        assert!(engine.state.modes.is_enabled(1 << 12));
+        assert!(engine.state.modes.is_enabled(MODE_LNM));
+        assert!(engine.state.modes.is_enabled(MODE_INSERT));
 
         // DECSTR
         engine.process_bytes(b"\x1b[!p");
 
         assert!(!engine.state.application_cursor_keys);
-        assert!(!engine.state.modes.is_enabled(1 << 13));
-        assert!(!engine.state.modes.is_enabled(1 << 12));
+        assert!(!engine.state.modes.is_enabled(MODE_LNM));
+        assert!(!engine.state.modes.is_enabled(MODE_INSERT));
 
         // 写入数据防止崩溃
         engine.process_bytes(b"test");
@@ -674,8 +675,8 @@ fn test_alternate_buffer_with_decstr() {
     assert!(engine.state.use_alternate_buffer, "DECSTR should not switch buffer");
 
     // 但应该重置模式
-    assert!(!engine.state.modes.is_enabled(1 << 13)); // LNM
-    assert!(!engine.state.modes.is_enabled(1 << 12)); // Insert
+    assert!(!engine.state.modes.is_enabled(MODE_LNM)); // LNM
+    assert!(!engine.state.modes.is_enabled(MODE_INSERT)); // Insert
 
     // 切换回主缓冲区
     engine.process_bytes(b"\x1b[?1049l");

@@ -2,6 +2,7 @@
 // 运行：cargo test --test lnm_problems -- --nocapture
 
 use termux_rust::TerminalEngine;
+use termux_rust::terminal::modes::{MODE_LNM, MODE_INSERT, DECSET_BIT_ORIGIN_MODE, DECSET_BIT_AUTOWRAP};
 
 fn get_row_text(engine: &TerminalEngine, row: i32) -> String {
     let cols = engine.state.cols as usize;
@@ -102,7 +103,7 @@ fn test_decstr_does_not_reset_lnm_bug() {
 // =============================================================================
 
 #[test]
-fn test_lnm_private_mode_ignored() {
+fn test_lnm_private_mode_compatibility() {
     let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 先写几个字符
@@ -116,19 +117,10 @@ fn test_lnm_private_mode_ignored() {
     engine.process_bytes(b"\n");
     let x_after_lf = engine.state.cursor.x;
 
-    // 如果 LNM 没有被 ?20h 设置，x 应该保持 10
-    if x_after_lf == 10 {
-        println!("❌ CSI ? 20 h is ignored (expected for standard behavior)");
-        println!("   Some apps may incorrectly send ?20h instead of 20h.");
-        println!("   Consider adding mode 20 support to handle_decset for compatibility.");
-    } else if x_after_lf == 0 {
-        println!("✅ CSI ? 20 h is handled (compatibility mode enabled)");
-    }
-
-    // 当前行为：?20h 被忽略，这不是 bug，而是标准行为
-    // 但为了兼容性，建议在 handle_decset 中添加 mode 20
-    assert_eq!(x_after_lf, 10,
-        "CSI ? 20 h should be ignored by standard (no mode 20 in handle_decset)");
+    // Intentional compatibility extension introduced in f72dd5ad, not ANSI syntax.
+    assert_eq!(x_after_lf, 0, "Private LNM alias should enable newline mode");
+    engine.process_bytes(b"\x1b[?20lABCDEFGHIJ\n");
+    assert_eq!(engine.state.cursor.x, 10, "Private LNM alias should disable newline mode");
 }
 
 // =============================================================================
@@ -204,8 +196,8 @@ fn test_decstr_soft_reset_mode_effects() {
 
     // 验证都生效了
     assert!(engine.state.application_cursor_keys, "App cursor keys should be ON before DECSTR");
-    assert!(engine.state.modes.is_enabled(1 << 2), "ORIGIN_MODE should be ON before DECSTR");
-    assert!(engine.state.modes.is_enabled(1 << 13), "LNM should be ON before DECSTR");
+    assert!(engine.state.modes.is_enabled(DECSET_BIT_ORIGIN_MODE), "ORIGIN_MODE should be ON before DECSTR");
+    assert!(engine.state.modes.is_enabled(MODE_LNM), "LNM should be ON before DECSTR");
     assert!(engine.state.bracketed_paste, "Bracketed paste should be ON before DECSTR");
 
     // DECSTR 软复位
@@ -220,13 +212,13 @@ fn test_decstr_soft_reset_mode_effects() {
     // - 光标可见 ✓
 
     // 已知正确的：
-    assert!(!engine.state.modes.is_enabled(1 << 2),
+    assert!(!engine.state.modes.is_enabled(DECSET_BIT_ORIGIN_MODE),
         "DECSTR should reset ORIGIN_MODE (DECSET 6)");
-    assert!(engine.state.modes.is_enabled(1 << 3),
+    assert!(engine.state.modes.is_enabled(DECSET_BIT_AUTOWRAP),
         "DECSTR should set AUTOWRAP (DECSET 7)");
 
     // 已知 Bug：
-    let lnm_reset = !engine.state.modes.is_enabled(1 << 13);
+    let lnm_reset = !engine.state.modes.is_enabled(MODE_LNM);
     let bracketed_reset = !engine.state.bracketed_paste;
     let cursor_reset = !engine.state.application_cursor_keys;
 
@@ -272,7 +264,7 @@ fn test_insert_mode_actually_works() {
     engine.process_bytes(b"\x1b[4h");
 
     // 验证 MODE_INSERT 被设置了
-    assert!(engine.state.modes.is_enabled(1 << 12), "MODE_INSERT should be set");
+    assert!(engine.state.modes.is_enabled(MODE_INSERT), "MODE_INSERT should be set");
 
     // 输入一个字符
     engine.process_bytes(b"X");
@@ -285,9 +277,11 @@ fn test_insert_mode_actually_works() {
     let row0 = get_row_text(&engine, 0);
     println!("Row 0 after insert: '{}'", row0);
 
-    // 这个测试只是为了验证 MODE_INSERT 标志是否被设置
-    // 实际的 insert 字符逻辑可能未实现
-    println!("⚠️ Insert mode flag is set, but character insert logic may not be implemented");
+    assert_eq!(x_after, 3, "Insert should advance the cursor");
+    assert_eq!(row0, "ABXCDEFGHIJ", "Insert must shift existing text");
+    engine.process_bytes(b"\x1b[4lY");
+    assert!(!engine.state.modes.is_enabled(MODE_INSERT));
+    assert_eq!(get_row_text(&engine, 0), "ABXYDEFGHIJ", "Reset must restore overwrite mode");
 }
 
 // =============================================================================
@@ -364,7 +358,7 @@ mod tests {
     fn run_all() {
         test_lnm_basic_works();
         test_decstr_does_not_reset_lnm_bug();
-        test_lnm_private_mode_ignored();
+        test_lnm_private_mode_compatibility();
         test_lnm_affects_vt_and_ff();
         test_decstr_soft_reset_mode_effects();
         test_insert_mode_actually_works();
