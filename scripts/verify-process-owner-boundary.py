@@ -26,7 +26,8 @@ def main():
     assert 'managed_process_for_pid(pid)' in pty
     assert 'owner.wait()' in pty
     assert 'record_managed_child_exit()' in coordinator
-    assert 'self.process.as_ref().is_some_and(|owner| !owner.is_running())' in context
+    compact_context = re.sub(r'\s+', '', context)
+    assert 'self.process.as_ref().is_some_and(|owner|!owner.is_running())' in compact_context
     assert 'libc::P_PIDFD' in owner and 'libc::WNOHANG' in owner
     assert 'libc::SYS_pidfd_send_signal' in owner
     for method in ('terminateSession', 'getSessionProcessStatus'):
