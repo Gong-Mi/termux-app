@@ -471,16 +471,16 @@ pub const WIDE_EASTASIAN: &[(u32, u32)] = &[
 pub fn wcwidth(ucs: u32) -> usize {
     if ucs == 0
         || ucs == 0x034F
-        || (ucs >= 0x200B && ucs <= 0x200F)
+        || (0x200B..=0x200F).contains(&ucs)
         || ucs == 0x2028
         || ucs == 0x2029
-        || (ucs >= 0x202A && ucs <= 0x202E)
-        || (ucs >= 0x2060 && ucs <= 0x2063)
+        || (0x202A..=0x202E).contains(&ucs)
+        || (0x2060..=0x2063).contains(&ucs)
     {
         return 0;
     }
 
-    if ucs < 32 || (ucs >= 0x07F && ucs < 0x0A0) {
+    if ucs < 32 || (0x07F..0x0A0).contains(&ucs) {
         return 0;
     }
 

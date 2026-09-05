@@ -24,6 +24,7 @@ case "$tier" in
             consistency \
             extended_features \
             check_width \
+            wcwidth_boundaries \
             fix_verification \
             key_event_handling \
             osc_escape_test \
@@ -123,7 +124,7 @@ case "$tier" in
             vt_compatibility vte_parser_benchmark vte_performance_benchmark
             vte_sve_consistency vulkan_cache_performance_proof
             vulkan_lifecycle_stress vulkan_path_cache_test
-            vulkan_physical_cache_test vulkan_render_benchmark
+            vulkan_physical_cache_test vulkan_render_benchmark wcwidth_boundaries
         )
         run_tests all "${ALL_TESTS[@]}"
         ;;
