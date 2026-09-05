@@ -3,6 +3,7 @@ name: Android emulator experiment
 "on":
   pull_request:
     branches:
+      - fix/engine-adoption
       - feature/rust-integration
     paths:
       - 'app/**'
@@ -45,6 +46,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Verify KVM access before building
         run: |
@@ -104,7 +106,8 @@ jobs:
           APK_DIR=app/build/outputs/apk/debug
           test -s "$APK_DIR/termux-app_emulator-${GITHUB_SHA}_x86_64.apk"
           sha256sum "$APK_DIR/termux-app_emulator-${GITHUB_SHA}_x86_64.apk" > apk.sha256
-          printf 'headSha=%s\n' "$GITHUB_SHA" > source-identity.txt
+          printf 'headSha=%s\n' "$(git rev-parse HEAD)" > source-identity.txt
+          printf 'eventSha=%s\n' "$GITHUB_SHA" >> source-identity.txt
           printf 'apk=%s\n' "$APK_DIR/termux-app_emulator-${GITHUB_SHA}_x86_64.apk" >> source-identity.txt
 
       - name: Set up Android SDK
