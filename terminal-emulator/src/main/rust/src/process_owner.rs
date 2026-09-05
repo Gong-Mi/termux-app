@@ -310,7 +310,10 @@ mod tests {
             eprintln!("SKIP pidfd label-injection: pidfd unavailable; fallback tested separately");
             drop(original.stdin.take());
             owner.wait();
-            assert_eq!(original.wait().unwrap_err().raw_os_error(), Some(libc::ECHILD));
+            assert_eq!(
+                original.wait().unwrap_err().raw_os_error(),
+                Some(libc::ECHILD)
+            );
             return;
         }
         let mut unrelated = Command::new("sh")
@@ -322,7 +325,10 @@ mod tests {
         Arc::get_mut(&mut owner).unwrap().pid = unrelated.id() as i32;
         drop(original.stdin.take());
         assert_eq!(owner.wait(), ExitOutcome::Exited(31));
-        assert_eq!(original.wait().unwrap_err().raw_os_error(), Some(libc::ECHILD));
+        assert_eq!(
+            original.wait().unwrap_err().raw_os_error(),
+            Some(libc::ECHILD)
+        );
         assert_eq!(unrelated.wait().unwrap().code(), Some(77));
         eprintln!("PASS pidfd identity ignores reassigned numeric label");
     }
