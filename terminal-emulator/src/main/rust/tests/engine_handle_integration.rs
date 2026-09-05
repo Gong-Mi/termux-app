@@ -1,10 +1,10 @@
 //! Production global registry, real TerminalContext, fd ownership and RenderFrame.
 //! No fake JNI, Surface or GPU: JVM JNI coverage is a separate harness.
 use std::os::fd::AsRawFd;
-use std::time::{Duration, Instant};
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::time::{Duration, Instant};
 use termux_rust::coordinator::{SessionCoordinator, SessionEngineData};
 use termux_rust::engine::{ENGINE_HANDLES, TerminalContext, TerminalEngine, destroy_engine};
 use termux_rust::renderer::RenderFrame;
@@ -45,8 +45,13 @@ fn real_context_revocation_preserves_in_flight_frame_and_forgets_delivery() {
     assert!(coordinator.take_engine_data(session).is_none());
     assert!(!lease.running.load(Ordering::SeqCst));
     let deadline = Instant::now() + Duration::from_secs(3);
-    while !lease.io_is_joined() && Instant::now() < deadline { std::thread::yield_now(); }
-    assert!(lease.io_is_joined(), "silent reader did not terminate and join");
+    while !lease.io_is_joined() && Instant::now() < deadline {
+        std::thread::yield_now();
+    }
+    assert!(
+        lease.io_is_joined(),
+        "silent reader did not terminate and join"
+    );
     assert_eq!(unsafe { libc::fcntl(fd, libc::F_GETFD) }, -1);
     let frame = {
         let engine = lease.lock.read().unwrap();
@@ -55,7 +60,9 @@ fn real_context_revocation_preserves_in_flight_frame_and_forgets_delivery() {
     drop(frame);
     assert!(weak.upgrade().is_some());
     drop(lease);
-    while weak.upgrade().is_some() && Instant::now() < deadline { std::thread::yield_now(); }
+    while weak.upgrade().is_some() && Instant::now() < deadline {
+        std::thread::yield_now();
+    }
     assert!(weak.upgrade().is_none());
     destroy_engine(handle);
     drop(peer);

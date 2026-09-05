@@ -5,12 +5,14 @@ use std::os::fd::AsRawFd;
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use termux_rust::engine::{TerminalContext, TerminalEngine};
 use termux_rust::engine::context::INPUT_CAPACITY;
 use termux_rust::engine::io_runtime::SubmitError;
+use termux_rust::engine::{TerminalContext, TerminalEngine};
 
 fn context() -> Arc<TerminalContext> {
-    Arc::new(TerminalContext::new(TerminalEngine::new(0, 80, 24, 2000, 8, 16)))
+    Arc::new(TerminalContext::new(TerminalEngine::new(
+        0, 80, 24, 2000, 8, 16,
+    )))
 }
 
 fn joined(context: &Arc<TerminalContext>) {
@@ -32,16 +34,27 @@ fn real_parser_responses_and_user_input_use_worker_and_cancel_silent_peer() {
     peer.read_exact(&mut reply).unwrap();
     assert_eq!(&reply, b"\x1b[1;6R");
     let mut row = [0u16; 80];
-    context.lock.read().unwrap().state.copy_row_text(0, &mut row);
+    context
+        .lock
+        .read()
+        .unwrap()
+        .state
+        .copy_row_text(0, &mut row);
     assert!(String::from_utf16_lossy(&row).starts_with("hello"));
-    assert_eq!(context.submit_input(&vec![b'x'; INPUT_CAPACITY + 1]), Err(SubmitError::Full));
+    assert_eq!(
+        context.submit_input(&vec![b'x'; INPUT_CAPACITY + 1]),
+        Err(SubmitError::Full)
+    );
     context.submit_input(b"exact-input").unwrap();
     let mut bytes = [0; 11];
     peer.read_exact(&mut bytes).unwrap();
     assert_eq!(&bytes, b"exact-input");
     // Peer stays open and silent: closing the UI owner must wake poll.
     TerminalContext::stop_io(&context);
-    assert_eq!(context.submit_input(b"after-close"), Err(SubmitError::Closed));
+    assert_eq!(
+        context.submit_input(b"after-close"),
+        Err(SubmitError::Closed)
+    );
     joined(&context);
     assert_eq!(peer.read(&mut bytes).unwrap(), 0);
 }
@@ -93,5 +106,6 @@ fn startup_fd_configuration_failure_closes_owner_and_allows_retry() {
     assert_eq!(unsafe { libc::fcntl(raw, libc::F_GETFD) }, -1);
     let (master, _peer) = UnixStream::pair().unwrap();
     TerminalContext::start_io_owned(Arc::clone(&context), master.into()).unwrap();
-    TerminalContext::stop_io(&context); joined(&context);
+    TerminalContext::stop_io(&context);
+    joined(&context);
 }

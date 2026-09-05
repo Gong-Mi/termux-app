@@ -1,8 +1,8 @@
 use jni::JNIEnv;
 use jni::objects::{JClass, JObject, JString, JValue};
 use jni::sys::{jboolean, jbyteArray, jint, jintArray, jlong, jstring};
-use std::sync::Arc;
 use std::os::fd::{FromRawFd, OwnedFd};
+use std::sync::Arc;
 
 use crate::coordinator::SessionCoordinator;
 use crate::engine::{TerminalContext, TerminalEngine, TerminalEvent};
@@ -162,13 +162,26 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatch(
 
 /// Enqueue a complete input slice. 0=accepted, -1=closed, -2=full, -3=invalid.
 /// Acceptance is not delivery: explicit cancellation can discard pending bytes.
-fn enqueue_input(env: &JNIEnv, context: &TerminalContext, data: jbyteArray,
-    offset: jint, count: jint) -> jint {
-    if data.is_null() || offset < 0 || count < 0 { return -3; }
+fn enqueue_input(
+    env: &JNIEnv,
+    context: &TerminalContext,
+    data: jbyteArray,
+    offset: jint,
+    count: jint,
+) -> jint {
+    if data.is_null() || offset < 0 || count < 0 {
+        return -3;
+    }
     let j_array = unsafe { jni::objects::JByteArray::from_raw(data) };
-    let Ok(bytes) = env.convert_byte_array(&j_array) else { return -3; };
-    let Some(end) = (offset as usize).checked_add(count as usize) else { return -3; };
-    let Some(slice) = bytes.get(offset as usize..end) else { return -3; };
+    let Ok(bytes) = env.convert_byte_array(&j_array) else {
+        return -3;
+    };
+    let Some(end) = (offset as usize).checked_add(count as usize) else {
+        return -3;
+    };
+    let Some(slice) = bytes.get(offset as usize..end) else {
+        return -3;
+    };
     match context.submit_input(slice) {
         Ok(()) => 0,
         Err(crate::engine::io_runtime::SubmitError::Closed) => -1,
@@ -179,19 +192,38 @@ fn enqueue_input(env: &JNIEnv, context: &TerminalContext, data: jbyteArray,
 /// Legacy JVM signature retained; rejection is logged, never a blocking write.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_processInput(
-    env: JNIEnv, _class: JClass, ptr: jlong, data: jbyteArray, offset: jint, count: jint,
+    env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+    data: jbyteArray,
+    offset: jint,
+    count: jint,
 ) {
-    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else { return; };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return;
+    };
     let status = enqueue_input(&env, &context, data, offset, count);
-    if status != 0 { android_log(LogPriority::WARN, &format!("PTY input rejected: status={status}")); }
+    if status != 0 {
+        android_log(
+            LogPriority::WARN,
+            &format!("PTY input rejected: status={status}"),
+        );
+    }
 }
 
 /// Status-returning API for callers that must report bounded-queue rejection.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_termux_terminal_RustTerminal_tryProcessInput(
-    env: JNIEnv, _class: JClass, ptr: jlong, data: jbyteArray, offset: jint, count: jint,
+    env: JNIEnv,
+    _class: JClass,
+    ptr: jlong,
+    data: jbyteArray,
+    offset: jint,
+    count: jint,
 ) -> jint {
-    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else { return -1; };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return -1;
+    };
     enqueue_input(&env, &context, data, offset, count)
 }
 
@@ -209,11 +241,16 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_startIoThread(
     let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
         return;
     };
-    if pty_fd < 0 { return; }
+    if pty_fd < 0 {
+        return;
+    }
     // Preserve the legacy startIoThread ownership-transfer contract.
     let owned = unsafe { OwnedFd::from_raw_fd(pty_fd) };
     if let Err(error) = TerminalContext::start_io_owned(Arc::clone(&context), owned) {
-        android_log(LogPriority::ERROR, &format!("startIoThread failed: {error}"));
+        android_log(
+            LogPriority::ERROR,
+            &format!("startIoThread failed: {error}"),
+        );
     }
 }
 
@@ -1456,7 +1493,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
             // Transfer the original fd, not a duplicate. Java receives metadata
             // only; production resize and input route through the live handle.
             if let Err(error) = TerminalContext::start_io_owned(Arc::clone(&context), owned) {
-                android_log(LogPriority::ERROR, &format!("createSessionAsync IO start failed: {error}"));
+                android_log(
+                    LogPriority::ERROR,
+                    &format!("createSessionAsync IO start failed: {error}"),
+                );
                 return;
             }
 

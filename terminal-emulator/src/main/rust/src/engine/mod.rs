@@ -11,8 +11,8 @@ pub mod decset;
 /// - 终端事件枚举
 pub mod events;
 pub mod handles;
-pub mod key_event;
 pub mod io_runtime;
+pub mod key_event;
 pub mod perform_handler;
 pub mod sgr;
 pub mod shared_buffer;
@@ -32,7 +32,9 @@ pub static ENGINE_HANDLES: once_cell::sync::Lazy<handles::EngineHandles<Terminal
 /// Revoke new JNI/render leases, then cancel IO and join off the caller thread.
 /// An in-flight foreign callback can delay completion; cancellation is not drain.
 pub fn destroy_engine(handle: i64) {
-    let Some(context) = ENGINE_HANDLES.remove(handle) else { return; };
+    let Some(context) = ENGINE_HANDLES.remove(handle) else {
+        return;
+    };
     crate::coordinator::discard_engine_data(handle);
     TerminalContext::stop_io(&context);
 }
