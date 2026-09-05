@@ -15,6 +15,9 @@ name: Android emulator experiment
       - 'scripts/verify-skia-api-ab.py'
       - 'scripts/tests/test_verify_skia_api_ab.py'
       - 'scripts/test-skia-experiment-wiring.py'
+      - 'scripts/verify-test-build-ci.py'
+      - 'scripts/tests/test_rust_test_runner.py'
+      - 'scripts/tests/rust-tier-targets.json'
       - 'gradle/**'
       - '*.gradle*'
       - '.github/workflows/android-emulator-experiment.yml'
@@ -104,6 +107,36 @@ jobs:
           sudo install -m 0755 /tmp/gn-bin/gn /usr/local/bin/gn
           gn --version
           ninja --version
+
+      - name: Identify actual Android NDK
+        id: ndk
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+          ndk = os.environ.get("ANDROID_NDK_HOME") or os.environ.get("ANDROID_NDK_ROOT")
+          if not ndk:
+              raise SystemExit("Runner did not expose an Android NDK; cannot key native cache safely")
+          root = Path(ndk).resolve()
+          identity = hashlib.sha256((root / "source.properties").read_bytes()).hexdigest()
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"identity={identity}\n")
+          with open(os.environ["GITHUB_ENV"], "a") as output:
+              output.write(f"ANDROID_NDK_HOME={root}\n")
+          print((root / "source.properties").read_text())
+          PY
+
+      # Forced Skia source build, API35 and experimental feature must never
+      # share native outputs with rust-ci's default-feature API26 builds.
+      - name: Cache emulator native dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: terminal-emulator/src/main/rust -> target
+          key: emulator-x86_64-api26-skia35-release-skia-api-experiment-ndk-${{ steps.ndk.outputs.identity }}
+          env-vars: CARGO CC CFLAGS CXX CMAKE RUST ANDROID_NDK SKIA FORCE_SKIA ImageOS ImageVersion
+          cache-bin: "false"
+          cache-on-failure: "true"
 
       - name: Build debug APKs
         env:

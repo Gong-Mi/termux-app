@@ -32,6 +32,38 @@ bash ./scripts/run-rust-tests.sh all
 The `core` and `regressions` tiers are the default correctness gates. The
 renderer and benchmark tiers must not be used to claim Android GPU correctness.
 
+### Runner batching and failure domains
+
+Each tier submits its unchanged explicit target list in one locked Cargo command,
+not one Cargo invocation per target. Cargo owns binary execution order (the list
+is not an inter-test ordering contract); test binaries remain serial, and each
+binary retains `--test-threads=1`. `--no-fail-fast` runs remaining binaries after a
+runtime test failure, while preserving Cargo's nonzero exit status. Compilation
+failure still prevents execution; it is not a completed runtime test suite.
+No new test filters, ignored tests, parallel test execution or feature changes
+are introduced. This removes repeated Cargo setup/dependency checks, not the
+initial compilation of each distinct target. Measured CI savings remain separate
+from this command-count reduction.
+
+`python3 scripts/tests/test_rust_test_runner.py` checks all seven tier command
+contracts, failure propagation and the complete `all` inventory against actual
+Cargo metadata (including auto-discovered targets). The frozen inventory in
+`scripts/tests/rust-tier-targets.json` must be updated deliberately with the runner
+when registering a target. These process contracts use fake Cargo for invocation
+checks, not as evidence that production Rust tests passed. A dependency-free real
+Cargo fixture additionally proves a failed binary returns exit 101 while the
+later binary still executes.
+
+The host correctness/manual workflows cache dependencies with rustc/Cargo and
+native-environment identity, separated by tier. The emulator separately caches
+forced-source Skia dependencies for x86_64, API26/Skia35, release Rust profile and
+`skia-api-experiment`, keyed by the actual cargo-ndk NDK's `source.properties`.
+This is not the default-feature Android cross-build cache. Cache hits never skip
+compilation checks, APK construction or A/B acceptance. Native-cache first runs
+are cold; measure restore/save overhead and later warm runs before claiming a
+speedup. `python3 scripts/verify-test-build-ci.py` validates these static contracts
+(requires PyYAML).
+
 ## Required CI behavior
 
 - `cargo fmt -- --check` and `cargo clippy --all-targets --all-features -- -D warnings`
