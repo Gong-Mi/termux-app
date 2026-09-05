@@ -24,6 +24,7 @@ name: Rust correctness tiers
     branches:
       - fix/engine-adoption
       - fix/engine-handle-lifetime
+      - fix/skia-vulkan-api-contract
       - master
       - feature/rust-integration
     paths:
