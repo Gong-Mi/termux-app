@@ -2,7 +2,7 @@ name: Engine construction contract
 
 "on":
   pull_request:
-    branches: [fix/engine-adoption, refactor/test-normalization, feature/rust-integration]
+    branches: [fix/engine-handle-lifetime, fix/engine-adoption, refactor/test-normalization, feature/rust-integration]
     paths:
       - 'terminal-emulator/src/main/java/**'
       - 'terminal-emulator/src/main/rust/**'

@@ -11,6 +11,10 @@ crate-type = ["cdylib", "rlib"]
 name = "termux-rust-engine"
 path = "standalone/src/main.rs"
 
+# Explicit CI-only experiment; never enabled by default, even in debug APKs.
+[features]
+skia-api-experiment = []
+
 [dependencies]
 jni = "0.21.1"
 unicode-width = "0.2.2"

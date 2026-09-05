@@ -1,5 +1,6 @@
 package com.termux.rust
 
+import org.gradle.api.GradleException
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.tasks.Exec
@@ -13,6 +14,26 @@ class RustAndroidPlugin implements Plugin<Project> {
             def extension = project.extensions.getByType(RustAndroidExtension)
             def cargoTargetDir = project.file("${extension.rustSrcDir}/target")
             def jniLibsDir = project.file(extension.jniLibsDestDir)
+            def skiaApiExperiment = project.findProperty("skiaApiExperiment") == "true"
+            if (skiaApiExperiment) {
+                // Cargo release is an optimization profile, not APK debuggability.
+                // The shared native output must never enter a non-debuggable variant.
+                project.gradle.taskGraph.whenReady { graph ->
+                    project.rootProject.allprojects.each { androidProject ->
+                        def android = androidProject.extensions.findByName("android")
+                        def variants = androidProject.plugins.hasPlugin("com.android.application") ?
+                            android.applicationVariants :
+                            (androidProject.plugins.hasPlugin("com.android.library") ? android.libraryVariants : [])
+                        variants.each { variant ->
+                            if (!variant.buildType.debuggable && graph.allTasks.any {
+                                it.project == androidProject && it.name.contains(variant.name.capitalize())
+                            }) {
+                                throw new GradleException("skiaApiExperiment is restricted to debuggable APK variants")
+                            }
+                        }
+                    }
+                }
+            }
 
             def ndkAbis = project.android.defaultConfig.ndk.abiFilters
             if (!ndkAbis) {
@@ -30,6 +51,7 @@ class RustAndroidPlugin implements Plugin<Project> {
                     // 跟踪 Rust 源代码作为输入，确保增量构建生效
                     inputs.dir("${extension.rustSrcDir}/src")
                     inputs.file("${extension.rustSrcDir}/Cargo.toml")
+                    inputs.property("skiaApiExperiment", skiaApiExperiment)
                     if (project.file("${extension.rustSrcDir}/Cargo.lock").exists()) {
                         inputs.file("${extension.rustSrcDir}/Cargo.lock")
                     }
@@ -38,6 +60,9 @@ class RustAndroidPlugin implements Plugin<Project> {
                     outputs.file("${cargoTargetDir}/${rustArch}/release/lib${extension.libName}.so")
 
                     commandLine 'cargo', 'ndk', '-t', abi, '-p', extension.minSdkVersion.toString(), 'build', '--release'
+                    if (skiaApiExperiment) {
+                        args '--features', 'skia-api-experiment'
+                    }
 
                     doFirst {
                         println "Compiling Rust for ABI: ${abi}..."

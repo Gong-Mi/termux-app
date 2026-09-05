@@ -20,6 +20,7 @@ name: Rust correctness tiers
   pull_request:
     branches:
       - fix/engine-adoption
+      - fix/engine-handle-lifetime
       - master
       - feature/rust-integration
     paths:
