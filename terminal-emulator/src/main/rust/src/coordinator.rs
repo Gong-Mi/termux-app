@@ -252,29 +252,26 @@ impl SessionCoordinator {
             return Err(error);
         }
         drop(registry);
-        if terminate {
-            if let Err(error) = owner.terminate() {
-                android_log(
-                    LogPriority::ERROR,
-                    &format!("pending terminate failed: {error}"),
-                );
-            }
+        if terminate && let Err(error) = owner.terminate() {
+            android_log(
+                LogPriority::ERROR,
+                &format!("pending terminate failed: {error}"),
+            );
         }
         Ok(owner)
     }
 
     fn process_exited(&self, session_id: usize, owner: &Arc<ProcessOwner>, outcome: ExitOutcome) {
         let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(record) = registry.sessions.get_mut(&session_id) {
-            if record
+        if let Some(record) = registry.sessions.get_mut(&session_id)
+            && record
                 .process
                 .as_ref()
                 .is_some_and(|current| Arc::ptr_eq(current, owner))
-            {
-                record.state = SessionState::Finished;
-                if registry.pkg_owner == Some(session_id) {
-                    registry.pkg_owner = None;
-                }
+        {
+            record.state = SessionState::Finished;
+            if registry.pkg_owner == Some(session_id) {
+                registry.pkg_owner = None;
             }
         }
         drop(registry);
@@ -339,10 +336,10 @@ impl SessionCoordinator {
             Some(data)
         };
         drop(registry);
-        if let Some(old) = displaced {
-            if old.ptr != data.ptr || !self.has_session(session_id) {
-                crate::engine::destroy_engine(old.ptr);
-            }
+        if let Some(old) = displaced
+            && (old.ptr != data.ptr || !self.has_session(session_id))
+        {
+            crate::engine::destroy_engine(old.ptr);
         }
     }
     pub fn take_engine_data(&self, session_id: usize) -> Option<SessionEngineData> {
@@ -373,10 +370,10 @@ impl SessionCoordinator {
         let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
         if registry.pkg_owner == Some(session_id) {
             registry.pkg_owner = None;
-            if let Some(record) = registry.sessions.get_mut(&session_id) {
-                if record.state != SessionState::Finished {
-                    record.state = SessionState::Running;
-                }
+            if let Some(record) = registry.sessions.get_mut(&session_id)
+                && record.state != SessionState::Finished
+            {
+                record.state = SessionState::Running;
             }
         }
     }
