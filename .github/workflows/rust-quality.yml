@@ -19,6 +19,7 @@ name: Rust correctness tiers
       - 'terminal-emulator/build.gradle*'
   pull_request:
     branches:
+      - fix/engine-adoption
       - master
       - feature/rust-integration
     paths:
@@ -72,6 +73,8 @@ jobs:
         tier: [core, regressions, terminal, lifecycle]
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: dtolnay/rust-toolchain@stable
       - name: Install native test libraries
         run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
@@ -89,7 +92,7 @@ jobs:
         run: |
           {
             echo "### Rust correctness"
-            printf '%s\n' "- headSha: \`${GITHUB_SHA}\`"
+            printf '%s\n' "- headSha: \`$(git rev-parse HEAD)\`"
             printf '%s\n' "- command: \`bash ./scripts/run-rust-tests.sh ${{ matrix.tier }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -100,6 +103,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: dtolnay/rust-toolchain@stable
       - name: Install native test libraries
         run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
@@ -110,6 +115,6 @@ jobs:
         run: |
           {
             echo "### Rust correctness"
-            printf '%s\n' "- headSha: \`${GITHUB_SHA}\`"
+            printf '%s\n' "- headSha: \`$(git rev-parse HEAD)\`"
             printf '%s\n' "- command: \`bash ./scripts/run-rust-tests.sh ${{ inputs.tier }}\`"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -57,3 +57,10 @@ renderer and benchmark tiers must not be used to claim Android GPU correctness.
    documentation.
 6. Add the test name to `run-rust-tests.sh`; do not rely on directory discovery
    as the only registration mechanism.
+
+## Engine ownership slice
+
+See [Engine handle ownership](docs/ENGINE_HANDLE_OWNERSHIP.md) for the token/lease
+contract, complete baseline JNI owner mapping, the registered production-registry
+tests and the real Kotlin/JNI/PTY harness. Memory lifetime, async delivery, reader
+cancellation and actual Surface presentation have separate acceptance boundaries.

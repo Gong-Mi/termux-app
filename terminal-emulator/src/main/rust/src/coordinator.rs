@@ -46,6 +46,18 @@ impl SessionState {
 /// 全局 Session 协调器实例
 static SESSION_COORDINATOR: OnceCell<SessionCoordinator> = OnceCell::new();
 
+/// Forget revoked delivery tokens without starting a process monitor for a
+/// standalone engine. Cached SessionEngineData never owns an engine lease.
+pub(crate) fn discard_engine_data(handle: jni::sys::jlong) {
+    if let Some(coordinator) = SESSION_COORDINATOR.get() {
+        let mut data = coordinator
+            .engine_data_map
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        data.retain(|_, value| value.ptr != handle);
+    }
+}
+
 /// Session 协调器
 pub struct SessionCoordinator {
     pkg_lock: AtomicBool,
@@ -82,6 +94,11 @@ impl SessionCoordinator {
     }
 
     pub fn unregister_session(&self, session_id: usize) {
+        // Remove the pending polling owner before dropping it; destroy may
+        // reenter coordinator cleanup, so never hold engine_data_map here.
+        if let Some(data) = self.take_engine_data(session_id) {
+            crate::engine::destroy_engine(data.ptr);
+        }
         self.update_session_state(session_id, SessionState::Finished);
         let owner = self.pkg_lock_owner.load(Ordering::SeqCst);
         if owner == session_id {
@@ -325,12 +342,16 @@ pub extern "system" fn Java_com_termux_terminal_JNI_pollEngineData(
     _class: JClass,
     session_id: jint,
 ) -> jni::sys::jlongArray {
+    // Allocate before claiming so allocation failure cannot strand a handle.
+    let Ok(j_array) = env.new_long_array(3) else {
+        return std::ptr::null_mut();
+    };
     if let Some(data) = SessionCoordinator::get().take_engine_data(session_id as usize) {
         let res = [data.ptr, data.pty_fd as i64, data.pid as i64];
-        if let Ok(j_array) = env.new_long_array(3) {
-            let _ = env.set_long_array_region(&j_array, 0, &res);
+        if env.set_long_array_region(&j_array, 0, &res).is_ok() {
             j_array.into_raw()
         } else {
+            crate::engine::destroy_engine(data.ptr);
             std::ptr::null_mut()
         }
     } else {

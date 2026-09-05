@@ -21,7 +21,7 @@ def main():
     for name in ('compiler-classpath', 'compile-classpath', 'runtime-classpath', 'output'):
         p.add_argument('--' + name, required=True)
     p.add_argument('--native-library', required=True)
-    p.add_argument('--mode', choices=('contract', 'native'), required=True)
+    p.add_argument('--mode', choices=('contract', 'native', 'handles'), required=True)
     a = p.parse_args()
     repo = Path(__file__).resolve().parents[1]
     Path(a.output).mkdir(parents=True, exist_ok=True)
@@ -68,12 +68,12 @@ def main():
         stub = out / 'RustTerminal.kt'
         stub.write_text(text)
         sources = [s for s in sources if s != original] + [stub]
-    harness = repo / 'scripts/kotlin' / ('EmulatorConstructionContract.kt' if a.mode == 'contract' else 'EmulatorConstructionNative.kt')
+    harness = repo / 'scripts/kotlin' / {'contract': 'EmulatorConstructionContract.kt', 'native': 'EmulatorConstructionNative.kt', 'handles': 'EngineHandleNative.kt'}[a.mode]
     if run('compile', ['java', '-cp', a.compiler_classpath, 'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler',
                       '-no-stdlib', '-no-reflect', '-jvm-target', '21', '-classpath', a.compile_classpath,
                       '-d', classes, *sources, harness]):
         return 1
-    if a.mode == 'native':
+    if a.mode != 'contract':
         lib = Path(a.native_library).resolve(strict=True)
         summary['native_library'] = {'path': str(lib), 'sha256': hashlib.sha256(lib.read_bytes()).hexdigest()}
         native = out / 'build/libs'

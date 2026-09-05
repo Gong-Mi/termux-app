@@ -13,6 +13,7 @@ on:
       - 'terminal-emulator/src/main/rust/**'
   pull_request:
     branches:
+      - fix/engine-adoption
       - master
       - feature/rust-integration
     paths:
@@ -37,6 +38,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -55,6 +58,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -87,6 +92,8 @@ jobs:
     
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -127,6 +134,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable

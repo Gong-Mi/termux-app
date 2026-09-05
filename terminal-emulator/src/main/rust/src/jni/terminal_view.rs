@@ -106,10 +106,11 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetEnginePointer(
     _class: JClass,
     ptr: jlong,
 ) {
-    if let Ok(mut engine_ptr) = crate::render_thread::get_engine_pointer().lock() {
-        *engine_ptr = ptr;
+    // Validation and publication are atomic with destroyEngine's revocation.
+    // An old session callback must not replace a newer binding with a dead handle.
+    if !crate::engine::ENGINE_HANDLES.publish(ptr) {
+        return;
     }
-    crate::render_thread::get_engine_ready().store(ptr != 0, Ordering::SeqCst);
     if ptr != 0 {
         crate::render_thread::try_start_render_thread();
     }
