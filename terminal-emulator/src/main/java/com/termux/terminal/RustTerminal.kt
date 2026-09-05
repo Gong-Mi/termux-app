@@ -4,7 +4,9 @@ package com.termux.terminal
  * Rust Terminal JNI 桥接类
  *
  * 所有与 Rust 引擎的交互都通过这个类进行。
- * 每个方法都调用 JNI  native 方法并传递引擎指针。
+ * 每个方法都调用 JNI native 方法并传递不透明引擎句柄。
+ * enginePtr 的历史参数名保留以兼容 Kotlin 命名参数；Long 不是内存地址，
+ * 不能用于直接内存访问。销毁后原句柄失效，重复销毁为无操作。
  */
 object RustTerminal {
 

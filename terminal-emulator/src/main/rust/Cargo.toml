@@ -110,3 +110,11 @@ path = "tests/vulkan_path_cache_test.rs"
 [[test]]
 name = "vulkan_cache_performance_proof"
 path = "tests/vulkan_cache_performance_proof.rs"
+
+[[test]]
+name = "engine_handle_lifecycle"
+path = "tests/engine_handle_lifecycle.rs"
+
+[[test]]
+name = "engine_handle_integration"
+path = "tests/engine_handle_integration.rs"

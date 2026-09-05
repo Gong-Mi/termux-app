@@ -3,7 +3,7 @@ use jni::sys::jlong;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::engine::TerminalContext;
+use crate::engine::ENGINE_HANDLES;
 use crate::renderer::{RenderFrame, TerminalRenderer};
 use crate::utils::{LogPriority, android_log};
 use crate::vulkan_context::VulkanContext;
@@ -15,11 +15,9 @@ static TERMINAL_RENDERER: OnceCell<Mutex<Option<TerminalRenderer>>> = OnceCell::
 /// 渲染线程控制
 static RENDER_THREAD_RUNNING: AtomicBool = AtomicBool::new(false);
 static RENDER_THREAD_HANDLE: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
-static ENGINE_POINTER: Mutex<jlong> = Mutex::new(0);
 
 /// 状态标志
 static SURFACE_READY: AtomicBool = AtomicBool::new(false);
-static ENGINE_READY: AtomicBool = AtomicBool::new(false);
 
 /// 渲染参数 - 合并为单个结构体，一次锁定获取所有值
 #[derive(Clone, Copy)]
@@ -81,7 +79,8 @@ pub fn request_render() {
 /// 统一的渲染线程启动检查函数
 pub fn try_start_render_thread() {
     let surface_ready = SURFACE_READY.load(Ordering::SeqCst);
-    let engine_ready = ENGINE_READY.load(Ordering::SeqCst);
+    let binding = ENGINE_HANDLES.current();
+    let engine_ready = binding.is_some();
 
     android_log(
         LogPriority::DEBUG,
@@ -94,7 +93,7 @@ pub fn try_start_render_thread() {
     );
 
     if surface_ready && engine_ready {
-        let engine_ptr = *ENGINE_POINTER.lock().unwrap();
+        let engine_ptr = binding.as_ref().map_or(0, |(handle, _)| *handle);
         if engine_ptr != 0 && !RENDER_THREAD_RUNNING.load(Ordering::SeqCst) {
             android_log(
                 LogPriority::INFO,
@@ -219,13 +218,12 @@ fn spawn_render_thread(engine_ptr: jlong) {
                 };
 
                 // 获取 Engine 实例
-                let current_engine_ptr = *ENGINE_POINTER.lock().unwrap();
-                if current_engine_ptr == 0 {
+                // Clone a strong lease under the registry lock. Revocation can
+                // remove future frames, but cannot free this in-flight context.
+                let Some((_handle, term_ctx)) = ENGINE_HANDLES.current() else {
                     std::thread::sleep(std::time::Duration::from_millis(16));
                     continue;
-                }
-
-                let term_ctx = unsafe { &*(current_engine_ptr as *const TerminalContext) };
+                };
 
                 // 一次锁定获取所有渲染参数
                 let params = *RENDER_PARAMS.lock().unwrap();
@@ -408,14 +406,6 @@ pub fn get_terminal_renderer() -> &'static OnceCell<Mutex<Option<TerminalRendere
 
 pub fn get_surface_ready() -> &'static AtomicBool {
     &SURFACE_READY
-}
-
-pub fn get_engine_ready() -> &'static AtomicBool {
-    &ENGINE_READY
-}
-
-pub fn get_engine_pointer() -> &'static Mutex<jlong> {
-    &ENGINE_POINTER
 }
 
 pub fn get_render_params() -> &'static Mutex<RenderParams> {

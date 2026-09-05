@@ -131,7 +131,7 @@ class TerminalSession(
     /** Callback from Rust when async initialization is complete. */
     fun onEngineInitialized(enginePtr: Long, ptyFd: Int, pid: Int) {
         android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 6. onEngineInitialized callback received (pid=$pid)")
-        mMainThreadHandler.post {
+        val accepted = mMainThreadHandler.post {
             android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 7. Running onEngineInitialized logic on MainThread")
             
             // 必须在创建 Emulator 之前先设为 READY，否则 init 块里的 write 调用会被拦截
@@ -148,6 +148,7 @@ class TerminalSession(
             mClient.onTextChanged(this)
             notifyScreenUpdate()
         }
+        if (!accepted) RustTerminal.destroyEngine(enginePtr)
     }
 
     fun isEngineInitialized(): Boolean = mSessionState == SessionState.READY

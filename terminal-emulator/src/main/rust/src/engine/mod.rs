@@ -1,4 +1,5 @@
 pub mod context;
+pub mod handles;
 pub mod decset;
 /// 终端引擎模块
 ///
@@ -21,3 +22,27 @@ pub use context::{TerminalContext, TerminalEngine};
 pub use events::TerminalEvent;
 pub use shared_buffer::{FlatScreenBuffer, SharedBufferPtr, SharedScreenBuffer};
 pub use state::ScreenState;
+
+/// Java Long values are opaque tokens, never addresses. The registry also owns
+/// the renderer binding so publication and revocation share one linearization.
+pub static ENGINE_HANDLES: once_cell::sync::Lazy<handles::EngineHandles<TerminalContext>> =
+    once_cell::sync::Lazy::new(handles::EngineHandles::new);
+
+/// Revoke new JNI/render leases atomically. Existing leases retain memory, but
+/// the legacy IO stop below is NOT proof of reader cancellation or queue drain.
+pub fn destroy_engine(handle: i64) {
+    use std::sync::atomic::Ordering;
+    let Some(context) = ENGINE_HANDLES.remove(handle) else {
+        return;
+    };
+    crate::coordinator::discard_engine_data(handle);
+    context.running.store(false, Ordering::SeqCst);
+    let fd = context.pty_fd.swap(-1, Ordering::SeqCst);
+    if fd != -1 {
+        crate::utils::android_log(
+            crate::utils::LogPriority::INFO,
+            &format!("destroyEngine: Closing original PTY FD {fd}; reader stop not joined"),
+        );
+        unsafe { libc::close(fd) };
+    }
+}

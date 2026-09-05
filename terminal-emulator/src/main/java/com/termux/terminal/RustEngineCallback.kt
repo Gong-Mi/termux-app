@@ -33,7 +33,12 @@ class RustEngineCallback(private val mClient: TerminalSessionClient?) : Terminal
      * Called when the Rust engine and PTY are initialized asynchronously.
      */
     fun onEngineInitialized(enginePtr: Long, ptyFd: Int, pid: Int) {
-        mSession?.onEngineInitialized(enginePtr, ptyFd, pid)
+        val session = mSession
+        if (session == null) {
+            RustTerminal.destroyEngine(enginePtr)
+        } else {
+            session.onEngineInitialized(enginePtr, ptyFd, pid)
+        }
     }
 
     override fun reportTitleChange(title: String?) {

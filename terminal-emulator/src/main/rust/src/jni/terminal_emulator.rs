@@ -11,6 +11,21 @@ use crate::terminal::colors::TerminalColors;
 use crate::terminal::modes::*;
 use crate::utils::{LogPriority, android_log};
 
+/// Rolls back registry ownership if async delivery fails or unwinds. Reader
+/// cancellation/join remains a separate IO contract; revocation is not a join.
+struct PendingEngineDelivery {
+    handle: jlong,
+    delivered: bool,
+}
+
+impl Drop for PendingEngineDelivery {
+    fn drop(&mut self) {
+        if !self.delivered {
+            crate::engine::destroy_engine(self.handle);
+        }
+    }
+}
+
 /// 将事件刷新到 Java 侧
 pub fn flush_events_to_java(
     env: &mut JNIEnv,
@@ -107,7 +122,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_createEngine(
         }
     }
     let context = Arc::new(TerminalContext::new(engine));
-    Arc::into_raw(context) as jlong
+    crate::engine::ENGINE_HANDLES.insert(context).unwrap_or(0)
 }
 
 /// 批量处理
@@ -122,7 +137,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatch(
     if ptr == 0 || batch.is_null() {
         return;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return;
+    };
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let (events, cb) = {
             let mut engine = crate::safe_write!(context.lock);
@@ -141,7 +158,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processBatch(
         flush_events_to_java(&mut env, &cb, events);
         render_thread::request_render();
     }));
-    let _ = Arc::into_raw(context);
 }
 
 /// 处理用户输入（写回 PTY）
@@ -157,7 +173,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processInput(
     if ptr == 0 || data.is_null() {
         return;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return;
+    };
 
     let fd = context.pty_fd.load(Ordering::SeqCst);
     if fd != -1 {
@@ -176,8 +194,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processInput(
             }
         }
     }
-
-    let _ = Arc::into_raw(context);
 }
 
 /// 启动 IO 线程
@@ -191,9 +207,10 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_startIoThread(
     if ptr == 0 {
         return;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return;
+    };
     TerminalContext::start_io_thread(Arc::clone(&context), pty_fd);
-    let _ = Arc::into_raw(context);
 }
 
 /// 销毁引擎实例
@@ -206,23 +223,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_destroyEngine(
     if ptr == 0 {
         return;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
-
-    // 强制关闭逻辑：彻底消灭幻影线程
-    context.running.store(false, Ordering::SeqCst);
-    let fd = context.pty_fd.swap(-1, Ordering::SeqCst);
-    if fd != -1 {
-        android_log(
-            LogPriority::INFO,
-            &format!(
-                "JNI: destroyEngine - Closing PTY FD {} to kill IO thread",
-                fd
-            ),
-        );
-        unsafe {
-            libc::close(fd);
-        }
-    }
+    crate::engine::destroy_engine(ptr);
 }
 
 /// 处理 Unicode 码点
@@ -236,7 +237,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processCodePoint(
     if ptr == 0 {
         return;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return;
+    };
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let (events, cb) = {
             let mut engine = crate::safe_write!(context.lock);
@@ -246,7 +249,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_processCodePoint(
         flush_events_to_java(&mut env, &cb, events);
         render_thread::request_render();
     }));
-    let _ = Arc::into_raw(context);
 }
 
 /// 设置历史记录行数
@@ -260,12 +262,13 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_setTranscriptRows(
     if ptr == 0 {
         return;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return;
+    };
     {
         let mut engine = crate::safe_write!(context.lock);
         engine.state.main_screen.resize_transcript(rows as usize);
     }
-    let _ = Arc::into_raw(context);
 }
 
 /// 处理尺寸调整
@@ -282,7 +285,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_resize(
     if ptr == 0 {
         return;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return;
+    };
     let (events, cb) = {
         let mut engine = crate::safe_write!(context.lock);
         engine.state.resize(cols, rows);
@@ -291,7 +296,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_resize(
     };
     render_thread::request_render();
     flush_events_to_java(&mut env, &cb, events);
-    let _ = Arc::into_raw(context);
 }
 
 /// 获取标题
@@ -304,7 +308,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getTitle(
     if ptr == 0 {
         return std::ptr::null_mut();
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return std::ptr::null_mut();
+    };
     let title = {
         let engine = crate::safe_read!(context.lock);
         engine.state.title.clone().unwrap_or_default()
@@ -314,7 +320,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getTitle(
     } else {
         std::ptr::null_mut()
     };
-    let _ = Arc::into_raw(context);
     result
 }
 
@@ -328,12 +333,13 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getCursorRow(
     if ptr == 0 {
         return 0;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return 0;
+    };
     let result = {
         let engine = crate::safe_read!(context.lock);
         engine.state.cursor.y as jint
     };
-    let _ = Arc::into_raw(context);
     result
 }
 
@@ -347,12 +353,13 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getCursorCol(
     if ptr == 0 {
         return 0;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return 0;
+    };
     let result = {
         let engine = crate::safe_read!(context.lock);
         engine.state.cursor.x as jint
     };
-    let _ = Arc::into_raw(context);
     result
 }
 
@@ -366,12 +373,13 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getCursorStyle(
     if ptr == 0 {
         return 0;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return 0;
+    };
     let result = {
         let engine = crate::safe_read!(context.lock);
         engine.state.cursor.style as jint
     };
-    let _ = Arc::into_raw(context);
     result
 }
 
@@ -386,7 +394,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorStyle(
     if ptr == 0 {
         return;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return;
+    };
     let (events, cb) = {
         let mut engine = crate::safe_write!(context.lock);
         engine.state.cursor.style = cursor_style as i32;
@@ -394,7 +404,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorStyle(
     };
     render_thread::request_render();
     flush_events_to_java(&mut env, &cb, events);
-    let _ = Arc::into_raw(context);
 }
 
 /// DECSET/DECRST
@@ -409,7 +418,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_doDecSetOrReset(
     if ptr == 0 {
         return;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return;
+    };
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let (events, cb) = {
             let mut engine = crate::safe_write!(context.lock);
@@ -419,7 +430,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_doDecSetOrReset(
         render_thread::request_render();
         flush_events_to_java(&mut env, &cb, events);
     }));
-    let _ = Arc::into_raw(context);
 }
 
 /// 光标可见性检查
@@ -432,7 +442,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_shouldCursorBeVisib
     if ptr == 0 {
         return 0;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return 0;
+    };
     let result = {
         let engine = crate::safe_read!(context.lock);
         if engine
@@ -445,7 +457,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_shouldCursorBeVisib
             0
         }
     };
-    let _ = Arc::into_raw(context);
     result
 }
 
@@ -458,12 +469,13 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isCursorEnabled(
     if ptr == 0 {
         return 0;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return 0;
+    };
     let result = {
         let engine = crate::safe_read!(context.lock);
         if engine.state.cursor_enabled { 1 } else { 0 }
     };
-    let _ = Arc::into_raw(context);
     result
 }
 
@@ -476,7 +488,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isReverseVideo(
     if ptr == 0 {
         return 0;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return 0;
+    };
     let result = {
         let engine = crate::safe_read!(context.lock);
         if engine.state.modes.is_enabled(DECSET_BIT_REVERSE_VIDEO) {
@@ -485,7 +499,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isReverseVideo(
             0
         }
     };
-    let _ = Arc::into_raw(context);
     result
 }
 
@@ -498,7 +511,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isAlternateBufferAc
     if ptr == 0 {
         return 0;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return 0;
+    };
     let result = {
         let engine = crate::safe_read!(context.lock);
         if engine.state.use_alternate_buffer {
@@ -507,7 +522,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isAlternateBufferAc
             0
         }
     };
-    let _ = Arc::into_raw(context);
     result
 }
 
@@ -520,7 +534,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isCursorKeysApplica
     if ptr == 0 {
         return 0;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return 0;
+    };
     let result = {
         let engine = crate::safe_read!(context.lock);
         if engine.state.application_cursor_keys {
@@ -529,7 +545,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isCursorKeysApplica
             0
         }
     };
-    let _ = Arc::into_raw(context);
     result
 }
 
@@ -542,7 +557,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isKeypadApplication
     if ptr == 0 {
         return 0;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return 0;
+    };
     let result = {
         let engine = crate::safe_read!(context.lock);
         if engine.state.modes.is_enabled(DECSET_BIT_APPLICATION_KEYPAD) {
@@ -551,7 +568,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isKeypadApplication
             0
         }
     };
-    let _ = Arc::into_raw(context);
     result
 }
 
@@ -564,12 +580,13 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isMouseTrackingActi
     if ptr == 0 {
         return 0;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return 0;
+    };
     let result = {
         let engine = crate::safe_read!(context.lock);
         if engine.state.mouse_tracking { 1 } else { 0 }
     };
-    let _ = Arc::into_raw(context);
     result
 }
 
@@ -591,12 +608,13 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getScrollCounter(
     if ptr == 0 {
         return 0;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return 0;
+    };
     let result = {
         let engine = crate::safe_read!(context.lock);
         engine.state.scroll_counter as jint
     };
-    let _ = Arc::into_raw(context);
     result
 }
 
@@ -609,12 +627,13 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getRows(
     if ptr == 0 {
         return 0;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return 0;
+    };
     let result = {
         let engine = crate::safe_read!(context.lock);
         engine.state.rows as jint
     };
-    let _ = Arc::into_raw(context);
     result
 }
 
@@ -627,12 +646,13 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getCols(
     if ptr == 0 {
         return 0;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return 0;
+    };
     let result = {
         let engine = crate::safe_read!(context.lock);
         engine.state.cols as jint
     };
-    let _ = Arc::into_raw(context);
     result
 }
 
@@ -649,7 +669,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_readRow(
     if ptr == 0 {
         return;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return;
+    };
     let (text_buf, style_buf) = {
         let engine = crate::safe_read!(context.lock);
         let cols = engine.state.cols as usize;
@@ -666,7 +688,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_readRow(
         let _ = env.set_int_array_region(&j_text, 0, &text_buf);
         let _ = env.set_long_array_region(&j_styles, 0, &style_buf);
     }
-    let _ = Arc::into_raw(context);
 }
 
 /// 获取选中文本
@@ -683,7 +704,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getSelectedText(
     if ptr == 0 {
         return std::ptr::null_mut();
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return std::ptr::null_mut();
+    };
 
     // 规范化坐标：确保 (x1, y1) 在 (x2, y2) 之前
     let (real_x1, real_y1, real_x2, real_y2) = if y1 < y2 || (y1 == y2 && x1 <= x2) {
@@ -704,7 +727,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getSelectedText(
     } else {
         std::ptr::null_mut()
     };
-    let _ = Arc::into_raw(context);
     result
 }
 
@@ -720,7 +742,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getWordAtLocation(
     if ptr == 0 {
         return std::ptr::null_mut();
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return std::ptr::null_mut();
+    };
     let text = {
         let engine = crate::safe_read!(context.lock);
         engine
@@ -734,7 +758,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getWordAtLocation(
     } else {
         std::ptr::null_mut()
     };
-    let _ = Arc::into_raw(context);
     result
 }
 
@@ -748,7 +771,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getTranscriptText(
     if ptr == 0 {
         return std::ptr::null_mut();
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return std::ptr::null_mut();
+    };
     let text = {
         let engine = crate::safe_read!(context.lock);
         engine.state.get_current_screen().get_transcript_text()
@@ -758,7 +783,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getTranscriptText(
     } else {
         std::ptr::null_mut()
     };
-    let _ = Arc::into_raw(context);
     result
 }
 
@@ -772,14 +796,15 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_clearScrollCounter(
     if ptr == 0 {
         return;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return;
+    };
     let (events, cb) = {
         let mut engine = crate::safe_write!(context.lock);
         engine.state.scroll_counter = 0;
         (engine.take_events(), engine.state.java_callback_obj.clone())
     };
     flush_events_to_java(&mut env, &cb, events);
-    let _ = Arc::into_raw(context);
 }
 
 /// 自动滚动设置
@@ -792,7 +817,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isAutoScrollDisable
     if ptr == 0 {
         return 0;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return 0;
+    };
     let result = {
         let engine = crate::safe_read!(context.lock);
         if engine.state.auto_scroll_disabled {
@@ -801,7 +828,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isAutoScrollDisable
             0
         }
     };
-    let _ = Arc::into_raw(context);
     result
 }
 
@@ -814,14 +840,15 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_toggleAutoScrollDis
     if ptr == 0 {
         return;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return;
+    };
     let (events, cb) = {
         let mut engine = crate::safe_write!(context.lock);
         engine.state.auto_scroll_disabled = !engine.state.auto_scroll_disabled;
         (engine.take_events(), engine.state.java_callback_obj.clone())
     };
     flush_events_to_java(&mut env, &cb, events);
-    let _ = Arc::into_raw(context);
 }
 
 /// 鼠标事件
@@ -838,7 +865,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_sendMouseEvent(
     if ptr == 0 {
         return;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return;
+    };
     let (events, cb) = {
         let mut engine = crate::safe_write!(context.lock);
         engine
@@ -847,7 +876,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_sendMouseEvent(
         (engine.take_events(), engine.state.java_callback_obj.clone())
     };
     flush_events_to_java(&mut env, &cb, events);
-    let _ = Arc::into_raw(context);
 }
 
 /// 按键码处理
@@ -872,7 +900,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_sendKeyCode(
     } else {
         String::new()
     };
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return std::ptr::null_mut();
+    };
 
     let seq = {
         let mut engine = crate::safe_write!(context.lock);
@@ -880,7 +910,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_sendKeyCode(
             .state
             .send_key_event(key_code, Some(rust_str), meta_state)
     };
-    let _ = Arc::into_raw(context);
 
     match seq {
         Some(s) => match env.new_string(s) {
@@ -910,14 +939,15 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_pasteText(
     };
 
     if let Some(s) = rust_str {
-        let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+        let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+            return;
+        };
         let (events, cb) = {
             let mut engine = crate::safe_write!(context.lock);
             engine.state.paste(&s);
             (engine.take_events(), engine.state.java_callback_obj.clone())
         };
         flush_events_to_java(&mut env, &cb, events);
-        let _ = Arc::into_raw(context);
     }
 }
 
@@ -931,12 +961,13 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getActiveTranscript
     if ptr == 0 {
         return 0;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return 0;
+    };
     let result = {
         let engine = crate::safe_read!(context.lock);
         engine.state.get_current_screen().active_transcript_rows as jint
     };
-    let _ = Arc::into_raw(context);
     result
 }
 
@@ -950,7 +981,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getColors(
     if ptr == 0 {
         return std::ptr::null_mut();
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return std::ptr::null_mut();
+    };
     let colors = {
         let engine = crate::safe_read!(context.lock);
         engine.state.colors.current_colors
@@ -968,7 +1001,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getColors(
     } else {
         std::ptr::null_mut()
     };
-    let _ = Arc::into_raw(context);
     result
 }
 
@@ -982,7 +1014,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_resetColors(
     if ptr == 0 {
         return;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return;
+    };
 
     let (events, cb) = {
         let mut engine = crate::safe_write!(context.lock);
@@ -993,7 +1027,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_resetColors(
     };
 
     flush_events_to_java(&mut env, &cb, events);
-    let _ = Arc::into_raw(context);
 }
 
 /// 更新颜色
@@ -1008,7 +1041,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_updateColors(
         return;
     }
 
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return;
+    };
 
     let props_map = {
         let mut map = std::collections::HashMap::new();
@@ -1100,7 +1135,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_updateColors(
     };
 
     flush_events_to_java(&mut env, &cb, events);
-    let _ = Arc::into_raw(context);
 }
 
 /// 设置光标颜色
@@ -1114,7 +1148,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorColorForBa
         return;
     }
 
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return;
+    };
 
     let (events, cb) = {
         let mut engine = crate::safe_write!(context.lock);
@@ -1126,7 +1162,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorColorForBa
     };
 
     flush_events_to_java(&mut env, &cb, events);
-    let _ = Arc::into_raw(context);
 }
 
 /// 获取感知亮度
@@ -1151,7 +1186,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_updateTerminalSessi
     if ptr == 0 {
         return;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return;
+    };
     let (events, cb) = {
         let mut engine = crate::safe_write!(context.lock);
         if client.is_null() {
@@ -1164,7 +1201,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_updateTerminalSessi
         (engine.take_events(), engine.state.java_callback_obj.clone())
     };
     flush_events_to_java(&mut env, &cb, events);
-    let _ = Arc::into_raw(context);
 }
 
 /// 设置光标闪烁状态
@@ -1178,7 +1214,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorBlinkState
     if ptr == 0 {
         return;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return;
+    };
     let (events, cb) = {
         let mut engine = crate::safe_write!(context.lock);
         engine.state.cursor.blink_state = state != 0;
@@ -1186,7 +1224,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorBlinkState
     };
     render_thread::request_render();
     flush_events_to_java(&mut env, &cb, events);
-    let _ = Arc::into_raw(context);
 }
 
 #[unsafe(no_mangle)]
@@ -1199,7 +1236,9 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorBlinkingEn
     if ptr == 0 {
         return;
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return;
+    };
     let (events, cb) = {
         let mut engine = crate::safe_write!(context.lock);
         engine.state.cursor.blinking_enabled = enabled != 0;
@@ -1207,7 +1246,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorBlinkingEn
     };
     render_thread::request_render();
     flush_events_to_java(&mut env, &cb, events);
-    let _ = Arc::into_raw(context);
 }
 
 /// 获取调试信息
@@ -1221,7 +1259,10 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getDebugInfo(
         let empty = env.new_string("TerminalEmulator[destroyed]").ok();
         return empty.map_or(std::ptr::null_mut(), |s| s.into_raw());
     }
-    let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        let empty = env.new_string("TerminalEmulator[destroyed]").ok();
+        return empty.map_or(std::ptr::null_mut(), |s| s.into_raw());
+    };
     let debug_info = {
         let engine = crate::safe_read!(context.lock);
         engine.state.get_debug_info()
@@ -1231,7 +1272,6 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getDebugInfo(
     } else {
         std::ptr::null_mut()
     };
-    let _ = Arc::into_raw(context);
     result
 }
 
@@ -1314,11 +1354,19 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
         }
     }
 
-    let callback_ref = if !callback.is_null() {
+    // Null callback selects the legacy polling delivery API. A non-null
+    // callback selects push delivery; never publish the same owner twice.
+    let poll_delivery = callback.is_null();
+    let callback_ref = if !poll_delivery {
         env.new_global_ref(callback).ok()
     } else {
         None
     };
+
+    if !poll_delivery && callback_ref.is_none() {
+        android_log(LogPriority::ERROR, "createSessionAsync: callback global reference failed");
+        return;
+    }
 
     std::thread::spawn(move || {
         let result = std::panic::catch_unwind(move || {
@@ -1365,7 +1413,12 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
             }
 
             let context = Arc::new(TerminalContext::new(engine));
-            let context_ptr = Arc::into_raw(context.clone());
+            let Some(context_handle) = crate::engine::ENGINE_HANDLES.insert(Arc::clone(&context)) else {
+                // No handle was published and no reader owns a duplicate yet.
+                unsafe { libc::close(pty_fd) };
+                return;
+            };
+            let mut pending = PendingEngineDelivery { handle: context_handle, delivered: false };
 
             // 关键修复：必须存储 pty_fd，否则 processInput 无法写入输入
             context.pty_fd.store(pty_fd as i32, Ordering::SeqCst);
@@ -1376,16 +1429,26 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
             );
             // 使用 dup 确保 IO 线程持有独立的 FD 引用
             let dup_fd = unsafe { libc::dup(pty_fd) };
+            if dup_fd < 0 {
+                android_log(LogPriority::ERROR, "createSessionAsync: dup failed");
+                return;
+            }
             TerminalContext::start_io_thread(Arc::clone(&context), dup_fd);
 
-            coordinator.set_engine_data(
-                session_id,
-                crate::coordinator::SessionEngineData {
-                    ptr: context_ptr as jlong,
-                    pty_fd: pty_fd as i32,
-                    pid: pid as i32,
-                },
-            );
+            if poll_delivery {
+                coordinator.set_engine_data(
+                    session_id,
+                    crate::coordinator::SessionEngineData {
+                        ptr: context_handle,
+                        pty_fd: pty_fd as i32,
+                        pid: pid as i32,
+                    },
+                );
+                // The coordinator owns this unclaimed delivery until poll or
+                // unregister. Callback delivery does not also populate the map.
+                pending.delivered = true;
+                return;
+            }
             crate::utils::android_log(
                 crate::utils::LogPriority::INFO,
                 &format!(
@@ -1398,20 +1461,25 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
             if let Some(ref cb) = callback_ref {
                 if let Some(vm) = crate::JAVA_VM.get() {
                     if let Ok(mut env) = vm.attach_current_thread() {
-                        let _ = env.call_method(
+                        let delivered = env.call_method(
                             cb.as_obj(),
                             "onEngineInitialized",
                             "(JII)V",
                             &[
-                                jni::objects::JValue::Long(context_ptr as jlong),
+                                jni::objects::JValue::Long(context_handle),
                                 jni::objects::JValue::Int(pty_fd as i32),
                                 jni::objects::JValue::Int(pid as i32),
                             ],
                         );
-                        crate::utils::android_log(
-                            crate::utils::LogPriority::INFO,
-                            "[TRACE_SESSION] 5.6. Java onEngineInitialized callback executed.",
-                        );
+                        pending.delivered = delivered.is_ok();
+                        if pending.delivered {
+                            crate::utils::android_log(
+                                crate::utils::LogPriority::INFO,
+                                "[TRACE_SESSION] 5.6. Java onEngineInitialized callback executed.",
+                            );
+                        } else {
+                            android_log(LogPriority::ERROR, "createSessionAsync: callback rejected");
+                        }
                     }
                 }
             }
