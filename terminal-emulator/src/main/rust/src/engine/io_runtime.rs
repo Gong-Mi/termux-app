@@ -226,16 +226,16 @@ fn run(
             return StopOutcome::Cancelled;
         }
         let resize = shared.pending.lock().unwrap().resize.take();
-        if let Some(size) = resize {
-            if unsafe { libc::ioctl(fd, libc::TIOCSWINSZ, &size) } < 0 {
-                let error = io::Error::last_os_error();
-                if error.raw_os_error() == Some(libc::EINTR) {
-                    // Preserve interrupted command unless a newer one superseded it.
-                    shared.pending.lock().unwrap().resize.get_or_insert(size);
-                    continue;
-                }
-                return StopOutcome::IoError(error);
+        if let Some(size) = resize
+            && unsafe { libc::ioctl(fd, libc::TIOCSWINSZ, &size) } < 0
+        {
+            let error = io::Error::last_os_error();
+            if error.raw_os_error() == Some(libc::EINTR) {
+                // Preserve interrupted command unless a newer one superseded it.
+                shared.pending.lock().unwrap().resize.get_or_insert(size);
+                continue;
             }
+            return StopOutcome::IoError(error);
         }
         if head.is_none() {
             head = shared
@@ -321,26 +321,27 @@ fn run(
         if shared.closed.load(Ordering::Acquire) {
             return StopOutcome::Cancelled;
         }
-        if ready & libc::POLLOUT != 0 && ready & libc::POLLHUP == 0 {
-            if let Some((bytes, offset)) = head.as_mut() {
-                let count = (bytes.len() - *offset).min(16 * 1024);
-                let n = unsafe { libc::write(fd, bytes[*offset..].as_ptr().cast(), count) };
-                if n < 0 {
-                    let error = io::Error::last_os_error();
-                    if !retryable(&error) {
-                        return StopOutcome::IoError(error);
-                    }
-                } else if n == 0 {
-                    return StopOutcome::IoError(io::Error::new(
-                        io::ErrorKind::WriteZero,
-                        "PTY write returned zero",
-                    ));
-                } else {
-                    *offset += n as usize;
-                    shared.pending.lock().unwrap().bytes -= n as usize;
-                    if *offset == bytes.len() {
-                        head = None;
-                    }
+        if ready & libc::POLLOUT != 0
+            && ready & libc::POLLHUP == 0
+            && let Some((bytes, offset)) = head.as_mut()
+        {
+            let count = (bytes.len() - *offset).min(16 * 1024);
+            let n = unsafe { libc::write(fd, bytes[*offset..].as_ptr().cast(), count) };
+            if n < 0 {
+                let error = io::Error::last_os_error();
+                if !retryable(&error) {
+                    return StopOutcome::IoError(error);
+                }
+            } else if n == 0 {
+                return StopOutcome::IoError(io::Error::new(
+                    io::ErrorKind::WriteZero,
+                    "PTY write returned zero",
+                ));
+            } else {
+                *offset += n as usize;
+                shared.pending.lock().unwrap().bytes -= n as usize;
+                if *offset == bytes.len() {
+                    head = None;
                 }
             }
         }
