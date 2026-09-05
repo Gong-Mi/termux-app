@@ -51,8 +51,8 @@ pub const COLOR_INDEX_CURSOR: usize = 258;
 pub const NUM_INDEXED_COLORS: usize = 259;
 
 /// 感知亮度计算的系数（来自 Java TerminalColors.getPerceivedBrightnessOfColor）
-/// https://www.nbdtech.com/Blog/archive/2008/04/27/Calculating-the-Perceived-Brightness-of-a-Color.aspx
-/// http://alienryderflex.com/hsp.html
+/// <https://www.nbdtech.com/Blog/archive/2008/04/27/Calculating-the-Perceived-Brightness-of-a-Color.aspx>
+/// <http://alienryderflex.com/hsp.html>
 const BRIGHTNESS_R_COEF: f64 = 0.241;
 const BRIGHTNESS_G_COEF: f64 = 0.691;
 const BRIGHTNESS_B_COEF: f64 = 0.068;

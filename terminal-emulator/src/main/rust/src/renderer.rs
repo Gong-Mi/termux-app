@@ -24,7 +24,7 @@ pub struct RenderFrame {
     pub cursor_enabled: bool,
     pub reverse_video: bool,
     pub top_row: i32,
-    /// 预计算的行数据: (text: Vec<char>, styles: Vec<u64>, hash: u64)
+    /// 预计算的行数据: `(text: Vec<char>, styles: Vec<u64>, hash: u64)`
     pub row_data: Vec<(Vec<char>, Vec<u64>, u64)>,
 }
 

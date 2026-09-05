@@ -56,9 +56,9 @@ pub const ESC_CSI_EXCLAMATION: u8 = 19;
 pub const ESC_APC: u8 = 20;
 /// 转义处理："ESC _" APC 后跟 ESC
 pub const ESC_APC_ESCAPE: u8 = 21;
-/// 转义处理：ESC [ <parameter bytes>
+/// 转义处理：`ESC [ <parameter bytes>`
 pub const ESC_CSI_UNSUPPORTED_PARAMETER_BYTE: u8 = 22;
-/// 转义处理：ESC [ <parameter bytes> <intermediate bytes>
+/// 转义处理：`ESC [ <parameter bytes> <intermediate bytes>`
 pub const ESC_CSI_UNSUPPORTED_INTERMEDIATE_BYTE: u8 = 23;
 
 // =============================================================================
