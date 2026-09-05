@@ -320,6 +320,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getTitle(
     } else {
         std::ptr::null_mut()
     };
+    drop(context);
     result
 }
 
@@ -340,6 +341,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getCursorRow(
         let engine = crate::safe_read!(context.lock);
         engine.state.cursor.y as jint
     };
+    drop(context);
     result
 }
 
@@ -360,6 +362,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getCursorCol(
         let engine = crate::safe_read!(context.lock);
         engine.state.cursor.x as jint
     };
+    drop(context);
     result
 }
 
@@ -380,6 +383,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getCursorStyle(
         let engine = crate::safe_read!(context.lock);
         engine.state.cursor.style as jint
     };
+    drop(context);
     result
 }
 
@@ -457,6 +461,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_shouldCursorBeVisib
             0
         }
     };
+    drop(context);
     result
 }
 
@@ -476,6 +481,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isCursorEnabled(
         let engine = crate::safe_read!(context.lock);
         if engine.state.cursor_enabled { 1 } else { 0 }
     };
+    drop(context);
     result
 }
 
@@ -499,6 +505,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isReverseVideo(
             0
         }
     };
+    drop(context);
     result
 }
 
@@ -522,6 +529,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isAlternateBufferAc
             0
         }
     };
+    drop(context);
     result
 }
 
@@ -545,6 +553,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isCursorKeysApplica
             0
         }
     };
+    drop(context);
     result
 }
 
@@ -568,6 +577,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isKeypadApplication
             0
         }
     };
+    drop(context);
     result
 }
 
@@ -587,6 +597,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isMouseTrackingActi
         let engine = crate::safe_read!(context.lock);
         if engine.state.mouse_tracking { 1 } else { 0 }
     };
+    drop(context);
     result
 }
 
@@ -615,6 +626,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getScrollCounter(
         let engine = crate::safe_read!(context.lock);
         engine.state.scroll_counter as jint
     };
+    drop(context);
     result
 }
 
@@ -634,6 +646,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getRows(
         let engine = crate::safe_read!(context.lock);
         engine.state.rows as jint
     };
+    drop(context);
     result
 }
 
@@ -653,6 +666,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getCols(
         let engine = crate::safe_read!(context.lock);
         engine.state.cols as jint
     };
+    drop(context);
     result
 }
 
@@ -727,6 +741,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getSelectedText(
     } else {
         std::ptr::null_mut()
     };
+    drop(context);
     result
 }
 
@@ -758,6 +773,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getWordAtLocation(
     } else {
         std::ptr::null_mut()
     };
+    drop(context);
     result
 }
 
@@ -783,6 +799,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getTranscriptText(
     } else {
         std::ptr::null_mut()
     };
+    drop(context);
     result
 }
 
@@ -828,6 +845,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_isAutoScrollDisable
             0
         }
     };
+    drop(context);
     result
 }
 
@@ -968,6 +986,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getActiveTranscript
         let engine = crate::safe_read!(context.lock);
         engine.state.get_current_screen().active_transcript_rows as jint
     };
+    drop(context);
     result
 }
 
@@ -1001,6 +1020,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getColors(
     } else {
         std::ptr::null_mut()
     };
+    drop(context);
     result
 }
 
@@ -1272,6 +1292,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_getDebugInfo(
     } else {
         std::ptr::null_mut()
     };
+    drop(context);
     result
 }
 
