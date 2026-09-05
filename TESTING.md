@@ -64,6 +64,20 @@ are cold; measure restore/save overhead and later warm runs before claiming a
 speedup. `python3 scripts/verify-test-build-ci.py` validates these static contracts
 (requires PyYAML).
 
+## Known-child process owner (C1)
+
+`process_owner` and `session_process_lifecycle` are registered in lifecycle/all.
+They exercise real subprocess exit/reaping, retained status, concurrent wait/kill,
+forced old-kernel fallback, unregister/late binding, and input rejection while
+an independently held IO peer can still deliver tail bytes. The numeric-label
+injection test is not actual kernel PID reuse; pidfd availability must be read
+from test output rather than inferred from a passing fallback case.
+
+`python3 scripts/verify-process-owner-boundary.py` verifies the static native/JNI/
+Kotlin wiring. It is not proof of kernel syscall execution or ART interaction.
+Process exit does not imply reader EOF, full output drain, UI completion, final
+frame presentation or disposal; those remain separate acceptance work.
+
 ## Required CI behavior
 
 - `cargo fmt -- --check` and `cargo clippy --all-targets --all-features -- -D warnings`

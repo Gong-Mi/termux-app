@@ -255,49 +255,106 @@ impl<T> JoinHandleExt for thread::JoinHandle<T> {
 
 #[test]
 fn test_frame_backpressure_simulation() {
-    // 模拟 3 帧 swapchain 缓冲
-    const SWAPCHAIN_IMAGES: usize = 3;
-    let in_flight = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    use std::collections::VecDeque;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::mpsc;
 
+    // A host-side synchronization model, not a GPU or production-renderer test.
+    // Completion permits replace sleeps: no frame can finish before it is released.
+    // Three concurrent frames do not have a serial 100ms / 8ms throughput bound.
+    const SWAPCHAIN_IMAGES: usize = 3;
+    const REFILL_ROUNDS: usize = 8;
+    let in_flight = Arc::new(AtomicUsize::new(0));
+    let completed = Arc::new(AtomicUsize::new(0));
+    let mut workers = VecDeque::new();
     let mut frames_submitted = 0;
     let mut frames_blocked = 0;
-    let start = Instant::now();
 
-    // 模拟渲染循环：每 1ms 提交一帧，GPU 处理需要 8ms
-    while start.elapsed() < Duration::from_millis(100) {
-        let count = in_flight.load(Ordering::SeqCst);
-        if count >= SWAPCHAIN_IMAGES {
-            // 模拟 acquire_next_image 阻塞（无可用图像）
-            frames_blocked += 1;
-            // 等待一帧的 GPU 完成
-            thread::sleep(Duration::from_millis(8));
-            in_flight.fetch_sub(1, Ordering::SeqCst);
-        } else {
-            in_flight.fetch_add(1, Ordering::SeqCst);
-            frames_submitted += 1;
-            // GPU 异步处理，8ms 后完成
-            let in_flight_clone = in_flight.clone();
-            thread::spawn(move || {
-                thread::sleep(Duration::from_millis(8));
-                in_flight_clone.fetch_sub(1, Ordering::SeqCst);
-            });
+    let try_submit = || {
+        loop {
+            let count = in_flight.load(Ordering::SeqCst);
+            if count >= SWAPCHAIN_IMAGES {
+                return None;
+            }
+            if in_flight
+                .compare_exchange_weak(count, count + 1, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                break;
+            }
         }
+        let (release, permit) = mpsc::channel();
+        let in_flight = Arc::clone(&in_flight);
+        let completed = Arc::clone(&completed);
+        let worker = thread::spawn(move || {
+            if permit.recv().is_ok() {
+                // Only the completion owner releases capacity, exactly once.
+                let previous = in_flight.fetch_sub(1, Ordering::SeqCst);
+                assert!((1..=SWAPCHAIN_IMAGES).contains(&previous));
+                completed.fetch_add(1, Ordering::SeqCst);
+            }
+        });
+        Some((release, worker))
+    };
+    // Snapshots are taken only while workers are gated or after joining the
+    // released worker, so the two completion atomics cannot be read mid-update.
+    let assert_state = |submitted, expected_completed, expected_in_flight| {
+        let active = in_flight.load(Ordering::SeqCst);
+        let finished = completed.load(Ordering::SeqCst);
+        assert_eq!(active, expected_in_flight);
+        assert_eq!(finished, expected_completed);
+        assert!(active <= SWAPCHAIN_IMAGES);
+        assert_eq!(
+            submitted,
+            finished + active,
+            "frame accounting must balance"
+        );
+    };
+
+    for _ in 0..SWAPCHAIN_IMAGES {
+        workers.push_back(try_submit().expect("initial capacity must be available"));
+        frames_submitted += 1;
+        assert_state(frames_submitted, 0, frames_submitted);
     }
 
+    for round in 0..REFILL_ROUNDS {
+        assert!(try_submit().is_none(), "full queue must reject submission");
+        frames_blocked += 1;
+        assert_state(frames_submitted, round, SWAPCHAIN_IMAGES);
+
+        let (release, worker) = workers.pop_front().unwrap();
+        release.send(()).unwrap();
+        worker
+            .join()
+            .expect("completion worker must exit successfully");
+        assert_state(frames_submitted, round + 1, SWAPCHAIN_IMAGES - 1);
+
+        workers.push_back(try_submit().expect("one completion must free one slot"));
+        frames_submitted += 1;
+        assert_state(frames_submitted, round + 1, SWAPCHAIN_IMAGES);
+        assert!(
+            try_submit().is_none(),
+            "only one replacement may be admitted"
+        );
+        frames_blocked += 1;
+        assert_state(frames_submitted, round + 1, SWAPCHAIN_IMAGES);
+    }
+
+    // Drain every remaining frame; no detached worker or outstanding capacity.
+    let mut expected_completed = REFILL_ROUNDS;
+    while let Some((release, worker)) = workers.pop_front() {
+        release.send(()).unwrap();
+        worker
+            .join()
+            .expect("completion worker must exit successfully");
+        expected_completed += 1;
+        assert_state(frames_submitted, expected_completed, workers.len());
+    }
+    assert_eq!(frames_submitted, SWAPCHAIN_IMAGES + REFILL_ROUNDS);
+    assert_eq!(frames_blocked, 2 * REFILL_ROUNDS);
+    assert_state(frames_submitted, frames_submitted, 0);
     eprintln!(
-        "Frames submitted: {}, frames blocked: {}",
-        frames_submitted, frames_blocked
-    );
-
-    // 验证：在 100ms 内，3 帧缓冲 + 8ms GPU 延迟 → 应该阻塞多次
-    assert!(
-        frames_blocked > 0,
-        "Expected some frame blocking with GPU backpressure"
-    );
-
-    // 验证：总帧数不应超过理论上限（100ms / 8ms ≈ 12 帧 + 3 缓冲 ≈ 15）
-    assert!(
-        frames_submitted + frames_blocked < 25,
-        "Too many frames submitted, backpressure not working correctly"
+        "Frames submitted: {frames_submitted}, frames blocked: {frames_blocked}, \
+         frames completed: {expected_completed}, in flight: 0"
     );
 }

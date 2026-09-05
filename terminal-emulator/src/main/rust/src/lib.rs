@@ -46,6 +46,7 @@ pub mod bootstrap;
 pub mod coordinator;
 pub mod engine;
 pub mod jni;
+pub mod process_owner;
 pub mod pty;
 pub mod render_thread;
 pub mod renderer;

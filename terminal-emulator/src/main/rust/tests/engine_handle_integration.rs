@@ -1,5 +1,6 @@
 //! Production global registry, real TerminalContext, fd ownership and RenderFrame.
 //! No fake JNI, Surface or GPU: JVM JNI coverage is a separate harness.
+use std::io::Read;
 use std::os::fd::AsRawFd;
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
@@ -22,7 +23,8 @@ fn real_context_revocation_preserves_in_flight_frame_and_forgets_delivery() {
         16,
     )));
     let weak = Arc::downgrade(&context);
-    let (master, peer) = UnixStream::pair().unwrap();
+    let (master, mut peer) = UnixStream::pair().unwrap();
+    peer.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
     let fd = master.as_raw_fd();
     TerminalContext::start_io_owned(Arc::clone(&context), master.into()).unwrap();
     let handle = ENGINE_HANDLES.insert(context).unwrap();
@@ -52,7 +54,9 @@ fn real_context_revocation_preserves_in_flight_frame_and_forgets_delivery() {
         lease.io_is_joined(),
         "silent reader did not terminate and join"
     );
-    assert_eq!(unsafe { libc::fcntl(fd, libc::F_GETFD) }, -1);
+    // Verify closure of the actual socket endpoint, not whether its numeric fd
+    // has already been recycled by logging or another runtime subsystem.
+    assert_eq!(peer.read(&mut [0; 1]).unwrap(), 0);
     let frame = {
         let engine = lease.lock.read().unwrap();
         RenderFrame::from_engine(&engine, 24, 80, 0)

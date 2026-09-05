@@ -692,46 +692,50 @@ pub fn set_pty_window_size(fd: jint, rows: jint, cols: jint, cell_width: jint, c
     }
 }
 
+/// Managed monitors call this exactly once for a child created by this module.
+/// Generic ProcessOwner tests/unrelated subprocesses do not touch this counter.
+pub(crate) fn record_managed_child_exit() {
+    let mut count = ACTIVE_CHILD_COUNT.load(Ordering::SeqCst);
+    loop {
+        match ACTIVE_CHILD_COUNT.compare_exchange_weak(
+            count,
+            count.saturating_sub(1).max(0),
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        ) {
+            Ok(_) => return,
+            Err(observed) => count = observed,
+        }
+    }
+}
+
 pub fn wait_for(pid: jint) -> jint {
-    let mut status: i32 = 0;
-    unsafe {
-        let res = libc::waitpid(pid, &mut status, 0);
-        if res < 0 {
-            crate::utils::android_log(
-                crate::utils::LogPriority::ERROR,
-                &format!("CHECKPOINT: waitpid failed for PID: {}", pid),
-            );
+    if pid <= 0 {
+        return -1;
+    }
+    if let Some(owner) = crate::coordinator::managed_process_for_pid(pid) {
+        return match owner.wait() {
+            crate::process_owner::ExitOutcome::Exited(code) => code,
+            crate::process_owner::ExitOutcome::Lost(_) => -1,
+        };
+    }
+    // Legacy unbound child API: its caller remains the sole reaping owner.
+    loop {
+        let mut status = 0;
+        let result = unsafe { libc::waitpid(pid, &mut status, 0) };
+        if result < 0 {
+            if std::io::Error::last_os_error().raw_os_error() == Some(libc::EINTR) {
+                continue;
+            }
             return -1;
         }
-
         if libc::WIFEXITED(status) {
-            ACTIVE_CHILD_COUNT.fetch_sub(1, Ordering::SeqCst);
-            let exit_code = libc::WEXITSTATUS(status);
-            crate::utils::android_log(
-                crate::utils::LogPriority::INFO,
-                &format!(
-                    "CHECKPOINT: Process PID: {} EXITED normally with code: {}",
-                    pid, exit_code
-                ),
-            );
-            exit_code
-        } else if libc::WIFSIGNALED(status) {
-            ACTIVE_CHILD_COUNT.fetch_sub(1, Ordering::SeqCst);
-            let sig = libc::WTERMSIG(status);
-            crate::utils::android_log(
-                crate::utils::LogPriority::WARN,
-                &format!(
-                    "CHECKPOINT: Process PID: {} TERMINATED by signal: {} (If 9, likely Phantom Killer)",
-                    pid, sig
-                ),
-            );
-            -sig
-        } else {
-            crate::utils::android_log(
-                crate::utils::LogPriority::DEBUG,
-                &format!("CHECKPOINT: Process PID: {} changed state (other)", pid),
-            );
-            0
+            record_managed_child_exit();
+            return libc::WEXITSTATUS(status);
+        }
+        if libc::WIFSIGNALED(status) {
+            record_managed_child_exit();
+            return -libc::WTERMSIG(status);
         }
     }
 }

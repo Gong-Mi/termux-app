@@ -3,6 +3,7 @@ name: Android emulator experiment
 "on":
   pull_request:
     branches:
+      - fix/pty-io-lifecycle
       - fix/engine-adoption
       - fix/engine-handle-lifetime
       - fix/skia-vulkan-api-contract
