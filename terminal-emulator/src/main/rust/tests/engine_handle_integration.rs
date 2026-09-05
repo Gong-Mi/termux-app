@@ -13,7 +13,12 @@ fn real_context_revocation_preserves_in_flight_frame_and_forgets_delivery() {
     let coordinator = SessionCoordinator::get();
     let session = coordinator.register_session();
     let context = Arc::new(TerminalContext::new(TerminalEngine::new(
-        session as i32, 80, 24, 2000, 8, 16,
+        session as i32,
+        80,
+        24,
+        2000,
+        8,
+        16,
     )));
     let weak = Arc::downgrade(&context);
     let (master, peer) = UnixStream::pair().unwrap();
@@ -21,7 +26,14 @@ fn real_context_revocation_preserves_in_flight_frame_and_forgets_delivery() {
     let fd = master.into_raw_fd();
     context.pty_fd.store(fd, Ordering::SeqCst);
     let handle = ENGINE_HANDLES.insert(context).unwrap();
-    coordinator.set_engine_data(session, SessionEngineData { ptr: handle, pty_fd: fd, pid: -1 });
+    coordinator.set_engine_data(
+        session,
+        SessionEngineData {
+            ptr: handle,
+            pty_fd: fd,
+            pid: -1,
+        },
+    );
     assert!(ENGINE_HANDLES.publish(handle));
     let (frame_handle, lease) = ENGINE_HANDLES.current().unwrap();
     assert_eq!(frame_handle, handle);
@@ -51,10 +63,19 @@ fn real_context_revocation_preserves_in_flight_frame_and_forgets_delivery() {
     coordinator.unregister_session(session);
 
     let pending_session = coordinator.register_session();
-    let pending = Arc::new(TerminalContext::new(TerminalEngine::new(0, 20, 10, 100, 8, 16)));
+    let pending = Arc::new(TerminalContext::new(TerminalEngine::new(
+        0, 20, 10, 100, 8, 16,
+    )));
     let pending_weak = Arc::downgrade(&pending);
     let pending_handle = ENGINE_HANDLES.insert(pending).unwrap();
-    coordinator.set_engine_data(pending_session, SessionEngineData { ptr: pending_handle, pty_fd: -1, pid: -1 });
+    coordinator.set_engine_data(
+        pending_session,
+        SessionEngineData {
+            ptr: pending_handle,
+            pty_fd: -1,
+            pid: -1,
+        },
+    );
     coordinator.unregister_session(pending_session);
     assert!(ENGINE_HANDLES.acquire(pending_handle).is_none());
     assert!(pending_weak.upgrade().is_none());

@@ -187,9 +187,11 @@ mod tests {
         assert_eq!(drops.load(Ordering::SeqCst), 1);
         assert_eq!(unlocked_drops.load(Ordering::SeqCst), 1);
         registry.state.lock().unwrap().last_handle = i64::MAX;
-        assert!(registry
-            .insert(probe(&registry, &drops, &unlocked_drops))
-            .is_none());
+        assert!(
+            registry
+                .insert(probe(&registry, &drops, &unlocked_drops))
+                .is_none()
+        );
         assert_eq!(drops.load(Ordering::SeqCst), 2);
         assert_eq!(unlocked_drops.load(Ordering::SeqCst), 2);
     }

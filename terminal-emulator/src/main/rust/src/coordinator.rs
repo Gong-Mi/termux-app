@@ -50,7 +50,10 @@ static SESSION_COORDINATOR: OnceCell<SessionCoordinator> = OnceCell::new();
 /// standalone engine. Cached SessionEngineData never owns an engine lease.
 pub(crate) fn discard_engine_data(handle: jni::sys::jlong) {
     if let Some(coordinator) = SESSION_COORDINATOR.get() {
-        let mut data = coordinator.engine_data_map.lock().unwrap_or_else(|e| e.into_inner());
+        let mut data = coordinator
+            .engine_data_map
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         data.retain(|_, value| value.ptr != handle);
     }
 }

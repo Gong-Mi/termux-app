@@ -1,5 +1,4 @@
 pub mod context;
-pub mod handles;
 pub mod decset;
 /// 终端引擎模块
 ///
@@ -11,6 +10,7 @@ pub mod decset;
 /// - 共享缓冲区管理
 /// - 终端事件枚举
 pub mod events;
+pub mod handles;
 pub mod key_event;
 pub mod perform_handler;
 pub mod sgr;

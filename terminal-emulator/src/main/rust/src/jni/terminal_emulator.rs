@@ -1364,7 +1364,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
     };
 
     if !poll_delivery && callback_ref.is_none() {
-        android_log(LogPriority::ERROR, "createSessionAsync: callback global reference failed");
+        android_log(
+            LogPriority::ERROR,
+            "createSessionAsync: callback global reference failed",
+        );
         return;
     }
 
@@ -1413,12 +1416,16 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
             }
 
             let context = Arc::new(TerminalContext::new(engine));
-            let Some(context_handle) = crate::engine::ENGINE_HANDLES.insert(Arc::clone(&context)) else {
+            let Some(context_handle) = crate::engine::ENGINE_HANDLES.insert(Arc::clone(&context))
+            else {
                 // No handle was published and no reader owns a duplicate yet.
                 unsafe { libc::close(pty_fd) };
                 return;
             };
-            let mut pending = PendingEngineDelivery { handle: context_handle, delivered: false };
+            let mut pending = PendingEngineDelivery {
+                handle: context_handle,
+                delivered: false,
+            };
 
             // 关键修复：必须存储 pty_fd，否则 processInput 无法写入输入
             context.pty_fd.store(pty_fd as i32, Ordering::SeqCst);
@@ -1478,7 +1485,10 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
                                 "[TRACE_SESSION] 5.6. Java onEngineInitialized callback executed.",
                             );
                         } else {
-                            android_log(LogPriority::ERROR, "createSessionAsync: callback rejected");
+                            android_log(
+                                LogPriority::ERROR,
+                                "createSessionAsync: callback rejected",
+                            );
                         }
                     }
                 }
