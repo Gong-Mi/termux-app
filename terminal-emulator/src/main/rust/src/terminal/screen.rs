@@ -603,11 +603,7 @@ impl Screen {
                 let is_atomic_pair = display_width == 2
                     && i + 1 < old_line.text.len()
                     && old_line.text[i + 1] == '\0';
-                let unit_width = if is_atomic_pair {
-                    2
-                } else {
-                    display_width
-                };
+                let unit_width = if is_atomic_pair { 2 } else { display_width };
 
                 // Update style for this column
                 if display_width > 0 && current_old_col < old_cols {
