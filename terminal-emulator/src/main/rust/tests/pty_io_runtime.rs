@@ -173,7 +173,9 @@ fn io_outcome_preserves_errno_and_falls_back_to_eio() {
     fn copy_eq<T: Copy + Eq>() {}
     copy_eq::<IoOutcome>();
     assert_eq!(
-        IoOutcome::from(&StopOutcome::IoError(io::Error::from_raw_os_error(libc::ENOTTY))),
+        IoOutcome::from(&StopOutcome::IoError(io::Error::from_raw_os_error(
+            libc::ENOTTY
+        ))),
         IoOutcome::IoError(libc::ENOTTY)
     );
     assert_eq!(

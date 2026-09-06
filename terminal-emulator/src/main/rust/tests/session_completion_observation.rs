@@ -16,11 +16,17 @@ fn wait_for(mut predicate: impl FnMut() -> bool) {
     }
 }
 fn context(process: Arc<ProcessOwner>) -> Arc<TerminalContext> {
-    Arc::new(TerminalContext::with_process(TerminalEngine::new(0, 80, 24, 2000, 8, 16), process))
+    Arc::new(TerminalContext::with_process(
+        TerminalEngine::new(0, 80, 24, 2000, 8, 16),
+        process,
+    ))
 }
 fn child() -> std::process::Child {
-    Command::new("sh").args(["-c", "read -r value; exit 23"])
-        .stdin(Stdio::piped()).spawn().unwrap()
+    Command::new("sh")
+        .args(["-c", "read -r value; exit 23"])
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap()
 }
 
 #[test]
@@ -44,14 +50,25 @@ fn process_exit_does_not_finish_io_and_eof_preserves_utf8_tail() {
     peer.write_all(&text[..6]).unwrap();
     wait_for(|| {
         let mut row = [0u16; 80];
-        context.lock.read().unwrap().state.copy_row_text(0, &mut row);
+        context
+            .lock
+            .read()
+            .unwrap()
+            .state
+            .copy_row_text(0, &mut row);
         String::from_utf16_lossy(&row).starts_with("tail-")
     });
     peer.write_all(&text[6..]).unwrap();
     drop(peer);
     wait_for(|| context.completion_status()[2] == 2);
     assert_eq!(context.completion_status(), [2, 23, 2, 0]);
-    let text = context.lock.read().unwrap().state.get_current_screen().get_transcript_text();
+    let text = context
+        .lock
+        .read()
+        .unwrap()
+        .state
+        .get_current_screen()
+        .get_transcript_text();
     assert!(text.starts_with("tail-中文"), "transcript={text:?}");
     TerminalContext::stop_io(&context);
     wait_for(|| context.io_is_joined());

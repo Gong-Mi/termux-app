@@ -255,7 +255,11 @@ impl Drop for WorkerOwner {
         pending.bytes = 0;
         pending.resize = None;
         drop(pending);
-        *self.observer.outcome.lock().unwrap_or_else(|e| e.into_inner()) = Some(self.outcome);
+        *self
+            .observer
+            .outcome
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(self.outcome);
         self.shared.stopped.store(true, Ordering::Release);
     }
 }

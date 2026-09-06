@@ -17,10 +17,8 @@ impl Perform for Events {
     }
 
     fn csi_dispatch(&mut self, p: &Params, i: &[u8], ignore: bool, c: char) {
-        self.0.push(format!(
-            "csi:{:?}:{i:?}:{ignore}:{c}",
-            &p.values[..p.len]
-        ));
+        self.0
+            .push(format!("csi:{:?}:{i:?}:{ignore}:{c}", &p.values[..p.len]));
     }
 
     fn osc_dispatch(&mut self, p: &[&[u8]], bell: bool) {
@@ -73,7 +71,11 @@ fn utf8_interleaved_with_csi_osc_and_controls_is_chunk_invariant() {
     let expected = parse(&[text.as_bytes()]);
     assert!(expected.0.contains(&"csi:[31]:[]:false:m".to_owned()));
     assert!(expected.0.contains(&"print:中".to_owned()));
-    let osc_events: Vec<_> = expected.0.iter().filter(|e| e.starts_with("osc:")).collect();
+    let osc_events: Vec<_> = expected
+        .0
+        .iter()
+        .filter(|e| e.starts_with("osc:"))
+        .collect();
     assert_eq!(
         osc_events,
         vec![
@@ -150,7 +152,11 @@ fn malformed_streams_match_lossy_decode_without_swallowing_following_ascii() {
         let decoded = String::from_utf8_lossy(&bytes);
         let expected = parse(&[decoded.as_bytes()]);
         assert_eq!(parse(&[&bytes]), expected, "whole input: {bytes:?}");
-        assert_eq!(parse(&bytes.chunks(1).collect::<Vec<_>>()), expected, "fragmented: {bytes:?}");
+        assert_eq!(
+            parse(&bytes.chunks(1).collect::<Vec<_>>()),
+            expected,
+            "fragmented: {bytes:?}"
+        );
     }
 }
 
@@ -166,12 +172,18 @@ fn sve_scanner_matches_scalar_at_unaligned_and_short_tail_boundaries() {
             for offset in [0, 1, 15, 16, 31] {
                 let mut bytes = vec![0xa5; offset + len].into_boxed_slice();
                 let data = &mut bytes[offset..];
-                assert_eq!(unsafe { termux_rust::vte_sve::find_first_control_sve(data) }, len);
+                assert_eq!(
+                    unsafe { termux_rust::vte_sve::find_first_control_sve(data) },
+                    len
+                );
                 if len != 0 {
                     for index in [0, len / 2, len - 1] {
                         for control in [0, 31, 127] {
                             data[index] = control;
-                            assert_eq!(unsafe { termux_rust::vte_sve::find_first_control_sve(data) }, index);
+                            assert_eq!(
+                                unsafe { termux_rust::vte_sve::find_first_control_sve(data) },
+                                index
+                            );
                             data[index] = 0xa5;
                         }
                     }

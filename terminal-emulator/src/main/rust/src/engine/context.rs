@@ -165,7 +165,10 @@ impl TerminalContext {
                 );
             },
         )?;
-        *context.io_observer.lock().unwrap_or_else(|e| e.into_inner()) = Some(runtime.observer());
+        *context
+            .io_observer
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(runtime.observer());
         context.io_joined.store(false, Ordering::Release);
         *slot = Some(runtime);
         Ok(())
