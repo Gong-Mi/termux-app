@@ -31,6 +31,13 @@ class CompletionArtContracts(unittest.TestCase):
                        'INSTRUMENTATION_STATUS_CODE: -3', 'INSTRUMENTATION_STATUS_CODE: -4'):
             self.assertFalse(art.verify_output(self.output() + marker, 0))
 
+    def test_art_output_producers_are_system_tools_and_fail_closed(self):
+        source = (ROOT / 'app/src/androidTest/java/com/termux/app/SessionCompletionArtTest.java').read_text()
+        self.assertEqual(source.count('/system/bin/toybox printf'), len(art.EXPECTED))
+        self.assertEqual(source.count('|| exit 91;'), len(art.EXPECTED))
+        self.assertIn('actual transcript=', source)
+        self.assertIn('actual plugin stdout=', source)
+
     def test_every_named_art_test_is_registered_and_ci_keeps_ab(self):
         source = (ROOT / 'app/src/androidTest/java/com/termux/app/SessionCompletionArtTest.java').read_text()
         self.assertEqual(set(re.findall(r'@Test public void (\w+)\(', source)), art.EXPECTED)

@@ -71,7 +71,7 @@ public class SessionCompletionArtTest {
         Probe probe = new Probe();
         AtomicReference<TerminalSession> holder = new AtomicReference<>();
         main(() -> {
-            TerminalSession session = terminal("printf 'art-tail\\n'; exit 37", probe);
+            TerminalSession session = terminal("/system/bin/toybox printf 'art-tail\\n' || exit 91; exit 37", probe);
             holder.set(session);
             session.initializeEmulator(80, 24, 8, 16);
             // Keep this real main-thread task active while native producers finish;
@@ -86,7 +86,7 @@ public class SessionCompletionArtTest {
             assertEquals(Integer.valueOf(37), session.getProcessExitStatus());
             assertNull(session.getCompletionError());
             assertEquals(1, probe.calls.get());
-            assertTrue(probe.transcript.contains("art-tail"));
+            assertTrue("actual transcript=" + probe.transcript, probe.transcript.contains("art-tail"));
             assertTrue(probe.transcript.contains("[Process completed (code 37) - press Enter]"));
             assertTrue(session.getEmulator().isAlive());
             main(() -> session.updateSize(90, 30, 8, 16));
@@ -111,7 +111,7 @@ public class SessionCompletionArtTest {
         Probe probe = new Probe();
         AtomicReference<TermuxSession> holder = new AtomicReference<>();
         ExecutionCommand command = new ExecutionCommand(901, "/system/bin/sh",
-            new String[]{"-c", "printf 'result-tail\\n'; exit 0"}, null,
+            new String[]{"-c", "/system/bin/toybox printf 'result-tail\\n' || exit 91; exit 0"}, null,
             context().getFilesDir().getAbsolutePath(), "terminal-session", true);
         AtomicInteger results = new AtomicInteger();
         main(() -> {
@@ -119,7 +119,7 @@ public class SessionCompletionArtTest {
                 assertSame(Looper.getMainLooper(), Looper.myLooper());
                 assertEquals(Integer.valueOf(0), command.resultData.exitCode);
                 assertFalse(command.isStateFailed());
-                assertTrue(command.resultData.stdout.toString().contains("result-tail"));
+                assertTrue("actual stdout=" + command.resultData.stdout, command.resultData.stdout.toString().contains("result-tail"));
                 assertTrue(completed.getTerminalSession().getEmulator().isAlive());
                 results.incrementAndGet();
                 completed.getTerminalSession().dispose();
@@ -160,7 +160,7 @@ public class SessionCompletionArtTest {
             didBind = context.bindService(new Intent(context, TermuxService.class), connection, Context.BIND_AUTO_CREATE);
             assertTrue(didBind); await(bound);
             ExecutionCommand command = new ExecutionCommand(902, "/system/bin/sh",
-                new String[]{"-c", "printf 'plugin-art-tail\\n'; exit 0"}, null,
+                new String[]{"-c", "/system/bin/toybox printf 'plugin-art-tail\\n' || exit 91; exit 0"}, null,
                 context.getFilesDir().getAbsolutePath(), "terminal-session", true);
             command.isPluginExecutionCommand = true;
             command.resultConfig.resultPendingIntent = pending;
@@ -174,7 +174,8 @@ public class SessionCompletionArtTest {
             await(received);
             Bundle bundle = result.get().getBundleExtra(command.resultConfig.resultBundleKey);
             assertNotNull(bundle);
-            assertTrue(bundle.getString(command.resultConfig.resultStdoutKey).contains("plugin-art-tail"));
+            assertTrue("actual plugin stdout=" + bundle.getString(command.resultConfig.resultStdoutKey),
+                bundle.getString(command.resultConfig.resultStdoutKey).contains("plugin-art-tail"));
             assertEquals(0, bundle.getInt(command.resultConfig.resultExitCodeKey));
             until("service removed completed plugin", () -> holder.get().getTerminalSession().getEmulator() == null);
             main(() -> assertEquals(-1, service.get().getIndexOfSession(holder.get().getTerminalSession())));
