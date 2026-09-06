@@ -1446,6 +1446,59 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
                 return;
             }
 
+            // Install before either producer starts. This stable bridge accepts raw
+            // facts even before the engine offer is queued/adopted.
+            if let Some(cb) = callback_ref.clone() {
+                let installed = coordinator.install_completion_sink(
+                    session_id,
+                    Arc::new(move |candidate| {
+                        use crate::engine::io_runtime::IoOutcome;
+                        use crate::process_owner::ExitOutcome;
+                        let Some(vm) = crate::JAVA_VM.get() else {
+                            return false;
+                        };
+                        let Ok(mut env) = vm
+                            .get_env()
+                            .or_else(|_| vm.attach_current_thread_as_daemon())
+                        else {
+                            return false;
+                        };
+                        let (pk, pc) = match candidate.process {
+                            ExitOutcome::Exited(code) => (2, code),
+                            ExitOutcome::Lost(errno) => (3, errno),
+                        };
+                        let (ik, ic) = match candidate.io {
+                            IoOutcome::Eof => (2, 0),
+                            IoOutcome::Cancelled => (3, 0),
+                            IoOutcome::IoError(errno) => (4, errno),
+                            IoOutcome::ResponseOverflow => (5, 0),
+                            IoOutcome::Panicked => (6, 0),
+                        };
+                        let result = env
+                            .call_method(
+                                cb.as_obj(),
+                                "onSessionCompletion",
+                                "(IIIII)Z",
+                                &[
+                                    jni::objects::JValue::Int(candidate.session_id as i32),
+                                    jni::objects::JValue::Int(pk),
+                                    jni::objects::JValue::Int(pc),
+                                    jni::objects::JValue::Int(ik),
+                                    jni::objects::JValue::Int(ic),
+                                ],
+                            )
+                            .and_then(|value| value.z());
+                        if result.is_err() && env.exception_check().unwrap_or(false) {
+                            let _ = env.exception_clear();
+                        }
+                        result.unwrap_or(false)
+                    }),
+                );
+                if !installed {
+                    return;
+                }
+            }
+
             let pty_res = crate::pty::create_subprocess_with_data(
                 cmd_str, cwd_str, argv, envp, rows, cols, cw, ch,
             );

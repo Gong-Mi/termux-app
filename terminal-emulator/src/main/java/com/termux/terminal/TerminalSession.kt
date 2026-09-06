@@ -79,6 +79,22 @@ class TerminalSession(
     @Volatile private var mSessionState = SessionState.IDLE
     private val mScreenUpdatePending = AtomicBoolean(false)
 
+    /** Immutable raw outcomes. Receipt does not mean Handler/client delivery. */
+    data class CompletionFacts(val processKind: Int, val processCode: Int,
+                               val ioKind: Int, val ioCode: Int)
+    @Volatile private var mCompletionFacts: CompletionFacts? = null
+    fun getCompletionFacts(): CompletionFacts? = mCompletionFacts
+
+    /** Native callback may precede offer/claim/ack; retain it without completing UI. */
+    fun onNativeCompletion(sessionId: Int, processKind: Int, processCode: Int,
+                           ioKind: Int, ioCode: Int): Boolean = synchronized(mLifecycleLock) {
+        if (sessionId != mNativeSessionId || mSessionState == SessionState.DISPOSED ||
+            mSessionState == SessionState.IDLE || mCompletionFacts != null) return@synchronized false
+        if (processKind !in 2..3 || ioKind !in 2..6) return@synchronized false
+        mCompletionFacts = CompletionFacts(processKind, processCode, ioKind, ioCode)
+        true
+    }
+
     val mMainThreadHandler = MainThreadHandler()
 
     /** Update the client for this session. */

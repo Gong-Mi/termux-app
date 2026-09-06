@@ -80,6 +80,9 @@ pub struct CompletionCandidate {
     pub io: IoOutcome,
 }
 
+/// Return true only when the bridge accepted the facts, not when UI presented.
+pub type CompletionSink = Arc<dyn Fn(CompletionCandidate) -> bool + Send + Sync>;
+
 struct SessionRecord {
     state: SessionState,
     process: Option<Arc<ProcessOwner>>,
@@ -87,6 +90,9 @@ struct SessionRecord {
     process_outcome: Option<ExitOutcome>,
     io_outcome: Option<IoOutcome>,
     candidate_taken: bool,
+    sink_installed: bool,
+    completion_sink: Option<CompletionSink>,
+    dispatch_status: u8,
 }
 #[derive(Default)]
 struct Registry {
@@ -139,20 +145,25 @@ impl SessionCoordinator {
                 process_outcome: None,
                 io_outcome: None,
                 candidate_taken: false,
+                sink_installed: false,
+                completion_sink: None,
+                dispatch_status: 0,
             },
         );
         id
     }
 
     pub fn unregister_session(&self, session_id: usize) {
-        let delivery = {
+        let (delivery, removed_record) = {
             let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
-            registry.sessions.remove(&session_id);
+            let record = registry.sessions.remove(&session_id);
             if registry.pkg_owner == Some(session_id) {
                 registry.pkg_owner = None;
             }
-            registry.engine_data.remove(&session_id)
+            (registry.engine_data.remove(&session_id), record)
         };
+        // A sink may own a JNI global reference; never drop it under registry lock.
+        drop(removed_record);
         // No coordinator lock is held while destroy cancels/reaps IO resources.
         if let Some(delivery) = delivery {
             crate::engine::destroy_unadopted_engine(delivery.data.ptr);
@@ -315,6 +326,7 @@ impl SessionCoordinator {
             }
         }
         drop(registry);
+        self.dispatch_completion(session_id);
         android_log(
             LogPriority::INFO,
             &format!(
@@ -332,6 +344,8 @@ impl SessionCoordinator {
         if record.io_outcome.is_none() {
             record.io_outcome = Some(outcome);
         }
+        drop(registry);
+        self.dispatch_completion(observer.session_id);
     }
 
     /// Consume the joined process/IO facts once. This does not transfer any
@@ -341,7 +355,7 @@ impl SessionCoordinator {
         let record = registry.sessions.get_mut(&session_id)?;
         let process = record.process_outcome?;
         let io = record.io_outcome?;
-        if record.candidate_taken {
+        if record.candidate_taken || record.sink_installed {
             return None;
         }
         record.candidate_taken = true;
@@ -350,6 +364,73 @@ impl SessionCoordinator {
             process,
             io,
         })
+    }
+
+    /// Install once. Facts may precede installation; replay occurs outside locks.
+    /// Once installed, this sink exclusively consumes the candidate (poll cannot steal it).
+    pub fn install_completion_sink(&self, session_id: usize, sink: CompletionSink) -> bool {
+        {
+            let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
+            let Some(record) = registry.sessions.get_mut(&session_id) else {
+                return false;
+            };
+            if record.sink_installed || record.candidate_taken {
+                return false;
+            }
+            record.sink_installed = true;
+            record.completion_sink = Some(sink);
+        }
+        self.dispatch_completion(session_id);
+        true
+    }
+
+    /// 0=not attempted, 1=in flight, 2=bridge accepted, 3=bridge failed.
+    /// Neither 2 nor callback return proves Handler execution or final presentation.
+    pub fn completion_dispatch_status(&self, session_id: usize) -> Option<u8> {
+        let registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
+        Some(registry.sessions.get(&session_id)?.dispatch_status)
+    }
+
+    fn dispatch_completion(&self, session_id: usize) {
+        let pending = {
+            let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
+            let Some(record) = registry.sessions.get_mut(&session_id) else {
+                return;
+            };
+            let (Some(process), Some(io)) = (record.process_outcome, record.io_outcome) else {
+                return;
+            };
+            if record.candidate_taken {
+                return;
+            }
+            let Some(sink) = record.completion_sink.take() else {
+                return;
+            };
+            record.candidate_taken = true;
+            record.dispatch_status = 1;
+            (
+                sink,
+                CompletionCandidate {
+                    session_id,
+                    process,
+                    io,
+                },
+            )
+        };
+        // Revocation after claim cannot cancel in-flight foreign code. The receiving
+        // session must reject its stale identity; unregister never resurrects it.
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (pending.0)(pending.1)));
+        {
+            let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(record) = registry.sessions.get_mut(&session_id) {
+                record.dispatch_status = if matches!(result, Ok(true)) { 2 } else { 3 };
+            }
+        }
+        // Preserve Rust callback unwind semantics after recording failure.
+        if let Err(payload) = result {
+            std::panic::resume_unwind(payload);
+        }
     }
 
     pub fn completion_facts(&self, session_id: usize) -> Option<(ExitOutcome, IoOutcome)> {
@@ -786,6 +867,18 @@ pub extern "system" fn Java_com_termux_terminal_JNI_rejectEngineData(
     handle: jni::sys::jlong,
 ) -> jboolean {
     SessionCoordinator::get().reject_engine_data(session_id as usize, handle) as jboolean
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_JNI_getCompletionDispatchStatus(
+    _env: JNIEnv,
+    _class: JClass,
+    session_id: jint,
+) -> jint {
+    SessionCoordinator::get()
+        .completion_dispatch_status(session_id as usize)
+        .map(i32::from)
+        .unwrap_or(-1)
 }
 
 #[cfg(test)]

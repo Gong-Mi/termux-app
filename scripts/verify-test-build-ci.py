@@ -32,6 +32,14 @@ class BuildContracts(unittest.TestCase):
         self.assertIn("('contract', 'native', 'handles', 'delivery')", commands)
         self.assertIn('scripts/java/delivery-stubs/**', workflow['on']['pull_request']['paths'])
 
+    def test_completion_bridge_stack_keeps_all_acceptance_routes(self):
+        for name in ('rust-ci.yml', 'rust-quality.yml', 'engine-construction.yml',
+                     'android-emulator-experiment.yml'):
+            with self.subTest(workflow=name):
+                workflow = yaml.safe_load((ROOT / '.github/workflows' / name).read_text())
+                self.assertIn('feat/session-completion-candidate',
+                              workflow.get('on', workflow.get(True, {}))['pull_request']['branches'])
+
     def test_candidate_stack_keeps_all_acceptance_routes(self):
         for name in ('rust-ci.yml', 'rust-quality.yml', 'engine-construction.yml',
                      'android-emulator-experiment.yml'):

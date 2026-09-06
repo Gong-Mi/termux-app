@@ -20,6 +20,37 @@ private fun session(client: Client): TerminalSession {
 }
 fun main() {
     check(JNI.sNativeLibrariesLoaded)
+    // Real native completion before any queued engine adoption is executed.
+    val shell = if (java.io.File("/system/bin/sh").canExecute()) "/system/bin/sh" else "/bin/sh"
+    val earlyClient = Client()
+    val early = TerminalSession(shell, System.getProperty("user.dir"),
+        arrayOf(shell, "-c", "printf 'completion-tail\n'; exit 37"),
+        arrayOf("PATH=/system/bin:/usr/bin:/bin", "LD_PRELOAD="), 2000, earlyClient)
+    early.initializeEmulator(80, 24, 8, 16)
+    val earlyId = id(early)
+    waitFor("real early completion bridge") { JNI.getCompletionDispatchStatus(earlyId) == 2 }
+    check(early.getCompletionFacts() == TerminalSession.CompletionFacts(2, 37, 2, 0))
+    check(!early.isEngineInitialized() && earlyClient.deliveries == 0)
+    check(!callback(early).onSessionCompletion(earlyId, 2, 99, 2, 0))
+    check(!callback(early).onSessionCompletion(earlyId + 1, 2, 99, 2, 0))
+    early.mMainThreadHandler.drain()
+    check(early.isEngineInitialized() && early.mEmulator!!.isAlive())
+    check(early.getCompletionFacts() == TerminalSession.CompletionFacts(2, 37, 2, 0))
+    early.dispose()
+    check(!early.onNativeCompletion(earlyId, 2, 37, 2, 0))
+    check(JNI.getCompletionDispatchStatus(earlyId) == -1)
+    println("PASS: actual JNI early facts retained before adoption, duplicate/stale rejected, dispose does not resurrect")
+
+    // Real JNI boolean rejection is observable, not a successful delivery.
+    val unboundId = JNI.registerSession()
+    val unbound = RustEngineCallback(null).apply { setNativeSessionId(unboundId) }
+    JNI.createSessionAsync(unboundId, shell, requireNotNull(System.getProperty("user.dir")),
+        arrayOf(shell, "-c", "exit 38"), arrayOf("PATH=/system/bin:/usr/bin:/bin", "LD_PRELOAD="),
+        24, 80, 8, 16, 2000, unbound)
+    waitFor("unbound bridge rejected") { JNI.getCompletionDispatchStatus(unboundId) == 3 }
+    JNI.unregisterSession(unboundId)
+    println("PASS: actual JNI receiver rejection records bridge failure")
+
     val client = Client()
     val s = session(client)
     s.initializeEmulator(80, 24, 8, 16)

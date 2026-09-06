@@ -69,6 +69,8 @@ internal object JNI {
     @JvmStatic external fun terminateSession(sessionId: Int): Boolean
     /** [kind, pid, code]; kind: pending0/running1/exited2/lost3; null if unknown. */
     @JvmStatic external fun getSessionProcessStatus(sessionId: Int): IntArray?
+    /** -1=unknown, 0=pending, 1=in flight, 2=raw bridge accepted, 3=bridge failed. Not UI delivery. */
+    @JvmStatic external fun getCompletionDispatchStatus(sessionId: Int): Int
     @JvmStatic external fun tryAcquirePkgLock(sessionId: Int): Boolean
     @JvmStatic external fun releasePkgLock(sessionId: Int)
     @JvmStatic external fun isPkgLockHeld(): Boolean

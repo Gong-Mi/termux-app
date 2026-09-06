@@ -49,6 +49,11 @@ class RustEngineCallback(@Volatile private var mClient: TerminalSessionClient?) 
         }
     }
 
+    /** Raw-fact receipt, not main-thread/client completion or final presentation. */
+    fun onSessionCompletion(sessionId: Int, processKind: Int, processCode: Int,
+                            ioKind: Int, ioCode: Int): Boolean =
+        mSession?.onNativeCompletion(sessionId, processKind, processCode, ioKind, ioCode) ?: false
+
     override fun reportTitleChange(title: String?) {
         mClient?.reportTitleChange(title)
     }
