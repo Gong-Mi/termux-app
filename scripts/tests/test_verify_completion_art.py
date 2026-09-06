@@ -48,6 +48,18 @@ class CompletionArtContracts(unittest.TestCase):
         self.assertIn('actual transcript=', source)
         self.assertIn('actual plugin stdout=', source)
 
+    def test_app_suite_explicitly_defers_package_mutation(self):
+        expected = art.expected_for_suite('app')
+        self.assertNotIn('aptInstallsPythonAndPythonSubprocessRunsInArt', expected)
+        self.assertIn('existingPrefixDirectoryRepairPreservesUserFilesInArt', expected)
+        self.assertEqual(art.EXPECTED - expected, {'aptInstallsPythonAndPythonSubprocessRunsInArt'})
+        output = '\n'.join('INSTRUMENTATION_STATUS: test=' + name for name in sorted(expected)) + f'\nOK ({len(expected)} tests)\n'
+        self.assertTrue(art.verify_output(output, 0, expected))
+        self.assertFalse(art.verify_output(output, 0))
+        flow = yaml.safe_load((ROOT / '.github/workflows/android-emulator-experiment.yml').read_text())
+        commands = '\n'.join(step.get('run', '') for step in flow['jobs']['install-startup']['steps'])
+        self.assertIn('--output completion-art --suite app', commands)
+
     def test_zero_exit_install_log_with_traceback_is_not_clean(self):
         self.assertEqual(art.package_script_errors('Setting up python ...\n'), [])
         errors = art.package_script_errors('Setting up python ...\nTraceback (most recent call last):\nPermissionError: denied\nSetting up pip ...\n')
