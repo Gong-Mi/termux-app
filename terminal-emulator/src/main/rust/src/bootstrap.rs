@@ -211,18 +211,27 @@ mod tests {
     impl Temp {
         fn new() -> Self {
             static NEXT: AtomicUsize = AtomicUsize::new(0);
-            let path = std::env::temp_dir().join(format!("termux-bootstrap-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
+            let path = std::env::temp_dir().join(format!(
+                "termux-bootstrap-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
             std::fs::create_dir(&path).unwrap();
             Self(path)
         }
     }
     impl Drop for Temp {
-        fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
     }
     fn archive(dirs: &[&str]) -> Vec<u8> {
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-        let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        for name in dirs { zip.add_directory(*name, options).unwrap(); }
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        for name in dirs {
+            zip.add_directory(*name, options).unwrap();
+        }
         zip.start_file("bin/marker", options).unwrap();
         zip.write_all(b"bootstrap-marker").unwrap();
         zip.finish().unwrap().into_inner()
@@ -232,12 +241,21 @@ mod tests {
     fn explicit_empty_directories_survive_extraction() {
         let temp = Temp::new();
         let bytes = archive(&["tmp/", "etc/apt/apt.conf.d/", "share/empty/nested/"]);
-        assert_eq!(extract_zip_to_dir(&bytes, temp.0.to_str().unwrap()).unwrap(), 1);
+        assert_eq!(
+            extract_zip_to_dir(&bytes, temp.0.to_str().unwrap()).unwrap(),
+            1
+        );
         for directory in ["tmp", "etc/apt/apt.conf.d", "share/empty/nested"] {
-            assert!(temp.0.join(directory).is_dir(), "missing archive directory: {directory}");
+            assert!(
+                temp.0.join(directory).is_dir(),
+                "missing archive directory: {directory}"
+            );
         }
         std::fs::write(temp.0.join("tmp/apt.conf.probe"), b"actual-write").unwrap();
-        assert_eq!(std::fs::read(temp.0.join("bin/marker")).unwrap(), b"bootstrap-marker");
+        assert_eq!(
+            std::fs::read(temp.0.join("bin/marker")).unwrap(),
+            b"bootstrap-marker"
+        );
     }
 
     #[test]
