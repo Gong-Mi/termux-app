@@ -22,6 +22,16 @@ class BuildContracts(unittest.TestCase):
                 workflow = yaml.safe_load((ROOT / '.github/workflows' / name).read_text())
                 self.assertIn('fix/session-process-owner', workflow.get('on', workflow.get(True, {}))['pull_request']['branches'])
 
+    def test_delivery_stack_keeps_all_acceptance_routes_and_real_jni_mode(self):
+        for name in ('rust-ci.yml', 'rust-quality.yml', 'engine-construction.yml',
+                     'android-emulator-experiment.yml'):
+            workflow = yaml.safe_load((ROOT / '.github/workflows' / name).read_text())
+            self.assertIn('fix/session-completion-observation', workflow.get('on', workflow.get(True, {}))['pull_request']['branches'])
+        workflow = yaml.safe_load((ROOT / '.github/workflows/engine-construction.yml').read_text())
+        commands = '\n'.join(step.get('run', '') for step in workflow['jobs']['constructor-contract']['steps'])
+        self.assertIn("('contract', 'native', 'handles', 'delivery')", commands)
+        self.assertIn('scripts/java/delivery-stubs/**', workflow['on']['pull_request']['paths'])
+
     def test_host_tiers_keep_coverage_and_isolate_dependency_cache(self):
         workflow = yaml.safe_load((ROOT / '.github/workflows/rust-quality.yml').read_text())
         self.assertEqual(workflow['jobs']['correctness']['strategy']['matrix']['tier'],

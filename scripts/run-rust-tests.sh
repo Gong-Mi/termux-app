@@ -71,6 +71,7 @@ case "$tier" in
         run_tests lifecycle \
             engine_handle_lifecycle \
             engine_handle_integration \
+            engine_delivery_claim \
             pty_io_runtime \
             pty_context_integration \
             process_owner \
@@ -117,7 +118,7 @@ case "$tier" in
             box_drawing_geometry_verify box_drawing_layout_stress_test
             box_drawing_overlap_verify check_width clear_screen_test
             concurrency_lock_safety consistency content_overflow_test crlf_test
-            engine_handle_lifecycle engine_handle_integration
+            engine_handle_lifecycle engine_handle_integration engine_delivery_claim
             pty_io_runtime pty_context_integration process_owner session_process_lifecycle
             session_completion_observation
             extended_features extreme_content_stress fix_verification

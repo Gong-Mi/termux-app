@@ -43,6 +43,7 @@
   "lifecycle": [
     "engine_handle_lifecycle",
     "engine_handle_integration",
+    "engine_delivery_claim",
     "pty_io_runtime",
     "pty_context_integration",
     "process_owner",
@@ -93,6 +94,7 @@
     "crlf_test",
     "engine_handle_lifecycle",
     "engine_handle_integration",
+    "engine_delivery_claim",
     "pty_io_runtime",
     "pty_context_integration",
     "process_owner",
