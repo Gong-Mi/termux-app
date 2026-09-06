@@ -245,6 +245,10 @@ public class SessionCompletionArtTest {
             android.os.Build.HARDWARE.equals("ranchu") || android.os.Build.HARDWARE.equals("goldfish"));
         java.io.File prefix = new java.io.File(context().getFilesDir(), "usr");
         assertFalse("fresh bootstrap must not already contain Python", new java.io.File(prefix, "bin/python").exists());
+        assertTrue("bootstrap omitted tmp directory", new java.io.File(prefix, "tmp").isDirectory());
+        assertTrue("bootstrap omitted apt.conf.d directory", new java.io.File(prefix, "etc/apt/apt.conf.d").isDirectory());
+        java.io.File writableProbe = java.io.File.createTempFile("apt-conf-", ".probe", new java.io.File(prefix, "tmp"));
+        assertTrue("temporary write probe cleanup", writableProbe.delete());
         java.io.File evidence = new java.io.File(context().getFilesDir(), "package-python-art");
         assertTrue(evidence.isDirectory() || evidence.mkdirs());
         for (String asset : new String[]{"package-python-art.sh", "python-subprocess-probe.py"}) {

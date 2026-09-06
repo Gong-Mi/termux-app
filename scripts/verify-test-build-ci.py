@@ -32,6 +32,15 @@ class BuildContracts(unittest.TestCase):
         self.assertIn("('contract', 'native', 'handles', 'delivery')", commands)
         self.assertIn('scripts/java/delivery-stubs/**', workflow['on']['pull_request']['paths'])
 
+    def test_bootstrap_directory_tests_are_real_and_routed(self):
+        flow = yaml.safe_load((ROOT / '.github/workflows/rust-quality.yml').read_text())
+        for job in ('correctness', 'manual'):
+            step = next(s for s in flow['jobs'][job]['steps'] if s.get('name') == 'Verify bootstrap archive directories')
+            self.assertEqual(step['run'], 'cargo test --locked --lib bootstrap::tests')
+            self.assertEqual(step['working-directory'], 'terminal-emulator/src/main/rust')
+            self.assertIn('!cancelled()', step['if'])
+            self.assertNotIn('continue-on-error', step)
+
     def test_completion_ui_routes_and_result_method_contract(self):
         for name in ('rust-ci.yml', 'rust-quality.yml', 'engine-construction.yml',
                      'android-emulator-experiment.yml'):
