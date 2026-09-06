@@ -2,14 +2,18 @@ name: Engine construction contract
 
 "on":
   pull_request:
-    branches: [fix/session-process-owner, fix/pty-io-lifecycle, fix/skia-vulkan-api-contract, fix/engine-handle-lifetime, fix/engine-adoption, refactor/test-normalization, feature/rust-integration]
+    branches: [fix/session-completion-observation, fix/session-process-owner, fix/pty-io-lifecycle, fix/skia-vulkan-api-contract, fix/engine-handle-lifetime, fix/engine-adoption, refactor/test-normalization, feature/rust-integration]
     paths:
       - 'terminal-emulator/src/main/java/**'
       - 'terminal-emulator/src/main/rust/**'
       - 'scripts/kotlin/EngineHandleNative.kt'
+      - 'scripts/kotlin/EngineDeliveryNative.kt'
+      - 'scripts/java/delivery-stubs/**'
       - 'scripts/verify-engine-handle-boundary.py'
       - 'scripts/verify-pty-io-boundary.py'
       - 'scripts/verify-process-owner-boundary.py'
+      - 'scripts/verify-delivery-boundary.py'
+      - 'app/src/main/java/com/termux/app/TermuxService.java'
       - 'scripts/kotlin/EmulatorConstruction*.kt'
       - 'scripts/verify-emulator-construction.py'
       - '.github/workflows/engine-construction.yml'
@@ -61,6 +65,7 @@ jobs:
           python3 scripts/verify-engine-handle-boundary.py
           python3 scripts/verify-pty-io-boundary.py
           python3 scripts/verify-process-owner-boundary.py
+          python3 scripts/verify-delivery-boundary.py
           cd terminal-emulator/src/main/rust
           cargo build --locked --lib
       - name: Verify recording contract and real Kotlin JNI
@@ -76,7 +81,7 @@ jobs:
           stdlib = stdlibs[0]
           annotation = Path(os.environ['RUNNER_TEMP']) / 'engine-construction-deps/annotation.jar'
           android = Path(os.environ['ANDROID_HOME']) / 'platforms/android-36/android.jar'
-          for mode in ('contract', 'native', 'handles'):
+          for mode in ('contract', 'native', 'handles', 'delivery'):
               subprocess.run([
                   'python3', 'scripts/verify-emulator-construction.py',
                   '--compiler-classpath', str(lib / '*'),

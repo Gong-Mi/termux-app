@@ -9,9 +9,14 @@ import androidx.annotation.Nullable
  *
  * 实现 TerminalSessionClient 接口，以便可以直接传给 Rust JNI
  */
-class RustEngineCallback(private val mClient: TerminalSessionClient?) : TerminalSessionClient {
+class RustEngineCallback(@Volatile private var mClient: TerminalSessionClient?) : TerminalSessionClient {
 
-    private var mSession: TerminalSession? = null
+    @Volatile private var mSession: TerminalSession? = null
+
+    @Volatile private var mNativeSessionId = -1
+    fun setNativeSessionId(sessionId: Int) { mNativeSessionId = sessionId }
+    fun updateClient(client: TerminalSessionClient) { mClient = client }
+    fun clear() { mSession = null; mClient = null }
 
     fun setSession(session: TerminalSession) {
         mSession = session
@@ -23,9 +28,9 @@ class RustEngineCallback(private val mClient: TerminalSessionClient?) : Terminal
 
     fun onScreenUpdated() {
         if (mSession != null) {
-            mSession!!.onNativeScreenUpdated()
+            mSession?.onNativeScreenUpdated()
         } else if (mClient != null) {
-            mClient.logVerbose("RustEngineCallback", "Screen updated but no session available")
+            mClient?.logVerbose("RustEngineCallback", "Screen updated but no session available")
         }
     }
 
@@ -35,7 +40,10 @@ class RustEngineCallback(private val mClient: TerminalSessionClient?) : Terminal
     fun onEngineInitialized(enginePtr: Long, ptyFd: Int, pid: Int) {
         val session = mSession
         if (session == null) {
-            RustTerminal.destroyEngine(enginePtr)
+            // Session-bound offers must reject through the coordinator. Never
+            // destroy a token which may already belong to an acknowledged owner.
+            if (mNativeSessionId >= 0) JNI.rejectEngineData(mNativeSessionId, enginePtr)
+            else RustTerminal.destroyEngine(enginePtr)
         } else {
             session.onEngineInitialized(enginePtr, ptyFd, pid)
         }
@@ -73,18 +81,18 @@ class RustEngineCallback(private val mClient: TerminalSessionClient?) : Terminal
         // 将终端响应（DSR、光标位置、颜色查询等）写回 PTY
         // 否则嵌套 shell 会在等待响应时无限期挂起
         if (data.isNotEmpty() && mSession != null) {
-            mSession!!.write(data.toByteArray(Charsets.UTF_8))
+            mSession?.write(data.toByteArray(Charsets.UTF_8))
         } else if (mClient != null) {
-            mClient.logVerbose("RustEngineCallback", "Write to session: $data")
+            mClient?.logVerbose("RustEngineCallback", "Write to session: $data")
         }
     }
 
     fun onWriteToSessionBytes(data: ByteArray) {
         // 二进制数据写入 PTY
         if (data.isNotEmpty() && mSession != null) {
-            mSession!!.write(data, 0, data.size)
+            mSession?.write(data, 0, data.size)
         } else if (mClient != null) {
-            mClient.logVerbose("RustEngineCallback", "Write ${data.size} bytes to session")
+            mClient?.logVerbose("RustEngineCallback", "Write ${data.size} bytes to session")
         }
     }
 
@@ -99,11 +107,11 @@ class RustEngineCallback(private val mClient: TerminalSessionClient?) : Terminal
      */
     override fun onSixelImage(rgbaData: ByteArray?, width: Int, height: Int, startX: Int, startY: Int) {
         if (mClient != null) {
-            mClient.logDebug("SixelImage", String.format(
+            mClient?.logDebug("SixelImage", String.format(
                 "Received Sixel image: %dx%d at (%d,%d), data size: %d",
                 width, height, startX, startY, rgbaData?.size ?: 0
             ))
-            mClient.onSixelImage(rgbaData, width, height, startX, startY)
+            mClient?.onSixelImage(rgbaData, width, height, startX, startY)
         }
     }
 
@@ -112,8 +120,8 @@ class RustEngineCallback(private val mClient: TerminalSessionClient?) : Terminal
      */
     override fun onClearScreen() {
         if (mClient != null) {
-            mClient.logDebug("TerminalScreen", "Clear screen event received")
-            mClient.onClearScreen()
+            mClient?.logDebug("TerminalScreen", "Clear screen event received")
+            mClient?.onClearScreen()
         }
     }
 

@@ -15,13 +15,13 @@ use crate::utils::{LogPriority, android_log};
 /// cancellation/join remains a separate IO contract; revocation is not a join.
 struct PendingEngineDelivery {
     handle: jlong,
-    delivered: bool,
+    cleanup_transferred: bool,
 }
 
 impl Drop for PendingEngineDelivery {
     fn drop(&mut self) {
-        if !self.delivered {
-            crate::engine::destroy_engine(self.handle);
+        if !self.cleanup_transferred {
+            crate::engine::destroy_unadopted_engine(self.handle);
         }
     }
 }
@@ -1501,7 +1501,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
             };
             let mut pending = PendingEngineDelivery {
                 handle: context_handle,
-                delivered: false,
+                cleanup_transferred: false,
             };
 
             // Transfer the original fd, not a duplicate. Java receives metadata
@@ -1514,56 +1514,54 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
                 return;
             }
 
+            // Both push and poll publish a native-owned offer. Java callback
+            // return only acknowledges notification, never engine adoption.
+            coordinator.set_engine_data(
+                session_id,
+                crate::coordinator::SessionEngineData {
+                    ptr: context_handle,
+                    pty_fd,
+                    pid,
+                },
+            );
+            pending.cleanup_transferred = true; // cleanup responsibility moved to registry
             if poll_delivery {
-                coordinator.set_engine_data(
-                    session_id,
-                    crate::coordinator::SessionEngineData {
-                        ptr: context_handle,
-                        pty_fd: pty_fd as i32,
-                        pid: pid as i32,
-                    },
-                );
-                // The coordinator owns this unclaimed delivery until poll or
-                // unregister. Callback delivery does not also populate the map.
-                pending.delivered = true;
                 return;
             }
-            crate::utils::android_log(
-                crate::utils::LogPriority::INFO,
-                &format!(
-                    "[TRACE_SESSION] 5.5. Engine data registered for session {}. SUCCESS.",
-                    session_id
-                ),
-            );
-
-            // 主动回调 Java 通知初始化完成
-            if let Some(ref cb) = callback_ref {
-                if let Some(vm) = crate::JAVA_VM.get() {
-                    if let Ok(mut env) = vm.attach_current_thread() {
-                        let delivered = env.call_method(
-                            cb.as_obj(),
-                            "onEngineInitialized",
-                            "(JII)V",
-                            &[
-                                jni::objects::JValue::Long(context_handle),
-                                jni::objects::JValue::Int(pty_fd as i32),
-                                jni::objects::JValue::Int(pid as i32),
-                            ],
-                        );
-                        pending.delivered = delivered.is_ok();
-                        if pending.delivered {
-                            crate::utils::android_log(
-                                crate::utils::LogPriority::INFO,
-                                "[TRACE_SESSION] 5.6. Java onEngineInitialized callback executed.",
-                            );
-                        } else {
-                            android_log(
-                                LogPriority::ERROR,
-                                "createSessionAsync: callback rejected",
-                            );
-                        }
-                    }
+            let notified = if let Some(ref cb) = callback_ref
+                && let Some(vm) = crate::JAVA_VM.get()
+                && let Ok(mut env) = vm.attach_current_thread()
+            {
+                let result = env.call_method(
+                    cb.as_obj(),
+                    "onEngineInitialized",
+                    "(JII)V",
+                    &[
+                        jni::objects::JValue::Long(context_handle),
+                        jni::objects::JValue::Int(pty_fd),
+                        jni::objects::JValue::Int(pid),
+                    ],
+                );
+                if result.is_err() && env.exception_check().unwrap_or(false) {
+                    let _ = env.exception_clear();
                 }
+                result.is_ok()
+            } else {
+                false
+            };
+            if notified {
+                android_log(
+                    LogPriority::INFO,
+                    "ENGINE_OFFER_NOTIFIED: ownership awaits claim/ack",
+                );
+            } else {
+                // Reject only this still-native-owned offer; an already acked
+                // callback recipient must not be destroyed by a later exception.
+                coordinator.reject_engine_data(session_id, context_handle);
+                android_log(
+                    LogPriority::ERROR,
+                    "ENGINE_OFFER_REJECTED: callback unavailable or failed",
+                );
             }
         });
 

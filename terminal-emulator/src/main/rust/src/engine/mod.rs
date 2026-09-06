@@ -38,3 +38,20 @@ pub fn destroy_engine(handle: i64) {
     crate::coordinator::discard_engine_data(handle);
     TerminalContext::stop_io(&context);
 }
+
+/// Failed/revoked initialization still owns its process as well as its engine.
+/// Unlike normal display disposal, this path must not rely on PTY HUP for kill.
+/// Caller must already hold exclusive cleanup responsibility, never an acked token.
+pub(crate) fn destroy_unadopted_engine(handle: i64) {
+    let Some(context) = ENGINE_HANDLES.remove(handle) else {
+        return;
+    };
+    crate::coordinator::discard_engine_data(handle);
+    if let Err(error) = context.terminate_unadopted_process() {
+        crate::utils::android_log(
+            crate::utils::LogPriority::ERROR,
+            &format!("UNADOPTED_PROCESS_TERMINATE_FAILED: {error}"),
+        );
+    }
+    TerminalContext::stop_io(&context);
+}

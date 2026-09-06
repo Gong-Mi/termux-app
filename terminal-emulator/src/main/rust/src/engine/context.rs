@@ -204,6 +204,14 @@ impl TerminalContext {
         [process_kind, process_code, io_kind, io_code]
     }
 
+    /// Used only when cleanup responsibility was never transferred to a client.
+    pub(crate) fn terminate_unadopted_process(&self) -> std::io::Result<bool> {
+        match self.process.as_ref() {
+            Some(process) => process.terminate(),
+            None => Ok(false),
+        }
+    }
+
     pub fn submit_input(&self, bytes: &[u8]) -> Result<(), SubmitError> {
         // Process exit revokes new input without truncating reader tail/drain.
         if self

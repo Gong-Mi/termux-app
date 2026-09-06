@@ -102,6 +102,32 @@ and validated complete UTF-8 prefixes. The scanner advances only active bytes
 and consumes its predicate within one asm block; this repair is not a measured
 performance claim. CI x86 scalar and local ARM/SVE evidence remain separate.
 
+## Initialization ownership transfer (D1)
+
+`engine_delivery_claim` is registered in lifecycle/all. Pending and Claimed offers
+remain native-owned until identity-matched ack; unregister/reject reclaims both,
+while legacy poll is an atomic direct transfer and cannot steal a claim. Failed
+adoption has no authority to reject another claimant. Rejected/unadopted engines
+request termination through their existing ProcessOwner before IO cancellation;
+ordinary engine destruction does not acquire this new process-kill policy.
+
+The `delivery` verifier mode compiles actual production Kotlin against a minimal
+Handler/Message/Log queue shim and executes the actual JNI library with real
+shells. The shim is only a controllable scheduling/logging boundary, not ART or
+Android Looper validation, and is not part of an Android source set. Other verifier
+modes do not load it. Harness and shim source hashes are recorded independently.
+
+Adoption occurs inside the queued Runnable: claim, wrapper construction, ack,
+then READY. Client notifications occur after the lifecycle lock is released.
+`dispose()` is explicit final removal, not process exit. Service invokes it at
+both actual removal sites outside the list lock, after result/transcript capture.
+`verify-delivery-boundary.py` checks this source wiring, not live Service behavior;
+APK compilation/cold-start and eventual ART lifecycle acceptance are separate.
+
+No completed-process callback or retained-final-screen policy is enabled by D1.
+Native failures before an offer, OOM/attach failure feedback, UI completion/drain,
+and in-flight callback quiescence remain separately tracked lifecycle work.
+
 ## Required CI behavior
 
 - `cargo fmt -- --check` and `cargo clippy --all-targets --all-features -- -D warnings`

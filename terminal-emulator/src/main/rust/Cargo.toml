@@ -146,3 +146,7 @@ path = "tests/session_completion_observation.rs"
 [[test]]
 name = "utf8_streaming"
 path = "tests/utf8_streaming.rs"
+
+[[test]]
+name = "engine_delivery_claim"
+path = "tests/engine_delivery_claim.rs"

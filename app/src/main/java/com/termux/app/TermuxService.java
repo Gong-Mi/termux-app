@@ -311,6 +311,9 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
                 synchronized (mShellManager.mTermuxSessions) {
                     mShellManager.mTermuxSessions.remove(termuxSessions.get(i));
                 }
+                // This session is no longer retained; revoke pending adoption
+                // and release the engine outside the shell-manager lock.
+                termuxSessions.get(i).getTerminalSession().dispose();
             }
         }
 
@@ -709,6 +712,9 @@ public final class TermuxService extends Service implements AppShell.AppShellCli
             synchronized (mShellManager.mTermuxSessions) {
                 mShellManager.mTermuxSessions.remove(termuxSession);
             }
+            // finish()/killIfExecuting() have already captured transcript data,
+            // and plugin result processing above must precede final disposal.
+            termuxSession.getTerminalSession().dispose();
 
             // Notify {@link TermuxSessionsListViewController} that sessions list has been updated if
             // activity in is foreground
