@@ -176,12 +176,30 @@ fn real_pty_preserves_empty_path_and_explicit_library_path() {
 #[test]
 fn real_pty_does_not_force_a_login_shell_or_rewrite_argv_zero() {
     use std::os::fd::{FromRawFd, OwnedFd};
-    let shell = if cfg!(target_os = "android") { "/system/bin/sh" } else { "/bin/sh" };
+    let shell = if cfg!(target_os = "android") {
+        "/system/bin/sh"
+    } else {
+        "/bin/sh"
+    };
     let (fd, pid) = termux_rust::pty::create_subprocess_with_data(
-        shell.into(), "/".into(),
-        vec!["caller-shell-name".into(), "-c".into(), "[ \"$0\" = caller-shell-name ] || exit 75".into()],
-        vec!["PATH=/system/bin".into(), "LD_PRELOAD=".into()], 24, 80, 8, 16,
-    ).unwrap();
+        shell.into(),
+        "/".into(),
+        vec![
+            "caller-shell-name".into(),
+            "-c".into(),
+            "[ \"$0\" = caller-shell-name ] || exit 75".into(),
+        ],
+        vec!["PATH=/system/bin".into(), "LD_PRELOAD=".into()],
+        24,
+        80,
+        8,
+        16,
+    )
+    .unwrap();
     let _master = unsafe { OwnedFd::from_raw_fd(fd) };
-    assert_eq!(termux_rust::pty::wait_for(pid), 0, "75=caller argv0 overwritten");
+    assert_eq!(
+        termux_rust::pty::wait_for(pid),
+        0,
+        "75=caller argv0 overwritten"
+    );
 }

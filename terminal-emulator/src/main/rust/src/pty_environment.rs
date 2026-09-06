@@ -11,7 +11,11 @@ pub(crate) fn prepare(env: &[String], prefix: &str) -> Vec<String> {
     } else {
         "libtermux-exec-direct-ld-preload.so"
     });
-    let hook = if preferred.is_file() { preferred } else { lib.join("libtermux-exec.so") };
+    let hook = if preferred.is_file() {
+        preferred
+    } else {
+        lib.join("libtermux-exec.so")
+    };
     let hook = if hook.is_file() {
         Some(
             hook.canonicalize()
@@ -28,21 +32,43 @@ pub(crate) fn prepare(env: &[String], prefix: &str) -> Vec<String> {
 // Matches bootstrap bin/termux-exec-system-linker-exec (2.4.0): disable,
 // force on API>=29, otherwise exempt only unavailable SELinux or app_25/app_27.
 fn linker_required(mode: &str, api: u32, context: &str) -> bool {
-    if api < 29 || mode == "disable" { return false; }
-    if mode == "force" { return true; }
+    if api < 29 || mode == "disable" {
+        return false;
+    }
+    if mode == "force" {
+        return true;
+    }
     !context.trim_matches(['\0', '\n', ' ']).is_empty()
         && !context.starts_with("u:r:untrusted_app_25:")
         && !context.starts_with("u:r:untrusted_app_27:")
 }
 
 fn platform_linker_required(env: &[String]) -> bool {
-    let mode = env.iter().rev().find_map(|entry| entry.strip_prefix("TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE=")).unwrap_or("enable");
+    let mode = env
+        .iter()
+        .rev()
+        .find_map(|entry| entry.strip_prefix("TERMUX_EXEC__SYSTEM_LINKER_EXEC__MODE="))
+        .unwrap_or("enable");
     #[cfg(target_os = "android")]
     let api = {
-        unsafe extern "C" { fn __system_property_get(name: *const std::ffi::c_char, value: *mut std::ffi::c_char) -> i32; }
+        unsafe extern "C" {
+            fn __system_property_get(
+                name: *const std::ffi::c_char,
+                value: *mut std::ffi::c_char,
+            ) -> i32;
+        }
         let mut value = [0 as std::ffi::c_char; 92];
-        let n = unsafe { __system_property_get(c"ro.build.version.sdk".as_ptr(), value.as_mut_ptr()) };
-        if n > 0 { unsafe { std::ffi::CStr::from_ptr(value.as_ptr()) }.to_str().ok().and_then(|s| s.parse().ok()).unwrap_or(0) } else { 0 }
+        let n =
+            unsafe { __system_property_get(c"ro.build.version.sdk".as_ptr(), value.as_mut_ptr()) };
+        if n > 0 {
+            unsafe { std::ffi::CStr::from_ptr(value.as_ptr()) }
+                .to_str()
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0)
+        } else {
+            0
+        }
     };
     #[cfg(not(target_os = "android"))]
     let api = 0;
