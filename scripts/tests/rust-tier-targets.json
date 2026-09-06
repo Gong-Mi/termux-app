@@ -4,6 +4,7 @@
     "extended_features",
     "check_width",
     "wcwidth_boundaries",
+    "utf8_streaming",
     "fix_verification",
     "key_event_handling",
     "osc_escape_test",
@@ -46,6 +47,7 @@
     "pty_context_integration",
     "process_owner",
     "session_process_lifecycle",
+    "session_completion_observation",
     "concurrency_lock_safety",
     "flat_buffer_test",
     "jni_boundary_safety",
@@ -95,6 +97,7 @@
     "pty_context_integration",
     "process_owner",
     "session_process_lifecycle",
+    "session_completion_observation",
     "extended_features",
     "extreme_content_stress",
     "fix_verification",
@@ -154,6 +157,7 @@
     "vulkan_path_cache_test",
     "vulkan_physical_cache_test",
     "vulkan_render_benchmark",
-    "wcwidth_boundaries"
+    "wcwidth_boundaries",
+    "utf8_streaming"
   ]
 }

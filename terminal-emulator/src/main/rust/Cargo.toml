@@ -138,3 +138,11 @@ path = "tests/process_owner.rs"
 [[test]]
 name = "session_process_lifecycle"
 path = "tests/session_process_lifecycle.rs"
+
+[[test]]
+name = "session_completion_observation"
+path = "tests/session_completion_observation.rs"
+
+[[test]]
+name = "utf8_streaming"
+path = "tests/utf8_streaming.rs"
