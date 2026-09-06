@@ -3,6 +3,7 @@ name: Android emulator experiment
 "on":
   pull_request:
     branches:
+      - feat/session-completion-ui
       - feat/session-completion-bridge
       - feat/session-completion-candidate
       - fix/session-delivery-claim
@@ -20,6 +21,7 @@ name: Android emulator experiment
       - 'termux-shared/**'
       - 'buildSrc/**'
       - 'scripts/verify-skia-api-ab.py'
+      - 'scripts/verify-completion-art.py'
       - 'scripts/tests/test_verify_skia_api_ab.py'
       - 'scripts/test-skia-experiment-wiring.py'
       - 'scripts/verify-test-build-ci.py'
@@ -162,7 +164,7 @@ jobs:
           if result.returncode == 0 or 'skiaApiExperiment is restricted to debuggable APK variants' not in result.stdout:
               raise SystemExit('Experiment release guard was not exercised successfully')
           PY
-          ./gradlew assembleDebug -PskiaApiExperiment=true --parallel --no-daemon --console=plain
+          ./gradlew assembleDebug -PskiaApiExperiment=true :app:assembleDebugAndroidTest --parallel --no-daemon --console=plain
           APK_DIR=app/build/outputs/apk/debug
           test -s "$APK_DIR/termux-app_emulator-${GITHUB_SHA}_x86_64.apk"
           sha256sum "$APK_DIR/termux-app_emulator-${GITHUB_SHA}_x86_64.apk" > apk.sha256
@@ -221,12 +223,16 @@ jobs:
           adb shell wm density
           adb shell getprop ro.build.version.sdk
 
-      - name: Install exact APK and verify Skia API A/B
+      - name: Install exact APK
+        id: install-target
         run: |
           set -euo pipefail
           APK="app/build/outputs/apk/debug/termux-app_emulator-${GITHUB_SHA}_x86_64.apk"
           adb install -r "$APK"
           adb shell dumpsys package com.termux > package.txt
+
+      - name: Verify Skia API A/B
+        run: |
           python3 scripts/verify-skia-api-ab.py --output skia-api-ab --require-baseline-failure
 
       - name: Record experiment evidence
@@ -240,6 +246,11 @@ jobs:
             echo '- claim boundary: see skia-api-ab/summary.json for same-APK API-cap A/B, GPU readback and first-frame result; not physical GPU or sustained rendering evidence'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Verify real ART completion and plugin result delivery
+        if: ${{ !cancelled() && steps.install-target.outcome == 'success' }}
+        run: |
+          python3 scripts/verify-completion-art.py --output completion-art
+
       - name: Upload emulator evidence
         if: always()
         uses: actions/upload-artifact@v6
@@ -252,3 +263,4 @@ jobs:
             emulator.pid
             package.txt
             skia-api-ab/
+            completion-art/

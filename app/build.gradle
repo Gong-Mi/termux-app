@@ -49,6 +49,7 @@ android {
 
     defaultConfig {
         applicationId "com.termux"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         minSdk project.properties.minSdkVersion.toInteger()
         targetSdk project.properties.targetSdkVersion.toInteger()
         versionCode 118
@@ -164,6 +165,8 @@ android {
 
 dependencies {
     testImplementation "junit:junit:4.13.2"
+    androidTestImplementation "androidx.test.ext:junit:1.1.5"
+    androidTestImplementation "androidx.test:runner:1.5.2"
     testImplementation "org.robolectric:robolectric:4.10"
     coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.0.4"
 }
