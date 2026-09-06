@@ -1683,3 +1683,23 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_close(
     );
     // unsafe { libc::close(fd); }
 }
+
+/// Observe process and IO terminal facts without changing their ownership.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_RustTerminal_getCompletionStatus(
+    env: JNIEnv,
+    _class: JClass,
+    ptr: jni::sys::jlong,
+) -> jni::sys::jintArray {
+    let Some(context) = crate::engine::ENGINE_HANDLES.acquire(ptr) else {
+        return std::ptr::null_mut();
+    };
+    let status = context.completion_status();
+    let Ok(array) = env.new_int_array(4) else {
+        return std::ptr::null_mut();
+    };
+    if env.set_int_array_region(&array, 0, &status).is_err() {
+        return std::ptr::null_mut();
+    }
+    array.into_raw()
+}

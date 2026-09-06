@@ -26,6 +26,14 @@ object RustTerminal {
     @JvmStatic
     external fun startIoThread(enginePtr: Long, ptyFd: Int)
 
+    /** Independent monotonic observations, not a cross-source atomic snapshot.
+     * [processKind, processCode, ioKind, ioCode]; null for invalid/revoked handle.
+     * Process: absent0/running1/exited2/lost3. IO: notStarted0/running1/EOF2/
+     * cancelled3/error4/overflow5/panicked6. Only exited/lost and errors carry codes.
+     * IO terminal means fd closed, not thread joined/UI delivered/final frame shown. */
+    @JvmStatic
+    external fun getCompletionStatus(enginePtr: Long): IntArray?
+
     // --- 数据处理 ---
 
     @JvmStatic

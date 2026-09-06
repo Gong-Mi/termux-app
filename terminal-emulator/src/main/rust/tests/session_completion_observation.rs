@@ -42,13 +42,17 @@ fn process_exit_does_not_finish_io_and_eof_preserves_utf8_tail() {
     assert_eq!(context.completion_status(), [2, 23, 1, 0]);
     let text = "tail-中文".as_bytes();
     peer.write_all(&text[..6]).unwrap();
+    wait_for(|| {
+        let mut row = [0u16; 80];
+        context.lock.read().unwrap().state.copy_row_text(0, &mut row);
+        String::from_utf16_lossy(&row).starts_with("tail-")
+    });
     peer.write_all(&text[6..]).unwrap();
     drop(peer);
     wait_for(|| context.completion_status()[2] == 2);
     assert_eq!(context.completion_status(), [2, 23, 2, 0]);
-    let mut row = [0u16; 80];
-    context.lock.read().unwrap().state.copy_row_text(0, &mut row);
-    assert!(String::from_utf16_lossy(&row).starts_with("tail-中文"));
+    let text = context.lock.read().unwrap().state.get_current_screen().get_transcript_text();
+    assert!(text.starts_with("tail-中文"), "transcript={text:?}");
     TerminalContext::stop_io(&context);
     wait_for(|| context.io_is_joined());
     assert_eq!(context.completion_status(), [2, 23, 2, 0]);

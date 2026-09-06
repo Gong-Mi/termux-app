@@ -3,7 +3,187 @@ use std::{
     os::fd::{AsRawFd, FromRawFd, OwnedFd},
     time::{Duration, Instant},
 };
-use termux_rust::engine::io_runtime::{IoRuntime, StopOutcome, SubmitError};
+use termux_rust::engine::io_runtime::{IoObserver, IoOutcome, IoRuntime, StopOutcome, SubmitError};
+
+fn observed(observer: &IoObserver) -> IoOutcome {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        if let Some(outcome) = observer.outcome() {
+            return outcome;
+        }
+        assert!(Instant::now() < deadline, "IO outcome not published");
+        std::thread::yield_now();
+    }
+}
+
+#[test]
+fn observer_survives_runtime_drop_without_retaining_silent_socket() {
+    let (master, peer) = socket_pair();
+    let runtime = IoRuntime::start(master, 4096, |_| vec![]).unwrap();
+    let observer = runtime.observer();
+    let clone = observer.clone();
+    assert_eq!(observer.outcome(), None);
+    drop(runtime);
+    assert_eq!(observed(&observer), IoOutcome::Cancelled);
+    assert_eq!(clone.outcome(), Some(IoOutcome::Cancelled));
+    // Peer EOF proves the owned endpoint really closed, without racing fd reuse.
+    let mut byte = 0u8;
+    assert_eq!(
+        unsafe {
+            libc::recv(
+                peer.as_raw_fd(),
+                (&mut byte as *mut u8).cast(),
+                1,
+                libc::MSG_DONTWAIT,
+            )
+        },
+        0,
+        "observer must not publish before endpoint closure",
+    );
+}
+
+fn observer_final_bytes_before_eof(pair: (OwnedFd, OwnedFd), socket: bool) {
+    let (master, peer) = pair;
+    let (entered_tx, entered) = std::sync::mpsc::channel();
+    let (release, released) = gate();
+    let (after_tx, after) = gate();
+    let (finish, finished) = gate();
+    let mut runtime = IoRuntime::start_with_callbacks(
+        master,
+        4096,
+        move |bytes| {
+            entered_tx.send(bytes.to_vec()).unwrap();
+            released.recv_timeout(Duration::from_secs(3)).unwrap();
+            vec![]
+        },
+        move || {
+            after_tx.send(()).unwrap();
+            finished.recv_timeout(Duration::from_secs(3)).unwrap();
+        },
+        |_| {},
+    )
+    .unwrap();
+    let observer = runtime.observer();
+    write_small(&peer, b"final-\xf0\x9f\x8c\x99");
+    if socket {
+        assert_eq!(
+            unsafe { libc::shutdown(peer.as_raw_fd(), libc::SHUT_WR) },
+            0
+        );
+    }
+    assert_eq!(
+        entered.recv_timeout(Duration::from_secs(3)).unwrap(),
+        b"final-\xf0\x9f\x8c\x99"
+    );
+    // PTY close may discard unread slave output: close only after actual read.
+    drop(peer);
+    assert_eq!(observer.outcome(), None, "on_bytes is still running");
+    release.send(()).unwrap();
+    after.recv_timeout(Duration::from_secs(3)).unwrap();
+    assert_eq!(observer.outcome(), None, "after_read is still running");
+    finish.send(()).unwrap();
+    assert_eq!(observed(&observer), IoOutcome::Eof);
+    assert!(matches!(runtime.join().unwrap(), StopOutcome::Eof));
+    drop(runtime);
+    assert_eq!(observer.outcome(), Some(IoOutcome::Eof));
+}
+
+#[test]
+fn socket_observer_waits_for_final_bytes_and_after_read() {
+    observer_final_bytes_before_eof(socket_pair(), true);
+}
+
+#[test]
+fn pty_observer_waits_for_final_bytes_and_after_read() {
+    observer_final_bytes_before_eof(pty(), false);
+}
+
+#[test]
+fn observer_does_not_wait_for_on_stop_or_claim_join() {
+    let (master, peer) = socket_pair();
+    let (entered_tx, entered) = gate();
+    let (release, released) = gate();
+    let mut runtime = IoRuntime::start_with_callbacks(
+        master,
+        4096,
+        |_| vec![],
+        || {},
+        move |_| {
+            entered_tx.send(()).unwrap();
+            released.recv_timeout(Duration::from_secs(3)).unwrap();
+        },
+    )
+    .unwrap();
+    let observer = runtime.observer();
+    runtime.cancel();
+    entered.recv_timeout(Duration::from_secs(3)).unwrap();
+    assert_eq!(observer.outcome(), Some(IoOutcome::Cancelled));
+    let mut byte = 0u8;
+    assert_eq!(
+        unsafe {
+            libc::recv(
+                peer.as_raw_fd(),
+                (&mut byte as *mut u8).cast(),
+                1,
+                libc::MSG_DONTWAIT,
+            )
+        },
+        0,
+        "observer must not publish before endpoint closure",
+    );
+    release.send(()).unwrap();
+    assert!(matches!(runtime.join().unwrap(), StopOutcome::Cancelled));
+}
+
+#[test]
+fn after_read_panic_publishes_panicked_without_swallowing_unwind() {
+    let (master, peer) = socket_pair();
+    let mut runtime = IoRuntime::start_with_callbacks(
+        master,
+        4096,
+        |_| vec![b"queued-reply".to_vec()],
+        || panic!("injected after_read panic"),
+        |_| panic!("on_stop must not run on parser unwind"),
+    )
+    .unwrap();
+    let observer = runtime.observer();
+    write_small(&peer, b"query");
+    assert_eq!(observed(&observer), IoOutcome::Panicked);
+    assert_eq!(runtime.submit(b"late"), Err(SubmitError::Closed));
+    let mut byte = 0u8;
+    assert_eq!(
+        unsafe {
+            libc::recv(
+                peer.as_raw_fd(),
+                (&mut byte as *mut u8).cast(),
+                1,
+                libc::MSG_DONTWAIT,
+            )
+        },
+        0,
+        "observer must not publish before endpoint closure",
+    );
+    assert!(runtime.join().is_err());
+    drop(runtime);
+    assert_eq!(observer.outcome(), Some(IoOutcome::Panicked));
+}
+
+#[test]
+fn io_outcome_preserves_errno_and_falls_back_to_eio() {
+    fn copy_eq<T: Copy + Eq>() {}
+    copy_eq::<IoOutcome>();
+    assert_eq!(
+        IoOutcome::from(&StopOutcome::IoError(io::Error::from_raw_os_error(libc::ENOTTY))),
+        IoOutcome::IoError(libc::ENOTTY)
+    );
+    assert_eq!(
+        IoOutcome::from(&StopOutcome::IoError(io::Error::new(
+            io::ErrorKind::WriteZero,
+            "zero write",
+        ))),
+        IoOutcome::IoError(libc::EIO)
+    );
+}
 
 fn pty() -> (OwnedFd, OwnedFd) {
     let (mut master, mut slave) = (-1, -1);
@@ -97,6 +277,7 @@ fn cancel_silent_slave_is_idempotent_and_closes_admission() {
     runtime.cancel();
     assert_eq!(runtime.submit(b"x"), Err(SubmitError::Closed));
     stopped(&runtime);
+    assert_eq!(runtime.observer().outcome(), Some(IoOutcome::Cancelled));
     assert!(matches!(runtime.join().unwrap(), StopOutcome::Cancelled));
 }
 
@@ -211,6 +392,10 @@ fn parser_response_overflow_is_a_terminal_failure_not_silent_loss() {
         runtime.join().unwrap(),
         StopOutcome::ResponseOverflow
     ));
+    assert_eq!(
+        runtime.observer().outcome(),
+        Some(IoOutcome::ResponseOverflow)
+    );
     assert_eq!(runtime.submit(b"x"), Err(SubmitError::Closed));
 }
 
@@ -243,6 +428,8 @@ fn callback_unwind_closes_fd_and_old_cancel_never_closes_reused_number() {
     write_small(&slave, b"x");
     stopped(&runtime);
     assert!(runtime.join().is_err());
+    let observer = runtime.observer();
+    assert_eq!(observer.outcome(), Some(IoOutcome::Panicked));
     let replacement = std::fs::File::open("/dev/null").unwrap();
     // dup2 exercises exact descriptor reuse without double-owning replacement.
     let replacement_fd = if replacement.as_raw_fd() == fd {
@@ -255,6 +442,7 @@ fn callback_unwind_closes_fd_and_old_cancel_never_closes_reused_number() {
     runtime.cancel();
     drop(runtime);
     assert!(unsafe { libc::fcntl(fd, libc::F_GETFD) } >= 0);
+    assert_eq!(observer.outcome(), Some(IoOutcome::Panicked));
     drop(replacement_fd);
     drop(replacement);
 }
@@ -289,6 +477,10 @@ fn invalid_resize_target_reports_io_error_and_closes_admission() {
     let mut runtime = IoRuntime::start(master, 4096, |_| vec![]).unwrap();
     runtime.resize(1, 1, 1, 1).unwrap();
     stopped(&runtime);
+    assert_eq!(
+        runtime.observer().outcome(),
+        Some(IoOutcome::IoError(libc::ENOTTY))
+    );
     match runtime.join().unwrap() {
         StopOutcome::IoError(error) => assert_eq!(error.raw_os_error(), Some(libc::ENOTTY)),
         other => panic!("wrong outcome: {other:?}"),
@@ -349,6 +541,7 @@ fn cancel_revokes_admission_but_does_not_pretend_to_interrupt_callback() {
     entered.recv_timeout(Duration::from_secs(3)).unwrap();
     runtime.cancel();
     assert!(!runtime.is_stopped(), "callback has not returned yet");
+    assert_eq!(runtime.observer().outcome(), None);
     assert_eq!(runtime.submit(b"x"), Err(SubmitError::Closed));
     release.send(()).unwrap();
     stopped(&runtime);

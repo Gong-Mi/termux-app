@@ -31,6 +31,40 @@ pub enum StopOutcome {
     ResponseOverflow,
 }
 
+/// Transport completion, not child exit or worker-thread join.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IoOutcome {
+    Eof,
+    Cancelled,
+    IoError(i32),
+    ResponseOverflow,
+    Panicked,
+}
+
+impl From<&StopOutcome> for IoOutcome {
+    fn from(outcome: &StopOutcome) -> Self {
+        match outcome {
+            StopOutcome::Eof => Self::Eof,
+            StopOutcome::Cancelled => Self::Cancelled,
+            StopOutcome::IoError(error) => Self::IoError(error.raw_os_error().unwrap_or(libc::EIO)),
+            StopOutcome::ResponseOverflow => Self::ResponseOverflow,
+        }
+    }
+}
+
+/// Retains only terminal data: no descriptor, thread handle, or parser context.
+#[derive(Clone)]
+pub struct IoObserver {
+    outcome: Arc<Mutex<Option<IoOutcome>>>,
+}
+impl IoObserver {
+    /// Some means parsing ended, the owned fd closed, and pending output cleared.
+    /// It does not mean the on_stop callback returned or the worker was joined.
+    pub fn outcome(&self) -> Option<IoOutcome> {
+        *self.outcome.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
 struct Pending {
     queue: VecDeque<Vec<u8>>,
     // Includes the worker-local head's unwritten suffix.
@@ -62,6 +96,7 @@ impl Shared {
 
 pub struct IoRuntime {
     shared: Arc<Shared>,
+    observer: IoObserver,
     worker: Option<JoinHandle<StopOutcome>>,
 }
 impl IoRuntime {
@@ -103,23 +138,35 @@ impl IoRuntime {
             stopped: AtomicBool::new(false),
             wake: unsafe { OwnedFd::from_raw_fd(wake) },
         });
+        let observer = IoObserver {
+            outcome: Arc::new(Mutex::new(None)),
+        };
+        let completion = observer.clone();
         let state = shared.clone();
         let worker = thread::Builder::new()
             .name("pty-io".into())
             .spawn(move || {
-                let owner = WorkerOwner {
+                let mut owner = WorkerOwner {
                     fd: Some(fd),
                     shared: state,
+                    observer: completion,
+                    outcome: IoOutcome::Panicked,
                 };
                 let outcome = run(&owner, on_bytes, after_read);
+                owner.outcome = IoOutcome::from(&outcome);
                 drop(owner);
                 on_stop(&outcome);
                 outcome
             })?;
         Ok(Self {
             shared,
+            observer,
             worker: Some(worker),
         })
+    }
+
+    pub fn observer(&self) -> IoObserver {
+        self.observer.clone()
     }
 
     pub fn submit(&self, data: &[u8]) -> Result<(), SubmitError> {
@@ -190,6 +237,9 @@ impl Drop for IoRuntime {
 struct WorkerOwner {
     fd: Option<OwnedFd>,
     shared: Arc<Shared>,
+    observer: IoObserver,
+    // Replaced only when run returns normally; unwind retains Panicked.
+    outcome: IoOutcome,
 }
 impl Drop for WorkerOwner {
     fn drop(&mut self) {
@@ -205,6 +255,7 @@ impl Drop for WorkerOwner {
         pending.bytes = 0;
         pending.resize = None;
         drop(pending);
+        *self.observer.outcome.lock().unwrap_or_else(|e| e.into_inner()) = Some(self.outcome);
         self.shared.stopped.store(true, Ordering::Release);
     }
 }
