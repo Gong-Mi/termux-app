@@ -29,6 +29,7 @@ case "$tier" in
             extended_features \
             check_width \
             wcwidth_boundaries \
+            utf8_streaming \
             fix_verification \
             key_event_handling \
             osc_escape_test \
@@ -74,6 +75,7 @@ case "$tier" in
             pty_context_integration \
             process_owner \
             session_process_lifecycle \
+            session_completion_observation \
             concurrency_lock_safety \
             flat_buffer_test \
             jni_boundary_safety \
@@ -117,6 +119,7 @@ case "$tier" in
             concurrency_lock_safety consistency content_overflow_test crlf_test
             engine_handle_lifecycle engine_handle_integration
             pty_io_runtime pty_context_integration process_owner session_process_lifecycle
+            session_completion_observation
             extended_features extreme_content_stress fix_verification
             flat_buffer_test font_calibration gemini_compat_test
             gemini_state_soak_test inverse_video_test jni_boundary_safety
@@ -136,7 +139,7 @@ case "$tier" in
             vt_compatibility vte_parser_benchmark vte_performance_benchmark
             vte_sve_consistency vulkan_cache_performance_proof
             vulkan_lifecycle_stress vulkan_path_cache_test
-            vulkan_physical_cache_test vulkan_render_benchmark wcwidth_boundaries
+            vulkan_physical_cache_test vulkan_render_benchmark wcwidth_boundaries utf8_streaming
         )
         run_tests all "${ALL_TESTS[@]}"
         ;;

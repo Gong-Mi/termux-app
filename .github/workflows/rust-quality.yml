@@ -22,6 +22,7 @@ name: Rust correctness tiers
       - 'terminal-emulator/build.gradle*'
   pull_request:
     branches:
+      - fix/session-process-owner
       - fix/pty-io-lifecycle
       - fix/engine-adoption
       - fix/engine-handle-lifetime

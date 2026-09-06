@@ -20,6 +20,17 @@ private fun assertExited(sessionId: Int, handle: Long, code: Int, retained: Stri
     }
     val expected = intArrayOf(2, -1, code)
     check(status!!.contentEquals(expected)) { "exit status: ${status!!.contentToString()}" }
+    // A parsed marker proves the slave opened. Pending termination may happen
+    // before first slave open, so process exit alone must not manufacture EOF.
+    if (retained != null) {
+        awaitCondition("IO EOF for session $sessionId") {
+            RustTerminal.getCompletionStatus(handle)?.get(2) == 2
+        }
+        check(RustTerminal.getCompletionStatus(handle)!!.contentEquals(intArrayOf(2, code, 2, 0)))
+    }
+    val observed = RustTerminal.getCompletionStatus(handle)!!
+    check(observed[0] == 2 && observed[1] == code)
+    println("PASS: independent process/IO observation=${observed.contentToString()}; not UI completion")
     // Exit does not revoke the engine or clear text already parsed by the reader.
     // This is not a claim about EOF, output drain or UI callback delivery.
     repeat(3) {
@@ -57,6 +68,7 @@ fun main() {
     val callback = RustEngineCallback(null)
     val handle = RustTerminal.createEngine(80, 24, 8, 16, 2000, callback)
     check(handle > 0)
+    check(RustTerminal.getCompletionStatus(handle)!!.contentEquals(intArrayOf(0, 0, 0, 0)))
     val text = "lease-中文".toByteArray(Charsets.UTF_8)
     RustTerminal.processBatch(handle, text, text.size)
     check(RustTerminal.getTranscriptText(handle).contains("lease-中文"))

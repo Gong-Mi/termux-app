@@ -1,4 +1,4 @@
-use super::io_runtime::{IoRuntime, SubmitError};
+use super::io_runtime::{IoObserver, IoOutcome, IoRuntime, SubmitError};
 /// 终端引擎和上下文管理
 use std::os::fd::OwnedFd;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -85,6 +85,7 @@ pub struct TerminalContext {
     pub running: AtomicBool,
     process: Option<Arc<crate::process_owner::ProcessOwner>>,
     io: Mutex<Option<IoRuntime>>,
+    io_observer: Mutex<Option<IoObserver>>,
     io_joined: AtomicBool,
 }
 
@@ -98,6 +99,7 @@ impl TerminalContext {
             running: AtomicBool::new(true),
             process: None,
             io: Mutex::new(None),
+            io_observer: Mutex::new(None),
             io_joined: AtomicBool::new(true),
         }
     }
@@ -163,9 +165,43 @@ impl TerminalContext {
                 );
             },
         )?;
+        *context
+            .io_observer
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(runtime.observer());
         context.io_joined.store(false, Ordering::Release);
         *slot = Some(runtime);
         Ok(())
+    }
+
+    /// Independent monotonic observations, not a cross-source atomic snapshot.
+    /// [process kind, code, IO kind, errno]. Process: absent0/running1/exited2/lost3.
+    /// IO: not-started0/running1/EOF2/cancelled3/error4/overflow5/panicked6.
+    /// An IO terminal result observes fd closure and parsing activity ending, not
+    /// join, full child/descendant drain, callback delivery or frame presentation.
+    pub fn completion_status(&self) -> [i32; 4] {
+        use crate::process_owner::ExitOutcome;
+        let (process_kind, process_code) = match self.process.as_ref() {
+            None => (0, 0),
+            Some(owner) => match owner.outcome() {
+                None => (1, 0),
+                Some(ExitOutcome::Exited(code)) => (2, code),
+                Some(ExitOutcome::Lost(errno)) => (3, errno),
+            },
+        };
+        let observer = self.io_observer.lock().unwrap_or_else(|e| e.into_inner());
+        let (io_kind, io_code) = match observer.as_ref() {
+            None => (0, 0),
+            Some(observer) => match observer.outcome() {
+                None => (1, 0),
+                Some(IoOutcome::Eof) => (2, 0),
+                Some(IoOutcome::Cancelled) => (3, 0),
+                Some(IoOutcome::IoError(errno)) => (4, errno),
+                Some(IoOutcome::ResponseOverflow) => (5, 0),
+                Some(IoOutcome::Panicked) => (6, 0),
+            },
+        };
+        [process_kind, process_code, io_kind, io_code]
     }
 
     pub fn submit_input(&self, bytes: &[u8]) -> Result<(), SubmitError> {

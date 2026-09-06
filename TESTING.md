@@ -78,6 +78,30 @@ Kotlin wiring. It is not proof of kernel syscall execution or ART interaction.
 Process exit does not imply reader EOF, full output drain, UI completion, final
 frame presentation or disposal; those remain separate acceptance work.
 
+## Independent process/IO observations (C2a)
+
+`session_completion_observation` exercises actual child processes and context IO
+in both event orders: process exit with a still-open IO peer, and IO EOF with a
+still-running child. Cancelled remains distinct after join. Neither an absent
+process nor unstarted IO counts as completed. `IoObserver` retains terminal data
+only, not fds or a thread/context owner, and observes close plus queue cleanup;
+`on_stop` reporting and thread join are later boundaries.
+
+`RustTerminal.getCompletionStatus(handle)` returns independent monotonic facts,
+not an atomic cross-source snapshot or a UI completion acknowledgement. The four
+fields are process kind/code and IO kind/code. Invalid or revoked handles return
+null; a retained engine preserves the outcome after its runtime was removed.
+No production UI callback, automatic grace deadline or disposal policy is enabled
+by this observation interface.
+
+`utf8_streaming` in core/all verifies 2/3/4-byte split points, byte-at-a-time input,
+control/CSI/OSC boundaries and malformed-byte consumption. Parser pending storage
+is bounded to one scalar. Incomplete UTF-8 remains pending across advance calls;
+there is no new EOF flush policy. The SVE scanner is retained with bounded windows
+and validated complete UTF-8 prefixes. The scanner advances only active bytes
+and consumes its predicate within one asm block; this repair is not a measured
+performance claim. CI x86 scalar and local ARM/SVE evidence remain separate.
+
 ## Required CI behavior
 
 - `cargo fmt -- --check` and `cargo clippy --all-targets --all-features -- -D warnings`
