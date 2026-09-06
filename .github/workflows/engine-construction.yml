@@ -2,7 +2,7 @@ name: Engine construction contract
 
 "on":
   pull_request:
-    branches: [feat/session-completion-bridge, feat/session-completion-candidate, fix/session-delivery-claim, fix/session-completion-observation, fix/session-process-owner, fix/pty-io-lifecycle, fix/skia-vulkan-api-contract, fix/engine-handle-lifetime, fix/engine-adoption, refactor/test-normalization, feature/rust-integration]
+    branches: [feat/session-completion-ui, feat/session-completion-bridge, feat/session-completion-candidate, fix/session-delivery-claim, fix/session-completion-observation, fix/session-process-owner, fix/pty-io-lifecycle, fix/skia-vulkan-api-contract, fix/engine-handle-lifetime, fix/engine-adoption, refactor/test-normalization, feature/rust-integration]
     paths:
       - 'terminal-emulator/src/main/java/**'
       - 'terminal-emulator/src/main/rust/**'
