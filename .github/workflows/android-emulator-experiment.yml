@@ -3,6 +3,7 @@ name: Android emulator experiment
 "on":
   pull_request:
     branches:
+      - fix/pty-environment-contract
       - test/session-completion-art
       - feat/session-completion-ui
       - feat/session-completion-bridge

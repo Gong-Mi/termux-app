@@ -240,4 +240,51 @@ public class SessionCompletionArtTest {
         } finally { main(session::dispose); }
     }
 
+    @Test public void aptInstallsPythonAndPythonSubprocessRunsInArt() throws Exception {
+        assertTrue("package mutation is emulator-only",
+            android.os.Build.HARDWARE.equals("ranchu") || android.os.Build.HARDWARE.equals("goldfish"));
+        java.io.File prefix = new java.io.File(context().getFilesDir(), "usr");
+        assertFalse("fresh bootstrap must not already contain Python", new java.io.File(prefix, "bin/python").exists());
+        assertTrue("bootstrap omitted tmp directory", new java.io.File(prefix, "tmp").isDirectory());
+        assertTrue("bootstrap omitted apt.conf.d directory", new java.io.File(prefix, "etc/apt/apt.conf.d").isDirectory());
+        java.io.File writableProbe = java.io.File.createTempFile("apt-conf-", ".probe", new java.io.File(prefix, "tmp"));
+        assertTrue("temporary write probe cleanup", writableProbe.delete());
+        java.io.File evidence = new java.io.File(context().getFilesDir(), "package-python-art");
+        assertTrue(evidence.isDirectory() || evidence.mkdirs());
+        for (String asset : new String[]{"package-python-art.sh", "python-subprocess-probe.py"}) {
+            try (java.io.InputStream input = InstrumentationRegistry.getInstrumentation().getContext().getAssets().open(asset);
+                 java.io.OutputStream output = new java.io.FileOutputStream(new java.io.File(evidence, asset))) {
+                byte[] buffer = new byte[8192];
+                for (int n; (n = input.read(buffer)) != -1;) output.write(buffer, 0, n);
+            }
+        }
+        HashMap<String, String> env = new com.termux.shared.termux.shell.command.environment.TermuxShellEnvironment()
+            .getEnvironment(context(), false);
+        env.put("CASE_DIR", evidence.getAbsolutePath());
+        String[] entries = env.entrySet().stream().map(entry -> entry.getKey() + "=" + entry.getValue()).toArray(String[]::new);
+        Probe probe = new Probe();
+        AtomicReference<TerminalSession> holder = new AtomicReference<>();
+        main(() -> {
+            TerminalSession session = new TerminalSession("/system/bin/sh", context().getFilesDir().getAbsolutePath(),
+                new String[]{"sh", new java.io.File(evidence, "package-python-art.sh").getAbsolutePath()}, entries, 2000, probe);
+            holder.set(session); session.initializeEmulator(100, 30, 8, 16);
+        });
+        TerminalSession session = holder.get();
+        try {
+            assertTrue("apt/Python real PTY timed out", probe.done.await(900, TimeUnit.SECONDS));
+            rethrow(probe.error);
+            assertEquals("transcript=" + probe.transcript, Integer.valueOf(0), session.getProcessExitStatus());
+            assertEquals(1, probe.calls.get());
+            String status = new String(java.nio.file.Files.readAllBytes(new java.io.File(evidence, "python-package.txt").toPath()), java.nio.charset.StandardCharsets.UTF_8);
+            assertTrue(status, status.startsWith("install ok installed\t"));
+            String text = new String(java.nio.file.Files.readAllBytes(new java.io.File(evidence, "python-result.json").toPath()), java.nio.charset.StandardCharsets.UTF_8);
+            org.json.JSONObject result = new org.json.JSONObject(text);
+            assertTrue(text, result.getBoolean("passed"));
+            assertEquals("python-private-child", result.getString("private_child"));
+            assertEquals("python-child", result.getString("python_child"));
+            assertEquals("python-shell-child", result.getString("shell_child"));
+            assertTrue(probe.transcript.contains("python-subprocess-ok"));
+        } finally { main(session::dispose); }
+    }
+
 }

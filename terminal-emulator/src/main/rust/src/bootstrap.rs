@@ -113,10 +113,12 @@ fn extract_zip_to_dir(
         let file_path = file.enclosed_name().ok_or("Invalid file path")?;
         let path_str = file_path.to_string_lossy().to_string();
 
-        // 跳过目录
+        // Directory entries can be empty but required at runtime (tmp, apt.conf.d).
+        // Do not rely on later files to create their parents; propagate mkdir errors.
         if file.is_dir() {
+            create_dir_all(Path::new(target_dir).join(&file_path))?;
             dir_count += 1;
-            eprintln!("[Rust Extract] [{}] Skip directory: {}", i, path_str);
+            eprintln!("[Rust Extract] [{}] Created directory: {}", i, path_str);
             continue;
         }
 
@@ -200,8 +202,72 @@ fn extract_zip_to_dir(
 
 #[cfg(test)]
 mod tests {
+    use super::extract_zip_to_dir;
+    use std::io::{Cursor, Write};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use zip::write::SimpleFileOptions;
+
+    struct Temp(std::path::PathBuf);
+    impl Temp {
+        fn new() -> Self {
+            static NEXT: AtomicUsize = AtomicUsize::new(0);
+            let path = std::env::temp_dir().join(format!(
+                "termux-bootstrap-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            std::fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+    }
+    impl Drop for Temp {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    fn archive(dirs: &[&str]) -> Vec<u8> {
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        for name in dirs {
+            zip.add_directory(*name, options).unwrap();
+        }
+        zip.start_file("bin/marker", options).unwrap();
+        zip.write_all(b"bootstrap-marker").unwrap();
+        zip.finish().unwrap().into_inner()
+    }
+
     #[test]
-    fn test_extract_zip() {
-        assert!(true);
+    fn explicit_empty_directories_survive_extraction() {
+        let temp = Temp::new();
+        let bytes = archive(&["tmp/", "etc/apt/apt.conf.d/", "share/empty/nested/"]);
+        assert_eq!(
+            extract_zip_to_dir(&bytes, temp.0.to_str().unwrap()).unwrap(),
+            1
+        );
+        for directory in ["tmp", "etc/apt/apt.conf.d", "share/empty/nested"] {
+            assert!(
+                temp.0.join(directory).is_dir(),
+                "missing archive directory: {directory}"
+            );
+        }
+        std::fs::write(temp.0.join("tmp/apt.conf.probe"), b"actual-write").unwrap();
+        assert_eq!(
+            std::fs::read(temp.0.join("bin/marker")).unwrap(),
+            b"bootstrap-marker"
+        );
+    }
+
+    #[test]
+    fn directory_creation_errors_are_not_ignored() {
+        let temp = Temp::new();
+        std::fs::write(temp.0.join("tmp"), b"not-a-directory").unwrap();
+        assert!(extract_zip_to_dir(&archive(&["tmp/"]), temp.0.to_str().unwrap()).is_err());
+    }
+
+    #[test]
+    fn parent_traversal_directory_is_rejected() {
+        let temp = Temp::new();
+        assert!(extract_zip_to_dir(&archive(&["../escape/"]), temp.0.to_str().unwrap()).is_err());
     }
 }

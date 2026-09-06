@@ -22,6 +22,7 @@ name: Rust correctness tiers
       - 'terminal-emulator/build.gradle*'
   pull_request:
     branches:
+      - fix/pty-environment-contract
       - test/session-completion-art
       - feat/session-completion-ui
       - feat/session-completion-bridge
@@ -106,6 +107,10 @@ jobs:
         run: python3 scripts/tests/test_rust_test_runner.py
       - name: Run explicit test tier
         run: bash ./scripts/run-rust-tests.sh "${{ matrix.tier }}"
+      - name: Verify bootstrap archive directories
+        if: ${{ !cancelled() && matrix.tier == 'lifecycle' }}
+        working-directory: terminal-emulator/src/main/rust
+        run: cargo test --locked --lib bootstrap::tests
       - name: Record exact verification
         if: always()
         run: |
@@ -139,6 +144,10 @@ jobs:
         run: python3 scripts/tests/test_rust_test_runner.py
       - name: Run selected tier
         run: bash ./scripts/run-rust-tests.sh "${{ inputs.tier }}"
+      - name: Verify bootstrap archive directories
+        if: ${{ !cancelled() && (inputs.tier == 'lifecycle' || inputs.tier == 'all') }}
+        working-directory: terminal-emulator/src/main/rust
+        run: cargo test --locked --lib bootstrap::tests
       - name: Record exact verification
         if: always()
         run: |
