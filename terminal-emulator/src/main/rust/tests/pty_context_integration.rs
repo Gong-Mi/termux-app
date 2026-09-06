@@ -1,5 +1,7 @@
 //! Production TerminalContext parsing/response/admission/reaper integration.
 //! Host sockets exercise real syscalls; PTY termios/resize is in pty_io_runtime.
+#[path = "../src/pty_environment.rs"]
+mod pty_environment;
 use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
 use std::os::unix::net::UnixStream;
@@ -108,4 +110,30 @@ fn startup_fd_configuration_failure_closes_owner_and_allows_retry() {
     TerminalContext::start_io_owned(Arc::clone(&context), master.into()).unwrap();
     TerminalContext::stop_io(&context);
     joined(&context);
+}
+
+#[test]
+fn real_pty_preserves_explicit_path_and_absent_library_path() {
+    use std::os::fd::{FromRawFd, OwnedFd};
+    let shell = if cfg!(target_os = "android") { "/system/bin/sh" } else { "/bin/sh" };
+    let command = "[ \"$PATH\" = /system/bin ] || exit 71; [ \"${LD_LIBRARY_PATH+x}\" != x ] || exit 72; exit 0";
+    let (fd, pid) = termux_rust::pty::create_subprocess_with_data(
+        shell.into(), "/".into(), vec!["sh".into(), "-c".into(), command.into()],
+        vec!["PATH=/system/bin".into(), "LD_PRELOAD=".into()], 24, 80, 8, 16,
+    ).unwrap();
+    let _master = unsafe { OwnedFd::from_raw_fd(fd) };
+    assert_eq!(termux_rust::pty::wait_for(pid), 0, "71=PATH overwritten; 72=LD_LIBRARY_PATH injected");
+}
+
+#[test]
+fn real_pty_preserves_empty_path_and_explicit_library_path() {
+    use std::os::fd::{FromRawFd, OwnedFd};
+    let shell = if cfg!(target_os = "android") { "/system/bin/sh" } else { "/bin/sh" };
+    let command = "[ -z \"$PATH\" ] || exit 73; [ \"$LD_LIBRARY_PATH\" = /system/lib64 ] || exit 74; exit 0";
+    let (fd, pid) = termux_rust::pty::create_subprocess_with_data(
+        shell.into(), "/".into(), vec!["sh".into(), "-c".into(), command.into()],
+        vec!["PATH=".into(), "LD_LIBRARY_PATH=/system/lib64".into(), "LD_PRELOAD=".into()], 24, 80, 8, 16,
+    ).unwrap();
+    let _master = unsafe { OwnedFd::from_raw_fd(fd) };
+    assert_eq!(termux_rust::pty::wait_for(pid), 0, "73=empty PATH overwritten; 74=library path overwritten");
 }

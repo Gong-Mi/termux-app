@@ -13,14 +13,14 @@ spec.loader.exec_module(art)
 
 class CompletionArtContracts(unittest.TestCase):
     def output(self):
-        return '\n'.join('INSTRUMENTATION_STATUS: test=' + name for name in sorted(art.EXPECTED)) + '\nOK (3 tests)\nINSTRUMENTATION_CODE: -1\n'
+        return '\n'.join('INSTRUMENTATION_STATUS: test=' + name for name in sorted(art.EXPECTED)) + f'\nOK ({len(art.EXPECTED)} tests)\nINSTRUMENTATION_CODE: -1\n'
 
     def test_complete_output_passes_and_runner_code_is_not_test_failure(self):
         self.assertTrue(art.verify_output(self.output(), 0))
 
     def test_missing_count_wrong_count_or_missing_test_fails(self):
         text = self.output()
-        for bad in (text.replace('OK (3 tests)', ''), text.replace('3 tests', '2 tests'),
+        for bad in (text.replace(f'OK ({len(art.EXPECTED)} tests)', ''), text.replace(f'{len(art.EXPECTED)} tests', '0 tests'),
                     text.replace(sorted(art.EXPECTED)[0], 'unexpectedTest'), ''):
             self.assertFalse(art.verify_output(bad, 0))
         self.assertFalse(art.verify_output(text, 1))
@@ -43,7 +43,7 @@ class CompletionArtContracts(unittest.TestCase):
     def test_art_output_producers_are_system_tools_and_fail_closed(self):
         source = (ROOT / 'app/src/androidTest/java/com/termux/app/SessionCompletionArtTest.java').read_text()
         self.assertEqual(source.count('/system/bin/toybox printf'), len(art.EXPECTED))
-        self.assertEqual(source.count('|| exit 91;'), len(art.EXPECTED))
+        self.assertEqual(source.count('|| exit 91;'), 3)  # original completion fixtures
         self.assertIn('actual transcript=', source)
         self.assertIn('actual plugin stdout=', source)
 

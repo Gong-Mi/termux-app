@@ -13,6 +13,8 @@ EXPECTED = {
     'earlyExitDeliversOnRealMainLooperAndRetainsTranscript',
     'actualExecutionCommandCapturesBeforeResultCallbackDisposes',
     'serviceOnlyPluginDeliversPendingIntentThenRemovesSession',
+    'callerEnvironmentRemainsIntactInArt',
+    'privateCommandsAndNestedShellsExecuteInArt',
 }
 
 
