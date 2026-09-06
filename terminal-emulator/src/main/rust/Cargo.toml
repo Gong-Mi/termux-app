@@ -148,5 +148,9 @@ name = "utf8_streaming"
 path = "tests/utf8_streaming.rs"
 
 [[test]]
+name = "session_completion_candidate"
+path = "tests/session_completion_candidate.rs"
+
+[[test]]
 name = "engine_delivery_claim"
 path = "tests/engine_delivery_claim.rs"

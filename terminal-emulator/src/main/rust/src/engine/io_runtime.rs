@@ -29,6 +29,7 @@ pub enum StopOutcome {
     Cancelled,
     IoError(io::Error),
     ResponseOverflow,
+    Panicked,
 }
 
 /// Transport completion, not child exit or worker-thread join.
@@ -48,6 +49,7 @@ impl From<&StopOutcome> for IoOutcome {
             StopOutcome::Cancelled => Self::Cancelled,
             StopOutcome::IoError(error) => Self::IoError(error.raw_os_error().unwrap_or(libc::EIO)),
             StopOutcome::ResponseOverflow => Self::ResponseOverflow,
+            StopOutcome::Panicked => Self::Panicked,
         }
     }
 }
@@ -152,11 +154,24 @@ impl IoRuntime {
                     observer: completion,
                     outcome: IoOutcome::Panicked,
                 };
-                let outcome = run(&owner, on_bytes, after_read);
-                owner.outcome = IoOutcome::from(&outcome);
-                drop(owner);
-                on_stop(&outcome);
-                outcome
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    run(&owner, on_bytes, after_read)
+                }));
+                match result {
+                    Ok(outcome) => {
+                        owner.outcome = IoOutcome::from(&outcome);
+                        drop(owner);
+                        on_stop(&outcome);
+                        outcome
+                    }
+                    Err(payload) => {
+                        let outcome = StopOutcome::Panicked;
+                        owner.outcome = IoOutcome::Panicked;
+                        drop(owner);
+                        on_stop(&outcome);
+                        std::panic::resume_unwind(payload);
+                    }
+                }
             })?;
         Ok(Self {
             shared,

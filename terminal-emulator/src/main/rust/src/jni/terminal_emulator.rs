@@ -1506,7 +1506,18 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
 
             // Transfer the original fd, not a duplicate. Java receives metadata
             // only; production resize and input route through the live handle.
-            if let Err(error) = TerminalContext::start_io_owned(Arc::clone(&context), owned) {
+            let Some(completion_observer) = coordinator.completion_observer(session_id) else {
+                android_log(
+                    LogPriority::ERROR,
+                    "createSessionAsync completion observer unavailable",
+                );
+                return;
+            };
+            if let Err(error) = TerminalContext::start_io_owned_for_session(
+                Arc::clone(&context),
+                owned,
+                completion_observer,
+            ) {
                 android_log(
                     LogPriority::ERROR,
                     &format!("createSessionAsync IO start failed: {error}"),

@@ -5,6 +5,7 @@
 //! - Session 状态管理
 //! - Session 注册和注销
 
+use crate::engine::io_runtime::IoOutcome;
 use crate::process_owner::{ExitOutcome, ProcessOwner};
 use once_cell::sync::OnceCell;
 use std::collections::HashMap;
@@ -67,10 +68,25 @@ struct EngineDelivery {
     claimed: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CompletionObserver {
+    session_id: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CompletionCandidate {
+    pub session_id: usize,
+    pub process: ExitOutcome,
+    pub io: IoOutcome,
+}
+
 struct SessionRecord {
     state: SessionState,
     process: Option<Arc<ProcessOwner>>,
     terminate_requested: bool,
+    process_outcome: Option<ExitOutcome>,
+    io_outcome: Option<IoOutcome>,
+    candidate_taken: bool,
 }
 #[derive(Default)]
 struct Registry {
@@ -120,6 +136,9 @@ impl SessionCoordinator {
                 state: SessionState::Idle,
                 process: None,
                 terminate_requested: false,
+                process_outcome: None,
+                io_outcome: None,
+                candidate_taken: false,
             },
         );
         id
@@ -149,6 +168,11 @@ impl SessionCoordinator {
             .unwrap_or_else(|e| e.into_inner())
             .sessions
             .contains_key(&session_id)
+    }
+
+    pub fn completion_observer(&self, session_id: usize) -> Option<CompletionObserver> {
+        self.has_session(session_id)
+            .then_some(CompletionObserver { session_id })
     }
 
     pub fn bind_pid(
@@ -235,6 +259,9 @@ impl SessionCoordinator {
             SessionState::Finished
         };
         record.process = Some(Arc::clone(&owner));
+        if let Some(outcome) = owner.outcome() {
+            record.process_outcome = Some(outcome);
+        }
         let monitored = Arc::clone(&owner);
         let spawn = std::thread::Builder::new()
             .name("session-process".into())
@@ -279,6 +306,9 @@ impl SessionCoordinator {
                 .as_ref()
                 .is_some_and(|current| Arc::ptr_eq(current, owner))
         {
+            if record.process_outcome.is_none() {
+                record.process_outcome = Some(outcome);
+            }
             record.state = SessionState::Finished;
             if registry.pkg_owner == Some(session_id) {
                 registry.pkg_owner = None;
@@ -292,6 +322,50 @@ impl SessionCoordinator {
                 owner.pid()
             ),
         );
+    }
+
+    pub(crate) fn record_io_outcome(&self, observer: CompletionObserver, outcome: IoOutcome) {
+        let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(record) = registry.sessions.get_mut(&observer.session_id) else {
+            return;
+        };
+        if record.io_outcome.is_none() {
+            record.io_outcome = Some(outcome);
+        }
+    }
+
+    /// Consume the joined process/IO facts once. This does not transfer any
+    /// engine, fd, runtime, or process cleanup ownership.
+    pub fn take_completion_candidate(&self, session_id: usize) -> Option<CompletionCandidate> {
+        let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
+        let record = registry.sessions.get_mut(&session_id)?;
+        let process = record.process_outcome?;
+        let io = record.io_outcome?;
+        if record.candidate_taken {
+            return None;
+        }
+        record.candidate_taken = true;
+        Some(CompletionCandidate {
+            session_id,
+            process,
+            io,
+        })
+    }
+
+    pub fn completion_facts(&self, session_id: usize) -> Option<(ExitOutcome, IoOutcome)> {
+        let registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
+        let record = registry.sessions.get(&session_id)?;
+        Some((record.process_outcome?, record.io_outcome?))
+    }
+
+    #[cfg(test)]
+    fn record_process_outcome_for_test(&self, session_id: usize, outcome: ExitOutcome) {
+        let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(record) = registry.sessions.get_mut(&session_id)
+            && record.process_outcome.is_none()
+        {
+            record.process_outcome = Some(outcome);
+        }
     }
 
     /// A request before child bind is retained. Unknown/terminal sessions cannot
@@ -712,4 +786,68 @@ pub extern "system" fn Java_com_termux_terminal_JNI_rejectEngineData(
     handle: jni::sys::jlong,
 ) -> jboolean {
     SessionCoordinator::get().reject_engine_data(session_id as usize, handle) as jboolean
+}
+
+#[cfg(test)]
+mod completion_candidate_tests {
+    use super::*;
+
+    #[test]
+    fn all_io_terminal_classes_are_retained_and_first_fact_wins() {
+        let coordinator = SessionCoordinator::get();
+        for io in [
+            IoOutcome::Eof,
+            IoOutcome::Cancelled,
+            IoOutcome::IoError(libc::EIO),
+            IoOutcome::ResponseOverflow,
+            IoOutcome::Panicked,
+        ] {
+            let session = coordinator.register_session();
+            let observer = coordinator.completion_observer(session).unwrap();
+            coordinator.record_process_outcome_for_test(session, ExitOutcome::Exited(7));
+            assert!(coordinator.take_completion_candidate(session).is_none());
+            coordinator.record_io_outcome(observer, io);
+            coordinator.record_io_outcome(observer, IoOutcome::Eof);
+            assert_eq!(
+                coordinator.completion_facts(session),
+                Some((ExitOutcome::Exited(7), io))
+            );
+            let candidate = coordinator.take_completion_candidate(session).unwrap();
+            assert_eq!(candidate.io, io);
+            assert_eq!(
+                coordinator.completion_facts(session),
+                Some((ExitOutcome::Exited(7), io))
+            );
+            assert!(coordinator.take_completion_candidate(session).is_none());
+            coordinator.unregister_session(session);
+        }
+    }
+
+    #[test]
+    fn concurrent_candidate_take_has_one_winner() {
+        let coordinator = SessionCoordinator::get();
+        let session = coordinator.register_session();
+        let observer = coordinator.completion_observer(session).unwrap();
+        coordinator.record_process_outcome_for_test(session, ExitOutcome::Lost(libc::ECHILD));
+        coordinator.record_io_outcome(observer, IoOutcome::Cancelled);
+        let gate = Arc::new(std::sync::Barrier::new(17));
+        let mut workers = Vec::new();
+        for _ in 0..16 {
+            let gate = Arc::clone(&gate);
+            workers.push(std::thread::spawn(move || {
+                gate.wait();
+                SessionCoordinator::get()
+                    .take_completion_candidate(session)
+                    .is_some()
+            }));
+        }
+        gate.wait();
+        let winners = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap())
+            .filter(|won| *won)
+            .count();
+        assert_eq!(winners, 1);
+        coordinator.unregister_session(session);
+    }
 }

@@ -13,6 +13,7 @@ on:
       - 'terminal-emulator/src/main/rust/**'
   pull_request:
     branches:
+      - fix/session-delivery-claim
       - fix/session-completion-observation
       - fix/session-process-owner
       - fix/pty-io-lifecycle

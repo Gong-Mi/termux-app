@@ -4,6 +4,7 @@ use std::os::fd::OwnedFd;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
+use crate::coordinator::CompletionObserver;
 use crate::engine::events::TerminalEvent;
 use crate::engine::perform_handler::PerformHandler;
 use crate::engine::state::ScreenState;
@@ -116,7 +117,27 @@ impl TerminalContext {
 
     /// Transfer an owned descriptor exactly once. Repeated start is rejected;
     /// rejected descriptors are dropped, not leaked or allowed a second reader.
+    /// Legacy/standalone IO entry point. The engine's numeric session_id is
+    /// never treated as a coordinator identity.
     pub fn start_io_owned(context: Arc<Self>, fd: OwnedFd) -> std::io::Result<()> {
+        Self::start_io_owned_internal(context, fd, None)
+    }
+
+    /// Managed session entry point. The coordinator identity is supplied by
+    /// the managed creator, never inferred from TerminalEngine state.
+    pub fn start_io_owned_for_session(
+        context: Arc<Self>,
+        fd: OwnedFd,
+        observer: CompletionObserver,
+    ) -> std::io::Result<()> {
+        Self::start_io_owned_internal(context, fd, Some(observer))
+    }
+
+    fn start_io_owned_internal(
+        context: Arc<Self>,
+        fd: OwnedFd,
+        managed_observer: Option<CompletionObserver>,
+    ) -> std::io::Result<()> {
         let mut slot = context.io.lock().unwrap_or_else(|e| e.into_inner());
         if !context.running.load(Ordering::Acquire) || slot.is_some() {
             return Err(std::io::Error::new(
@@ -158,7 +179,12 @@ impl TerminalContext {
                     Self::dispatch_io_events(events, callback);
                 }
             },
-            |outcome| {
+            move |outcome| {
+                if let Some(observer) = managed_observer {
+                    let io_outcome = IoOutcome::from(outcome);
+                    crate::coordinator::SessionCoordinator::get()
+                        .record_io_outcome(observer, io_outcome);
+                }
                 crate::utils::android_log(
                     crate::utils::LogPriority::INFO,
                     &format!("PTY_IO_OUTCOME: {outcome:?}; accepted output may remain undelivered"),
