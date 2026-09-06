@@ -125,6 +125,12 @@ impl TerminalContext {
             ));
         }
         let weak = Arc::downgrade(&context);
+        let session_id = context
+            .lock
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .state
+            .session_id as usize;
         // A worker-local handoff between parse and notification phases. Never
         // hold this lock while calling Java; replies enter FIFO before reentry.
         let notifications = Arc::new(Mutex::new(None));
@@ -158,7 +164,10 @@ impl TerminalContext {
                     Self::dispatch_io_events(events, callback);
                 }
             },
-            |outcome| {
+            move |outcome| {
+                let io_outcome = IoOutcome::from(outcome);
+                crate::coordinator::SessionCoordinator::get()
+                    .record_io_outcome(session_id, io_outcome);
                 crate::utils::android_log(
                     crate::utils::LogPriority::INFO,
                     &format!("PTY_IO_OUTCOME: {outcome:?}; accepted output may remain undelivered"),
