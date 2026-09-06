@@ -361,10 +361,10 @@ impl SessionCoordinator {
     #[cfg(test)]
     fn record_process_outcome_for_test(&self, session_id: usize, outcome: ExitOutcome) {
         let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(record) = registry.sessions.get_mut(&session_id) {
-            if record.process_outcome.is_none() {
-                record.process_outcome = Some(outcome);
-            }
+        if let Some(record) = registry.sessions.get_mut(&session_id)
+            && record.process_outcome.is_none()
+        {
+            record.process_outcome = Some(outcome);
         }
     }
 
@@ -568,70 +568,6 @@ impl SessionCoordinator {
             .sessions
             .values()
             .any(|record| record.state == SessionState::WaitingLock)
-    }
-}
-
-#[cfg(test)]
-mod completion_candidate_tests {
-    use super::*;
-
-    #[test]
-    fn all_io_terminal_classes_are_retained_and_first_fact_wins() {
-        let coordinator = SessionCoordinator::get();
-        for io in [
-            IoOutcome::Eof,
-            IoOutcome::Cancelled,
-            IoOutcome::IoError(libc::EIO),
-            IoOutcome::ResponseOverflow,
-            IoOutcome::Panicked,
-        ] {
-            let session = coordinator.register_session();
-            let observer = coordinator.completion_observer(session).unwrap();
-            coordinator.record_process_outcome_for_test(session, ExitOutcome::Exited(7));
-            assert!(coordinator.take_completion_candidate(session).is_none());
-            coordinator.record_io_outcome(observer, io);
-            coordinator.record_io_outcome(observer, IoOutcome::Eof);
-            assert_eq!(
-                coordinator.completion_facts(session),
-                Some((ExitOutcome::Exited(7), io))
-            );
-            let candidate = coordinator.take_completion_candidate(session).unwrap();
-            assert_eq!(candidate.io, io);
-            assert_eq!(
-                coordinator.completion_facts(session),
-                Some((ExitOutcome::Exited(7), io))
-            );
-            assert!(coordinator.take_completion_candidate(session).is_none());
-            coordinator.unregister_session(session);
-        }
-    }
-
-    #[test]
-    fn concurrent_candidate_take_has_one_winner() {
-        let coordinator = SessionCoordinator::get();
-        let session = coordinator.register_session();
-        let observer = coordinator.completion_observer(session).unwrap();
-        coordinator.record_process_outcome_for_test(session, ExitOutcome::Lost(libc::ECHILD));
-        coordinator.record_io_outcome(observer, IoOutcome::Cancelled);
-        let gate = Arc::new(std::sync::Barrier::new(17));
-        let mut workers = Vec::new();
-        for _ in 0..16 {
-            let gate = Arc::clone(&gate);
-            workers.push(std::thread::spawn(move || {
-                gate.wait();
-                SessionCoordinator::get()
-                    .take_completion_candidate(session)
-                    .is_some()
-            }));
-        }
-        gate.wait();
-        let winners = workers
-            .into_iter()
-            .map(|worker| worker.join().unwrap())
-            .filter(|won| *won)
-            .count();
-        assert_eq!(winners, 1);
-        coordinator.unregister_session(session);
     }
 }
 
@@ -850,4 +786,68 @@ pub extern "system" fn Java_com_termux_terminal_JNI_rejectEngineData(
     handle: jni::sys::jlong,
 ) -> jboolean {
     SessionCoordinator::get().reject_engine_data(session_id as usize, handle) as jboolean
+}
+
+#[cfg(test)]
+mod completion_candidate_tests {
+    use super::*;
+
+    #[test]
+    fn all_io_terminal_classes_are_retained_and_first_fact_wins() {
+        let coordinator = SessionCoordinator::get();
+        for io in [
+            IoOutcome::Eof,
+            IoOutcome::Cancelled,
+            IoOutcome::IoError(libc::EIO),
+            IoOutcome::ResponseOverflow,
+            IoOutcome::Panicked,
+        ] {
+            let session = coordinator.register_session();
+            let observer = coordinator.completion_observer(session).unwrap();
+            coordinator.record_process_outcome_for_test(session, ExitOutcome::Exited(7));
+            assert!(coordinator.take_completion_candidate(session).is_none());
+            coordinator.record_io_outcome(observer, io);
+            coordinator.record_io_outcome(observer, IoOutcome::Eof);
+            assert_eq!(
+                coordinator.completion_facts(session),
+                Some((ExitOutcome::Exited(7), io))
+            );
+            let candidate = coordinator.take_completion_candidate(session).unwrap();
+            assert_eq!(candidate.io, io);
+            assert_eq!(
+                coordinator.completion_facts(session),
+                Some((ExitOutcome::Exited(7), io))
+            );
+            assert!(coordinator.take_completion_candidate(session).is_none());
+            coordinator.unregister_session(session);
+        }
+    }
+
+    #[test]
+    fn concurrent_candidate_take_has_one_winner() {
+        let coordinator = SessionCoordinator::get();
+        let session = coordinator.register_session();
+        let observer = coordinator.completion_observer(session).unwrap();
+        coordinator.record_process_outcome_for_test(session, ExitOutcome::Lost(libc::ECHILD));
+        coordinator.record_io_outcome(observer, IoOutcome::Cancelled);
+        let gate = Arc::new(std::sync::Barrier::new(17));
+        let mut workers = Vec::new();
+        for _ in 0..16 {
+            let gate = Arc::clone(&gate);
+            workers.push(std::thread::spawn(move || {
+                gate.wait();
+                SessionCoordinator::get()
+                    .take_completion_candidate(session)
+                    .is_some()
+            }));
+        }
+        gate.wait();
+        let winners = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap())
+            .filter(|won| *won)
+            .count();
+        assert_eq!(winners, 1);
+        coordinator.unregister_session(session);
+    }
 }
