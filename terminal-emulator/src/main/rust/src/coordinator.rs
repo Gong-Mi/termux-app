@@ -591,10 +591,16 @@ mod completion_candidate_tests {
             assert!(coordinator.take_completion_candidate(session).is_none());
             coordinator.record_io_outcome(observer, io);
             coordinator.record_io_outcome(observer, IoOutcome::Eof);
-            assert_eq!(coordinator.completion_facts(session), Some((ExitOutcome::Exited(7), io)));
+            assert_eq!(
+                coordinator.completion_facts(session),
+                Some((ExitOutcome::Exited(7), io))
+            );
             let candidate = coordinator.take_completion_candidate(session).unwrap();
             assert_eq!(candidate.io, io);
-            assert_eq!(coordinator.completion_facts(session), Some((ExitOutcome::Exited(7), io)));
+            assert_eq!(
+                coordinator.completion_facts(session),
+                Some((ExitOutcome::Exited(7), io))
+            );
             assert!(coordinator.take_completion_candidate(session).is_none());
             coordinator.unregister_session(session);
         }
@@ -613,7 +619,9 @@ mod completion_candidate_tests {
             let gate = Arc::clone(&gate);
             workers.push(std::thread::spawn(move || {
                 gate.wait();
-                SessionCoordinator::get().take_completion_candidate(session).is_some()
+                SessionCoordinator::get()
+                    .take_completion_candidate(session)
+                    .is_some()
             }));
         }
         gate.wait();

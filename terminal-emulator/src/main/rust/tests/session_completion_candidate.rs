@@ -15,7 +15,10 @@ fn wait_for_candidate(coordinator: &SessionCoordinator, session: usize) -> Compl
         if let Some(candidate) = coordinator.take_completion_candidate(session) {
             return candidate;
         }
-        assert!(Instant::now() < deadline, "completion candidate was not published");
+        assert!(
+            Instant::now() < deadline,
+            "completion candidate was not published"
+        );
         thread::yield_now();
     }
 }
@@ -31,19 +34,34 @@ fn real_process_exit_then_io_eof_publish_one_candidate() {
     while process.outcome().is_none() && Instant::now() < deadline {
         thread::yield_now();
     }
-    assert_eq!(process.outcome(), Some(termux_rust::process_owner::ExitOutcome::Exited(23)));
+    assert_eq!(
+        process.outcome(),
+        Some(termux_rust::process_owner::ExitOutcome::Exited(23))
+    );
 
     let context = Arc::new(TerminalContext::new(TerminalEngine::new(
-        session as i32, 80, 24, 2000, 8, 16,
+        session as i32,
+        80,
+        24,
+        2000,
+        8,
+        16,
     )));
     let (master, peer) = UnixStream::pair().unwrap();
-    TerminalContext::start_io_owned_for_session(Arc::clone(&context), OwnedFd::from(master), observer)
-        .unwrap();
+    TerminalContext::start_io_owned_for_session(
+        Arc::clone(&context),
+        OwnedFd::from(master),
+        observer,
+    )
+    .unwrap();
     drop(peer);
 
     let candidate = wait_for_candidate(coordinator, session);
     assert_eq!(candidate.process, process.outcome().unwrap());
-    assert_eq!(candidate.io, termux_rust::engine::io_runtime::IoOutcome::Eof);
+    assert_eq!(
+        candidate.io,
+        termux_rust::engine::io_runtime::IoOutcome::Eof
+    );
     assert!(coordinator.take_completion_candidate(session).is_none());
     coordinator.unregister_session(session);
 }
@@ -54,11 +72,20 @@ fn real_io_eof_then_process_exit_publish_one_candidate() {
     let session = coordinator.register_session();
     let observer = coordinator.completion_observer(session).unwrap();
     let context = Arc::new(TerminalContext::new(TerminalEngine::new(
-        session as i32, 80, 24, 2000, 8, 16,
+        session as i32,
+        80,
+        24,
+        2000,
+        8,
+        16,
     )));
     let (master, peer) = UnixStream::pair().unwrap();
-    TerminalContext::start_io_owned_for_session(Arc::clone(&context), OwnedFd::from(master), observer)
-        .unwrap();
+    TerminalContext::start_io_owned_for_session(
+        Arc::clone(&context),
+        OwnedFd::from(master),
+        observer,
+    )
+    .unwrap();
     drop(peer);
     let deadline = Instant::now() + Duration::from_secs(3);
     while context.completion_status()[2] != 2 && Instant::now() < deadline {
@@ -70,7 +97,10 @@ fn real_io_eof_then_process_exit_publish_one_candidate() {
     let process = coordinator.bind_pid(session, child.id() as i32).unwrap();
     let candidate = wait_for_candidate(coordinator, session);
     assert_eq!(candidate.process, process.outcome().unwrap());
-    assert_eq!(candidate.io, termux_rust::engine::io_runtime::IoOutcome::Eof);
+    assert_eq!(
+        candidate.io,
+        termux_rust::engine::io_runtime::IoOutcome::Eof
+    );
     assert!(coordinator.take_completion_candidate(session).is_none());
     coordinator.unregister_session(session);
 }
@@ -81,11 +111,20 @@ fn unregister_makes_late_real_io_producer_a_no_op() {
     let session = coordinator.register_session();
     let observer = coordinator.completion_observer(session).unwrap();
     let context = Arc::new(TerminalContext::new(TerminalEngine::new(
-        session as i32, 80, 24, 2000, 8, 16,
+        session as i32,
+        80,
+        24,
+        2000,
+        8,
+        16,
     )));
     let (master, peer) = UnixStream::pair().unwrap();
-    TerminalContext::start_io_owned_for_session(Arc::clone(&context), OwnedFd::from(master), observer)
-        .unwrap();
+    TerminalContext::start_io_owned_for_session(
+        Arc::clone(&context),
+        OwnedFd::from(master),
+        observer,
+    )
+    .unwrap();
     coordinator.unregister_session(session);
     drop(peer);
     let deadline = Instant::now() + Duration::from_secs(3);
@@ -132,16 +171,23 @@ fn real_context_cancellation_preserves_cancelled_io_outcome() {
     let child = Command::new("sh").arg("-c").arg("sleep 1").spawn().unwrap();
     let process = coordinator.bind_pid(session, child.id() as i32).unwrap();
     let context = Arc::new(TerminalContext::new(TerminalEngine::new(
-        session as i32, 80, 24, 2000, 8, 16,
+        session as i32,
+        80,
+        24,
+        2000,
+        8,
+        16,
     )));
     let (master, _peer) = UnixStream::pair().unwrap();
-    TerminalContext::start_io_owned_for_session(Arc::clone(&context), OwnedFd::from(master), observer)
-        .unwrap();
+    TerminalContext::start_io_owned_for_session(
+        Arc::clone(&context),
+        OwnedFd::from(master),
+        observer,
+    )
+    .unwrap();
     TerminalContext::stop_io(&context);
     let deadline = Instant::now() + Duration::from_secs(3);
-    while coordinator.completion_facts(session).is_none()
-        && Instant::now() < deadline
-    {
+    while coordinator.completion_facts(session).is_none() && Instant::now() < deadline {
         thread::yield_now();
     }
     assert_eq!(
@@ -152,7 +198,10 @@ fn real_context_cancellation_preserves_cancelled_io_outcome() {
         ))
     );
     let candidate = wait_for_candidate(coordinator, session);
-    assert_eq!(candidate.io, termux_rust::engine::io_runtime::IoOutcome::Cancelled);
+    assert_eq!(
+        candidate.io,
+        termux_rust::engine::io_runtime::IoOutcome::Cancelled
+    );
     coordinator.unregister_session(session);
 }
 
@@ -171,11 +220,15 @@ fn panic_on_bytes_reports_before_join_without_changing_join_panic_semantics() {
         move |outcome| sender.send(IoOutcome::from(outcome)).unwrap(),
     )
     .unwrap();
-    peer.set_write_timeout(Some(Duration::from_secs(3))).unwrap();
+    peer.set_write_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
     peer.write_all(b"panic").unwrap();
     let join = runtime.join();
     assert!(join.is_err());
-    assert_eq!(receiver.recv_timeout(Duration::from_secs(3)).unwrap(), IoOutcome::Panicked);
+    assert_eq!(
+        receiver.recv_timeout(Duration::from_secs(3)).unwrap(),
+        IoOutcome::Panicked
+    );
     assert_eq!(runtime.observer().outcome(), Some(IoOutcome::Panicked));
 }
 
@@ -197,7 +250,10 @@ fn panic_after_read_reports_before_join_without_changing_join_panic_semantics() 
     peer.write_all(b"after-read-panic").unwrap();
     let join = runtime.join();
     assert!(join.is_err());
-    assert_eq!(receiver.recv_timeout(Duration::from_secs(3)).unwrap(), IoOutcome::Panicked);
+    assert_eq!(
+        receiver.recv_timeout(Duration::from_secs(3)).unwrap(),
+        IoOutcome::Panicked
+    );
     assert_eq!(runtime.observer().outcome(), Some(IoOutcome::Panicked));
 }
 
