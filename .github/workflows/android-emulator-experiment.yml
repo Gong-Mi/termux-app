@@ -223,12 +223,16 @@ jobs:
           adb shell wm density
           adb shell getprop ro.build.version.sdk
 
-      - name: Install exact APK and verify Skia API A/B
+      - name: Install exact APK
+        id: install-target
         run: |
           set -euo pipefail
           APK="app/build/outputs/apk/debug/termux-app_emulator-${GITHUB_SHA}_x86_64.apk"
           adb install -r "$APK"
           adb shell dumpsys package com.termux > package.txt
+
+      - name: Verify Skia API A/B
+        run: |
           python3 scripts/verify-skia-api-ab.py --output skia-api-ab --require-baseline-failure
 
       - name: Record experiment evidence
@@ -243,6 +247,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify real ART completion and plugin result delivery
+        if: ${{ !cancelled() && steps.install-target.outcome == 'success' }}
         run: |
           python3 scripts/verify-completion-art.py --output completion-art
 

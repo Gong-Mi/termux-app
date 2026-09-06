@@ -31,6 +31,15 @@ class CompletionArtContracts(unittest.TestCase):
                        'INSTRUMENTATION_STATUS_CODE: -3', 'INSTRUMENTATION_STATUS_CODE: -4'):
             self.assertFalse(art.verify_output(self.output() + marker, 0))
 
+    def test_art_is_not_skipped_by_independent_skia_failure(self):
+        flow = yaml.safe_load((ROOT / '.github/workflows/android-emulator-experiment.yml').read_text())
+        steps = flow['jobs']['install-startup']['steps']
+        install = next(step for step in steps if step.get('id') == 'install-target')
+        self.assertIn('adb install -r', install['run'])
+        art_step = next(step for step in steps if step['name'] == 'Verify real ART completion and plugin result delivery')
+        self.assertEqual(art_step['if'], "${{ !cancelled() && steps.install-target.outcome == 'success' }}")
+        self.assertFalse(art_step.get('continue-on-error', False))
+
     def test_art_output_producers_are_system_tools_and_fail_closed(self):
         source = (ROOT / 'app/src/androidTest/java/com/termux/app/SessionCompletionArtTest.java').read_text()
         self.assertEqual(source.count('/system/bin/toybox printf'), len(art.EXPECTED))
