@@ -211,6 +211,8 @@ public class SessionCompletionArtTest {
         Probe probe = new Probe();
         AtomicReference<TerminalSession> holder = new AtomicReference<>();
         String script = "[ -n \"$LD_PRELOAD\" ] || exit 81; " +
+            "echo \"exec-preload=$LD_PRELOAD\"; " +
+            "/system/bin/toybox grep termux-exec /proc/$$/maps || exit 88; " +
             "\"$PREFIX/bin/printf\" 'ecosystem-direct\\n' || exit 82; " +
             "/system/bin/sh -c '\"$PREFIX/bin/printf\" \"ecosystem-nested\\n\"' || exit 83; " +
             "\"$PREFIX/bin/env\" /system/bin/sh -c '\"$PREFIX/bin/printf\" \"ecosystem-env\\n\"' || exit 84; " +
