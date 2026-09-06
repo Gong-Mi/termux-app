@@ -187,6 +187,11 @@ public class SessionCompletionArtTest {
         }
     }
     @Test public void callerEnvironmentRemainsIntactInArt() throws Exception {
+        HashMap<String, String> generated = new com.termux.shared.termux.shell.command.environment.TermuxShellEnvironment()
+            .getEnvironment(context(), true);
+        assertEquals(context().getApplicationInfo().dataDir, generated.get("TERMUX_APP__DATA_DIR"));
+        assertEquals("/data/data/" + context().getPackageName(), generated.get("TERMUX_APP__LEGACY_DATA_DIR"));
+        assertEquals(generated.get("PREFIX"), generated.get("TERMUX__PREFIX"));
         Probe probe = new Probe();
         AtomicReference<TerminalSession> holder = new AtomicReference<>();
         main(() -> {

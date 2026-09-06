@@ -2,6 +2,7 @@
 //! exec hook. In particular, never force LD_LIBRARY_PATH or rewrite arbitrary values.
 
 pub(crate) fn prepare(env: &[String], prefix: &str) -> Vec<String> {
+    let prefix = effective_prefix(env, prefix);
     // termux-exec 2.x ships separate direct/linker builds; bootstrap's primary
     // copy can still be direct until postinst runs. Match its setup policy without
     // mutating the bootstrap or overriding an explicit non-empty LD_PRELOAD.
@@ -76,8 +77,43 @@ fn platform_linker_required(env: &[String]) -> bool {
     linker_required(mode, api, &context)
 }
 
+fn effective_prefix<'a>(env: &'a [String], fallback: &'a str) -> &'a str {
+    for key in ["TERMUX__PREFIX=", "PREFIX="] {
+        if let Some(value) = env.iter().rev().find_map(|entry| entry.strip_prefix(key))
+            && !value.is_empty()
+        {
+            return value;
+        }
+    }
+    fallback
+}
+
+fn add_missing(result: &mut Vec<String>, key: &str, value: &str) {
+    let name = format!("{key}=");
+    if !result.iter().any(|entry| entry.starts_with(&name)) {
+        result.push(format!("{name}{value}"));
+    }
+}
+
+// termux-core's path predicate does not resolve ordinary executable symlinks:
+// multicall binaries depend on their invoked basename. Advertise both data-dir
+// namespaces instead of rewriting executable paths or arbitrary environment text.
+fn add_path_metadata(result: &mut Vec<String>, prefix: &str) {
+    let path = std::path::Path::new(prefix);
+    if !path.is_absolute() { return; }
+    let Some(files) = path.parent().filter(|p| p.file_name().is_some_and(|n| n == "files")) else { return; };
+    if path.file_name().is_none_or(|n| n != "usr") { return; }
+    let Some(data) = files.parent() else { return; };
+    let Some(package) = data.file_name().and_then(|name| name.to_str()) else { return; };
+    add_missing(result, "TERMUX_APP__DATA_DIR", &data.to_string_lossy());
+    add_missing(result, "TERMUX_APP__LEGACY_DATA_DIR", &format!("/data/data/{package}"));
+    add_missing(result, "TERMUX__PREFIX", prefix);
+}
+
 fn apply(env: &[String], prefix: &str, available_hook: Option<String>) -> Vec<String> {
+    let prefix = effective_prefix(env, prefix);
     let mut result = env.to_vec();
+    add_path_metadata(&mut result, prefix);
     if !result.iter().any(|entry| entry.starts_with("PATH=")) {
         result.push(format!("PATH={prefix}/bin:/system/bin:/system/xbin"));
     }
@@ -103,6 +139,23 @@ mod tests {
     use super::*;
     fn entries(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).into()).collect()
+    }
+
+    #[test]
+    fn explicit_exec_path_metadata_is_never_overwritten() {
+        let env = entries(&["PATH=/chosen", "TERMUX_APP__DATA_DIR=/chosen/data",
+            "TERMUX_APP__LEGACY_DATA_DIR=/chosen/legacy", "TERMUX__PREFIX=/chosen/files/usr"]);
+        assert_eq!(apply(&env, "/fallback/files/usr", None), env);
+    }
+
+    #[test]
+    fn metadata_identifies_nonlegacy_app_dir_without_rewriting_commands() {
+        let env = entries(&["PATH=/system/bin", "PREFIX=/data/user/10/com.example/files/usr"]);
+        let output = apply(&env, "/fallback/files/usr", None);
+        assert!(output.contains(&"TERMUX_APP__DATA_DIR=/data/user/10/com.example".into()));
+        assert!(output.contains(&"TERMUX_APP__LEGACY_DATA_DIR=/data/data/com.example".into()));
+        assert!(output.contains(&"TERMUX__PREFIX=/data/user/10/com.example/files/usr".into()));
+        assert!(output.contains(&env[1]));
     }
 
     #[test]
