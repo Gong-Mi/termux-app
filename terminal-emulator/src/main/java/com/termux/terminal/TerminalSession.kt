@@ -36,7 +36,6 @@ class TerminalSession(
 
     companion object {
         private const val MSG_NEW_INPUT = 1
-        private const val MSG_PROCESS_EXITED = 4
         private const val MSG_SCREEN_UPDATED = 5
         private const val LOG_TAG = "TerminalSession"
     }
@@ -84,14 +83,34 @@ class TerminalSession(
                                val ioKind: Int, val ioCode: Int)
     @Volatile private var mCompletionFacts: CompletionFacts? = null
     fun getCompletionFacts(): CompletionFacts? = mCompletionFacts
+    private enum class CompletionDelivery { NONE, PENDING, POSTED, RUNNING, ATTEMPTED, DELIVERED, FAILED, CANCELLED }
+    @Volatile private var mCompletionDelivery = CompletionDelivery.NONE
+    fun getCompletionDeliveryState(): String = mCompletionDelivery.name
+    /** Null means the process exit status was lost; never export a fabricated process code. */
+    fun getProcessExitStatus(): Int? = mCompletionFacts?.let { if (it.processKind == 2) it.processCode else null }
+    fun getCompletionError(): String? = mCompletionFacts?.let { facts ->
+        val errors = mutableListOf<String>()
+        if (facts.processKind == 3) errors.add("Process exit status unavailable (errno=${facts.processCode})")
+        val ioError = when (facts.ioKind) {
+            3 -> "PTY output cancelled; output may be incomplete"
+            4 -> "PTY IO failed (errno=${facts.ioCode}); output may be incomplete"
+            5 -> "PTY response queue overflow; output may be incomplete"
+            6 -> "PTY worker panicked; output may be incomplete"
+            else -> null
+        }
+        ioError?.let { errors.add(it) }
+        errors.takeIf { it.isNotEmpty() }?.joinToString("; ")
+    }
 
-    /** Native callback may precede offer/claim/ack; retain it without completing UI. */
+    /** Native callback may precede adoption; queue completion only once READY. */
     fun onNativeCompletion(sessionId: Int, processKind: Int, processCode: Int,
                            ioKind: Int, ioCode: Int): Boolean = synchronized(mLifecycleLock) {
         if (sessionId != mNativeSessionId || mSessionState == SessionState.DISPOSED ||
             mSessionState == SessionState.IDLE || mCompletionFacts != null) return@synchronized false
         if (processKind !in 2..3 || ioKind !in 2..6) return@synchronized false
         mCompletionFacts = CompletionFacts(processKind, processCode, ioKind, ioCode)
+        mCompletionDelivery = CompletionDelivery.PENDING
+        postCompletionLocked()
         true
     }
 
@@ -197,6 +216,7 @@ class TerminalSession(
                                 mTerminalFileDescriptor = ptyFd
                                 mShellPid = pid
                                 mSessionState = SessionState.READY
+                                postCompletionLocked()
                                 true
                             }
                         }
@@ -220,6 +240,9 @@ class TerminalSession(
         synchronized(mLifecycleLock) {
             if (mSessionState == SessionState.DISPOSED) return
             mSessionState = SessionState.DISPOSED
+            if (mCompletionDelivery == CompletionDelivery.PENDING || mCompletionDelivery == CompletionDelivery.POSTED) {
+                mCompletionDelivery = CompletionDelivery.CANCELLED
+            }
             val sessionId = mNativeSessionId
             mNativeSessionId = -1
             if (JNI.sNativeLibrariesLoaded && sessionId >= 0) {
@@ -311,7 +334,7 @@ class TerminalSession(
     }
 
     /** Request termination through the native child owner, including pending bind.
-     * mShellPid remains a presentation value until completion delivery is migrated. */
+     * mShellPid remains a presentation value, never native process identity. */
     fun finishIfRunning() {
         val sessionId = mNativeSessionId
         if (JNI.sNativeLibrariesLoaded && sessionId >= 0) {
@@ -323,14 +346,64 @@ class TerminalSession(
         }
     }
 
-    /** Cleanup resources when the process exits. */
-    private fun cleanupResources(exitStatus: Int) {
-        mShellPid = -1
-        mShellExitStatus = exitStatus
-        mEmulator?.destroy()
-        mEmulator = null
-        mTerminalToProcessIOQueue.close()
-        mProcessToTerminalIOQueue.close()
+    /** Called with mLifecycleLock held. post success is only queue admission. */
+    private fun postCompletionLocked() {
+        if (mSessionState != SessionState.READY || mCompletionDelivery != CompletionDelivery.PENDING) return
+        val sessionId = mNativeSessionId
+        mCompletionDelivery = CompletionDelivery.POSTED
+        try {
+            if (!mMainThreadHandler.post { deliverCompletion(sessionId) }) {
+                mCompletionDelivery = CompletionDelivery.FAILED
+            }
+        } catch (_: RuntimeException) {
+            mCompletionDelivery = CompletionDelivery.FAILED
+        }
+    }
+
+    private fun deliverCompletion(sessionId: Int) {
+        val client = try {
+            synchronized(mLifecycleLock) {
+                if (mSessionState != SessionState.READY || sessionId != mNativeSessionId ||
+                    mCompletionDelivery != CompletionDelivery.POSTED) return
+                val facts = mCompletionFacts ?: return
+                val emulator = mEmulator?.takeIf { it.isAlive() } ?: run {
+                    mCompletionDelivery = CompletionDelivery.FAILED
+                    return
+                }
+                mCompletionDelivery = CompletionDelivery.RUNNING
+                // Compatibility presentation code only; shared results use nullable
+                // getProcessExitStatus(), so Lost is never exported as process exit 1.
+                mShellExitStatus = if (facts.processKind == 2) facts.processCode else 1
+                mShellPid = -1
+                var description = "\r\n[Process completed"
+                if (facts.processKind == 2) description += when {
+                    facts.processCode > 0 -> " (code ${facts.processCode})"
+                    facts.processCode < 0 -> " (signal ${-facts.processCode})"
+                    else -> ""
+                }
+                getCompletionError()?.let { description += " - $it" }
+                description += " - press Enter]"
+                val bytes = description.toByteArray(StandardCharsets.UTF_8)
+                emulator.append(bytes, bytes.size)
+                mClient
+            }
+        } catch (failure: Throwable) {
+            mCompletionDelivery = CompletionDelivery.FAILED
+            runCatching { mClient.logError(LOG_TAG, "Completion preparation failed: ${failure.message}") }
+            return
+        }
+        // Client code is outside lifecycle/native locks. A throwing render notification
+        // must not suppress the separate result callback; neither is retried.
+        var failed = false
+        try { client.onTextChanged(this) } catch (_: Throwable) { failed = true }
+        if (mSessionState == SessionState.DISPOSED) {
+            mCompletionDelivery = CompletionDelivery.CANCELLED
+            return
+        }
+        mCompletionDelivery = CompletionDelivery.ATTEMPTED
+        try { client.onSessionFinished(this) } catch (_: Throwable) { failed = true }
+        mCompletionDelivery = if (failed) CompletionDelivery.FAILED else CompletionDelivery.DELIVERED
+        // The client may synchronously read results/remove/dispose. Never destroy here.
     }
 
     val isRunning: Boolean
@@ -370,7 +443,7 @@ class TerminalSession(
 
         override fun handleMessage(msg: Message) {
             val emulator = mEmulator
-            if (msg.what != MSG_PROCESS_EXITED && (emulator == null || !emulator.isAlive())) return
+            if (emulator == null || !emulator.isAlive()) return
 
             if (msg.what == MSG_SCREEN_UPDATED) {
                 notifyScreenUpdate()
@@ -379,25 +452,6 @@ class TerminalSession(
 
             // --- 这里的旧代码（读取 mProcessToTerminalIOQueue）已被移除 ---
             // 所有 IO 逻辑现在完全在 Rust 后台线程中处理
-
-            if (msg.what == MSG_PROCESS_EXITED) {
-                val exitCode = msg.obj as? Int ?: 0
-                var exitDescription = "\r\n[Process completed"
-                exitDescription += when {
-                    exitCode > 0 -> " (code $exitCode)"
-                    exitCode < 0 -> " (signal ${-exitCode})"
-                    else -> ""
-                }
-                exitDescription += " - press Enter]"
-
-                val bytesToWrite = exitDescription.toByteArray(StandardCharsets.UTF_8)
-                if (emulator?.isAlive() == true) {
-                    emulator.append(bytesToWrite, bytesToWrite.size)
-                    notifyScreenUpdate()
-                }
-                cleanupResources(exitCode)
-                mClient.onSessionFinished(this@TerminalSession)
-            }
         }
     }
 }

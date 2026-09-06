@@ -177,9 +177,14 @@ public class TermuxSession {
         // If process is still running, then ignore the call
         if (mTerminalSession.isRunning()) return;
 
-        int exitCode = mTerminalSession.getExitStatus();
+        // Do not call shouldNotProcessResults() here: it consumes the result latch.
+        // processTermuxSessionResult() below is its single owner.
+        // Lost wait status is null in the result, not the compatibility UI code.
+        Integer exitCode = mTerminalSession.getCompletionFacts() == null
+            ? Integer.valueOf(mTerminalSession.getExitStatus()) : mTerminalSession.getProcessExitStatus();
+        String completionError = mTerminalSession.getCompletionError();
 
-        if (exitCode == 0)
+        if (exitCode != null && exitCode == 0 && completionError == null)
             Logger.logDebug(LOG_TAG, "The \"" + mExecutionCommand.getCommandIdAndLabelLogString() + "\" TermuxSession exited normally");
         else
             Logger.logDebug(LOG_TAG, "The \"" + mExecutionCommand.getCommandIdAndLabelLogString() + "\" TermuxSession exited with code: " + exitCode);
@@ -194,6 +199,14 @@ public class TermuxSession {
 
         if (this.mSetStdoutOnExit)
             mExecutionCommand.resultData.stdout.append(ShellUtils.getTerminalSessionTranscriptText(mTerminalSession, true, false));
+
+        // Preserve the actual process status and captured output, but transport
+        // failure must not become command success merely because the child exited 0.
+        if (completionError != null) {
+            if (mExecutionCommand.setStateFailed(Errno.ERRNO_FAILED.getCode(), completionError))
+                TermuxSession.processTermuxSessionResult(this, null);
+            return;
+        }
 
         if (!mExecutionCommand.setState(ExecutionCommand.ExecutionState.EXECUTED))
             return;
