@@ -2,7 +2,7 @@ name: Engine construction contract
 
 "on":
   pull_request:
-    branches: [fix/pty-environment-contract, test/session-completion-art, feat/session-completion-ui, feat/session-completion-bridge, feat/session-completion-candidate, fix/session-delivery-claim, fix/session-completion-observation, fix/session-process-owner, fix/pty-io-lifecycle, fix/skia-vulkan-api-contract, fix/engine-handle-lifetime, fix/engine-adoption, refactor/test-normalization, feature/rust-integration]
+    branches: [test/termux-package-python-art, fix/pty-environment-contract, test/session-completion-art, feat/session-completion-ui, feat/session-completion-bridge, feat/session-completion-candidate, fix/session-delivery-claim, fix/session-completion-observation, fix/session-process-owner, fix/pty-io-lifecycle, fix/skia-vulkan-api-contract, fix/engine-handle-lifetime, fix/engine-adoption, refactor/test-normalization, feature/rust-integration]
     paths:
       - 'terminal-emulator/src/main/java/**'
       - 'terminal-emulator/src/main/rust/**'
@@ -14,6 +14,9 @@ name: Engine construction contract
       - 'scripts/verify-process-owner-boundary.py'
       - 'scripts/verify-delivery-boundary.py'
       - 'scripts/verify-completion-result.py'
+      - 'scripts/verify-bootstrap-directory-repair.py'
+      - 'app/src/main/java/com/termux/app/BootstrapDirectoryRepair.java'
+      - 'app/src/main/java/com/termux/app/TermuxInstaller.java'
       - 'app/src/main/java/com/termux/app/terminal/TermuxTerminalSessionActivityClient.java'
       - 'app/src/main/java/com/termux/app/terminal/TermuxTerminalSessionServiceClient.java'
       - 'termux-shared/src/main/java/com/termux/shared/termux/shell/command/runner/terminal/TermuxSession.java'
@@ -71,6 +74,7 @@ jobs:
           python3 scripts/verify-process-owner-boundary.py
           python3 scripts/verify-delivery-boundary.py
           python3 scripts/verify-completion-result.py
+          python3 scripts/verify-bootstrap-directory-repair.py
           cd terminal-emulator/src/main/rust
           cargo build --locked --lib
       - name: Verify recording contract and real Kotlin JNI
