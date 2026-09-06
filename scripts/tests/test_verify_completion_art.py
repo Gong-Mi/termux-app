@@ -48,6 +48,11 @@ class CompletionArtContracts(unittest.TestCase):
         self.assertIn('actual transcript=', source)
         self.assertIn('actual plugin stdout=', source)
 
+    def test_zero_exit_install_log_with_traceback_is_not_clean(self):
+        self.assertEqual(art.package_script_errors('Setting up python ...\n'), [])
+        errors = art.package_script_errors('Setting up python ...\nTraceback (most recent call last):\nPermissionError: denied\nSetting up pip ...\n')
+        self.assertEqual(errors, ['Traceback (most recent call last):', 'PermissionError: denied'])
+
     def test_package_python_probe_is_real_and_failure_checked(self):
         import ast
         import subprocess

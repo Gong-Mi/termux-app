@@ -29,6 +29,12 @@ def verify_output(text, returncode):
     return returncode == 0 and ok == [str(len(EXPECTED))] and names == EXPECTED and not failed
 
 
+def package_script_errors(text):
+    """Python postinst may print an exception and still exit zero."""
+    return [line for line in text.splitlines()
+            if line.startswith('Traceback (most recent call last):') or line.startswith('PermissionError:')]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', required=True)
@@ -67,7 +73,8 @@ def main():
         run('clear-logcat', ['logcat', '-c'])
         result = run('instrumentation', ['shell', 'am', 'instrument', '-w', '-r', '-e', 'class', TEST_CLASS,
                      'com.termux.test/androidx.test.runner.AndroidJUnitRunner'], timeout=1200)
-        summary['passed'] = verify_output(result.stdout, result.returncode)
+        summary['instrumentation_passed'] = verify_output(result.stdout, result.returncode)
+        summary['passed'] = summary['instrumentation_passed']
         print(result.stdout)
         if not summary['passed']:
             raise RuntimeError('Instrumentation output failed strict count/name/failure checks')
@@ -78,10 +85,20 @@ def main():
         # Copy actual app-owned package evidence even if installation/tests failed.
         for name in ('apt-update.log', 'apt-install.log', 'python-package.txt', 'python-result.json', 'python-stderr.log'):
             try:
-                run('package-' + name, ['exec-out', 'run-as', 'com.termux', '/system/bin/cat',
+                capture = run('package-' + name, ['exec-out', 'run-as', 'com.termux', '/system/bin/cat',
                     'files/package-python-art/' + name])
+                if name == 'apt-install.log':
+                    errors = package_script_errors(capture.stdout) if capture.returncode == 0 else ['installation log unavailable']
+                    summary['package_script_errors'] = errors
+                    summary['package_scripts_clean'] = not errors
+                    if errors:
+                        summary['passed'] = False
+                        print('FAIL package scripts:', errors)
             except (OSError, subprocess.SubprocessError) as error:
                 summary.setdefault('package_evidence_errors', {})[name] = str(error)
+                if name == 'apt-install.log':
+                    summary['passed'] = False
+                    summary['package_scripts_clean'] = False
         try:
             run('logcat', ['logcat', '-d', '-v', 'threadtime'])
         except (OSError, subprocess.SubprocessError) as error:
