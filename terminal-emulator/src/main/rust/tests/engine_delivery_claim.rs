@@ -212,3 +212,56 @@ fn poll_and_claim_have_exactly_one_winner() {
         offer.assert_live();
     }
 }
+
+#[test]
+fn unadopted_cleanup_terminates_owned_process_without_relying_on_pty_hup() {
+    use std::io::BufRead;
+    use std::process::{Command, Stdio};
+    use termux_rust::process_owner::ExitOutcome;
+    let c = SessionCoordinator::get();
+    for mode in ["reject", "unregister", "late_offer", "acked"] {
+        let session = c.register_session();
+        let mut child = Command::new("sh")
+            .args(["-c", "trap '' HUP; printf 'ready\n'; read -r hold; exit 23"])
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+        let mut ready = String::new();
+        std::io::BufReader::new(child.stdout.take().unwrap()).read_line(&mut ready).unwrap();
+        assert_eq!(ready, "ready\n");
+        let process = c.bind_pid(session, child.id() as i32).unwrap();
+        let context = Arc::new(TerminalContext::with_process(
+            TerminalEngine::new(session as i32, 80, 24, 100, 8, 16), process.clone(),
+        ));
+        // A distinct socket makes PTY HUP unavailable as an accidental kill path.
+        let (master, mut peer) = UnixStream::pair().unwrap();
+        peer.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        TerminalContext::start_io_owned(context.clone(), master.into()).unwrap();
+        let handle = ENGINE_HANDLES.insert(context.clone()).unwrap();
+        let data = SessionEngineData { ptr: handle, pty_fd: -1, pid: child.id() as i32 };
+        if mode == "late_offer" { c.unregister_session(session); }
+        c.set_engine_data(session, data);
+        if mode == "acked" {
+            assert!(c.claim_engine_data(session, handle).is_some());
+            assert!(c.ack_engine_data(session, handle));
+            c.unregister_session(session);
+            destroy_engine(handle); // normal display disposal must not kill
+            drop(child.stdin.take());
+            assert_eq!(process.wait(), ExitOutcome::Exited(23));
+            assert_eq!(child.wait().unwrap_err().raw_os_error(), Some(libc::ECHILD));
+            assert_eq!(peer.read(&mut [0; 1]).unwrap(), 0);
+            continue;
+        }
+        if mode == "reject" { assert!(c.reject_engine_data(session, handle)); }
+        if mode == "unregister" { c.unregister_session(session); }
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while process.outcome().is_none() && Instant::now() < deadline { std::thread::yield_now(); }
+        let observed = process.outcome();
+        // RED must not leave a live child behind after reporting the failure.
+        if observed.is_none() { process.terminate().unwrap(); }
+        process.wait();
+        c.unregister_session(session);
+        destroy_engine(handle);
+        assert_eq!(child.wait().unwrap_err().raw_os_error(), Some(libc::ECHILD));
+        assert_eq!(observed, Some(ExitOutcome::Exited(-libc::SIGKILL)), "{mode} left an unadopted child running");
+        assert_eq!(peer.read(&mut [0; 1]).unwrap(), 0);
+    }
+}

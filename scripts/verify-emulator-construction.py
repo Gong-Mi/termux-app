@@ -21,7 +21,7 @@ def main():
     for name in ('compiler-classpath', 'compile-classpath', 'runtime-classpath', 'output'):
         p.add_argument('--' + name, required=True)
     p.add_argument('--native-library', required=True)
-    p.add_argument('--mode', choices=('contract', 'native', 'handles'), required=True)
+    p.add_argument('--mode', choices=('contract', 'native', 'handles', 'delivery'), required=True)
     a = p.parse_args()
     repo = Path(__file__).resolve().parents[1]
     Path(a.output).mkdir(parents=True, exist_ok=True)
@@ -68,9 +68,19 @@ def main():
         stub = out / 'RustTerminal.kt'
         stub.write_text(text)
         sources = [s for s in sources if s != original] + [stub]
-    harness = repo / 'scripts/kotlin' / {'contract': 'EmulatorConstructionContract.kt', 'native': 'EmulatorConstructionNative.kt', 'handles': 'EngineHandleNative.kt'}[a.mode]
+    compile_classpath = a.compile_classpath
+    if a.mode == 'delivery':
+        # Only scheduling/logging are shimmed; production Kotlin and JNI are unchanged.
+        shims = sorted((repo / 'scripts/java/delivery-stubs').rglob('*.java'))
+        summary['scheduling_boundary'] = 'explicit test queue; not ART/Looper'
+        summary['shims'] = {str(s.relative_to(repo)): hashlib.sha256(s.read_bytes()).hexdigest() for s in shims}
+        if run('compile-queue', ['javac', '-d', classes, *shims]):
+            return 1
+        compile_classpath = os.pathsep.join([str(classes), a.compile_classpath])
+    harness = repo / 'scripts/kotlin' / {'contract': 'EmulatorConstructionContract.kt', 'native': 'EmulatorConstructionNative.kt', 'handles': 'EngineHandleNative.kt', 'delivery': 'EngineDeliveryNative.kt'}[a.mode]
+    summary['harness'] = {'path': str(harness.relative_to(repo)), 'sha256': hashlib.sha256(harness.read_bytes()).hexdigest()}
     if run('compile', ['java', '-cp', a.compiler_classpath, 'org.jetbrains.kotlin.cli.jvm.K2JVMCompiler',
-                      '-no-stdlib', '-no-reflect', '-jvm-target', '21', '-classpath', a.compile_classpath,
+                      '-no-stdlib', '-no-reflect', '-jvm-target', '21', '-classpath', compile_classpath,
                       '-d', classes, *sources, harness]):
         return 1
     if a.mode != 'contract':

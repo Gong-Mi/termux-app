@@ -44,7 +44,7 @@ class TerminalSession(
     @JvmField
     val mHandle: String = UUID.randomUUID().toString()
     @JvmField
-    var mEmulator: TerminalEmulator? = null
+    @Volatile var mEmulator: TerminalEmulator? = null
     @JvmField
     var mSessionName: String? = null
 
@@ -57,15 +57,15 @@ class TerminalSession(
     /** Buffer to write translate code points into utf8 before writing to mTerminalToProcessIOQueue */
     private val mUtf8InputBuffer = ByteArray(5)
 
-    var mClient: TerminalSessionClient = client
+    @Volatile var mClient: TerminalSessionClient = client
         private set
 
     /** The pid of the shell process. 0 if not started and -1 if finished running. */
-    var mShellPid: Int = 0
+    @Volatile var mShellPid: Int = 0
         private set
 
     /** The exit status of the shell process. Only valid if mShellPid is -1. */
-    var mShellExitStatus: Int = 0
+    @Volatile var mShellExitStatus: Int = 0
         private set
 
     /** The file descriptor referencing the master half of a pseudo-terminal pair. */
@@ -74,16 +74,21 @@ class TerminalSession(
 
     private val mRustCallback: RustEngineCallback = RustEngineCallback(client).also { it.setSession(this) }
 
-    private enum class SessionState { IDLE, INITIALIZING, READY }
-    private var mSessionState = SessionState.IDLE
+    private val mLifecycleLock = Any()
+    private enum class SessionState { IDLE, INITIALIZING, READY, DISPOSED }
+    @Volatile private var mSessionState = SessionState.IDLE
     private val mScreenUpdatePending = AtomicBoolean(false)
 
     val mMainThreadHandler = MainThreadHandler()
 
     /** Update the client for this session. */
     fun updateTerminalSessionClient(client: TerminalSessionClient) {
-        mClient = client
-        mEmulator?.takeIf { it.isAlive() }?.updateTerminalSessionClient(client)
+        synchronized(mLifecycleLock) {
+            if (mSessionState == SessionState.DISPOSED) return
+            mClient = client
+            mRustCallback.updateClient(client)
+            // Native already holds this stable bridge; only its client reference changes.
+        }
     }
 
     /** Inform the attached pty of the new size and reflow or initialize the emulator. */
@@ -99,68 +104,132 @@ class TerminalSession(
 
     /** The terminal title as set through escape sequences or null if none set. */
     fun getTitle(): String? {
-        if (mSessionState != SessionState.READY || mEmulator == null || !mEmulator!!.isAlive()) return null
-        return mEmulator!!.getTitle()
+        if (mSessionState != SessionState.READY) return null
+        val emulator = mEmulator ?: return null
+        return if (emulator.isAlive()) emulator.getTitle() else null
     }
 
-    /** Set the terminal emulator's window size and start terminal emulation asynchronously. */
+    /** Begin at most once; init, offer adoption and disposal share one lifecycle lock. */
     fun initializeEmulator(columns: Int, rows: Int, cellWidthPixels: Int, cellHeightPixels: Int) {
-        android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 4. initializeEmulator called (${columns}x${rows})")
-        mSessionState = SessionState.INITIALIZING
-        if (JNI.sNativeLibrariesLoaded) {
-            val sessionId = JNI.registerSession()
-            if (sessionId < 0) {
+        val failure = synchronized(mLifecycleLock) {
+            if (mSessionState != SessionState.IDLE) return
+            mSessionState = SessionState.INITIALIZING
+            if (!JNI.sNativeLibrariesLoaded) {
                 mSessionState = SessionState.IDLE
-                mClient.logError(LOG_TAG, "Native session ID allocation failed")
+                "Native libraries unavailable"
+            } else {
+                val sessionId = JNI.registerSession()
+                if (sessionId < 0) {
+                    mSessionState = SessionState.IDLE
+                    "Native session ID allocation failed"
+                } else {
+                    mNativeSessionId = sessionId
+                    mRustCallback.setNativeSessionId(sessionId)
+                    try {
+                        JNI.createSessionAsync(sessionId, shellPath, cwd ?: "", args, env,
+                            rows, columns, cellWidthPixels, cellHeightPixels,
+                            transcriptRows ?: TerminalEmulator.DEFAULT_TERMINAL_TRANSCRIPT_ROWS, mRustCallback)
+                        null
+                    } catch (t: Exception) {
+                        JNI.terminateSession(sessionId)
+                        JNI.unregisterSession(sessionId)
+                        mNativeSessionId = -1
+                        // A creator may already have escaped; never reuse this callback generation.
+                        "Native session creation failed: ${t.message}"
+                    }
+                }
+            }
+        }
+        failure?.let { mClient.logError(LOG_TAG, it) }
+    }
+
+    /** Native offers remain coordinator-owned until the queued adoption acknowledges them. */
+    fun onEngineInitialized(enginePtr: Long, ptyFd: Int, pid: Int) {
+        synchronized(mLifecycleLock) {
+            val sessionId = mNativeSessionId
+            if (mSessionState != SessionState.INITIALIZING) {
+                JNI.rejectEngineData(sessionId, enginePtr)
                 return
             }
-            mNativeSessionId = sessionId
-            android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 5. Calling JNI.createSessionAsync (SessionID=$sessionId)")
-            
-            JNI.createSessionAsync(
-                sessionId,
-                shellPath, cwd ?: "", args, env, rows, columns, cellWidthPixels, cellHeightPixels,
-                transcriptRows ?: TerminalEmulator.DEFAULT_TERMINAL_TRANSCRIPT_ROWS, mRustCallback
-            )
-        } else {
-            android.util.Log.w("TermuxTrace", "[TRACE_SESSION] JNI libraries not loaded, using mock")
-            mShellPid = 99999
-            mTerminalFileDescriptor = -1
-            mEmulator = TerminalEmulator(this, columns, rows, cellWidthPixels, cellHeightPixels, transcriptRows, mTerminalFileDescriptor, mClient)
-            mSessionState = SessionState.READY
-            mClient.setTerminalShellPid(this, mShellPid)
+            val posted = mMainThreadHandler.post {
+                val adopted = synchronized(mLifecycleLock) {
+                    if (mSessionState != SessionState.INITIALIZING || mNativeSessionId != sessionId) {
+                        JNI.rejectEngineData(sessionId, enginePtr)
+                        false
+                    } else {
+                        val data = JNI.claimEngineData(sessionId, enginePtr)
+                        if (data == null) {
+                            // No successful claim means no authority to reject.
+                            // A duplicate offer may race a different claimant.
+                            false
+                        } else {
+                            // Until ack, the wrapper only borrows the native owner's token.
+                            // Constructor failures must reject, never create a replacement engine.
+                            val emulator = try {
+                                require(data.size == 3 && data[0] == enginePtr && data[1] == ptyFd.toLong() && data[2] == pid.toLong())
+                                TerminalEmulator(this, enginePtr, ptyFd, mRustCallback)
+                            } catch (t: Throwable) {
+                                JNI.rejectEngineData(sessionId, enginePtr)
+                                null
+                            }
+                            if (emulator == null) false
+                            else if (!JNI.ackEngineData(sessionId, enginePtr)) {
+                                JNI.rejectEngineData(sessionId, enginePtr)
+                                false
+                            } else {
+                                mEmulator = emulator
+                                mTerminalFileDescriptor = ptyFd
+                                mShellPid = pid
+                                mSessionState = SessionState.READY
+                                true
+                            }
+                        }
+                    }
+                }
+                // Exceptions from client code cannot roll ownership back after ack.
+                // Never retain a pre-adoption client snapshot or call clients under the lock.
+                if (adopted && mSessionState == SessionState.READY) {
+                    mClient.setTerminalShellPid(this, pid)
+                    mClient.onSessionStateChanged(this)
+                    mClient.onTextChanged(this)
+                    notifyScreenUpdate()
+                }
+            }
+            if (!posted) JNI.rejectEngineData(sessionId, enginePtr)
         }
     }
 
-    /** Callback from Rust when async initialization is complete. */
-    fun onEngineInitialized(enginePtr: Long, ptyFd: Int, pid: Int) {
-        android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 6. onEngineInitialized callback received (pid=$pid)")
-        val accepted = mMainThreadHandler.post {
-            android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 7. Running onEngineInitialized logic on MainThread")
-            
-            // 必须在创建 Emulator 之前先设为 READY，否则 init 块里的 write 调用会被拦截
-            mSessionState = SessionState.READY
-            mTerminalFileDescriptor = ptyFd
-            mShellPid = pid
-
-            mEmulator = TerminalEmulator(this, enginePtr, ptyFd, mRustCallback)
-            mClient.setTerminalShellPid(this, mShellPid)
-            android.util.Log.d("TermuxTrace", "[TRACE_SESSION] 8. Emulator instance created and READY")
-
-            // 唤醒 UI
-            mClient.onSessionStateChanged(this)
-            mClient.onTextChanged(this)
-            notifyScreenUpdate()
+    /** Explicit removal, not process exit. Revokes pending offers before releasing adopted state. */
+    fun dispose() {
+        synchronized(mLifecycleLock) {
+            if (mSessionState == SessionState.DISPOSED) return
+            mSessionState = SessionState.DISPOSED
+            val sessionId = mNativeSessionId
+            mNativeSessionId = -1
+            if (JNI.sNativeLibrariesLoaded && sessionId >= 0) {
+                runCatching { JNI.terminateSession(sessionId) }
+                runCatching { JNI.unregisterSession(sessionId) }
+            }
+            runCatching { mEmulator?.destroy() }
+            mEmulator = null
+            mTerminalFileDescriptor = -1
+            mShellPid = -1
+            mTerminalToProcessIOQueue.close()
+            mProcessToTerminalIOQueue.close()
+            mMainThreadHandler.removeCallbacksAndMessages(null)
+            mScreenUpdatePending.set(false)
+            mRustCallback.clear()
+            mClient = RustEngineCallback(null)
         }
-        if (!accepted) RustTerminal.destroyEngine(enginePtr)
     }
 
     fun isEngineInitialized(): Boolean = mSessionState == SessionState.READY
 
     /** Write data to the shell process. */
     override fun write(data: ByteArray, offset: Int, count: Int) {
-        if (mSessionState != SessionState.READY || mEmulator == null) return
-        val ptr = mEmulator!!.getNativePointer()
+        if (mSessionState != SessionState.READY) return
+        val emulator = mEmulator ?: return
+        val ptr = emulator.getNativePointer()
         if (ptr != 0L) {
             val status = RustTerminal.tryProcessInput(ptr, data, offset, count)
             if (status != RustTerminal.INPUT_ACCEPTED) {
@@ -284,7 +353,8 @@ class TerminalSession(
         val mReceiveBuffer = ByteArray(64 * 1024)
 
         override fun handleMessage(msg: Message) {
-            if (msg.what != MSG_PROCESS_EXITED && (mEmulator == null || !mEmulator!!.isAlive())) return
+            val emulator = mEmulator
+            if (msg.what != MSG_PROCESS_EXITED && (emulator == null || !emulator.isAlive())) return
 
             if (msg.what == MSG_SCREEN_UPDATED) {
                 notifyScreenUpdate()
@@ -305,8 +375,8 @@ class TerminalSession(
                 exitDescription += " - press Enter]"
 
                 val bytesToWrite = exitDescription.toByteArray(StandardCharsets.UTF_8)
-                if (mEmulator?.isAlive() == true) {
-                    mEmulator!!.append(bytesToWrite, bytesToWrite.size)
+                if (emulator?.isAlive() == true) {
+                    emulator.append(bytesToWrite, bytesToWrite.size)
                     notifyScreenUpdate()
                 }
                 cleanupResources(exitCode)

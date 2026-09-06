@@ -46,16 +46,23 @@ impl SessionState {
 /// 全局 Session 协调器实例
 static SESSION_COORDINATOR: OnceCell<SessionCoordinator> = OnceCell::new();
 
-/// Forget revoked delivery tokens without starting a process monitor for a
-/// standalone engine. Cached SessionEngineData never owns an engine lease.
+/// Forget pending OR claimed tokens after engine revocation. destroy_engine
+/// releases the engine-handle lock before entering here; never destroy here.
 pub(crate) fn discard_engine_data(handle: jni::sys::jlong) {
     if let Some(coordinator) = SESSION_COORDINATOR.get() {
-        let mut data = coordinator
-            .engine_data_map
+        let mut registry = coordinator
+            .registry
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        data.retain(|_, value| value.ptr != handle);
+        registry.engine_data.retain(|_, value| value.data.ptr != handle);
     }
+}
+
+/// Both states retain native cleanup responsibility. Claimed metadata is only
+/// provisional: callers must ack successfully before treating it as ownership.
+struct EngineDelivery {
+    data: SessionEngineData,
+    claimed: bool,
 }
 
 struct SessionRecord {
@@ -69,12 +76,13 @@ struct Registry {
     sessions: HashMap<usize, SessionRecord>,
     pkg_owner: Option<usize>,
     pid_owners: HashMap<i32, Weak<ProcessOwner>>,
+    engine_data: HashMap<usize, EngineDelivery>,
 }
 
-/// Membership, process publication and package ownership share one state lock.
+/// Membership, delivery, process publication and package ownership share one
+/// state lock. Delivery methods never enter engine/JNI/IO code under this lock.
 pub struct SessionCoordinator {
     registry: Mutex<Registry>,
-    engine_data_map: Mutex<HashMap<usize, SessionEngineData>>,
 }
 
 /// Legacy known-PID waits share the managed status cache, never a second reaper.
@@ -93,7 +101,6 @@ impl SessionCoordinator {
     pub fn get() -> &'static Self {
         SESSION_COORDINATOR.get_or_init(|| Self {
             registry: Mutex::new(Registry::default()),
-            engine_data_map: Mutex::new(HashMap::new()),
         })
     }
 
@@ -117,16 +124,17 @@ impl SessionCoordinator {
     }
 
     pub fn unregister_session(&self, session_id: usize) {
-        {
+        let delivery = {
             let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
             registry.sessions.remove(&session_id);
             if registry.pkg_owner == Some(session_id) {
                 registry.pkg_owner = None;
             }
-        }
+            registry.engine_data.remove(&session_id)
+        };
         // No coordinator lock is held while destroy cancels/reaps IO resources.
-        if let Some(data) = self.take_engine_data(session_id) {
-            crate::engine::destroy_engine(data.ptr);
+        if let Some(delivery) = delivery {
+            crate::engine::destroy_unadopted_engine(delivery.data.ptr);
         }
     }
 
@@ -325,28 +333,84 @@ impl SessionCoordinator {
         })
     }
 
+    /// Offer an engine for native-owned delivery. The async creator publishes
+    /// once; as before, a different replacement reclaims the displaced engine.
+    /// Repeating the same token updates metadata but must not reopen a claim.
+    /// This consumes cleanup responsibility, including when membership is gone.
     pub fn set_engine_data(&self, session_id: usize, data: SessionEngineData) {
-        let registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
-        let displaced = if registry.sessions.contains_key(&session_id) {
-            self.engine_data_map
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .insert(session_id, data)
-        } else {
-            Some(data)
+        let displaced = {
+            let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
+            if !registry.sessions.contains_key(&session_id) {
+                Some(data)
+            } else if let Some(current) = registry.engine_data.get_mut(&session_id)
+                && current.data.ptr == data.ptr
+            {
+                current.data = data;
+                None
+            } else {
+                registry.engine_data.insert(session_id, EngineDelivery {
+                    data,
+                    claimed: false,
+                }).map(|old| old.data)
+            }
         };
-        drop(registry);
-        if let Some(old) = displaced
-            && (old.ptr != data.ptr || !self.has_session(session_id))
-        {
-            crate::engine::destroy_engine(old.ptr);
+        if let Some(old) = displaced {
+            crate::engine::destroy_unadopted_engine(old.ptr);
         }
     }
+
+    /// Legacy poll is an atomic single-step ownership transfer, never a claim
+    /// thief. Removal and membership revocation use the same linearization lock.
     pub fn take_engine_data(&self, session_id: usize) -> Option<SessionEngineData> {
-        self.engine_data_map
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(&session_id)
+        let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
+        if registry.engine_data.get(&session_id)?.claimed {
+            return None;
+        }
+        registry.engine_data.remove(&session_id).map(|offer| offer.data)
+    }
+
+    /// Pending -> Claimed; native still owns cancellation/reclamation until ack.
+    /// A claim is not a lifetime lease: unregister/reject/destroy may revoke it.
+    pub fn claim_engine_data(
+        &self,
+        session_id: usize,
+        expected_handle: jni::sys::jlong,
+    ) -> Option<SessionEngineData> {
+        let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
+        let offer = registry.engine_data.get_mut(&session_id)?;
+        if offer.claimed || offer.data.ptr != expected_handle {
+            return None;
+        }
+        offer.claimed = true;
+        Some(offer.data)
+    }
+
+    /// Only a matching claim transfers cleanup responsibility to the caller.
+    /// False means the caller must not adopt the provisional metadata.
+    pub fn ack_engine_data(&self, session_id: usize, expected_handle: jni::sys::jlong) -> bool {
+        let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
+        if registry.engine_data.get(&session_id).is_none_or(|offer|
+            !offer.claimed || offer.data.ptr != expected_handle)
+        {
+            return false;
+        }
+        registry.engine_data.remove(&session_id);
+        true
+    }
+
+    /// Revoke either delivery state, then destroy outside ALL coordinator locks.
+    pub fn reject_engine_data(&self, session_id: usize, expected_handle: jni::sys::jlong) -> bool {
+        let delivery = {
+            let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
+            if registry.engine_data.get(&session_id).is_none_or(|offer|
+                offer.data.ptr != expected_handle)
+            {
+                return false;
+            }
+            registry.engine_data.remove(&session_id).unwrap()
+        };
+        crate::engine::destroy_unadopted_engine(delivery.data.ptr);
+        true
     }
 
     pub fn try_acquire_pkg_lock(&self, session_id: usize) -> bool {
@@ -542,7 +606,7 @@ pub extern "system" fn Java_com_termux_terminal_JNI_pollEngineData(
         if env.set_long_array_region(&j_array, 0, &res).is_ok() {
             j_array.into_raw()
         } else {
-            crate::engine::destroy_engine(data.ptr);
+            crate::engine::destroy_unadopted_engine(data.ptr);
             std::ptr::null_mut()
         }
     } else {
@@ -590,4 +654,47 @@ pub extern "system" fn Java_com_termux_terminal_JNI_getSessionProcessStatus(
         return std::ptr::null_mut();
     }
     array.into_raw()
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_JNI_claimEngineData(
+    env: JNIEnv,
+    _class: JClass,
+    session_id: jint,
+    handle: jni::sys::jlong,
+) -> jni::sys::jlongArray {
+    // Allocate before reserving the offer: allocation failure leaves it pending.
+    let Ok(array) = env.new_long_array(3) else {
+        return std::ptr::null_mut();
+    };
+    let coordinator = SessionCoordinator::get();
+    let Some(data) = coordinator.claim_engine_data(session_id as usize, handle) else {
+        return std::ptr::null_mut();
+    };
+    let values = [data.ptr, data.pty_fd as i64, data.pid as i64];
+    if env.set_long_array_region(&array, 0, &values).is_err() {
+        coordinator.reject_engine_data(session_id as usize, handle);
+        return std::ptr::null_mut();
+    }
+    array.into_raw()
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_JNI_ackEngineData(
+    _env: JNIEnv,
+    _class: JClass,
+    session_id: jint,
+    handle: jni::sys::jlong,
+) -> jboolean {
+    SessionCoordinator::get().ack_engine_data(session_id as usize, handle) as jboolean
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_termux_terminal_JNI_rejectEngineData(
+    _env: JNIEnv,
+    _class: JClass,
+    session_id: jint,
+    handle: jni::sys::jlong,
+) -> jboolean {
+    SessionCoordinator::get().reject_engine_data(session_id as usize, handle) as jboolean
 }
