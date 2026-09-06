@@ -371,8 +371,12 @@ impl SessionCoordinator {
     pub fn install_completion_sink(&self, session_id: usize, sink: CompletionSink) -> bool {
         {
             let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
-            let Some(record) = registry.sessions.get_mut(&session_id) else { return false; };
-            if record.sink_installed || record.candidate_taken { return false; }
+            let Some(record) = registry.sessions.get_mut(&session_id) else {
+                return false;
+            };
+            if record.sink_installed || record.candidate_taken {
+                return false;
+            }
             record.sink_installed = true;
             record.completion_sink = Some(sink);
         }
@@ -390,17 +394,33 @@ impl SessionCoordinator {
     fn dispatch_completion(&self, session_id: usize) {
         let pending = {
             let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
-            let Some(record) = registry.sessions.get_mut(&session_id) else { return; };
-            let (Some(process), Some(io)) = (record.process_outcome, record.io_outcome) else { return; };
-            if record.candidate_taken { return; }
-            let Some(sink) = record.completion_sink.take() else { return; };
+            let Some(record) = registry.sessions.get_mut(&session_id) else {
+                return;
+            };
+            let (Some(process), Some(io)) = (record.process_outcome, record.io_outcome) else {
+                return;
+            };
+            if record.candidate_taken {
+                return;
+            }
+            let Some(sink) = record.completion_sink.take() else {
+                return;
+            };
             record.candidate_taken = true;
             record.dispatch_status = 1;
-            (sink, CompletionCandidate { session_id, process, io })
+            (
+                sink,
+                CompletionCandidate {
+                    session_id,
+                    process,
+                    io,
+                },
+            )
         };
         // Revocation after claim cannot cancel in-flight foreign code. The receiving
         // session must reject its stale identity; unregister never resurrects it.
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (pending.0)(pending.1)));
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (pending.0)(pending.1)));
         {
             let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(record) = registry.sessions.get_mut(&session_id) {
@@ -408,7 +428,9 @@ impl SessionCoordinator {
             }
         }
         // Preserve Rust callback unwind semantics after recording failure.
-        if let Err(payload) = result { std::panic::resume_unwind(payload); }
+        if let Err(payload) = result {
+            std::panic::resume_unwind(payload);
+        }
     }
 
     pub fn completion_facts(&self, session_id: usize) -> Option<(ExitOutcome, IoOutcome)> {
@@ -853,8 +875,10 @@ pub extern "system" fn Java_com_termux_terminal_JNI_getCompletionDispatchStatus(
     _class: JClass,
     session_id: jint,
 ) -> jint {
-    SessionCoordinator::get().completion_dispatch_status(session_id as usize)
-        .map(i32::from).unwrap_or(-1)
+    SessionCoordinator::get()
+        .completion_dispatch_status(session_id as usize)
+        .map(i32::from)
+        .unwrap_or(-1)
 }
 
 #[cfg(test)]

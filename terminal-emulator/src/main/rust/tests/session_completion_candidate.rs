@@ -290,9 +290,16 @@ fn completion_bridge_replays_early_facts_once_outside_registry_lock() {
     let observer = coordinator.completion_observer(session).unwrap();
     let mut child = Command::new("sh").arg("-c").arg("exit 31").spawn().unwrap();
     coordinator.bind_pid(session, child.id() as i32).unwrap();
-    let context = Arc::new(TerminalContext::new(TerminalEngine::new(0, 80, 24, 2000, 8, 16)));
+    let context = Arc::new(TerminalContext::new(TerminalEngine::new(
+        0, 80, 24, 2000, 8, 16,
+    )));
     let (master, peer) = UnixStream::pair().unwrap();
-    TerminalContext::start_io_owned_for_session(Arc::clone(&context), OwnedFd::from(master), observer).unwrap();
+    TerminalContext::start_io_owned_for_session(
+        Arc::clone(&context),
+        OwnedFd::from(master),
+        observer,
+    )
+    .unwrap();
     drop(peer);
     let deadline = Instant::now() + Duration::from_secs(3);
     while coordinator.completion_facts(session).is_none() {
@@ -301,12 +308,18 @@ fn completion_bridge_replays_early_facts_once_outside_registry_lock() {
     }
     let calls = Arc::new(AtomicUsize::new(0));
     let seen = Arc::clone(&calls);
-    assert!(coordinator.install_completion_sink(session, Arc::new(move |candidate| {
-        assert!(SessionCoordinator::get().has_session(session)); // reentrant, no registry lock
-        assert_eq!(candidate.process, termux_rust::process_owner::ExitOutcome::Exited(31));
-        seen.fetch_add(1, Ordering::SeqCst);
-        true
-    })));
+    assert!(coordinator.install_completion_sink(
+        session,
+        Arc::new(move |candidate| {
+            assert!(SessionCoordinator::get().has_session(session)); // reentrant, no registry lock
+            assert_eq!(
+                candidate.process,
+                termux_rust::process_owner::ExitOutcome::Exited(31)
+            );
+            seen.fetch_add(1, Ordering::SeqCst);
+            true
+        })
+    ));
     assert_eq!(child.wait().unwrap_err().raw_os_error(), Some(libc::ECHILD));
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     assert_eq!(coordinator.completion_dispatch_status(session), Some(2));
@@ -323,17 +336,29 @@ fn completion_bridge_failure_is_not_retried_and_can_unregister_in_callback() {
         let session = coordinator.register_session();
         let observer = coordinator.completion_observer(session).unwrap();
         let (tx, rx) = std::sync::mpsc::channel();
-        assert!(coordinator.install_completion_sink(session, Arc::new(move |_| {
-            if remove { SessionCoordinator::get().unregister_session(session); }
-            tx.send(()).unwrap();
-            false
-        })));
+        assert!(coordinator.install_completion_sink(
+            session,
+            Arc::new(move |_| {
+                if remove {
+                    SessionCoordinator::get().unregister_session(session);
+                }
+                tx.send(()).unwrap();
+                false
+            })
+        ));
         assert!(coordinator.take_completion_candidate(session).is_none());
         let mut child = Command::new("sh").arg("-c").arg("exit 32").spawn().unwrap();
         coordinator.bind_pid(session, child.id() as i32).unwrap();
-        let context = Arc::new(TerminalContext::new(TerminalEngine::new(0, 80, 24, 2000, 8, 16)));
+        let context = Arc::new(TerminalContext::new(TerminalEngine::new(
+            0, 80, 24, 2000, 8, 16,
+        )));
         let (master, peer) = UnixStream::pair().unwrap();
-        TerminalContext::start_io_owned_for_session(Arc::clone(&context), OwnedFd::from(master), observer).unwrap();
+        TerminalContext::start_io_owned_for_session(
+            Arc::clone(&context),
+            OwnedFd::from(master),
+            observer,
+        )
+        .unwrap();
         drop(peer);
         rx.recv_timeout(Duration::from_secs(3)).unwrap();
         assert_eq!(child.wait().unwrap_err().raw_os_error(), Some(libc::ECHILD));
@@ -342,7 +367,10 @@ fn completion_bridge_failure_is_not_retried_and_can_unregister_in_callback() {
             assert!(Instant::now() < deadline);
             thread::yield_now();
         }
-        assert_eq!(coordinator.completion_dispatch_status(session), if remove { None } else { Some(3) });
+        assert_eq!(
+            coordinator.completion_dispatch_status(session),
+            if remove { None } else { Some(3) }
+        );
         assert!(coordinator.take_completion_candidate(session).is_none());
         assert!(!coordinator.install_completion_sink(session, Arc::new(|_| true)));
         assert!(rx.try_recv().is_err());
