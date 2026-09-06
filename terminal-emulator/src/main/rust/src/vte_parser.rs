@@ -342,6 +342,9 @@ pub struct Parser {
     dcs_buffer: Vec<u8>,
     /// 是否继续序列
     continue_sequence: bool,
+    /// Incomplete UTF-8 scalar, retained across advance calls (no EOF flush).
+    utf8_pending: [u8; 4],
+    utf8_pending_len: usize,
 }
 
 impl Parser {
@@ -353,6 +356,8 @@ impl Parser {
             osc_buffer: String::with_capacity(256),
             dcs_buffer: Vec::with_capacity(256),
             continue_sequence: false,
+            utf8_pending: [0; 4],
+            utf8_pending_len: 0,
         }
     }
 
@@ -362,44 +367,64 @@ impl Parser {
         let len = data.len();
 
         while pos < len {
-            // SVE 快速路径：当不在转义序列中时，快速跳过纯文本
-            if self.escape_state == ESC_NONE {
-                #[cfg(target_arch = "aarch64")]
-                {
-                    if crate::vte_sve::has_sve_support() {
-                        let fast_len =
-                            unsafe { crate::vte_sve::find_first_control_sve(&data[pos..]) };
-                        if fast_len > 0 {
-                            let text = String::from_utf8_lossy(&data[pos..pos + fast_len]);
-                            for c in text.chars() {
-                                handler.print(c);
-                            }
-                            pos += fast_len;
-                            if pos >= len {
-                                break;
-                            }
-                        }
+            if self.utf8_pending_len != 0 {
+                // The saved bytes are always a valid, incomplete scalar prefix.
+                // Validate at most four bytes; on rejection retry this input byte
+                // as a new lead/control instead of swallowing it with U+FFFD.
+                let pending_len = self.utf8_pending_len;
+                self.utf8_pending[pending_len] = data[pos];
+                match std::str::from_utf8(&self.utf8_pending[..pending_len + 1]) {
+                    Ok(text) => {
+                        let c = text.chars().next().unwrap();
+                        self.utf8_pending_len = 0;
+                        pos += 1;
+                        self.process_char(handler, c);
                     }
+                    Err(error) if error.error_len().is_none() => {
+                        self.utf8_pending_len += 1;
+                        pos += 1;
+                    }
+                    Err(_) => {
+                        self.utf8_pending_len = 0;
+                        self.process_char(handler, '\u{fffd}');
+                    }
+                }
+                continue;
+            }
+
+            // Keep SVE control scanning, but only dispatch validated complete
+            // UTF-8 prefixes. Bound the scan so malformed input cannot repeatedly
+            // rescan an arbitrarily long suffix (quadratic work). A window ending
+            // inside a scalar is completed by the same streaming decoder below.
+            #[cfg(target_arch = "aarch64")]
+            if self.escape_state == ESC_NONE && crate::vte_sve::has_sve_support() {
+                let window = &data[pos..pos + (len - pos).min(256)];
+                let fast_len = unsafe { crate::vte_sve::find_first_control_sve(window) };
+                let candidate = &window[..fast_len];
+                let valid_len = match std::str::from_utf8(candidate) {
+                    Ok(_) => fast_len,
+                    Err(error) => error.valid_up_to(),
+                };
+                if valid_len != 0 {
+                    // SAFETY: valid_up_to is a complete, validated UTF-8 boundary.
+                    let text = unsafe { std::str::from_utf8_unchecked(&candidate[..valid_len]) };
+                    for c in text.chars() {
+                        self.process_char(handler, c);
+                    }
+                    pos += valid_len;
+                    continue;
                 }
             }
 
-            // 慢速路径：逐字节/逐字符处理
-            // 为了正确处理 UTF-8，我们从当前位置尝试转换一个字符
-            let remaining = &data[pos..];
-
-            // 简单处理：如果是 ASCII，直接走 process_char
-            if remaining[0] < 128 {
-                self.process_char(handler, remaining[0] as char);
-                pos += 1;
-            } else {
-                // 如果是多字节，我们需要找到完整的字符边界
-                let text = String::from_utf8_lossy(remaining);
-                if let Some(c) = text.chars().next() {
-                    self.process_char(handler, c);
-                    pos += c.len_utf8();
-                } else {
-                    pos += 1; // 理论上不会发生
+            let byte = data[pos];
+            pos += 1;
+            match byte {
+                0x00..=0x7f => self.process_char(handler, byte as char),
+                0xc2..=0xf4 => {
+                    self.utf8_pending[0] = byte;
+                    self.utf8_pending_len = 1;
                 }
+                _ => self.process_char(handler, '\u{fffd}'),
             }
         }
     }
