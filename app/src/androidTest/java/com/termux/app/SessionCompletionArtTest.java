@@ -186,4 +186,58 @@ public class SessionCompletionArtTest {
             context.unregisterReceiver(receiver); pending.cancel();
         }
     }
+    @Test public void callerEnvironmentRemainsIntactInArt() throws Exception {
+        HashMap<String, String> generated = new com.termux.shared.termux.shell.command.environment.TermuxShellEnvironment()
+            .getEnvironment(context(), true);
+        assertEquals(context().getApplicationInfo().dataDir, generated.get("TERMUX_APP__DATA_DIR"));
+        assertEquals("/data/data/" + context().getPackageName(), generated.get("TERMUX_APP__LEGACY_DATA_DIR"));
+        assertEquals(generated.get("PREFIX"), generated.get("TERMUX__PREFIX"));
+        Probe probe = new Probe();
+        AtomicReference<TerminalSession> holder = new AtomicReference<>();
+        main(() -> {
+            TerminalSession session = terminal("[ \"$PATH\" = /system/bin ] || exit 71; " +
+                "[ \"${LD_LIBRARY_PATH+x}\" != x ] || exit 72; " +
+                "/system/bin/toybox printf 'environment-intact\\n' || exit 91", probe);
+            holder.set(session); session.initializeEmulator(80, 24, 8, 16);
+        });
+        TerminalSession session = holder.get();
+        try {
+            await(probe.done); rethrow(probe.error);
+            assertEquals("transcript=" + probe.transcript, Integer.valueOf(0), session.getProcessExitStatus());
+            assertTrue(probe.transcript.contains("environment-intact"));
+        } finally { main(session::dispose); }
+    }
+
+    @Test public void privateCommandsAndNestedShellsExecuteInArt() throws Exception {
+        String prefix = context().getFilesDir().getAbsolutePath() + "/usr";
+        // Fail, do not skip: the bootstrap is part of this app's execution contract.
+        for (String path : new String[]{"lib/libtermux-exec.so", "bin/printf", "bin/env", "bin/bash", "bin/apt", "bin/dpkg"})
+            assertTrue("bootstrap dependency missing: " + path, new java.io.File(prefix, path).isFile());
+        Probe probe = new Probe();
+        AtomicReference<TerminalSession> holder = new AtomicReference<>();
+        String script = "[ -n \"$LD_PRELOAD\" ] || exit 81; " +
+            "echo \"exec-preload=$LD_PRELOAD\"; " +
+            "/system/bin/toybox grep termux-exec /proc/$$/maps || exit 88; " +
+            "\"$PREFIX/bin/printf\" 'ecosystem-direct\\n' || exit 82; " +
+            "/system/bin/sh -c '\"$PREFIX/bin/printf\" \"ecosystem-nested\\n\"' || exit 83; " +
+            "\"$PREFIX/bin/env\" /system/bin/sh -c '\"$PREFIX/bin/printf\" \"ecosystem-env\\n\"' || exit 84; " +
+            "\"$PREFIX/bin/bash\" --noprofile --norc -c '\"$PREFIX/bin/printf\" \"ecosystem-bash\\n\"' || exit 85; " +
+            "\"$PREFIX/bin/apt\" --version >/dev/null || exit 86; " +
+            "\"$PREFIX/bin/dpkg\" --version >/dev/null || exit 87; " +
+            "/system/bin/toybox printf 'ecosystem-tools-ok\\n'";
+        main(() -> {
+            TerminalSession session = new TerminalSession("/system/bin/sh", context().getFilesDir().getAbsolutePath(),
+                new String[]{"sh", "-c", script}, new String[]{"PREFIX=" + prefix,
+                "PATH=" + prefix + "/bin:/system/bin", "LD_PRELOAD="}, 2000, probe);
+            holder.set(session); session.initializeEmulator(100, 30, 8, 16);
+        });
+        TerminalSession session = holder.get();
+        try {
+            await(probe.done); rethrow(probe.error);
+            assertEquals("transcript=" + probe.transcript, Integer.valueOf(0), session.getProcessExitStatus());
+            for (String marker : new String[]{"ecosystem-direct", "ecosystem-nested", "ecosystem-env", "ecosystem-bash", "ecosystem-tools-ok"})
+                assertTrue("missing " + marker + "; transcript=" + probe.transcript, probe.transcript.contains(marker));
+        } finally { main(session::dispose); }
+    }
+
 }

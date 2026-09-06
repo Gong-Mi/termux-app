@@ -1,3 +1,6 @@
+#[path = "pty_environment.rs"]
+mod environment;
+
 use jni::JNIEnv;
 use jni::objects::{JIntArray, JObjectArray, JString};
 use jni::sys::{JNINativeInterface_, jint, jintArray, jobjectArray, jstring};
@@ -156,6 +159,24 @@ pub fn create_subprocess_with_data(
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
 
+    // === CHECKPOINT 系统：记录 exec 解析链条，用于 W^X 错误分析 ===
+    let mut termux_data = "/data/data/com.termux".to_string();
+
+    // 动态检测实际路径（适配多用户/工作资料）
+    if cmd_str.contains("/data/user/") {
+        if let Some(pos) = cmd_str.find("/com.termux") {
+            termux_data = cmd_str[..pos + 11].to_string();
+        }
+    } else if cwd_str.contains("/data/user/") {
+        if let Some(pos) = cwd_str.find("/com.termux") {
+            termux_data = cwd_str[..pos + 11].to_string();
+        }
+    }
+
+    let termux_files = format!("{}/files", termux_data);
+    let termux_prefix = format!("{}/usr", termux_files);
+    let final_envp = environment::prepare(&envp, &termux_prefix);
+
     // 2. 打开 PTM
     use std::os::fd::IntoRawFd;
     let ptm = match open("/dev/ptmx", OFlag::O_RDWR | OFlag::O_CLOEXEC, Mode::empty()) {
@@ -257,23 +278,6 @@ pub fn create_subprocess_with_data(
                 }
                 libc::close(ptm);
 
-                // === CHECKPOINT 系统：记录 exec 解析链条，用于 W^X 错误分析 ===
-                let mut termux_data = "/data/data/com.termux".to_string();
-
-                // 动态检测实际路径（适配多用户/工作资料）
-                if cmd_str.contains("/data/user/") {
-                    if let Some(pos) = cmd_str.find("/com.termux") {
-                        termux_data = cmd_str[..pos + 11].to_string();
-                    }
-                } else if cwd_str.contains("/data/user/") {
-                    if let Some(pos) = cwd_str.find("/com.termux") {
-                        termux_data = cwd_str[..pos + 11].to_string();
-                    }
-                }
-
-                let termux_files = format!("{}/files", termux_data);
-                let termux_prefix = format!("{}/usr", termux_files);
-
                 // === 详细环境追踪 ===
                 crate::utils::android_log(
                     crate::utils::LogPriority::INFO,
@@ -290,55 +294,9 @@ pub fn create_subprocess_with_data(
                     ),
                 );
 
-                // === 顶级环境清洗：彻底扫除 /data/data/ 幽灵 ===
-                let mut final_envp: Vec<String> = envp
-                    .iter()
-                    .map(|s| {
-                        if s.contains("/data/data/com.termux") {
-                            s.replace("/data/data/com.termux", &termux_data)
-                        } else {
-                            s.clone()
-                        }
-                    })
-                    .collect();
-
-                // 1. 强制纠正核心变量
+                // Reuse the PR4 environment fixes without importing its unrelated
+                // branch history. The caller owns explicit PATH/library choices.
                 let termux_bin = format!("{}/bin", termux_prefix);
-                let termux_lib = format!("{}/lib", termux_prefix);
-
-                // PATH 清洗与注入
-                if let Some(pos) = final_envp.iter().position(|s| s.starts_with("PATH=")) {
-                    let old_path = final_envp[pos].splitn(2, '=').nth(1).unwrap_or("");
-                    // 彻底移除旧 PATH 中所有包含 /data/data/ 的条目
-                    let clean_path: Vec<&str> = old_path
-                        .split(':')
-                        .filter(|p| !p.contains("/data/data/com.termux"))
-                        .collect();
-                    let mut new_path_str = termux_bin.clone();
-                    if !clean_path.is_empty() {
-                        new_path_str.push(':');
-                        new_path_str.push_str(&clean_path.join(":"));
-                    }
-                    final_envp[pos] = format!("PATH={}", new_path_str);
-                } else {
-                    final_envp.push(format!("PATH={}:/system/bin:/system/xbin", termux_bin));
-                }
-
-                // LD_LIBRARY_PATH 强力注入
-                if let Some(pos) = final_envp
-                    .iter()
-                    .position(|s| s.starts_with("LD_LIBRARY_PATH="))
-                {
-                    final_envp[pos] = format!("LD_LIBRARY_PATH={}", termux_lib);
-                } else {
-                    final_envp.push(format!("LD_LIBRARY_PATH={}", termux_lib));
-                }
-
-                // 2. LD_PRELOAD
-                let termux_exec_path = format!("{}/lib/libtermux-exec.so", termux_prefix);
-                if !final_envp.iter().any(|s| s.starts_with("LD_PRELOAD=")) {
-                    final_envp.push(format!("LD_PRELOAD={}", termux_exec_path));
-                }
 
                 crate::utils::android_log(
                     crate::utils::LogPriority::INFO,
@@ -394,32 +352,12 @@ pub fn create_subprocess_with_data(
                     ),
                 );
 
+                // TermuxSession.execute already chooses login vs non-login argv[0].
+                // Preserve the caller's choice; forcing '-' sources profiles and can
+                // replace PATH or clear the exec hook before the requested command.
                 let mut final_args = argv.clone();
-                if !final_args.is_empty()
-                    && !final_args[0].starts_with('/')
-                    && !final_args[0].starts_with('-')
-                {
-                    let resolved = format!("{}/{}", termux_bin, final_args[0]);
-                    if std::path::Path::new(&resolved).exists() {
-                        final_args[0] = resolved;
-                    }
-                }
-
-                // Login Shell 处理
-                let is_shell = ["sh", "bash", "zsh", "dash", "fish"]
-                    .iter()
-                    .any(|&s| final_cmd.ends_with(s));
-                if is_shell {
-                    let shell_name = std::path::Path::new(&final_cmd)
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("sh");
-
-                    if final_args.is_empty() {
-                        final_args.push(format!("-{}", shell_name));
-                    } else if !final_args[0].starts_with('-') {
-                        final_args[0] = format!("-{}", shell_name);
-                    }
+                if final_args.is_empty() {
+                    final_args.push(final_cmd.clone());
                 }
 
                 // Parse ELF / Shebang
