@@ -22,6 +22,7 @@ name: Rust correctness tiers
       - 'terminal-emulator/build.gradle*'
   pull_request:
     branches:
+      - fix/pty-environment-contract
       - test/session-completion-art
       - feat/session-completion-ui
       - feat/session-completion-bridge

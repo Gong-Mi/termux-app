@@ -42,10 +42,29 @@ class CompletionArtContracts(unittest.TestCase):
 
     def test_art_output_producers_are_system_tools_and_fail_closed(self):
         source = (ROOT / 'app/src/androidTest/java/com/termux/app/SessionCompletionArtTest.java').read_text()
-        self.assertEqual(source.count('/system/bin/toybox printf'), len(art.EXPECTED))
+        for marker in ('art-tail', 'result-tail', 'plugin-art-tail'):
+            self.assertIn("/system/bin/toybox printf '" + marker, source)
         self.assertEqual(source.count('|| exit 91;'), 3)  # original completion fixtures
         self.assertIn('actual transcript=', source)
         self.assertIn('actual plugin stdout=', source)
+
+    def test_package_python_probe_is_real_and_failure_checked(self):
+        import ast
+        import subprocess
+        assets = ROOT / 'app/src/androidTest/assets'
+        script = (assets / 'package-python-art.sh').read_text()
+        subprocess.run(['bash', '-n', str(assets / 'package-python-art.sh')], check=True)
+        self.assertIn('APT::Update::Error-Mode=any update', script)
+        self.assertIn('install python', script)
+        self.assertNotIn('--allow-unauthenticated', script)
+        self.assertIn('dpkg-query', script)
+        self.assertIn('python-result.json', script)
+        probe = (assets / 'python-subprocess-probe.py').read_text()
+        ast.parse(probe)
+        self.assertIn('subprocess.check_output', probe)
+        self.assertIn("[sys.executable, '-c'", probe)
+        self.assertIn("prefix + '/bin/printf'", probe)
+        self.assertIn('aptInstallsPythonAndPythonSubprocessRunsInArt', art.EXPECTED)
 
     def test_every_named_art_test_is_registered_and_ci_keeps_ab(self):
         source = (ROOT / 'app/src/androidTest/java/com/termux/app/SessionCompletionArtTest.java').read_text()

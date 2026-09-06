@@ -15,6 +15,7 @@ EXPECTED = {
     'serviceOnlyPluginDeliversPendingIntentThenRemovesSession',
     'callerEnvironmentRemainsIntactInArt',
     'privateCommandsAndNestedShellsExecuteInArt',
+    'aptInstallsPythonAndPythonSubprocessRunsInArt',
 }
 
 
@@ -65,7 +66,7 @@ def main():
             raise RuntimeError('Target stop failed')
         run('clear-logcat', ['logcat', '-c'])
         result = run('instrumentation', ['shell', 'am', 'instrument', '-w', '-r', '-e', 'class', TEST_CLASS,
-                     'com.termux.test/androidx.test.runner.AndroidJUnitRunner'], timeout=240)
+                     'com.termux.test/androidx.test.runner.AndroidJUnitRunner'], timeout=1200)
         summary['passed'] = verify_output(result.stdout, result.returncode)
         print(result.stdout)
         if not summary['passed']:
@@ -74,6 +75,13 @@ def main():
         summary['error'] = str(error)
         print('FAIL:', error)
     finally:
+        # Copy actual app-owned package evidence even if installation/tests failed.
+        for name in ('apt-update.log', 'apt-install.log', 'python-package.txt', 'python-result.json', 'python-stderr.log'):
+            try:
+                run('package-' + name, ['exec-out', 'run-as', 'com.termux', '/system/bin/cat',
+                    'files/package-python-art/' + name])
+            except (OSError, subprocess.SubprocessError) as error:
+                summary.setdefault('package_evidence_errors', {})[name] = str(error)
         try:
             run('logcat', ['logcat', '-d', '-v', 'threadtime'])
         except (OSError, subprocess.SubprocessError) as error:
