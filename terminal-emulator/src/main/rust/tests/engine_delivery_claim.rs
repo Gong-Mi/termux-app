@@ -2,8 +2,8 @@
 use std::io::Read;
 use std::os::fd::AsRawFd;
 use std::os::unix::net::UnixStream;
-use std::sync::{Arc, Barrier};
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, Barrier};
 use std::time::{Duration, Instant};
 use termux_rust::coordinator::{SessionCoordinator, SessionEngineData};
 use termux_rust::engine::{ENGINE_HANDLES, TerminalContext, TerminalEngine, destroy_engine};
@@ -20,16 +20,30 @@ impl Offer {
     fn new() -> Self {
         let session = SessionCoordinator::get().register_session();
         let context = Arc::new(TerminalContext::new(TerminalEngine::new(
-            session as i32, 80, 24, 100, 8, 16,
+            session as i32,
+            80,
+            24,
+            100,
+            8,
+            16,
         )));
         let (master, peer) = UnixStream::pair().unwrap();
         peer.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
         let fd = master.as_raw_fd();
         TerminalContext::start_io_owned(Arc::clone(&context), master.into()).unwrap();
         let handle = ENGINE_HANDLES.insert(Arc::clone(&context)).unwrap();
-        let data = SessionEngineData { ptr: handle, pty_fd: fd, pid: -1 };
+        let data = SessionEngineData {
+            ptr: handle,
+            pty_fd: fd,
+            pid: -1,
+        };
         SessionCoordinator::get().set_engine_data(session, data);
-        Self { session, data, context, peer }
+        Self {
+            session,
+            data,
+            context,
+            peer,
+        }
     }
     fn assert_stopped(&mut self) {
         assert!(ENGINE_HANDLES.acquire(self.data.ptr).is_none());
@@ -63,7 +77,12 @@ fn unregister_cancels_pending_and_claimed_readers() {
     for claimed in [false, true] {
         let mut offer = Offer::new();
         if claimed {
-            assert_eq!(c.claim_engine_data(offer.session, offer.data.ptr).unwrap().ptr, offer.data.ptr);
+            assert_eq!(
+                c.claim_engine_data(offer.session, offer.data.ptr)
+                    .unwrap()
+                    .ptr,
+                offer.data.ptr
+            );
         }
         c.unregister_session(offer.session);
         offer.assert_stopped();
@@ -80,7 +99,10 @@ fn ack_transfers_once_and_unregister_leaves_external_owner_live() {
     let mut offer = Offer::new();
     assert!(!c.ack_engine_data(offer.session, offer.data.ptr));
     let claimed = c.claim_engine_data(offer.session, offer.data.ptr).unwrap();
-    assert_eq!((claimed.pty_fd, claimed.pid), (offer.data.pty_fd, offer.data.pid));
+    assert_eq!(
+        (claimed.pty_fd, claimed.pid),
+        (offer.data.pty_fd, offer.data.pid)
+    );
     assert!(c.claim_engine_data(offer.session, offer.data.ptr).is_none());
     assert!(c.take_engine_data(offer.session).is_none());
     assert!(c.ack_engine_data(offer.session, offer.data.ptr));
@@ -99,7 +121,9 @@ fn reject_checks_identity_and_reclaims_pending_or_claimed_only_once() {
         let mut offer = Offer::new();
         let other = Offer::new();
         assert!(c.claim_engine_data(offer.session, other.data.ptr).is_none());
-        if claimed { assert!(c.claim_engine_data(offer.session, offer.data.ptr).is_some()); }
+        if claimed {
+            assert!(c.claim_engine_data(offer.session, offer.data.ptr).is_some());
+        }
         assert!(!c.ack_engine_data(offer.session, other.data.ptr));
         assert!(!c.reject_engine_data(offer.session, other.data.ptr));
         offer.assert_live();
@@ -117,7 +141,9 @@ fn direct_destroy_discards_pending_and_claimed_tokens() {
     let c = SessionCoordinator::get();
     for claimed in [false, true] {
         let mut offer = Offer::new();
-        if claimed { assert!(c.claim_engine_data(offer.session, offer.data.ptr).is_some()); }
+        if claimed {
+            assert!(c.claim_engine_data(offer.session, offer.data.ptr).is_some());
+        }
         destroy_engine(offer.data.ptr);
         offer.assert_stopped();
         assert!(c.claim_engine_data(offer.session, offer.data.ptr).is_none());
@@ -182,7 +208,11 @@ fn unregister_and_ack_linearize_cleanup_responsibility() {
         unregister.join().unwrap();
         assert!(c.claim_engine_data(session, offer.data.ptr).is_none());
         assert!(!c.ack_engine_data(session, offer.data.ptr));
-        if acked { offer.assert_live(); } else { offer.assert_stopped(); }
+        if acked {
+            offer.assert_live();
+        } else {
+            offer.assert_stopped();
+        }
     }
 }
 
@@ -223,21 +253,33 @@ fn unadopted_cleanup_terminates_owned_process_without_relying_on_pty_hup() {
         let session = c.register_session();
         let mut child = Command::new("sh")
             .args(["-c", "trap '' HUP; printf 'ready\n'; read -r hold; exit 23"])
-            .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
         let mut ready = String::new();
-        std::io::BufReader::new(child.stdout.take().unwrap()).read_line(&mut ready).unwrap();
+        std::io::BufReader::new(child.stdout.take().unwrap())
+            .read_line(&mut ready)
+            .unwrap();
         assert_eq!(ready, "ready\n");
         let process = c.bind_pid(session, child.id() as i32).unwrap();
         let context = Arc::new(TerminalContext::with_process(
-            TerminalEngine::new(session as i32, 80, 24, 100, 8, 16), process.clone(),
+            TerminalEngine::new(session as i32, 80, 24, 100, 8, 16),
+            process.clone(),
         ));
         // A distinct socket makes PTY HUP unavailable as an accidental kill path.
         let (master, mut peer) = UnixStream::pair().unwrap();
         peer.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
         TerminalContext::start_io_owned(context.clone(), master.into()).unwrap();
         let handle = ENGINE_HANDLES.insert(context.clone()).unwrap();
-        let data = SessionEngineData { ptr: handle, pty_fd: -1, pid: child.id() as i32 };
-        if mode == "late_offer" { c.unregister_session(session); }
+        let data = SessionEngineData {
+            ptr: handle,
+            pty_fd: -1,
+            pid: child.id() as i32,
+        };
+        if mode == "late_offer" {
+            c.unregister_session(session);
+        }
         c.set_engine_data(session, data);
         if mode == "acked" {
             assert!(c.claim_engine_data(session, handle).is_some());
@@ -250,18 +292,30 @@ fn unadopted_cleanup_terminates_owned_process_without_relying_on_pty_hup() {
             assert_eq!(peer.read(&mut [0; 1]).unwrap(), 0);
             continue;
         }
-        if mode == "reject" { assert!(c.reject_engine_data(session, handle)); }
-        if mode == "unregister" { c.unregister_session(session); }
+        if mode == "reject" {
+            assert!(c.reject_engine_data(session, handle));
+        }
+        if mode == "unregister" {
+            c.unregister_session(session);
+        }
         let deadline = Instant::now() + Duration::from_secs(3);
-        while process.outcome().is_none() && Instant::now() < deadline { std::thread::yield_now(); }
+        while process.outcome().is_none() && Instant::now() < deadline {
+            std::thread::yield_now();
+        }
         let observed = process.outcome();
         // RED must not leave a live child behind after reporting the failure.
-        if observed.is_none() { process.terminate().unwrap(); }
+        if observed.is_none() {
+            process.terminate().unwrap();
+        }
         process.wait();
         c.unregister_session(session);
         destroy_engine(handle);
         assert_eq!(child.wait().unwrap_err().raw_os_error(), Some(libc::ECHILD));
-        assert_eq!(observed, Some(ExitOutcome::Exited(-libc::SIGKILL)), "{mode} left an unadopted child running");
+        assert_eq!(
+            observed,
+            Some(ExitOutcome::Exited(-libc::SIGKILL)),
+            "{mode} left an unadopted child running"
+        );
         assert_eq!(peer.read(&mut [0; 1]).unwrap(), 0);
     }
 }

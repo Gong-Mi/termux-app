@@ -1550,12 +1550,18 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
                 false
             };
             if notified {
-                android_log(LogPriority::INFO, "ENGINE_OFFER_NOTIFIED: ownership awaits claim/ack");
+                android_log(
+                    LogPriority::INFO,
+                    "ENGINE_OFFER_NOTIFIED: ownership awaits claim/ack",
+                );
             } else {
                 // Reject only this still-native-owned offer; an already acked
                 // callback recipient must not be destroyed by a later exception.
                 coordinator.reject_engine_data(session_id, context_handle);
-                android_log(LogPriority::ERROR, "ENGINE_OFFER_REJECTED: callback unavailable or failed");
+                android_log(
+                    LogPriority::ERROR,
+                    "ENGINE_OFFER_REJECTED: callback unavailable or failed",
+                );
             }
         });
 

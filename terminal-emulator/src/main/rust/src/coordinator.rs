@@ -54,7 +54,9 @@ pub(crate) fn discard_engine_data(handle: jni::sys::jlong) {
             .registry
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        registry.engine_data.retain(|_, value| value.data.ptr != handle);
+        registry
+            .engine_data
+            .retain(|_, value| value.data.ptr != handle);
     }
 }
 
@@ -348,10 +350,16 @@ impl SessionCoordinator {
                 current.data = data;
                 None
             } else {
-                registry.engine_data.insert(session_id, EngineDelivery {
-                    data,
-                    claimed: false,
-                }).map(|old| old.data)
+                registry
+                    .engine_data
+                    .insert(
+                        session_id,
+                        EngineDelivery {
+                            data,
+                            claimed: false,
+                        },
+                    )
+                    .map(|old| old.data)
             }
         };
         if let Some(old) = displaced {
@@ -366,7 +374,10 @@ impl SessionCoordinator {
         if registry.engine_data.get(&session_id)?.claimed {
             return None;
         }
-        registry.engine_data.remove(&session_id).map(|offer| offer.data)
+        registry
+            .engine_data
+            .remove(&session_id)
+            .map(|offer| offer.data)
     }
 
     /// Pending -> Claimed; native still owns cancellation/reclamation until ack.
@@ -389,8 +400,10 @@ impl SessionCoordinator {
     /// False means the caller must not adopt the provisional metadata.
     pub fn ack_engine_data(&self, session_id: usize, expected_handle: jni::sys::jlong) -> bool {
         let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
-        if registry.engine_data.get(&session_id).is_none_or(|offer|
-            !offer.claimed || offer.data.ptr != expected_handle)
+        if registry
+            .engine_data
+            .get(&session_id)
+            .is_none_or(|offer| !offer.claimed || offer.data.ptr != expected_handle)
         {
             return false;
         }
@@ -402,8 +415,10 @@ impl SessionCoordinator {
     pub fn reject_engine_data(&self, session_id: usize, expected_handle: jni::sys::jlong) -> bool {
         let delivery = {
             let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
-            if registry.engine_data.get(&session_id).is_none_or(|offer|
-                offer.data.ptr != expected_handle)
+            if registry
+                .engine_data
+                .get(&session_id)
+                .is_none_or(|offer| offer.data.ptr != expected_handle)
             {
                 return false;
             }
