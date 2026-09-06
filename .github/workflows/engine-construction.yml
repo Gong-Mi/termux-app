@@ -2,7 +2,7 @@ name: Engine construction contract
 
 "on":
   pull_request:
-    branches: [feat/session-completion-candidate, fix/session-delivery-claim, fix/session-completion-observation, fix/session-process-owner, fix/pty-io-lifecycle, fix/skia-vulkan-api-contract, fix/engine-handle-lifetime, fix/engine-adoption, refactor/test-normalization, feature/rust-integration]
+    branches: [feat/session-completion-bridge, feat/session-completion-candidate, fix/session-delivery-claim, fix/session-completion-observation, fix/session-process-owner, fix/pty-io-lifecycle, fix/skia-vulkan-api-contract, fix/engine-handle-lifetime, fix/engine-adoption, refactor/test-normalization, feature/rust-integration]
     paths:
       - 'terminal-emulator/src/main/java/**'
       - 'terminal-emulator/src/main/rust/**'
@@ -13,6 +13,10 @@ name: Engine construction contract
       - 'scripts/verify-pty-io-boundary.py'
       - 'scripts/verify-process-owner-boundary.py'
       - 'scripts/verify-delivery-boundary.py'
+      - 'scripts/verify-completion-result.py'
+      - 'app/src/main/java/com/termux/app/terminal/TermuxTerminalSessionActivityClient.java'
+      - 'app/src/main/java/com/termux/app/terminal/TermuxTerminalSessionServiceClient.java'
+      - 'termux-shared/src/main/java/com/termux/shared/termux/shell/command/runner/terminal/TermuxSession.java'
       - 'app/src/main/java/com/termux/app/TermuxService.java'
       - 'scripts/kotlin/EmulatorConstruction*.kt'
       - 'scripts/verify-emulator-construction.py'
@@ -66,6 +70,7 @@ jobs:
           python3 scripts/verify-pty-io-boundary.py
           python3 scripts/verify-process-owner-boundary.py
           python3 scripts/verify-delivery-boundary.py
+          python3 scripts/verify-completion-result.py
           cd terminal-emulator/src/main/rust
           cargo build --locked --lib
       - name: Verify recording contract and real Kotlin JNI

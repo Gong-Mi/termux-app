@@ -9,6 +9,21 @@ private fun id(session: TerminalSession): Int = TerminalSession::class.java.getD
 private fun callback(session: TerminalSession): RustEngineCallback = TerminalSession::class.java.getDeclaredField("mRustCallback").apply { isAccessible = true }.get(session) as RustEngineCallback
 private class Client : TerminalSessionClient by RustEngineCallback(null) {
     var deliveries = 0
+    var finished = 0
+    var completionTranscript = ""
+    var throwOnFinish = false
+    var throwOnText = false
+    var disposeOnFinish = false
+    override fun onTextChanged(session: TerminalSession) { if (throwOnText) error("text callback failure") }
+    override fun onSessionFinished(session: TerminalSession) {
+        check(!session.isRunning)
+        val emulator = checkNotNull(session.getEmulator())
+        check(emulator.isAlive()) { "completion destroyed the display before result capture" }
+        completionTranscript = RustTerminal.getTranscriptText(emulator.getNativePointer())
+        finished++
+        if (disposeOnFinish) session.dispose()
+        if (throwOnFinish) error("completion client failure")
+    }
     @Volatile var bells = 0
     var throwOnDelivery = false
     override fun setTerminalShellPid(session: TerminalSession, pid: Int) { check(pid > 0); deliveries++; if (throwOnDelivery) error("client notification failure") }
@@ -35,6 +50,10 @@ fun main() {
     check(!callback(early).onSessionCompletion(earlyId + 1, 2, 99, 2, 0))
     early.mMainThreadHandler.drain()
     check(early.isEngineInitialized() && early.mEmulator!!.isAlive())
+    check(earlyClient.finished == 1) { "early terminal facts were never delivered to the main-thread client" }
+    check(!early.isRunning && early.getExitStatus() == 37)
+    check(earlyClient.completionTranscript.contains("completion-tail"))
+    check(earlyClient.completionTranscript.contains("[Process completed (code 37) - press Enter]"))
     check(early.getCompletionFacts() == TerminalSession.CompletionFacts(2, 37, 2, 0))
     early.dispose()
     check(!early.onNativeCompletion(earlyId, 2, 37, 2, 0))
@@ -166,5 +185,109 @@ fun main() {
     failure.get()?.let { throw it }
     check(racing.mEmulator == null && !racing.isEngineInitialized())
     println("PASS: concurrent read/input and dispose use stable wrapper snapshots")
-    println("BOUNDARY: actual production Kotlin + actual JNI + real child shells; scheduling shim only, not ART or D2 completion")
+    fun ready(client: Client): TerminalSession {
+        val item = TerminalSession(shell, System.getProperty("user.dir"),
+            arrayOf(shell, "-c", "IFS= read -r hold; printf 'ui-tail'; exit 0"),
+            arrayOf("PATH=/system/bin:/usr/bin:/bin", "LD_PRELOAD="), 2000, client)
+        item.initializeEmulator(80, 24, 8, 16)
+        waitFor("ui offer") { item.mMainThreadHandler.queuedCount() > 0 }
+        item.mMainThreadHandler.drain()
+        check(item.isEngineInitialized() && item.getCompletionFacts() == null)
+        return item
+    }
+    fun exit(item: TerminalSession) {
+        item.write(byteArrayOf(10), 0, 1)
+        waitFor("ui raw receipt") { JNI.getCompletionDispatchStatus(id(item)) == 2 }
+    }
+    val oldUi = Client()
+    val switched = ready(oldUi)
+    exit(switched)
+    check(switched.getCompletionDeliveryState() == "POSTED" && oldUi.finished == 0)
+    val newUi = Client()
+    switched.updateTerminalSessionClient(newUi)
+    switched.mMainThreadHandler.drain()
+    check(oldUi.finished == 0 && newUi.finished == 1)
+    check(switched.getCompletionDeliveryState() == "DELIVERED")
+    check(switched.getProcessExitStatus() == 0 && switched.getCompletionError() == null)
+    check(newUi.completionTranscript.indexOf("ui-tail") < newUi.completionTranscript.indexOf("[Process completed"))
+    switched.mMainThreadHandler.drain()
+    check(newUi.finished == 1)
+    switched.dispose()
+    println("PASS: completion posted != delivered; current client; tail before banner; retained display; once")
+
+    val killedClient = Client()
+    val killed = ready(killedClient)
+    killed.finishIfRunning()
+    waitFor("terminated session raw receipt") { JNI.getCompletionDispatchStatus(id(killed)) == 2 }
+    killed.mMainThreadHandler.drain()
+    check(killedClient.finished == 1 && killed.getProcessExitStatus() == -9)
+    check(killedClient.completionTranscript.contains("signal 9"))
+    check(killed.getEmulator()!!.isAlive())
+    killed.dispose()
+    println("PASS: real ProcessOwner kill reaches one completion with signal status and retained display")
+
+    val noPostClient = Client()
+    val noPost = ready(noPostClient)
+    noPost.mMainThreadHandler.setAccepting(false)
+    exit(noPost)
+    check(noPost.getCompletionDeliveryState() == "FAILED" && noPostClient.finished == 0)
+    check(noPost.mEmulator!!.isAlive())
+    noPost.dispose()
+    println("PASS: completion post(false) is FAILED, not delivered and not display disposal")
+
+    val cancelledClient = Client()
+    val cancelled = ready(cancelledClient)
+    exit(cancelled)
+    val queued = mutableListOf<Runnable>()
+    while (true) { queued.add(cancelled.mMainThreadHandler.takeNext() ?: break) }
+    cancelled.dispose()
+    queued.forEach { it.run() }
+    check(cancelledClient.finished == 0 && cancelled.getCompletionDeliveryState() == "CANCELLED")
+    println("PASS: dequeued completion after dispose cannot notify or resurrect")
+
+    for (throwText in listOf(false, true)) {
+        val brokenClient = Client()
+        val broken = ready(brokenClient)
+        exit(broken)
+        // Remove screen messages without executing foreign callbacks. The completion
+        // runnable itself isolates both text and finished callbacks.
+        brokenClient.throwOnFinish = !throwText
+        // Text exceptions in ordinary screen messages are inherited; only directly
+        // invoke completion's queued runnable after identifying its captured sessionId.
+        val all = mutableListOf<Runnable>()
+        while (true) { all.add(broken.mMainThreadHandler.takeNext() ?: break) }
+        all.filter { runnable -> runnable.javaClass.declaredFields.any { it.type == Integer.TYPE } }
+            .also { check(it.size == 1) }.forEach { runnable ->
+                brokenClient.throwOnText = throwText
+                runnable.run()
+            }
+        check(brokenClient.finished == 1 && broken.getCompletionDeliveryState() == "FAILED")
+        check(broken.mEmulator!!.isAlive())
+        broken.dispose()
+    }
+    println("PASS: throwing text/finished clients record failure without duplicate or premature destroy")
+
+    val resultClient = Client().apply { disposeOnFinish = true }
+    val result = ready(resultClient)
+    exit(result)
+    result.mMainThreadHandler.drain()
+    check(resultClient.finished == 1 && resultClient.completionTranscript.contains("ui-tail"))
+    check(result.getEmulator() == null && result.getCompletionDeliveryState() == "DELIVERED")
+    println("PASS: synchronous result capture precedes callback-driven dispose")
+
+    // Inject only raw failure facts at the production receiver boundary. These are
+    // projection tests, not claims of a real kernel IO error or external reaper.
+    for ((pk, pc, ik, ic) in listOf(listOf(2, 0, 3, 0), listOf(2, 0, 4, 5),
+        listOf(2, 0, 5, 0), listOf(2, 0, 6, 0), listOf(3, 10, 2, 0))) {
+        val errorClient = Client()
+        val item = ready(errorClient)
+        check(item.onNativeCompletion(id(item), pk, pc, ik, ic))
+        item.mMainThreadHandler.drain()
+        check(errorClient.finished == 1 && item.getCompletionError() != null)
+        check(item.getProcessExitStatus() == if (pk == 2) pc else null)
+        check(item.getEmulator()!!.isAlive())
+        item.dispose()
+    }
+    println("PASS: injected cancelled/error/overflow/panic/lost preserve error and nullable actual process status")
+    println("BOUNDARY: actual Kotlin/JNI/shell completion and queue shim; error projection injected; not ART/Service/GPU present")
 }

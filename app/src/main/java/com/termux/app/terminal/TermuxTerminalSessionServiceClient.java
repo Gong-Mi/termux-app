@@ -22,6 +22,15 @@ public class TermuxTerminalSessionServiceClient extends TermuxTerminalSessionCli
     }
 
     @Override
+    public void onSessionFinished(@NonNull TerminalSession terminalSession) {
+        // No Activity is attached. Fulfil plugin results rather than losing the
+        // single completion event; ordinary sessions remain available on reattach.
+        TermuxSession session = mService.getTermuxSessionForTerminalSession(terminalSession);
+        if (session != null && session.getExecutionCommand().isPluginExecutionCommandWithPendingResult())
+            session.finish(); // captures transcript before Service removal/dispose
+    }
+
+    @Override
     public void setTerminalShellPid(@NonNull TerminalSession terminalSession, int pid) {
         TermuxSession termuxSession = mService.getTermuxSessionForTerminalSession(terminalSession);
         if (termuxSession != null)

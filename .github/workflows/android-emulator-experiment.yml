@@ -3,6 +3,7 @@ name: Android emulator experiment
 "on":
   pull_request:
     branches:
+      - feat/session-completion-bridge
       - feat/session-completion-candidate
       - fix/session-delivery-claim
       - fix/session-completion-observation
