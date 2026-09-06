@@ -69,6 +69,11 @@ struct EngineDelivery {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CompletionObserver {
+    session_id: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CompletionCandidate {
     pub session_id: usize,
     pub process: ExitOutcome,
@@ -163,6 +168,11 @@ impl SessionCoordinator {
             .unwrap_or_else(|e| e.into_inner())
             .sessions
             .contains_key(&session_id)
+    }
+
+    pub fn completion_observer(&self, session_id: usize) -> Option<CompletionObserver> {
+        self.has_session(session_id)
+            .then_some(CompletionObserver { session_id })
     }
 
     pub fn bind_pid(
@@ -314,11 +324,9 @@ impl SessionCoordinator {
         );
     }
 
-    /// A request before child bind is retained. Unknown/terminal sessions cannot
-    /// become raw-PID signal targets. No Java presentation PID is consulted.
-    pub(crate) fn record_io_outcome(&self, session_id: usize, outcome: IoOutcome) {
+    pub(crate) fn record_io_outcome(&self, observer: CompletionObserver, outcome: IoOutcome) {
         let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
-        let Some(record) = registry.sessions.get_mut(&session_id) else {
+        let Some(record) = registry.sessions.get_mut(&observer.session_id) else {
             return;
         };
         if record.io_outcome.is_none() {
@@ -360,6 +368,8 @@ impl SessionCoordinator {
         }
     }
 
+    /// A request before child bind is retained. Unknown/terminal sessions cannot
+    /// become raw-PID signal targets. No Java presentation PID is consulted.
     pub fn terminate_session(&self, session_id: usize) -> std::io::Result<bool> {
         let process = {
             let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
@@ -576,12 +586,15 @@ mod completion_candidate_tests {
             IoOutcome::Panicked,
         ] {
             let session = coordinator.register_session();
+            let observer = coordinator.completion_observer(session).unwrap();
             coordinator.record_process_outcome_for_test(session, ExitOutcome::Exited(7));
-            coordinator.record_io_outcome(session, io);
-            coordinator.record_io_outcome(session, IoOutcome::Eof);
+            assert!(coordinator.take_completion_candidate(session).is_none());
+            coordinator.record_io_outcome(observer, io);
+            coordinator.record_io_outcome(observer, IoOutcome::Eof);
             assert_eq!(coordinator.completion_facts(session), Some((ExitOutcome::Exited(7), io)));
             let candidate = coordinator.take_completion_candidate(session).unwrap();
             assert_eq!(candidate.io, io);
+            assert_eq!(coordinator.completion_facts(session), Some((ExitOutcome::Exited(7), io)));
             assert!(coordinator.take_completion_candidate(session).is_none());
             coordinator.unregister_session(session);
         }
@@ -591,14 +604,19 @@ mod completion_candidate_tests {
     fn concurrent_candidate_take_has_one_winner() {
         let coordinator = SessionCoordinator::get();
         let session = coordinator.register_session();
+        let observer = coordinator.completion_observer(session).unwrap();
         coordinator.record_process_outcome_for_test(session, ExitOutcome::Lost(libc::ECHILD));
-        coordinator.record_io_outcome(session, IoOutcome::Cancelled);
+        coordinator.record_io_outcome(observer, IoOutcome::Cancelled);
+        let gate = Arc::new(std::sync::Barrier::new(17));
         let mut workers = Vec::new();
         for _ in 0..16 {
+            let gate = Arc::clone(&gate);
             workers.push(std::thread::spawn(move || {
+                gate.wait();
                 SessionCoordinator::get().take_completion_candidate(session).is_some()
             }));
         }
+        gate.wait();
         let winners = workers
             .into_iter()
             .map(|worker| worker.join().unwrap())
