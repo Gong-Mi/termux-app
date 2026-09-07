@@ -127,7 +127,15 @@ final class TermuxInstaller {
             if (isPrefixEmpty) {
                 Logger.logInfo(LOG_TAG, "[PROCEED] PREFIX exists but empty, will install bootstrap.");
             } else {
-                Logger.logInfo(LOG_TAG, "[SKIP] PREFIX not empty, skipping bootstrap. whenDone.run()");
+                try {
+                    BootstrapDirectoryRepair.ensure(new File(TERMUX_PREFIX_DIR_PATH));
+                } catch (java.io.IOException repairError) {
+                    Logger.logError(LOG_TAG, "Existing prefix directory repair failed; files preserved: " + repairError);
+                    MessageDialogUtils.showMessage(activity, activity.getString(R.string.bootstrap_error_title),
+                        "Required runtime directories could not be restored. Existing files were not replaced or deleted.\n" + repairError.getMessage(), null);
+                    return; // Never fall through to the destructive fresh-install path.
+                }
+                Logger.logInfo(LOG_TAG, "[SKIP] Existing prefix retained; runtime directories verified.");
                 whenDone.run();
                 return;
             }

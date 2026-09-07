@@ -13,6 +13,7 @@ on:
       - 'terminal-emulator/src/main/rust/**'
   pull_request:
     branches:
+      - test/termux-package-python-art
       - fix/pty-environment-contract
       - test/session-completion-art
       - feat/session-completion-ui
@@ -25,6 +26,7 @@ on:
       - fix/engine-adoption
       - fix/engine-handle-lifetime
       - fix/skia-vulkan-api-contract
+      - fix/bootstrap-runtime-directories
       - master
       - feature/rust-integration
     paths:

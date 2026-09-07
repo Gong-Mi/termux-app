@@ -16,28 +16,43 @@ EXPECTED = {
     'callerEnvironmentRemainsIntactInArt',
     'privateCommandsAndNestedShellsExecuteInArt',
     'aptInstallsPythonAndPythonSubprocessRunsInArt',
+    'existingPrefixDirectoryRepairPreservesUserFilesInArt',
 }
 
 
-def verify_output(text, returncode):
+def expected_for_suite(suite):
+    return EXPECTED - {'aptInstallsPythonAndPythonSubprocessRunsInArt'} if suite == 'app' else EXPECTED
+
+
+def verify_output(text, returncode, expected=None):
+    expected = EXPECTED if expected is None else expected
     names = set(re.findall(r'INSTRUMENTATION_STATUS: test=(\w+)', text))
     ok = re.findall(r'OK \((\d+) tests?\)', text)
     failed = any(marker in text for marker in ('FAILURES!!!', 'INSTRUMENTATION_FAILED',
                  'INSTRUMENTATION_ABORTED', 'Process crashed', 'INSTRUMENTATION_STATUS_CODE: -2',
                  'INSTRUMENTATION_STATUS_CODE: -1', 'INSTRUMENTATION_STATUS_CODE: -3',
                  'INSTRUMENTATION_STATUS_CODE: -4'))
-    return returncode == 0 and ok == [str(len(EXPECTED))] and names == EXPECTED and not failed
+    return returncode == 0 and ok == [str(len(expected))] and names == expected and not failed
+
+
+def package_script_errors(text):
+    """Python postinst may print an exception and still exit zero."""
+    return [line for line in text.splitlines()
+            if line.startswith('Traceback (most recent call last):') or line.startswith('PermissionError:')]
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', required=True)
     parser.add_argument('--serial')
+    parser.add_argument('--suite', choices=('app', 'ecosystem'), default='ecosystem')
     args = parser.parse_args()
+    expected = expected_for_suite(args.suite)
     out = Path(args.output); out.mkdir(parents=True, exist_ok=True)
     adb = ['adb'] + (['-s', args.serial] if args.serial else [])
     summary = {'passed': False, 'layer': 'ART emulator, actual target APK/Looper/JNI/Service/PendingIntent; not final GPU text present',
-               'expected_tests': sorted(EXPECTED), 'steps': {}}
+               'suite': args.suite, 'expected_tests': sorted(expected),
+               'deferred_tests': sorted(EXPECTED - expected), 'steps': {}}
 
     def run(name, arguments, timeout=60):
         result = subprocess.run(adb + arguments, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -65,9 +80,10 @@ def main():
         if run('stop-target', ['shell', 'am', 'force-stop', 'com.termux']).returncode:
             raise RuntimeError('Target stop failed')
         run('clear-logcat', ['logcat', '-c'])
-        result = run('instrumentation', ['shell', 'am', 'instrument', '-w', '-r', '-e', 'class', TEST_CLASS,
+        result = run('instrumentation', ['shell', 'am', 'instrument', '-w', '-r', '-e', 'class', ','.join(TEST_CLASS + '#' + name for name in sorted(expected)),
                      'com.termux.test/androidx.test.runner.AndroidJUnitRunner'], timeout=1200)
-        summary['passed'] = verify_output(result.stdout, result.returncode)
+        summary['instrumentation_passed'] = verify_output(result.stdout, result.returncode, expected)
+        summary['passed'] = summary['instrumentation_passed']
         print(result.stdout)
         if not summary['passed']:
             raise RuntimeError('Instrumentation output failed strict count/name/failure checks')
@@ -76,12 +92,23 @@ def main():
         print('FAIL:', error)
     finally:
         # Copy actual app-owned package evidence even if installation/tests failed.
-        for name in ('apt-update.log', 'apt-install.log', 'python-package.txt', 'python-result.json', 'python-stderr.log'):
+        package_logs = ('apt-update.log', 'apt-install.log', 'python-package.txt', 'python-result.json', 'python-stderr.log') if args.suite == 'ecosystem' else ()
+        for name in package_logs:
             try:
-                run('package-' + name, ['exec-out', 'run-as', 'com.termux', '/system/bin/cat',
+                capture = run('package-' + name, ['exec-out', 'run-as', 'com.termux', '/system/bin/cat',
                     'files/package-python-art/' + name])
+                if name == 'apt-install.log':
+                    errors = package_script_errors(capture.stdout) if capture.returncode == 0 else ['installation log unavailable']
+                    summary['package_script_errors'] = errors
+                    summary['package_scripts_clean'] = not errors
+                    if errors:
+                        summary['passed'] = False
+                        print('FAIL package scripts:', errors)
             except (OSError, subprocess.SubprocessError) as error:
                 summary.setdefault('package_evidence_errors', {})[name] = str(error)
+                if name == 'apt-install.log':
+                    summary['passed'] = False
+                    summary['package_scripts_clean'] = False
         try:
             run('logcat', ['logcat', '-d', '-v', 'threadtime'])
         except (OSError, subprocess.SubprocessError) as error:

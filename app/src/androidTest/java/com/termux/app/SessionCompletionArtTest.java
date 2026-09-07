@@ -287,4 +287,25 @@ public class SessionCompletionArtTest {
         } finally { main(session::dispose); }
     }
 
+    @Test public void existingPrefixDirectoryRepairPreservesUserFilesInArt() throws Exception {
+        java.nio.file.Path root = java.nio.file.Files.createTempDirectory(context().getCacheDir().toPath(), "prefix-repair-");
+        java.nio.file.Path prefix = java.nio.file.Files.createDirectory(root.resolve("prefix"));
+        byte[] userData = "existing-user-data".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        java.nio.file.Files.write(prefix.resolve("keep.txt"), userData);
+        BootstrapDirectoryRepair.ensure(prefix.toFile());
+        assertTrue(prefix.resolve("tmp").toFile().isDirectory());
+        assertTrue(prefix.resolve("etc/apt/apt.conf.d").toFile().isDirectory());
+        BootstrapDirectoryRepair.ensure(prefix.toFile());
+        assertArrayEquals(userData, java.nio.file.Files.readAllBytes(prefix.resolve("keep.txt")));
+        java.nio.file.Path conflict = java.nio.file.Files.createDirectory(root.resolve("conflict"));
+        java.nio.file.Files.write(conflict.resolve("tmp"), userData);
+        try {
+            BootstrapDirectoryRepair.ensure(conflict.toFile());
+            fail("must not replace an existing file with a directory");
+        } catch (java.io.IOException expected) { }
+        assertArrayEquals(userData, java.nio.file.Files.readAllBytes(conflict.resolve("tmp")));
+        assertFalse(conflict.resolve("etc").toFile().exists());
+        // Deliberately retain this tiny app-cache fixture as evidence; no recursive deletion.
+    }
+
 }
