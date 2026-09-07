@@ -35,6 +35,7 @@ name: Rust correctness tiers
       - fix/engine-adoption
       - fix/engine-handle-lifetime
       - fix/skia-vulkan-api-contract
+      - fix/bootstrap-runtime-directories
       - master
       - feature/rust-integration
     paths:
