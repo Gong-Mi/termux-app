@@ -19,6 +19,7 @@ MARKERS = (
     "VulkanContext::new: SUCCESS",
     "RenderThread: Frame 0 completed",
     "SKIA_BACKEND_READBACK: PASS",
+    "SKIA_TEXT_READBACK: PASS",
 )
 FAILURE = "Skia make_vulkan failed"
 THREADTIME = re.compile(r"^\s*\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d+\s+(\d+)\s+\d+\s+[VDIWEFAS]\s+[^:]+:\s?(.*)$")

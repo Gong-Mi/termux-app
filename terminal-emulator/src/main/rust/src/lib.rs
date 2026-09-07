@@ -53,6 +53,8 @@ pub mod renderer;
 mod skia_api_contract;
 #[cfg(feature = "skia-api-experiment")]
 mod skia_backend_probe;
+#[cfg(feature = "skia-api-experiment")]
+mod skia_text_probe;
 pub mod terminal;
 pub mod utils;
 pub mod vte_parser;

@@ -546,6 +546,18 @@ impl VulkanContext {
         }
         #[cfg(feature = "skia-api-experiment")]
         android_log(LogPriority::INFO, "SKIA_BACKEND_READBACK: PASS");
+        #[cfg(feature = "skia-api-experiment")]
+        if let Err(reason) =
+            crate::skia_text_probe::draw_text_and_readback(ctx.context.as_mut().unwrap())
+        {
+            android_log(
+                LogPriority::ERROR,
+                &format!("SKIA_TEXT_READBACK: FAIL {reason}"),
+            );
+            return None;
+        }
+        #[cfg(feature = "skia-api-experiment")]
+        android_log(LogPriority::INFO, "SKIA_TEXT_READBACK: PASS");
 
         let swapchain_ok = ctx.recreate_swapchain(extent.width, extent.height);
         if !swapchain_ok {
