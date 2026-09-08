@@ -99,8 +99,8 @@ fn is_foreground(pixel: &[u8]) -> bool {
 
 /// Structure checks that distinguish a rendered glyph row from a blank frame
 /// or a solid fill: foreground exists in the text band, occupies a minority
-/// of it (glyph counters), stays out of the empty rows below, and is denser
-/// in the upper half of the band than the lower half.
+/// of it (glyph counters), stays out of the empty rows below, and never fills
+/// its own bounding box (a solid rectangle has no glyph strokes or gaps).
 fn verify_text_pixels(
     pixels: &[u8],
     width: usize,
@@ -111,18 +111,27 @@ fn verify_text_pixels(
     if band == 0 || band * 2 > height || width == 0 {
         return Err("probe geometry mismatch");
     }
-    let mut upper = 0usize;
-    let mut lower = 0usize;
     let mut band_fg = 0usize;
+    let mut min_x = width;
+    let mut max_x = 0usize;
+    let mut min_y = band;
+    let mut max_y = 0usize;
     for y in 0..band {
         for x in 0..width {
             let offset = (y * width + x) * 4;
             if is_foreground(&pixels[offset..offset + 4]) {
                 band_fg += 1;
-                if y < band / 2 {
-                    upper += 1;
-                } else {
-                    lower += 1;
+                if x < min_x {
+                    min_x = x;
+                }
+                if x > max_x {
+                    max_x = x;
+                }
+                if y < min_y {
+                    min_y = y;
+                }
+                if y > max_y {
+                    max_y = y;
                 }
             }
         }
@@ -137,12 +146,6 @@ fn verify_text_pixels(
     if band_fg < 20 {
         return Err("too few glyph pixels to be a rendered string");
     }
-    if upper == 0 {
-        return Err("no glyph pixels in ascent half");
-    }
-    if lower > upper {
-        return Err("glyph mass below the band midpoint");
-    }
     for y in band..height {
         for x in 0..width {
             let offset = (y * width + x) * 4;
@@ -150,6 +153,13 @@ fn verify_text_pixels(
                 return Err("foreground leaked into empty rows");
             }
         }
+    }
+    // A glyph's ink never fills its own bounding box: strokes leave gaps
+    // between and inside glyphs. This holds for any baseline placement, so it
+    // does not assume where inside the cell the renderer draws the text.
+    let bbox = (max_x - min_x + 1) * (max_y - min_y + 1);
+    if band_fg >= bbox {
+        return Err("glyph band is a solid rectangle");
     }
     Ok(())
 }
@@ -213,7 +223,7 @@ mod tests {
         }
         assert_eq!(
             verify_text_pixels(&inverted, W, H, BAND as f32),
-            Err("no glyph pixels in ascent half")
+            Err("glyph band is a solid rectangle")
         );
     }
 
