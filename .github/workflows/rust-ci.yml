@@ -15,6 +15,7 @@ on:
     branches:
       - master
       - feature/rust-integration
+      - refactor/test-normalization
     paths:
       - '.github/workflows/rust-ci.yml'
       - 'terminal-emulator/src/main/rust/**'

@@ -21,6 +21,7 @@ name: Rust correctness tiers
     branches:
       - master
       - feature/rust-integration
+      - refactor/test-normalization
     paths:
       - 'terminal-emulator/src/main/rust/**'
       - 'terminal-emulator/src/main/rust/Cargo.toml'

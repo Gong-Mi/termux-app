@@ -4,6 +4,7 @@ name: Android emulator experiment
   pull_request:
     branches:
       - feature/rust-integration
+      - refactor/test-normalization
     paths:
       - 'app/**'
       - 'terminal-emulator/**'
