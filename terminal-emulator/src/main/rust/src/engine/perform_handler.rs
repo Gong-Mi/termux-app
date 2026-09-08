@@ -27,10 +27,10 @@ impl<'a> Perform for PerformHandler<'a> {
     }
 
     fn osc_dispatch(&mut self, params: &[&[u8]], _bell_terminated: bool) {
-        if params.len() > 0 {
-            if let Ok(opcode) = std::str::from_utf8(params[0]) {
-                crate::terminal::handlers::osc::handle_osc(self.state, self.events, opcode, params);
-            }
+        if !params.is_empty()
+            && let Ok(opcode) = std::str::from_utf8(params[0])
+        {
+            crate::terminal::handlers::osc::handle_osc(self.state, self.events, opcode, params);
         }
     }
 

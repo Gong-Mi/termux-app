@@ -41,3 +41,10 @@ local_gemini_*.log
 
 # Git worktree for comparing with master branch
 .gitignore-workspaces/
+
+# Python bytecode caches (scripts/, tools/)
+__pycache__/
+*.pyc
+
+# Local cargo target dirs (worktree-local builds)
+.target-*/

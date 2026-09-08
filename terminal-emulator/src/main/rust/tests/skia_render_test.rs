@@ -2,7 +2,6 @@
 // 运行：cargo test --test skia_render_test -- --nocapture
 
 use skia_safe::{Color, Font, FontMgr, FontStyle, Paint, PaintStyle, Rect, surfaces};
-use std::cmp::{max, min};
 
 // ============================================================
 // 辅助函数：从 pixmap 获取指定坐标的 ARGB 颜色
@@ -71,7 +70,7 @@ fn test_selection_highlight_rendering() {
     sel_paint.set_color(Color::from_argb(128, 80, 120, 200));
 
     let sel_rect = Rect::from_xywh(50.0, 40.0, 200.0, 60.0);
-    canvas.draw_rect(&sel_rect, &sel_paint);
+    canvas.draw_rect(sel_rect, &sel_paint);
 
     let pixmap = surface.peek_pixels().expect("Failed to peek pixels");
 
@@ -134,6 +133,7 @@ fn test_bold_to_bright_color_mapping() {
         fg_idx_normal
     };
     assert_eq!(fg_idx_after, 8, "Bold black (0) should map to gray (8)");
+    assert_eq!(palette[fg_idx_after], 0xFF7F7F7F);
 
     // 测试: 粗体 + 前景色 3 (黄色) → 应该映射到 11 (亮黄)
     let fg_idx_normal: usize = 3;
@@ -146,6 +146,7 @@ fn test_bold_to_bright_color_mapping() {
         fg_idx_after, 11,
         "Bold yellow (3) should map to bright yellow (11)"
     );
+    assert_eq!(palette[fg_idx_after], 0xFFFFFF00);
 
     // 测试: 粗体 + 前景色 9 (亮红) → 不应映射 (>=8)
     let fg_idx_normal: usize = 9;
@@ -155,6 +156,7 @@ fn test_bold_to_bright_color_mapping() {
         fg_idx_normal
     };
     assert_eq!(fg_idx_after, 9, "Bright red (9) should stay 9");
+    assert_eq!(palette[fg_idx_after], 0xFFFF0000);
 
     // 测试: 非粗体 → 不应映射
     let fg_idx_normal: usize = 4;
@@ -165,6 +167,7 @@ fn test_bold_to_bright_color_mapping() {
         fg_idx_normal
     };
     assert_eq!(fg_idx_after, 4, "Normal blue (4) should stay 4");
+    assert_eq!(palette[fg_idx_after], 0xFF6495ED);
 
     println!("  ✅ Bold→Bright 颜色映射测试通过");
     println!("    0 (黑) + bold → 8 (灰)");
@@ -195,12 +198,12 @@ fn test_reverse_video_rendering() {
 
     // 绘制文字区域
     let text_rect = Rect::from_xywh(20.0, 10.0, 80.0, 30.0);
-    canvas.draw_rect(&text_rect, &paint);
+    canvas.draw_rect(text_rect, &paint);
 
     // 反向: 黑字白底
     canvas.clear(Color::new(0xFFFFFFFF)); // 白底
     paint.set_color(Color::new(0xFF000000)); // 黑字
-    canvas.draw_rect(&text_rect, &paint);
+    canvas.draw_rect(text_rect, &paint);
 
     let pixmap = surface.peek_pixels().expect("Failed to peek pixels");
 
@@ -442,11 +445,11 @@ fn test_wide_char_canvas_scaling() {
 
         // 绘制一个矩形模拟文字
         let rect = Rect::from_xywh(x_scaled, y_base - 20.0, measured_width, 20.0);
-        canvas.draw_rect(&rect, &paint);
+        canvas.draw_rect(rect, &paint);
         canvas.restore();
     } else {
         let rect = Rect::from_xywh(x, y_base - 20.0, expected_width, 20.0);
-        canvas.draw_rect(&rect, &paint);
+        canvas.draw_rect(rect, &paint);
     }
 
     let pixmap = surface.peek_pixels().expect("Failed to peek pixels");
@@ -455,7 +458,7 @@ fn test_wide_char_canvas_scaling() {
     let left_edge = get_pixel(&pixmap, (x + 1.0) as i32, (y_base - 10.0) as i32);
     let right_edge = get_pixel(
         &pixmap,
-        (x + expected_width as f32 - 2.0) as i32,
+        (x + expected_width - 2.0) as i32,
         (y_base - 10.0) as i32,
     );
 
@@ -603,7 +606,7 @@ fn test_full_frame_rendering_simulation() {
     text_paint.set_style(PaintStyle::Fill);
 
     let text_rect = Rect::from_xywh(5.0, y_base - font_height + 3.0, 40.0, 14.0);
-    canvas.draw_rect(&text_rect, &text_paint);
+    canvas.draw_rect(text_rect, &text_paint);
 
     // 4. 光标 (block)
     let mut cursor_paint = Paint::default();
@@ -637,7 +640,7 @@ fn test_full_frame_rendering_simulation() {
     let text_r = (text_area >> 16) & 0xFF;
     let text_g = (text_area >> 8) & 0xFF;
     let text_b = text_area & 0xFF;
-    let text_a = (text_area >> 24) & 0xFF;
+    let _text_a = (text_area >> 24) & 0xFF;
     // 亮红色 (palette[9] = 0xFFFF0000) 应该高红色分量
     assert!(
         text_r > 200,

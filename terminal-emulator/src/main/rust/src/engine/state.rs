@@ -410,15 +410,12 @@ impl ScreenState {
 
     pub fn set_cursor_style(&mut self, style: i32) {
         self.cursor.style = match style {
-            0 | 1 | 2 => 0,
+            0..=2 => 0,
             3 | 4 => 1,
             5 | 6 => 2,
             _ => 0,
         };
-        self.cursor.blinking_enabled = match style {
-            0 | 1 | 3 | 5 => true,
-            _ => false,
-        };
+        self.cursor.blinking_enabled = matches!(style, 0 | 1 | 3 | 5);
     }
 
     pub fn save_cursor(&mut self) {
@@ -601,13 +598,12 @@ impl ScreenState {
     }
 
     pub fn report_colors_changed(&self) {
-        if let Some(obj) = &self.java_callback_obj {
-            if let Some(vm) = crate::JAVA_VM.get() {
-                if let Ok(env) = vm.get_env() {
-                    let mut env: JNIEnv = env;
-                    let _ = env.call_method(obj.as_obj(), "onColorsChanged", "()V", &[]);
-                }
-            }
+        if let Some(obj) = &self.java_callback_obj
+            && let Some(vm) = crate::JAVA_VM.get()
+            && let Ok(env) = vm.get_env()
+        {
+            let mut env: JNIEnv = env;
+            let _ = env.call_method(obj.as_obj(), "onColorsChanged", "()V", &[]);
         }
     }
 
@@ -621,10 +617,10 @@ impl ScreenState {
 
     pub fn handle_osc52(&mut self, events: &mut Vec<TerminalEvent>, base64_data: &str) {
         use base64::{Engine as _, engine::general_purpose};
-        if let Ok(decoded) = general_purpose::STANDARD.decode(base64_data) {
-            if let Ok(text) = String::from_utf8(decoded) {
-                events.push(TerminalEvent::CopytoClipboard(text));
-            }
+        if let Ok(decoded) = general_purpose::STANDARD.decode(base64_data)
+            && let Ok(text) = String::from_utf8(decoded)
+        {
+            events.push(TerminalEvent::CopytoClipboard(text));
         }
     }
 
@@ -681,13 +677,12 @@ impl ScreenState {
     }
 
     pub fn report_bell(&self) {
-        if let Some(obj) = &self.java_callback_obj {
-            if let Some(vm) = crate::JAVA_VM.get() {
-                if let Ok(env) = vm.get_env() {
-                    let mut env: JNIEnv = env;
-                    let _ = env.call_method(obj.as_obj(), "onBell", "()V", &[]);
-                }
-            }
+        if let Some(obj) = &self.java_callback_obj
+            && let Some(vm) = crate::JAVA_VM.get()
+            && let Ok(env) = vm.get_env()
+        {
+            let mut env: JNIEnv = env;
+            let _ = env.call_method(obj.as_obj(), "onBell", "()V", &[]);
         }
     }
 

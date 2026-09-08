@@ -26,7 +26,7 @@ fn generate_random_ascii(size: usize) -> Vec<u8> {
         seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
         let byte = (seed & 0xFF) as u8;
         // 确保是可打印 ASCII
-        if byte >= 32 && byte <= 126 {
+        if (32..=126).contains(&byte) {
             data.push(byte);
         } else {
             data.push(b'A');

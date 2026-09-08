@@ -235,7 +235,7 @@ pub trait Perform {
             0x07 => self.bell(),
             0x08 => self.backspace(),
             0x09 => self.tab(),
-            0x0A | 0x0B | 0x0C => self.linefeed(),
+            0x0A..=0x0C => self.linefeed(),
             0x0D => self.carriage_return(),
             0x0E => self.shift_out(),
             0x0F => self.shift_in(),
@@ -362,13 +362,13 @@ impl Parser {
                 }
 
                 // 如果找到了连续可见字符块，批量处理
-                if chunk_end > pos {
-                    if let Ok(s) = std::str::from_utf8(&data[pos..chunk_end]) {
-                        handler.print_str(s);
-                        pos = chunk_end;
-                        if pos >= len {
-                            break;
-                        }
+                if chunk_end > pos
+                    && let Ok(s) = std::str::from_utf8(&data[pos..chunk_end])
+                {
+                    handler.print_str(s);
+                    pos = chunk_end;
+                    if pos >= len {
+                        break;
                     }
                 }
             }
@@ -447,12 +447,12 @@ impl Parser {
             }
             ESC_SELECT_LEFT_PAREN => {
                 // G0 字符集选择
-                handler.esc_dispatch(&[b'('], false, byte);
+                handler.esc_dispatch(b"(", false, byte);
                 self.escape_state = ESC_NONE;
             }
             ESC_SELECT_RIGHT_PAREN => {
                 // G1 字符集选择
-                handler.esc_dispatch(&[b')'], false, byte);
+                handler.esc_dispatch(b")", false, byte);
                 self.escape_state = ESC_NONE;
             }
             ESC_CSI => {
@@ -637,10 +637,10 @@ impl Parser {
         match byte {
             b'8' => {
                 // DECALN - 对齐测试，填充 E 字符
-                handler.esc_dispatch(&[b'#'], false, byte);
+                handler.esc_dispatch(b"#", false, byte);
             }
             _ => {
-                handler.esc_dispatch(&[b'#'], false, byte);
+                handler.esc_dispatch(b"#", false, byte);
             }
         }
         self.escape_state = ESC_NONE;
@@ -772,11 +772,8 @@ impl Parser {
     /// CSI args asterix 处理
     fn do_csi_args_asterix<P: Perform>(&mut self, _handler: &mut P, byte: u8) {
         // 矩形区域操作
-        match byte {
-            b'@'..=b'~' => {
-                self.escape_state = ESC_NONE;
-            }
-            _ => {}
+        if let b'@'..=b'~' = byte {
+            self.escape_state = ESC_NONE;
         }
     }
 
@@ -891,10 +888,8 @@ impl Parser {
             0x00..=0x1F => {
                 // 其他控制字符
             }
-            0x20..=0x7F => {
-                if self.osc_buffer.len() < MAX_OSC_STRING_LENGTH {
-                    self.osc_buffer.push(byte as char);
-                }
+            0x20..=0x7F if self.osc_buffer.len() < MAX_OSC_STRING_LENGTH => {
+                self.osc_buffer.push(byte as char);
             }
             _ => {}
         }

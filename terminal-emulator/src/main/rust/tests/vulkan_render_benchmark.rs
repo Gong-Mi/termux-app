@@ -142,17 +142,16 @@ fn simulate_detailed_pipeline(
     let font_width = 10.0;
     let font_height = 20.0;
 
-    let mut clear = Duration::ZERO;
+    // 1. 背景清屏
+    let clear = measure(|| {
+        canvas.clear(Color::new(0xFF000000u32));
+    });
+
     let mut grouping = Duration::ZERO;
     let mut glyph_lookup = Duration::ZERO;
     let mut blob_alloc = Duration::ZERO;
     let mut blob_make = Duration::ZERO;
     let mut draw_call = Duration::ZERO;
-
-    // 1. 背景清屏
-    clear = measure(|| {
-        canvas.clear(Color::new(0xFF000000u32));
-    });
 
     // 2. 逐行绘制
     for r in 0..terminal.rows {

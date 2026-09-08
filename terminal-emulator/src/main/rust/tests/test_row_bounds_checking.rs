@@ -22,7 +22,7 @@ fn test_get_row_bounds_checking() {
 
     // 2. 测试有效范围内的行
     println!("\n1. 测试有效范围内的行:");
-    for row in vec![-(active as i32), -1, 0, rows as i32 - 1] {
+    for row in [-(active as i32), -1, 0, rows - 1] {
         let line_text = engine.state.get_current_screen().get_row(row);
         let text: String = line_text
             .text
@@ -55,7 +55,7 @@ fn test_get_row_bounds_checking() {
 
     // 4. 测试超出范围的屏幕行（应该被钳制到有效范围）
     println!("\n3. 测试超出范围的屏幕行:");
-    let out_of_bounds_screen_rows = vec![rows as i32, rows as i32 + 1, 1000];
+    let out_of_bounds_screen_rows = vec![rows, rows + 1, 1000];
     for row in out_of_bounds_screen_rows {
         let line_text = engine.state.get_current_screen().get_row(row);
         let text: String = line_text
@@ -83,12 +83,11 @@ fn test_get_row_bounds_checking() {
 
     // 6. 验证 get_selected_text 不受影响
     println!("\n5. 验证 get_selected_text:");
-    let selected = engine.state.get_current_screen().get_selected_text(
-        0,
-        -(active as i32),
-        79,
-        rows as i32 - 1,
-    );
+    let selected =
+        engine
+            .state
+            .get_current_screen()
+            .get_selected_text(0, -(active as i32), 79, rows - 1);
     let selected_line_count = selected.lines().count();
     println!("   selected 行数：{}", selected_line_count);
     assert!(

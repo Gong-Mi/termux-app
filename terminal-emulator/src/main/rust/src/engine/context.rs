@@ -49,7 +49,7 @@ impl TerminalEngine {
         if !self.state.shared_buffer_ptr.0.is_null() {
             unsafe {
                 if let Some(flat) = &self.state.flat_buffer {
-                    let _ = flat.sync_to_shared(self.state.shared_buffer_ptr.0);
+                    flat.sync_to_shared(self.state.shared_buffer_ptr.0);
                 }
             }
         }
@@ -65,15 +65,15 @@ impl TerminalEngine {
     }
 
     pub fn notify_screen_updated(&self) {
-        if let Some(obj) = &self.state.java_callback_obj {
-            if let Some(vm) = crate::JAVA_VM.get() {
-                let env_res = vm
-                    .get_env()
-                    .or_else(|_| vm.attach_current_thread_as_daemon());
-                if let Ok(env) = env_res {
-                    let mut env: jni::JNIEnv = env;
-                    let _ = env.call_method(obj.as_obj(), "onScreenUpdated", "()V", &[]);
-                }
+        if let Some(obj) = &self.state.java_callback_obj
+            && let Some(vm) = crate::JAVA_VM.get()
+        {
+            let env_res = vm
+                .get_env()
+                .or_else(|_| vm.attach_current_thread_as_daemon());
+            if let Ok(env) = env_res {
+                let mut env: jni::JNIEnv = env;
+                let _ = env.call_method(obj.as_obj(), "onScreenUpdated", "()V", &[]);
             }
         }
     }

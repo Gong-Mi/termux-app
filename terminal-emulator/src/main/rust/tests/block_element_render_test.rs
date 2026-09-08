@@ -175,12 +175,12 @@ fn char_wc_width_test(ucs: u32) -> usize {
     if ucs == 0 || ucs == 32 {
         return 1;
     }
-    if ucs < 32 || (ucs >= 0x7F && ucs < 0xA0) {
+    if ucs < 32 || (0x7F..0xA0).contains(&ucs) {
         return 0;
     }
-    if (ucs >= 0x2E80 && ucs <= 0x9FFF)
-        || (ucs >= 0xAC00 && ucs <= 0xD7A3)
-        || (ucs >= 0xFF01 && ucs <= 0xFF60)
+    if (0x2E80..=0x9FFF).contains(&ucs)
+        || (0xAC00..=0xD7A3).contains(&ucs)
+        || (0xFF01..=0xFF60).contains(&ucs)
     {
         return 2;
     }

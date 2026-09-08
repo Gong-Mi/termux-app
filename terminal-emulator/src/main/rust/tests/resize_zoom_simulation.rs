@@ -162,8 +162,8 @@ fn test_cursor_position_during_zoom() {
     println!("缩小后光标: ({}, {})", final_cx, final_cy);
 
     // 光标应该在有效范围内
-    assert!(final_cx >= 0 && final_cx < 80, "光标 X 应该在范围内");
-    assert!(final_cy >= 0 && final_cy < 24, "光标 Y 应该在范围内");
+    assert!((0..80).contains(&final_cx), "光标 X 应该在范围内");
+    assert!((0..24).contains(&final_cy), "光标 Y 应该在范围内");
 
     println!("✅ 光标位置测试通过");
 }

@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
 
     /// 模拟渲染器的浮点对齐逻辑
     fn calculate_edge_point(x: f32, w: f32) -> f32 {

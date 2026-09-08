@@ -12,6 +12,12 @@ pub struct PerformanceMetrics {
     pub last_report: std::sync::Mutex<Instant>,
 }
 
+impl Default for PerformanceMetrics {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PerformanceMetrics {
     pub fn new() -> Self {
         Self {
@@ -62,7 +68,7 @@ impl PerformanceMetrics {
 }
 
 pub static METRICS: once_cell::sync::Lazy<PerformanceMetrics> =
-    once_cell::sync::Lazy::new(|| PerformanceMetrics::new());
+    once_cell::sync::Lazy::new(PerformanceMetrics::new);
 
 pub enum LogPriority {
     VERBOSE = 2,

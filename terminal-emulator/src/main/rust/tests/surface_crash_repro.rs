@@ -70,14 +70,14 @@ fn test_surface_destruction_race_condition() {
         let mut frames = 0;
         while running_r.load(Ordering::SeqCst) {
             // 模仿 render_thread.rs 的逻辑：尝试获取锁
-            if let Ok(guard) = ctx_r.try_lock() {
-                if let Some(ctx) = guard.as_ref() {
-                    println!("RenderThread: Presenting frame {}...", frames);
-                    // 模拟驱动正在工作时，锁被释放
-                    // 在真实驱动中，即便 guard 还在，底层的 window 句柄也可能被系统标记无效
-                    ctx.present();
-                    frames += 1;
-                }
+            if let Ok(guard) = ctx_r.try_lock()
+                && let Some(ctx) = guard.as_ref()
+            {
+                println!("RenderThread: Presenting frame {}...", frames);
+                // 模拟驱动正在工作时，锁被释放
+                // 在真实驱动中，即便 guard 还在，底层的 window 句柄也可能被系统标记无效
+                ctx.present();
+                frames += 1;
             }
             thread::sleep(Duration::from_millis(1));
         }

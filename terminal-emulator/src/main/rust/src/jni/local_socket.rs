@@ -69,7 +69,7 @@ pub unsafe extern "system" fn Java_com_termux_shared_net_socket_local_LocalSocke
     };
 
     match ls::create_server_socket(&path, backlog) {
-        Ok(fd) => get_jni_result(&mut env, &log_title, 0, 0, "", fd as i32).into_raw(),
+        Ok(fd) => get_jni_result(&mut env, &log_title, 0, 0, "", fd).into_raw(),
         Err(e) => get_jni_result(
             &mut env,
             &log_title,
@@ -101,9 +101,7 @@ pub unsafe extern "system" fn Java_com_termux_shared_net_socket_local_LocalSocke
     fd: jint,
 ) -> jobject {
     match ls::accept_client(fd as RawFd) {
-        Ok(client_fd) => {
-            get_jni_result(&mut env, &log_title, 0, 0, "", client_fd as i32).into_raw()
-        }
+        Ok(client_fd) => get_jni_result(&mut env, &log_title, 0, 0, "", client_fd).into_raw(),
         Err(e) => get_jni_result(
             &mut env,
             &log_title,

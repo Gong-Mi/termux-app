@@ -199,14 +199,11 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
             clear_wrap = false;
             if is_private {
                 // DEC-specific DSR
-                match params.get_arg0(-1) {
-                    6 => {
-                        // DECXCPR - Extended Cursor Position
-                        let r = state.cursor.y + 1;
-                        let c = state.cursor.x + 1;
-                        state.report_terminal_response(&format!("\x1b[?{};{};1R", r, c));
-                    }
-                    _ => {}
+                if params.get_arg0(-1) == 6 {
+                    // DECXCPR - Extended Cursor Position
+                    let r = state.cursor.y + 1;
+                    let c = state.cursor.x + 1;
+                    state.report_terminal_response(&format!("\x1b[?{};{};1R", r, c));
                 }
             } else {
                 // Standard DSR

@@ -20,7 +20,7 @@ fn test_skia_raster_draw() {
     paint.set_style(PaintStyle::Fill);
 
     let rect = Rect::from_xywh(10.0, 10.0, 80.0, 80.0);
-    canvas.draw_rect(&rect, &paint);
+    canvas.draw_rect(rect, &paint);
 
     // 3. 验证像素颜色
     // 使用 peek_pixels 直接获取像素数据，比 read_pixels 简单

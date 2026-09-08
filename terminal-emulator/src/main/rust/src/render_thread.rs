@@ -69,10 +69,10 @@ static SCREEN_DIRTY: AtomicBool = AtomicBool::new(false);
 /// 触发重绘并唤醒渲染线程
 pub fn request_render() {
     SCREEN_DIRTY.store(true, Ordering::SeqCst);
-    if let Ok(guard) = RENDER_THREAD_HANDLE.lock() {
-        if let Some(handle) = guard.as_ref() {
-            handle.thread().unpark();
-        }
+    if let Ok(guard) = RENDER_THREAD_HANDLE.lock()
+        && let Some(handle) = guard.as_ref()
+    {
+        handle.thread().unpark();
     }
 }
 
@@ -144,7 +144,7 @@ fn spawn_render_thread(engine_ptr: jlong) {
             while RENDER_THREAD_RUNNING.load(Ordering::SeqCst) {
                 // 0. 核心检查：如果 Surface 没准备好，渲染线程必须进入高效睡眠
                 if !SURFACE_READY.load(Ordering::SeqCst) {
-                    if frame_count % 60 == 0 {
+                    if frame_count.is_multiple_of(60) {
                         android_log(
                             LogPriority::DEBUG,
                             "RenderThread: Surface not ready, parking...",
@@ -159,21 +159,20 @@ fn spawn_render_thread(engine_ptr: jlong) {
                     let new_width = *SURFACE_NEW_WIDTH.lock().unwrap();
                     let new_height = *SURFACE_NEW_HEIGHT.lock().unwrap();
 
-                    if let Some(ctx_mutex) = VULKAN_CONTEXT.get() {
-                        if let Ok(mut ctx_guard) = ctx_mutex.try_lock() {
-                            if let Some(ctx) = ctx_guard.as_mut() {
-                                let ok = ctx.recreate_swapchain(new_width, new_height);
-                                android_log(
-                                    LogPriority::INFO,
-                                    &format!(
-                                        "Render: Swapchain recreated {}x{} success={}",
-                                        new_width, new_height, ok
-                                    ),
-                                );
-                                SURFACE_SIZE_CHANGED.store(false, Ordering::SeqCst);
-                                request_render();
-                            }
-                        }
+                    if let Some(ctx_mutex) = VULKAN_CONTEXT.get()
+                        && let Ok(mut ctx_guard) = ctx_mutex.try_lock()
+                        && let Some(ctx) = ctx_guard.as_mut()
+                    {
+                        let ok = ctx.recreate_swapchain(new_width, new_height);
+                        android_log(
+                            LogPriority::INFO,
+                            &format!(
+                                "Render: Swapchain recreated {}x{} success={}",
+                                new_width, new_height, ok
+                            ),
+                        );
+                        SURFACE_SIZE_CHANGED.store(false, Ordering::SeqCst);
+                        request_render();
                     }
                 }
 
@@ -194,7 +193,7 @@ fn spawn_render_thread(engine_ptr: jlong) {
                 let mut ctx_guard = match ctx_mutex.try_lock() {
                     Ok(g) => g,
                     Err(_) => {
-                        if frame_count % 60 == 0 {
+                        if frame_count.is_multiple_of(60) {
                             android_log(
                                 LogPriority::DEBUG,
                                 "RenderThread: VULKAN_CONTEXT lock contention, sleeping...",
@@ -233,7 +232,7 @@ fn spawn_render_thread(engine_ptr: jlong) {
                     let engine = match term_ctx.lock.try_read() {
                         Ok(e) => e,
                         Err(_) => {
-                            if frame_count % 60 == 0 {
+                            if frame_count.is_multiple_of(60) {
                                 android_log(
                                     LogPriority::DEBUG,
                                     "RenderThread: Engine lock busy, frame skipped",
@@ -282,7 +281,7 @@ fn spawn_render_thread(engine_ptr: jlong) {
 
                 let font_size = *RENDER_FONT_SIZE.lock().unwrap();
                 let font_path = crate::render_thread::get_render_font_path();
-                let needs_recreate = renderer_guard.as_ref().map_or(true, |r| {
+                let needs_recreate = renderer_guard.as_ref().is_none_or(|r| {
                     (r.font_size - font_size).abs() > 0.1 || r.font_path != font_path
                 });
                 if needs_recreate {
@@ -368,7 +367,7 @@ fn spawn_render_thread(engine_ptr: jlong) {
                     break;
                 }
 
-                if frame_count % 300 == 0 {
+                if frame_count.is_multiple_of(300) {
                     android_log(
                         LogPriority::INFO,
                         &format!(

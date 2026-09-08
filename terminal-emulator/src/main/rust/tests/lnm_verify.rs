@@ -396,7 +396,7 @@ fn test_insert_mode_scroll_at_end() {
     println!("Insert at end: row0='{}'", row0);
 
     // 验证没有 panic 或崩溃
-    assert!(row0.len() > 0);
+    assert!(!row0.is_empty());
 
     println!("✅ Insert mode scroll at end");
 }
@@ -703,7 +703,7 @@ fn test_nvim_like_sequence() {
 fn test_rapid_decstr_toggle() {
     let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
-    for i in 0..100 {
+    for _i in 0..100 {
         // 启用各种模式
         engine.process_bytes(b"\x1b[?1h\x1b[?6h\x1b[20h\x1b[4h\x1b[?2004h");
 

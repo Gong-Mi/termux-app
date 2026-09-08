@@ -48,13 +48,13 @@ impl ScreenState {
         let alt_down = (meta_state & KEYMOD_ALT) != 0;
         let ctrl_down = (meta_state & KEYMOD_CTRL) != 0;
 
-        if let Some(ref s) = char_str {
-            if !s.is_empty() {
-                if alt_down && s.chars().count() == 1 {
-                    return Some(format!("\x1b{}", s));
-                }
-                return Some(s.clone());
+        if let Some(ref s) = char_str
+            && !s.is_empty()
+        {
+            if alt_down && s.chars().count() == 1 {
+                return Some(format!("\x1b{}", s));
             }
+            return Some(s.clone());
         }
 
         let mut key_mode = 0;
@@ -97,10 +97,10 @@ impl ScreenState {
                 _ => {}
             };
 
-            if let Some(c) = cp {
-                if key_mode > 0 || c < 32 || c == 127 {
-                    return Some(format!("\x1b[{};{}u", c, modifier));
-                }
+            if let Some(c) = cp
+                && (key_mode > 0 || c < 32 || c == 127)
+            {
+                return Some(format!("\x1b[{};{}u", c, modifier));
             }
         }
 

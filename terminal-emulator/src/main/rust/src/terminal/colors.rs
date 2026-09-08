@@ -77,13 +77,10 @@ impl TerminalColors {
     ///
     /// 返回格式：0xFFRRGGBB
     pub fn parse_color(color_str: &str) -> Option<u32> {
-        let color_str = color_str
-            .trim_end_matches(|c| c == '\x07' || c == '\x1b' || c == '\\')
-            .trim();
+        let color_str = color_str.trim_end_matches(['\x07', '\x1b', '\\']).trim();
 
-        if color_str.starts_with('#') {
+        if let Some(hex) = color_str.strip_prefix('#') {
             // #RGB, #RRGGBB, #RRRGGGBBB, #RRRRGGGGBBBB
-            let hex = &color_str[1..];
             match hex.len() {
                 3 => {
                     // #RGB -> 每位重复
@@ -121,9 +118,8 @@ impl TerminalColors {
                 }
                 _ => None,
             }
-        } else if color_str.starts_with("rgb:") {
+        } else if let Some(rgb_part) = color_str.strip_prefix("rgb:") {
             // rgb:r/g/b 格式，r/g/b 可以是 1-4 位十六进制
-            let rgb_part = &color_str[4..];
             let parts: Vec<&str> = rgb_part.split('/').collect();
             if parts.len() != 3 {
                 return None;
@@ -228,11 +224,11 @@ impl TerminalColors {
     }
 
     pub fn try_parse_color(&mut self, index: usize, color_str: &str) -> bool {
-        if let Some(color) = Self::parse_color(color_str) {
-            if index < 259 {
-                self.current_colors[index] = color;
-                return true;
-            }
+        if let Some(color) = Self::parse_color(color_str)
+            && index < 259
+        {
+            self.current_colors[index] = color;
+            return true;
         }
         false
     }
