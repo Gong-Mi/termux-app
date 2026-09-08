@@ -2,7 +2,6 @@
 // 运行：cargo test --test vulkan_cache_performance_proof -- --nocapture
 
 use std::fs;
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 /// 模拟 Vulkan 管道编译过程
@@ -13,10 +12,9 @@ fn simulate_vulkan_pipeline_compile(
 ) -> (Duration, Vec<u8>) {
     let start = Instant::now();
 
-    if use_cache && cache_data.is_some() {
+    if use_cache && let Some(data) = cache_data {
         // --- 情况 A: 命中缓存 ---
         // 模拟从磁盘加载并解析预编译二进制，这是一个极快的过程
-        let data = cache_data.unwrap();
         // 模拟解析和驱动上传微小延迟
         std::thread::sleep(Duration::from_millis(5));
         (start.elapsed(), data.to_vec())

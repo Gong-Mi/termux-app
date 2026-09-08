@@ -87,7 +87,7 @@ impl VulkanContext {
         ];
 
         // 尝试启用调试扩展（如果可用）
-        let ext_ext_name = CStr::from_bytes_with_nul(b"VK_EXT_debug_utils\0").ok();
+        let ext_ext_name = Some(c"VK_EXT_debug_utils");
         let has_debug_utils = ext_ext_name.and_then(|ext_name| {
             let instance_ext_props =
                 unsafe { entry.enumerate_instance_extension_properties(None).ok()? };
@@ -318,7 +318,7 @@ impl VulkanContext {
         let mut device_exts = vec![swapchain::NAME.as_ptr()];
 
         // 尝试启用内存优先级扩展
-        let memory_priority_ext = CStr::from_bytes_with_nul(b"VK_KHR_maintenance1\0").ok();
+        let memory_priority_ext = Some(c"VK_KHR_maintenance1");
         if let Some(ext_name) = memory_priority_ext {
             let device_ext_props =
                 unsafe { instance.enumerate_device_extension_properties(pdevice).ok() }
@@ -963,11 +963,10 @@ fn load_pipeline_cache() -> Option<Vec<u8>> {
 
 fn save_pipeline_cache(device: &Device, cache: ash_vk::PipelineCache) {
     let path = get_cache_path();
-    if let Some(parent) = path.parent() {
-        if !parent.exists() {
+    if let Some(parent) = path.parent()
+        && !parent.exists() {
             let _ = std::fs::create_dir_all(parent);
         }
-    }
 
     match unsafe { device.get_pipeline_cache_data(cache) } {
         Ok(data) => {

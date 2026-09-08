@@ -381,7 +381,7 @@ fn test_lnm_with_origin_mode() {
     );
     // y 应该递增
     assert!(
-        engine.state.cursor.y > cursor_y_before || engine.state.cursor.y == cursor_y_before,
+        engine.state.cursor.y >= cursor_y_before,
         "LF: y should change (before={}, after={})",
         cursor_y_before,
         engine.state.cursor.y

@@ -1,7 +1,3 @@
-use argon2::{
-    Argon2,
-    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
-};
 use rusqlite::{Connection, OpenFlags};
 use skia_safe::{Font, FontMgr, FontStyle};
 use std::env;
@@ -30,6 +26,7 @@ pub struct FontCalibrationDB {
     level: AccessLevel,
 }
 
+#[allow(dead_code)]
 const ADMIN_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$767zXv5m9f1J9K/2oXkLBg$9oK+4yF1Z9oK+4yF1Z9oK+4yF1Z9oK+4yF1Z9oK+4w";
 
 impl FontCalibrationDB {
@@ -136,7 +133,7 @@ mod tests {
         let font_mgr = FontMgr::new();
         let typeface = font_mgr
             .match_family_style(&font_family, FontStyle::normal())
-            .expect(&format!("Failed to load font family: {}", font_family));
+            .unwrap_or_else(|| panic!("Failed to load font family: {}", font_family));
         let font = Font::new(typeface, Some(12.0));
 
         // 测量基准宽度 (M)
@@ -156,7 +153,7 @@ mod tests {
             };
 
             // 物理测量
-            let (actual_w, _) = font.measure_str(&ch.to_string(), None);
+            let (actual_w, _) = font.measure_str(ch.to_string(), None);
 
             // unicode-width 预期
             let expected_w = ch.width().unwrap_or(0) as i32;

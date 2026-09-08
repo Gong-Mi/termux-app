@@ -1,4 +1,5 @@
 use termux_rust::vte_parser::{Params, Parser, Perform};
+#[cfg(target_arch = "aarch64")]
 use termux_rust::vte_sve;
 
 /// 用于记录解析器行为的 Handler
@@ -64,6 +65,7 @@ fn test_vte_sve_scalar_consistency() {
 }
 
 #[test]
+#[cfg(target_arch = "aarch64")]
 fn test_sve_fast_path_boundary() {
     // 边界测试：正好在向量末尾出现控制字符
     let mut data = vec![b'A'; 127]; // 假设向量长度为 128

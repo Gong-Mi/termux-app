@@ -402,7 +402,7 @@ fn spawn_pty(shell: &str, cols: i32, rows: i32) -> io::Result<i32> {
                     ("TERM", "xterm-256color"),
                     ("PATH", &path),
                     ("USER", "termux"),
-                    ("SHELL", &shell),
+                    ("SHELL", shell),
                     ("ANDROID_ROOT", "/system"),
                     ("ANDROID_DATA", "/data"),
                     ("EXTERNAL_STORAGE", "/sdcard"),
@@ -420,7 +420,7 @@ fn spawn_pty(shell: &str, cols: i32, rows: i32) -> io::Result<i32> {
 
                 // 执行 shell (模拟登录 shell)
                 let shell_c = CString::new(shell).unwrap();
-                let shell_filename = shell.split('/').last().unwrap_or("sh");
+                let shell_filename = shell.split('/').next_back().unwrap_or("sh");
                 let arg0 = CString::new(format!("-{}", shell_filename)).unwrap();
 
                 let args = [arg0.as_ptr(), std::ptr::null()];

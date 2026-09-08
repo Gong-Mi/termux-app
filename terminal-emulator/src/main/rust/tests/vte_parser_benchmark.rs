@@ -56,7 +56,7 @@ impl Perform for StatsHandler {
             0x07 => self.bell(),
             0x08 => self.backspace(),
             0x09 => self.tab(),
-            0x0A | 0x0B | 0x0C => self.linefeed(),
+            0x0A..=0x0C => self.linefeed(),
             0x0D => self.carriage_return(),
             _ => {}
         }

@@ -104,7 +104,7 @@ impl SixelDecoder {
             self.params.push(param.first().copied().unwrap_or(-1));
         }
 
-        if self.params.len() >= 1 && self.params[0] > 0 {
+        if !self.params.is_empty() && self.params[0] > 0 {
             self.width = self.params[0] as usize;
         }
         if self.params.len() >= 2 && self.params[1] > 0 {
@@ -121,7 +121,7 @@ impl SixelDecoder {
         }
 
         let sixel_rows = if self.height > 0 {
-            (self.height + 5) / 6
+            self.height.div_ceil(6)
         } else {
             100
         };
@@ -132,8 +132,8 @@ impl SixelDecoder {
         self.state = SixelState::Data;
         if self.pixel_data.is_empty() {
             let default_width = self.width.max(100);
-            let default_height = 100;
-            let sixel_rows = (default_height + 5) / 6;
+            let default_height: usize = 100;
+            let sixel_rows = default_height.div_ceil(6);
             self.pixel_data = vec![vec![0u8; default_width]; sixel_rows];
             if self.width == 0 {
                 self.width = default_width;
@@ -156,7 +156,7 @@ impl SixelDecoder {
                     i += 1; // 跳过 '#'
                     while i < data.len() {
                         let b = data[i];
-                        if b >= b'0' && b <= b'9' {
+                        if b.is_ascii_digit() {
                             if param_value < 0 {
                                 param_value = 0;
                             }
@@ -187,7 +187,7 @@ impl SixelDecoder {
                     continue; // 跳过下面的 i += 1
                 }
                 48..=63 => {
-                    let sixel_value = (byte - 48) as u8;
+                    let sixel_value = byte - 48;
                     for bit in 0..6 {
                         let pixel_row = self.current_row + bit as usize;
                         if pixel_row < self.pixel_data.len() {
@@ -226,7 +226,7 @@ impl SixelDecoder {
                         for _ in 1..repeat_count {
                             // 重复绘制
                             if self.current_col
-                                < self.pixel_data.get(0).map(|r| r.len()).unwrap_or(0)
+                                < self.pixel_data.first().map(|r| r.len()).unwrap_or(0)
                             {
                                 let last_col = self.current_col.saturating_sub(1);
                                 for bit in 0..6 {
@@ -328,7 +328,7 @@ impl SixelDecoder {
         *pos += 1;
         while *pos < data.len() {
             let b = data[*pos];
-            if b >= b'0' && b <= b'9' {
+            if b.is_ascii_digit() {
                 count = count * 10 + (b - b'0') as usize;
                 *pos += 1;
             } else {
@@ -422,13 +422,13 @@ impl SixelDecoder {
     /// 辅助：构建 256 色的快速查找表 [R, G, B, A]
     fn build_fast_color_table(&self) -> [[u8; 4]; 256] {
         let mut table = [[0u8; 4]; 256];
-        for i in 0..256 {
+        for (i, slot) in table.iter_mut().enumerate() {
             let (r, g, b) = if let Some(color) = &self.color_registers[i] {
                 (color.r, color.g, color.b)
             } else {
                 index_to_default_color(i)
             };
-            table[i] = [r, g, b, 255];
+            *slot = [r, g, b, 255];
         }
         table
     }

@@ -3,6 +3,12 @@ name = "termux-rust-new"
 version = "0.1.0"
 edition = "2024"
 
+[lints.clippy]
+zombie_processes = "allow"
+needless_range_loop = "allow"
+missing_safety_doc = "allow"
+too_many_arguments = "allow"
+
 [lib]
 name = "termux_rust"
 crate-type = ["cdylib", "rlib"]

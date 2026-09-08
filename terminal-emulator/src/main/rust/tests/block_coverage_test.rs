@@ -26,7 +26,7 @@ fn test_all_block_elements_in_buffer() {
     // Verify each character is stored at the correct position
     for (i, &ch) in block_chars.iter().enumerate() {
         assert_eq!(
-            row.text[i] as char, ch,
+            row.text[i], ch,
             "Position {} should be '{}' (U+{:04X}), got U+{:04X}",
             i, ch, ch as u32, row.text[i] as u32
         );
@@ -54,7 +54,7 @@ fn test_quadrant_block_mapping() {
 
     for (codepoint, expected_mask, name) in tests {
         let ch = char::from_u32(codepoint).unwrap();
-        let has_bit = |mask: u8, bit: u8| (expected_mask & bit) != 0;
+        let _has_bit = |_mask: u8, bit: u8| (expected_mask & bit) != 0;
 
         // Verify character properties
         assert!(
@@ -179,8 +179,7 @@ fn test_quadrant_pattern() {
     let text: String = row
         .text
         .iter()
-        .take(pattern.chars().count())
-        .map(|&c| c as char)
+        .take(pattern.chars().count()).copied()
         .collect();
 
     assert_eq!(text, pattern, "Pattern should be stored exactly as input");

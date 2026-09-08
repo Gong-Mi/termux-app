@@ -67,7 +67,7 @@ pub fn decode_effect(style: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::terminal::colors::COLOR_INDEX_CURSOR;
+    
 
     #[test]
     fn test_style_normal() {

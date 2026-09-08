@@ -107,7 +107,7 @@ fn test_expand_shows_content_below_viewport() {
         let expected_prefix = format!("Line {:02}:", expected_num);
         let expected_md5 = format!("{:x}", compute(format!("Line_{}", expected_num).as_bytes()));
 
-        let row = (i - 1) as i32;
+        let row = i - 1;
         let row_text = engine.state.get_current_screen().get_row(row);
         let text: String = row_text
             .text

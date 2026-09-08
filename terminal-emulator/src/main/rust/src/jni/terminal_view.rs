@@ -1,7 +1,7 @@
 #![allow(unused_variables)]
 use jni::JNIEnv;
 use jni::objects::{JClass, JObject, JString};
-use jni::sys::{jboolean, jfloat, jfloatArray, jint, jlong};
+use jni::sys::{jboolean, jfloat, jint, jlong};
 use std::sync::atomic::Ordering;
 
 #[cfg(target_os = "android")]
@@ -184,22 +184,20 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeSetFontPath(
 pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
     env: JNIEnv,
     _class: JClass,
-    metrics_array: jfloatArray,
+    metrics_array: jni::objects::JFloatArray,
 ) {
     let mut font_width = 0.0f32;
     let mut font_height = 0.0f32;
     let mut font_ascent = 0.0f32;
 
     // 1. 尝试从已存在的 TerminalRenderer 读取真实字体指标
-    if let Some(mutex) = crate::render_thread::get_terminal_renderer().get() {
-        if let Ok(guard) = mutex.lock() {
-            if let Some(renderer) = guard.as_ref() {
+    if let Some(mutex) = crate::render_thread::get_terminal_renderer().get()
+        && let Ok(guard) = mutex.lock()
+            && let Some(renderer) = guard.as_ref() {
                 font_width = renderer.font_width;
                 font_height = renderer.font_height;
                 font_ascent = renderer.font_ascent();
             }
-        }
-    }
 
     // 2. Renderer 尚未创建时，根据当前 font_size 创建临时 FontCache 计算
     if font_width <= 0.0 {
@@ -213,7 +211,6 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
 
     let values = [font_width, font_height, font_ascent];
     if !metrics_array.is_null() {
-        let j_array = unsafe { jni::objects::JFloatArray::from_raw(metrics_array) };
-        let _ = env.set_float_array_region(&j_array, 0, &values);
+        let _ = env.set_float_array_region(&metrics_array, 0, &values);
     }
 }

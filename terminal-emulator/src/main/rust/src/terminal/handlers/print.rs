@@ -21,10 +21,13 @@ pub fn handle_print_str(state: &mut ScreenState, s: &str) {
 
 fn handle_print_internal(state: &mut ScreenState, c: char) {
     // 1. 字符映射
-    let c = if (c as u32) >= 0x20 && (c as u32) <= 0x7E {
-        if state.use_line_drawing_uses_g0 && state.use_line_drawing_g0 {
-            map_line_drawing(c as u8)
-        } else if !state.use_line_drawing_uses_g0 && state.use_line_drawing_g1 {
+    let c = if (0x20..=0x7E).contains(&(c as u32)) {
+        let use_line_drawing = if state.use_line_drawing_uses_g0 {
+            state.use_line_drawing_g0
+        } else {
+            state.use_line_drawing_g1
+        };
+        if use_line_drawing {
             map_line_drawing(c as u8)
         } else {
             c

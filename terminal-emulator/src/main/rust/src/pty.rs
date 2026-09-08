@@ -61,8 +61,8 @@ pub unsafe fn create_subprocess(
 
     let mut argv = Vec::new();
     let args_obj = unsafe { JObjectArray::from_raw(args) };
-    if !args_obj.is_null() {
-        if let Ok(len) = env.get_array_length(&args_obj) {
+    if !args_obj.is_null()
+        && let Ok(len) = env.get_array_length(&args_obj) {
             for i in 0..len {
                 if let Ok(arg_obj) = env.get_object_array_element(&args_obj, i) {
                     let arg_java: JString = arg_obj.into();
@@ -72,12 +72,11 @@ pub unsafe fn create_subprocess(
                 }
             }
         }
-    }
 
     let mut envp = Vec::new();
     let env_vars_obj = unsafe { JObjectArray::from_raw(env_vars) };
-    if !env_vars_obj.is_null() {
-        if let Ok(len) = env.get_array_length(&env_vars_obj) {
+    if !env_vars_obj.is_null()
+        && let Ok(len) = env.get_array_length(&env_vars_obj) {
             for i in 0..len {
                 if let Ok(env_obj) = env.get_object_array_element(&env_vars_obj, i) {
                     let env_java: JString = env_obj.into();
@@ -87,7 +86,6 @@ pub unsafe fn create_subprocess(
                 }
             }
         }
-    }
 
     let (ptm, pid) = match create_subprocess_with_data(
         cmd_str,
@@ -115,21 +113,20 @@ fn get_total_uid_process_count() -> i32 {
     if let Ok(entries) = std::fs::read_dir("/proc") {
         let my_uid = unsafe { libc::getuid() };
         for entry in entries.flatten() {
-            if let Ok(file_name) = entry.file_name().into_string() {
-                if file_name.chars().all(|c| c.is_ascii_digit()) {
-                    if let Ok(metadata) = std::fs::metadata(entry.path()) {
+            if let Ok(file_name) = entry.file_name().into_string()
+                && file_name.chars().all(|c| c.is_ascii_digit())
+                    && let Ok(metadata) = std::fs::metadata(entry.path()) {
                         use std::os::unix::fs::MetadataExt;
                         if metadata.uid() == my_uid {
                             count += 1;
                         }
                     }
-                }
-            }
         }
     }
     count
 }
 
+#[allow(clippy::result_unit_err)]
 pub fn create_subprocess_with_data(
     cmd_str: String,
     cwd_str: String,
@@ -167,11 +164,10 @@ pub fn create_subprocess_with_data(
         if let Some(pos) = cmd_str.find("/com.termux") {
             termux_data = cmd_str[..pos + 11].to_string();
         }
-    } else if cwd_str.contains("/data/user/") {
-        if let Some(pos) = cwd_str.find("/com.termux") {
+    } else if cwd_str.contains("/data/user/")
+        && let Some(pos) = cwd_str.find("/com.termux") {
             termux_data = cwd_str[..pos + 11].to_string();
         }
-    }
 
     let termux_files = format!("{}/files", termux_data);
     let termux_prefix = format!("{}/usr", termux_files);

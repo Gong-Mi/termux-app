@@ -80,7 +80,7 @@ impl FlatScreenBuffer {
             let base_ptr = shared_ptr as *mut u8;
             std::ptr::write(base_ptr.add(4) as *mut u32, self.cols as u32);
             std::ptr::write(base_ptr.add(8) as *mut u32, self.rows as u32);
-            let text_size = (self.cols * self.rows * 2) as usize;
+            let text_size = self.cols * self.rows * 2;
             let aligned_text_size = (text_size + 7) & !7;
             let style_offset = (16 + aligned_text_size) as u32;
             std::ptr::write(base_ptr.add(12) as *mut u32, style_offset);

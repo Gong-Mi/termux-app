@@ -267,7 +267,7 @@ pub trait Perform {
             0x07 => self.bell(),
             0x08 => self.backspace(),
             0x09 => self.tab(),
-            0x0A | 0x0B | 0x0C => self.linefeed(),
+            0x0A..=0x0C => self.linefeed(),
             0x0D => self.carriage_return(),
             0x0E => self.shift_out(),
             0x0F => self.shift_in(),
@@ -437,11 +437,10 @@ impl Parser {
         if ucs > 127 {
             if self.escape_state == ESC_NONE {
                 handler.print(c);
-            } else if self.escape_state == ESC_OSC || self.escape_state == ESC_APC {
-                if self.osc_buffer.len() < MAX_OSC_STRING_LENGTH {
+            } else if (self.escape_state == ESC_OSC || self.escape_state == ESC_APC)
+                && self.osc_buffer.len() < MAX_OSC_STRING_LENGTH {
                     self.osc_buffer.push(c);
                 }
-            }
             return;
         }
 
@@ -495,7 +494,7 @@ impl Parser {
                 }
                 return;
             }
-            0x00..=0x1F => {
+            0x01..=0x06 | 0x10..=0x17 | 0x19 | 0x1C..=0x1F => {
                 // 其他 C0 控制字符 - 默认执行
                 if self.escape_state == ESC_NONE {
                     handler.execute(byte);
@@ -524,12 +523,12 @@ impl Parser {
             }
             ESC_SELECT_LEFT_PAREN => {
                 // G0 字符集选择
-                handler.esc_dispatch(&[b'('], false, byte);
+                handler.esc_dispatch(b"(", false, byte);
                 self.escape_state = ESC_NONE;
             }
             ESC_SELECT_RIGHT_PAREN => {
                 // G1 字符集选择
-                handler.esc_dispatch(&[b')'], false, byte);
+                handler.esc_dispatch(b")", false, byte);
                 self.escape_state = ESC_NONE;
             }
             ESC_CSI => {
@@ -722,10 +721,10 @@ impl Parser {
         match byte {
             b'8' => {
                 // DECALN - 对齐测试，填充 E 字符
-                handler.esc_dispatch(&[b'#'], false, byte);
+                handler.esc_dispatch(b"#", false, byte);
             }
             _ => {
-                handler.esc_dispatch(&[b'#'], false, byte);
+                handler.esc_dispatch(b"#", false, byte);
             }
         }
         self.escape_state = ESC_NONE;
@@ -862,11 +861,8 @@ impl Parser {
     /// CSI args asterix 处理
     fn do_csi_args_asterix<P: Perform>(&mut self, _handler: &mut P, byte: u8) {
         // 矩形区域操作
-        match byte {
-            b'@'..=b'~' => {
-                self.escape_state = ESC_NONE;
-            }
-            _ => {}
+        if let b'@'..=b'~' = byte {
+            self.escape_state = ESC_NONE;
         }
     }
 

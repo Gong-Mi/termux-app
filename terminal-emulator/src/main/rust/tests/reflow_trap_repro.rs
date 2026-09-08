@@ -37,7 +37,7 @@ fn test_reflow_wide_char_atomicity() {
     println!("AFTER REFLOW:");
     let mut found_zhong = false;
     for r in 0..5 {
-        let row = screen.get_row(r as i32);
+        let row = screen.get_row(r);
         let row_hex: Vec<String> = row
             .text
             .iter()

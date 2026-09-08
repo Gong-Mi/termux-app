@@ -7,6 +7,8 @@
 //! - Vulkan/Skia GPU 渲染
 //! - JNI 接口供 Java 层调用
 
+#![allow(clippy::missing_safety_doc, clippy::too_many_arguments, clippy::zombie_processes)]
+
 use once_cell::sync::OnceCell;
 
 #[macro_export]
@@ -75,24 +77,44 @@ pub static JAVA_VM: OnceCell<JavaVM> = OnceCell::new();
 
 #[cfg(test)]
 mod metrics_tests {
-    use super::utils::METRICS;
+    use super::utils::{METRICS, PerformanceMetrics};
+    use std::sync::atomic::Ordering;
     use std::time::Duration;
 
+    /// 全局 METRICS 被所有测试共享，且 try_report 会在 2s 窗口后把计数器 swap 归零，
+    /// 因此对全局实例只做"可记录、不崩溃"的冒烟验证；确定性断言放到独立实例上。
     #[test]
     fn test_performance_metrics_collection() {
-        // 测试记录字节
         METRICS.record_bytes(1024 * 1024);
-        // 测试记录渲染耗时
         METRICS.record_render(Duration::from_millis(16));
-
-        // 验证不会崩溃
         METRICS.try_report();
+    }
 
-        assert!(
-            METRICS
-                .total_bytes_processed
-                .load(std::sync::atomic::Ordering::Relaxed)
-                >= 0
+    #[test]
+    fn test_performance_metrics_accumulate_bytes_and_frames() {
+        let metrics = PerformanceMetrics::new();
+
+        metrics.record_bytes(1024 * 1024);
+        metrics.record_bytes(512);
+        metrics.record_render(Duration::from_millis(16));
+        metrics.record_render(Duration::from_millis(4));
+
+        assert_eq!(
+            metrics.total_bytes_processed.load(Ordering::Relaxed),
+            1024 * 1024 + 512
         );
+        assert_eq!(metrics.frame_count.load(Ordering::Relaxed), 2);
+        assert_eq!(
+            metrics.total_render_time_ns.load(Ordering::Relaxed),
+            20_000_000
+        );
+
+        // 2s 窗口尚未到达，try_report 不应清零已有计数
+        metrics.try_report();
+        assert_eq!(
+            metrics.total_bytes_processed.load(Ordering::Relaxed),
+            1024 * 1024 + 512
+        );
+        assert_eq!(metrics.frame_count.load(Ordering::Relaxed), 2);
     }
 }

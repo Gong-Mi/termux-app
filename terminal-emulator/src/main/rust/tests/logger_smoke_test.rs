@@ -1,3 +1,7 @@
+// android_logger 只在 Android 目标上是依赖；该目标在其他平台无法编译。
+// 用 crate 级 cfg 让测试目标在宿主平台上编译为空，而不是让 --all-targets 直接失败。
+#![cfg(target_os = "android")]
+
 use android_logger::Config;
 use log::LevelFilter;
 
