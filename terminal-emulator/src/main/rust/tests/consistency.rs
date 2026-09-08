@@ -850,10 +850,7 @@ fn test_auto_wrap() {
         engine.state.cursor.x, 9,
         "Cursor X should be 9 (last column)"
     );
-    assert!(
-        engine.state.cursor.about_to_wrap,
-        "Should be about to wrap"
-    );
+    assert!(engine.state.cursor.about_to_wrap, "Should be about to wrap");
     // 光标位置取决于具体实现，我们只验证 Y
 }
 
@@ -868,17 +865,11 @@ fn test_decset_cursor_visible() {
 
     // 隐藏光标
     engine.process_bytes(b"\x1b[?25l");
-    assert!(
-        !engine.state.cursor_enabled,
-        "Cursor should be hidden"
-    );
+    assert!(!engine.state.cursor_enabled, "Cursor should be hidden");
 
     // 显示光标
     engine.process_bytes(b"\x1b[?25h");
-    assert!(
-        engine.state.cursor_enabled,
-        "Cursor should be visible"
-    );
+    assert!(engine.state.cursor_enabled, "Cursor should be visible");
 }
 
 /// 验证 DECSET 应用光标键 - ✅ PASS
@@ -905,16 +896,10 @@ fn test_decset_auto_wrap() {
     let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     engine.process_bytes(b"\x1b[?7l");
-    assert!(
-        !engine.state.auto_wrap(),
-        "Auto wrap should be disabled"
-    );
+    assert!(!engine.state.auto_wrap(), "Auto wrap should be disabled");
 
     engine.process_bytes(b"\x1b[?7h");
-    assert!(
-        engine.state.auto_wrap(),
-        "Auto wrap should be enabled"
-    );
+    assert!(engine.state.auto_wrap(), "Auto wrap should be enabled");
 }
 
 /// 验证 DECSET 原点模式 - ✅ PASS
@@ -923,10 +908,7 @@ fn test_decset_origin_mode() {
     let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     engine.process_bytes(b"\x1b[?6h");
-    assert!(
-        engine.state.origin_mode(),
-        "Origin mode should be enabled"
-    );
+    assert!(engine.state.origin_mode(), "Origin mode should be enabled");
 
     engine.process_bytes(b"\x1b[?6l");
     assert!(
@@ -1076,14 +1058,8 @@ fn test_decset_flags_save_restore() {
     // 恢复光标应该恢复 DECSET 标志
     engine.process_bytes(b"\x1b8");
 
-    assert!(
-        engine.state.auto_wrap(),
-        "Auto wrap should be restored"
-    );
-    assert!(
-        engine.state.origin_mode(),
-        "Origin mode should be restored"
-    );
+    assert!(engine.state.auto_wrap(), "Auto wrap should be restored");
+    assert!(engine.state.origin_mode(), "Origin mode should be restored");
 }
 
 // =============================================================================
@@ -1104,10 +1080,7 @@ fn test_mouse_event_sgr() {
     // 验证输出格式：CSI < button ; x ; y M
     // 实际输出会通过 write_to_session 发送到会话
     // 这里我们验证状态
-    assert!(
-        engine.state.sgr_mouse,
-        "SGR mouse mode should be enabled"
-    );
+    assert!(engine.state.sgr_mouse, "SGR mouse mode should be enabled");
 }
 
 /// 验证鼠标事件 (旧格式) - ✅ PASS
@@ -1122,10 +1095,7 @@ fn test_mouse_event_legacy() {
         engine.state.mouse_tracking,
         "Mouse tracking should be enabled"
     );
-    assert!(
-        !engine.state.sgr_mouse,
-        "SGR mouse should be disabled"
-    );
+    assert!(!engine.state.sgr_mouse, "SGR mouse should be disabled");
 
     // 模拟鼠标点击 (按钮 0, 位置 10,20)
     engine.state.send_mouse_event(0, 10, 20, true);
@@ -1301,10 +1271,7 @@ fn test_decset_1049_alternate_screen() {
     engine.process_bytes(b"\x1b[?1049l");
 
     // 验证切换回主缓冲区
-    assert!(
-        !engine.state.use_alternate_buffer,
-        "Should use main buffer"
-    );
+    assert!(!engine.state.use_alternate_buffer, "Should use main buffer");
     assert!(!engine.state.is_alternate_buffer_active());
 }
 
@@ -2547,10 +2514,7 @@ fn test_wide_char_at_line_end_with_background() {
         engine.state.cursor.y, 0,
         "Cursor should still be on row 0 (fits exactly)"
     );
-    assert!(
-        engine.state.cursor.about_to_wrap,
-        "Should be about to wrap"
-    );
+    assert!(engine.state.cursor.about_to_wrap, "Should be about to wrap");
 }
 
 // =============================================================================
@@ -2671,10 +2635,7 @@ fn test_line_drawing_charset_switch() {
         engine.state.use_line_drawing_g0,
         "Line drawing G0 should be enabled"
     );
-    assert!(
-        engine.state.use_line_drawing_uses_g0,
-        "Should be using G0"
-    );
+    assert!(engine.state.use_line_drawing_uses_g0, "Should be using G0");
 
     // ESC ) 0 - 选择行绘图字符集为 G1
     engine.process_bytes(b"\x1b)0");
@@ -2682,10 +2643,7 @@ fn test_line_drawing_charset_switch() {
         engine.state.use_line_drawing_g1,
         "Line drawing G1 should be enabled"
     );
-    assert!(
-        !engine.state.use_line_drawing_uses_g0,
-        "Should be using G1"
-    );
+    assert!(!engine.state.use_line_drawing_uses_g0, "Should be using G1");
 }
 
 /// 验证 SO/SI 字符集切换 - ✅ PASS
@@ -3010,7 +2968,10 @@ fn test_sixel_delete() {
     decoder.process_data(b"~");
 
     // 验证删除（简化测试）
-    assert!(!decoder.pixel_data.is_empty(), "Should still have pixel data");
+    assert!(
+        !decoder.pixel_data.is_empty(),
+        "Should still have pixel data"
+    );
 }
 
 /// 验证 Sixel 完整序列 - ⚠️ PARTIAL

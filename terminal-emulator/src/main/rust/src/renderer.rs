@@ -139,7 +139,8 @@ impl FontCache {
             .clone()
             .or_else(|| font_mgr.match_family_style("monospace", FontStyle::normal()))
             .expect("monospace font");
-        let tf_bold = custom_typeface.clone()
+        let tf_bold = custom_typeface
+            .clone()
             .or_else(|| font_mgr.match_family_style("monospace", FontStyle::bold()))
             .unwrap_or_else(|| tf_mono.clone());
         let tf_italic = font_mgr
@@ -621,12 +622,12 @@ impl TerminalRenderer {
             // 行缓存命中
             if let Some(ref entry) = self.row_cache[r as usize]
                 && entry.hash == row_h
-                    && entry.palette_hash == palette_h
-                    && entry.selection_hash == row_sel_hash
-                {
-                    canvas.draw_picture(&entry.picture, None, None);
-                    continue;
-                }
+                && entry.palette_hash == palette_h
+                && entry.selection_hash == row_sel_hash
+            {
+                canvas.draw_picture(&entry.picture, None, None);
+                continue;
+            }
 
             // 克隆行数据以避免借用冲突
             let row_text_clone = row_text.clone();
@@ -790,9 +791,10 @@ impl TerminalRenderer {
                 let mut cursor_width = self.font_width;
                 if let Some(row) = frame.row_data.get(visual_y as usize)
                     && let Some(&ch) = row.0.get(frame.cursor_x as usize)
-                        && char_wc_width(ch as u32) > 1 {
-                            cursor_width *= 2.0;
-                        }
+                    && char_wc_width(ch as u32) > 1
+                {
+                    cursor_width *= 2.0;
+                }
 
                 let rect = match frame.cursor_style {
                     1 => Rect::from_xywh(cx, cy + self.font_height - 2.0, cursor_width, 2.0),
@@ -896,14 +898,10 @@ impl TerminalRenderer {
             if is_special_render_char(ch) {
                 // 先刷新 TextBlob
                 if !group_chars.is_empty()
-                    && let Some(font) = group_font.take() {
-                        Self::flush_text_group_blob(
-                            &mut builder,
-                            &mut group_chars,
-                            &font,
-                            glyph_cache,
-                        );
-                    }
+                    && let Some(font) = group_font.take()
+                {
+                    Self::flush_text_group_blob(&mut builder, &mut group_chars, &font, glyph_cache);
+                }
                 // 绘制块元素（直接在 recording canvas 上）：修复坐标偏移
                 Self::draw_block_char_blob(
                     canvas,
@@ -930,14 +928,10 @@ impl TerminalRenderer {
 
             // 如果字体切换，先刷新当前组
             if let Some(ref prev_font) = group_font
-                && font_id != prev_font.typeface().unique_id() {
-                    Self::flush_text_group_blob(
-                        &mut builder,
-                        &mut group_chars,
-                        prev_font,
-                        glyph_cache,
-                    );
-                }
+                && font_id != prev_font.typeface().unique_id()
+            {
+                Self::flush_text_group_blob(&mut builder, &mut group_chars, prev_font, glyph_cache);
+            }
 
             group_font = Some(font);
             group_chars.push((ch, current_x - x)); // 使用相对 X 坐标
@@ -946,9 +940,10 @@ impl TerminalRenderer {
 
         // 刷新剩余的文本组
         if let Some(font) = group_font.take()
-            && !group_chars.is_empty() {
-                Self::flush_text_group_blob(&mut builder, &mut group_chars, &font, glyph_cache);
-            }
+            && !group_chars.is_empty()
+        {
+            Self::flush_text_group_blob(&mut builder, &mut group_chars, &font, glyph_cache);
+        }
 
         // 一次性绘制所有 TextBlob（相对于 x 坐标）
         if let Some(blob) = builder.make() {
@@ -1105,9 +1100,10 @@ impl TerminalRenderer {
                 if is_special_render_char(ch) {
                     // 刷新 TextBlob
                     if !group_chars.is_empty()
-                        && let Some(ref f) = current_group_font {
-                            Self::flush_text_group_blob(builder, group_chars, f, glyph_cache);
-                        }
+                        && let Some(ref f) = current_group_font
+                    {
+                        Self::flush_text_group_blob(builder, group_chars, f, glyph_cache);
+                    }
                     // 绘制块元素：使用绝对坐标 current_x 修复错位
                     Self::draw_block_char_blob(
                         canvas,
@@ -1134,9 +1130,10 @@ impl TerminalRenderer {
 
                 // 如果字体切换，刷新当前组
                 if let Some(ref prev_font) = current_group_font
-                    && font.typeface().unique_id() != prev_font.typeface().unique_id() {
-                        Self::flush_text_group_blob(builder, group_chars, prev_font, glyph_cache);
-                    }
+                    && font.typeface().unique_id() != prev_font.typeface().unique_id()
+                {
+                    Self::flush_text_group_blob(builder, group_chars, prev_font, glyph_cache);
+                }
 
                 current_group_font = Some(font);
                 group_chars.push((ch, current_x - x)); // 这里保持相对坐标，因为是提供给 TextBlobBuilder 的
@@ -1145,9 +1142,10 @@ impl TerminalRenderer {
 
             // 刷新剩余的文本组
             if let Some(ref f) = current_group_font
-                && !group_chars.is_empty() {
-                    Self::flush_text_group_blob(builder, group_chars, f, glyph_cache);
-                }
+                && !group_chars.is_empty()
+            {
+                Self::flush_text_group_blob(builder, group_chars, f, glyph_cache);
+            }
 
             // 一次性绘制所有 TextBlob 并存入缓存
             if let Some(blob) = builder.make() {
@@ -1496,7 +1494,6 @@ impl TerminalRenderer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[test]
     fn test_font_metrics_calculation() {

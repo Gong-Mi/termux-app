@@ -70,9 +70,10 @@ static SCREEN_DIRTY: AtomicBool = AtomicBool::new(false);
 pub fn request_render() {
     SCREEN_DIRTY.store(true, Ordering::SeqCst);
     if let Ok(guard) = RENDER_THREAD_HANDLE.lock()
-        && let Some(handle) = guard.as_ref() {
-            handle.thread().unpark();
-        }
+        && let Some(handle) = guard.as_ref()
+    {
+        handle.thread().unpark();
+    }
 }
 
 /// 统一的渲染线程启动检查函数
@@ -160,18 +161,19 @@ fn spawn_render_thread(engine_ptr: jlong) {
 
                     if let Some(ctx_mutex) = VULKAN_CONTEXT.get()
                         && let Ok(mut ctx_guard) = ctx_mutex.try_lock()
-                            && let Some(ctx) = ctx_guard.as_mut() {
-                                let ok = ctx.recreate_swapchain(new_width, new_height);
-                                android_log(
-                                    LogPriority::INFO,
-                                    &format!(
-                                        "Render: Swapchain recreated {}x{} success={}",
-                                        new_width, new_height, ok
-                                    ),
-                                );
-                                SURFACE_SIZE_CHANGED.store(false, Ordering::SeqCst);
-                                request_render();
-                            }
+                        && let Some(ctx) = ctx_guard.as_mut()
+                    {
+                        let ok = ctx.recreate_swapchain(new_width, new_height);
+                        android_log(
+                            LogPriority::INFO,
+                            &format!(
+                                "Render: Swapchain recreated {}x{} success={}",
+                                new_width, new_height, ok
+                            ),
+                        );
+                        SURFACE_SIZE_CHANGED.store(false, Ordering::SeqCst);
+                        request_render();
+                    }
                 }
 
                 // 2. 事件驱动与轮询结合的节流

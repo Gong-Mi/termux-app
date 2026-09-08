@@ -49,12 +49,13 @@ impl ScreenState {
         let ctrl_down = (meta_state & KEYMOD_CTRL) != 0;
 
         if let Some(ref s) = char_str
-            && !s.is_empty() {
-                if alt_down && s.chars().count() == 1 {
-                    return Some(format!("\x1b{}", s));
-                }
-                return Some(s.clone());
+            && !s.is_empty()
+        {
+            if alt_down && s.chars().count() == 1 {
+                return Some(format!("\x1b{}", s));
             }
+            return Some(s.clone());
+        }
 
         let mut key_mode = 0;
         if shift_down {
@@ -97,9 +98,10 @@ impl ScreenState {
             };
 
             if let Some(c) = cp
-                && (key_mode > 0 || c < 32 || c == 127) {
-                    return Some(format!("\x1b[{};{}u", c, modifier));
-                }
+                && (key_mode > 0 || c < 32 || c == 127)
+            {
+                return Some(format!("\x1b[{};{}u", c, modifier));
+            }
         }
 
         match key_code {

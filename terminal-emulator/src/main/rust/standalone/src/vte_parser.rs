@@ -363,13 +363,14 @@ impl Parser {
 
                 // 如果找到了连续可见字符块，批量处理
                 if chunk_end > pos
-                    && let Ok(s) = std::str::from_utf8(&data[pos..chunk_end]) {
-                        handler.print_str(s);
-                        pos = chunk_end;
-                        if pos >= len {
-                            break;
-                        }
+                    && let Ok(s) = std::str::from_utf8(&data[pos..chunk_end])
+                {
+                    handler.print_str(s);
+                    pos = chunk_end;
+                    if pos >= len {
+                        break;
                     }
+                }
             }
 
             // 回退到逐字节处理逻辑（处理转义序列或控制字符）
@@ -887,10 +888,9 @@ impl Parser {
             0x00..=0x1F => {
                 // 其他控制字符
             }
-            0x20..=0x7F
-                if self.osc_buffer.len() < MAX_OSC_STRING_LENGTH => {
-                    self.osc_buffer.push(byte as char);
-                }
+            0x20..=0x7F if self.osc_buffer.len() < MAX_OSC_STRING_LENGTH => {
+                self.osc_buffer.push(byte as char);
+            }
             _ => {}
         }
     }

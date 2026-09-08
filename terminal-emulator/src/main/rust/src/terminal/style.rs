@@ -67,7 +67,6 @@ pub fn decode_effect(style: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[test]
     fn test_style_normal() {

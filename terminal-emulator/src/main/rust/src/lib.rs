@@ -7,7 +7,11 @@
 //! - Vulkan/Skia GPU 渲染
 //! - JNI 接口供 Java 层调用
 
-#![allow(clippy::missing_safety_doc, clippy::too_many_arguments, clippy::zombie_processes)]
+#![allow(
+    clippy::missing_safety_doc,
+    clippy::too_many_arguments,
+    clippy::zombie_processes
+)]
 
 use once_cell::sync::OnceCell;
 

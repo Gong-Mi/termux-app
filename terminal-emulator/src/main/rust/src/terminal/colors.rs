@@ -77,9 +77,7 @@ impl TerminalColors {
     ///
     /// 返回格式：0xFFRRGGBB
     pub fn parse_color(color_str: &str) -> Option<u32> {
-        let color_str = color_str
-            .trim_end_matches(['\x07', '\x1b', '\\'])
-            .trim();
+        let color_str = color_str.trim_end_matches(['\x07', '\x1b', '\\']).trim();
 
         if let Some(hex) = color_str.strip_prefix('#') {
             // #RGB, #RRGGBB, #RRRGGGBBB, #RRRRGGGGBBBB
@@ -227,10 +225,11 @@ impl TerminalColors {
 
     pub fn try_parse_color(&mut self, index: usize, color_str: &str) -> bool {
         if let Some(color) = Self::parse_color(color_str)
-            && index < 259 {
-                self.current_colors[index] = color;
-                return true;
-            }
+            && index < 259
+        {
+            self.current_colors[index] = color;
+            return true;
+        }
         false
     }
 

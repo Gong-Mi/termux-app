@@ -438,9 +438,10 @@ impl Parser {
             if self.escape_state == ESC_NONE {
                 handler.print(c);
             } else if (self.escape_state == ESC_OSC || self.escape_state == ESC_APC)
-                && self.osc_buffer.len() < MAX_OSC_STRING_LENGTH {
-                    self.osc_buffer.push(c);
-                }
+                && self.osc_buffer.len() < MAX_OSC_STRING_LENGTH
+            {
+                self.osc_buffer.push(c);
+            }
             return;
         }
 

@@ -83,12 +83,11 @@ fn test_get_row_bounds_checking() {
 
     // 6. 验证 get_selected_text 不受影响
     println!("\n5. 验证 get_selected_text:");
-    let selected = engine.state.get_current_screen().get_selected_text(
-        0,
-        -(active as i32),
-        79,
-        rows - 1,
-    );
+    let selected =
+        engine
+            .state
+            .get_current_screen()
+            .get_selected_text(0, -(active as i32), 79, rows - 1);
     let selected_line_count = selected.lines().count();
     println!("   selected 行数：{}", selected_line_count);
     assert!(

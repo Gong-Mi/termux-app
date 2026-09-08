@@ -964,9 +964,10 @@ fn load_pipeline_cache() -> Option<Vec<u8>> {
 fn save_pipeline_cache(device: &Device, cache: ash_vk::PipelineCache) {
     let path = get_cache_path();
     if let Some(parent) = path.parent()
-        && !parent.exists() {
-            let _ = std::fs::create_dir_all(parent);
-        }
+        && !parent.exists()
+    {
+        let _ = std::fs::create_dir_all(parent);
+    }
 
     match unsafe { device.get_pipeline_cache_data(cache) } {
         Ok(data) => {

@@ -20,8 +20,7 @@ pub fn handle_osc(
         "0" | "2" => {
             if params.len() > 1 {
                 let title = std::str::from_utf8(params[1]).unwrap_or("");
-                let clean_title =
-                    title.trim_end_matches(['\x07', '\x1b', '\\']);
+                let clean_title = title.trim_end_matches(['\x07', '\x1b', '\\']);
                 state.set_title(clean_title);
             }
         }
@@ -60,9 +59,10 @@ pub fn handle_osc(
         }
         "52" => {
             if params.len() > 2
-                && let Ok(base64_data) = std::str::from_utf8(params[2]) {
-                    state.handle_osc52(events, base64_data);
-                }
+                && let Ok(base64_data) = std::str::from_utf8(params[2])
+            {
+                state.handle_osc52(events, base64_data);
+            }
         }
         "104" => {
             handle_osc104(state, &param_text);

@@ -600,10 +600,11 @@ impl ScreenState {
     pub fn report_colors_changed(&self) {
         if let Some(obj) = &self.java_callback_obj
             && let Some(vm) = crate::JAVA_VM.get()
-                && let Ok(env) = vm.get_env() {
-                    let mut env: JNIEnv = env;
-                    let _ = env.call_method(obj.as_obj(), "onColorsChanged", "()V", &[]);
-                }
+            && let Ok(env) = vm.get_env()
+        {
+            let mut env: JNIEnv = env;
+            let _ = env.call_method(obj.as_obj(), "onColorsChanged", "()V", &[]);
+        }
     }
 
     pub fn report_color_response(&mut self, response: &str) {
@@ -617,9 +618,10 @@ impl ScreenState {
     pub fn handle_osc52(&mut self, events: &mut Vec<TerminalEvent>, base64_data: &str) {
         use base64::{Engine as _, engine::general_purpose};
         if let Ok(decoded) = general_purpose::STANDARD.decode(base64_data)
-            && let Ok(text) = String::from_utf8(decoded) {
-                events.push(TerminalEvent::CopytoClipboard(text));
-            }
+            && let Ok(text) = String::from_utf8(decoded)
+        {
+            events.push(TerminalEvent::CopytoClipboard(text));
+        }
     }
 
     pub fn cursor_backward_tab(&mut self, n: i32) {
@@ -677,10 +679,11 @@ impl ScreenState {
     pub fn report_bell(&self) {
         if let Some(obj) = &self.java_callback_obj
             && let Some(vm) = crate::JAVA_VM.get()
-                && let Ok(env) = vm.get_env() {
-                    let mut env: JNIEnv = env;
-                    let _ = env.call_method(obj.as_obj(), "onBell", "()V", &[]);
-                }
+            && let Ok(env) = vm.get_env()
+        {
+            let mut env: JNIEnv = env;
+            let _ = env.call_method(obj.as_obj(), "onBell", "()V", &[]);
+        }
     }
 
     pub fn get_debug_info(&self) -> String {

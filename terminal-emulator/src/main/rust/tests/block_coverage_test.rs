@@ -179,7 +179,8 @@ fn test_quadrant_pattern() {
     let text: String = row
         .text
         .iter()
-        .take(pattern.chars().count()).copied()
+        .take(pattern.chars().count())
+        .copied()
         .collect();
 
     assert_eq!(text, pattern, "Pattern should be stored exactly as input");

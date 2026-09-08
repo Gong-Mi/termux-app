@@ -117,9 +117,10 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_createEngine(
     );
     let mut engine = TerminalEngine::new(0, cols, rows, total_rows, cw, ch);
     if !callback.is_null()
-        && let Ok(global_ref) = env.new_global_ref(callback) {
-            engine.state.java_callback_obj = Some(global_ref);
-        }
+        && let Ok(global_ref) = env.new_global_ref(callback)
+    {
+        engine.state.java_callback_obj = Some(global_ref);
+    }
     let context = Arc::new(TerminalContext::new(engine));
     crate::engine::ENGINE_HANDLES.insert(context).unwrap_or(0)
 }
@@ -1105,50 +1106,38 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_updateColors(
         if let Ok(entry_set) =
             env.call_method(&properties_obj, "entrySet", "()Ljava/util/Set;", &[])
             && let Ok(entry_set_obj) = entry_set.l()
-                && let Ok(iterator) =
-                    env.call_method(&entry_set_obj, "iterator", "()Ljava/util/Iterator;", &[])
-                    && let Ok(iter_obj) = iterator.l() {
-                        while let Ok(has_next) = env.call_method(&iter_obj, "hasNext", "()Z", &[]) {
-                            if !has_next.z().unwrap_or(false) {
-                                break;
-                            }
+            && let Ok(iterator) =
+                env.call_method(&entry_set_obj, "iterator", "()Ljava/util/Iterator;", &[])
+            && let Ok(iter_obj) = iterator.l()
+        {
+            while let Ok(has_next) = env.call_method(&iter_obj, "hasNext", "()Z", &[]) {
+                if !has_next.z().unwrap_or(false) {
+                    break;
+                }
 
-                            if let Ok(entry) =
-                                env.call_method(&iter_obj, "next", "()Ljava/lang/Object;", &[])
-                                && let Ok(entry_obj) = entry.l()
-                                    && let Ok(key) = env.call_method(
-                                        &entry_obj,
-                                        "getKey",
-                                        "()Ljava/lang/Object;",
-                                        &[],
-                                    )
-                                        && let Ok(key_obj) = key.l()
-                                            && let Ok(value) = env.call_method(
-                                                &entry_obj,
-                                                "getValue",
-                                                "()Ljava/lang/Object;",
-                                                &[],
-                                            )
-                                                && let Ok(value_obj) = value.l() {
-                                                    let key_jstring =
-                                                        jni::objects::JString::from(key_obj);
-                                                    let value_jstring =
-                                                        jni::objects::JString::from(value_obj);
+                if let Ok(entry) = env.call_method(&iter_obj, "next", "()Ljava/lang/Object;", &[])
+                    && let Ok(entry_obj) = entry.l()
+                    && let Ok(key) =
+                        env.call_method(&entry_obj, "getKey", "()Ljava/lang/Object;", &[])
+                    && let Ok(key_obj) = key.l()
+                    && let Ok(value) =
+                        env.call_method(&entry_obj, "getValue", "()Ljava/lang/Object;", &[])
+                    && let Ok(value_obj) = value.l()
+                {
+                    let key_jstring = jni::objects::JString::from(key_obj);
+                    let value_jstring = jni::objects::JString::from(value_obj);
 
-                                                    if let (Ok(key_rust), Ok(value_rust)) = (
-                                                        env.get_string(&key_jstring),
-                                                        env.get_string(&value_jstring),
-                                                    ) {
-                                                        map.insert(
-                                                            key_rust.to_string_lossy().to_string(),
-                                                            value_rust
-                                                                .to_string_lossy()
-                                                                .to_string(),
-                                                        );
-                                                    }
-                                                }
-                        }
+                    if let (Ok(key_rust), Ok(value_rust)) =
+                        (env.get_string(&key_jstring), env.get_string(&value_jstring))
+                    {
+                        map.insert(
+                            key_rust.to_string_lossy().to_string(),
+                            value_rust.to_string_lossy().to_string(),
+                        );
                     }
+                }
+            }
+        }
 
         map
     };
@@ -1362,30 +1351,32 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
     let mut argv = Vec::new();
     let args_obj = unsafe { jni::objects::JObjectArray::from_raw(args) };
     if !args_obj.is_null()
-        && let Ok(len) = env.get_array_length(&args_obj) {
-            for i in 0..len {
-                if let Ok(arg_obj) = env.get_object_array_element(&args_obj, i) {
-                    let arg_java: JString = arg_obj.into();
-                    if let Ok(s) = env.get_string(&arg_java) {
-                        argv.push(String::from(s));
-                    }
+        && let Ok(len) = env.get_array_length(&args_obj)
+    {
+        for i in 0..len {
+            if let Ok(arg_obj) = env.get_object_array_element(&args_obj, i) {
+                let arg_java: JString = arg_obj.into();
+                if let Ok(s) = env.get_string(&arg_java) {
+                    argv.push(String::from(s));
                 }
             }
         }
+    }
 
     let mut envp = Vec::new();
     let env_vars_obj = unsafe { jni::objects::JObjectArray::from_raw(env_vars) };
     if !env_vars_obj.is_null()
-        && let Ok(len) = env.get_array_length(&env_vars_obj) {
-            for i in 0..len {
-                if let Ok(env_obj) = env.get_object_array_element(&env_vars_obj, i) {
-                    let env_java: JString = env_obj.into();
-                    if let Ok(s) = env.get_string(&env_java) {
-                        envp.push(String::from(s));
-                    }
+        && let Ok(len) = env.get_array_length(&env_vars_obj)
+    {
+        for i in 0..len {
+            if let Ok(env_obj) = env.get_object_array_element(&env_vars_obj, i) {
+                let env_java: JString = env_obj.into();
+                if let Ok(s) = env.get_string(&env_java) {
+                    envp.push(String::from(s));
                 }
             }
         }
+    }
 
     // Null callback selects the legacy polling delivery API. A non-null
     // callback selects push delivery; never publish the same owner twice.
@@ -1642,30 +1633,32 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
     let mut argv = Vec::new();
     let args_obj = unsafe { jni::objects::JObjectArray::from_raw(args) };
     if !args_obj.is_null()
-        && let Ok(len) = env.get_array_length(&args_obj) {
-            for i in 0..len {
-                if let Ok(arg_obj) = env.get_object_array_element(&args_obj, i) {
-                    let arg_java: JString = arg_obj.into();
-                    if let Ok(s) = env.get_string(&arg_java) {
-                        argv.push(String::from(s));
-                    }
+        && let Ok(len) = env.get_array_length(&args_obj)
+    {
+        for i in 0..len {
+            if let Ok(arg_obj) = env.get_object_array_element(&args_obj, i) {
+                let arg_java: JString = arg_obj.into();
+                if let Ok(s) = env.get_string(&arg_java) {
+                    argv.push(String::from(s));
                 }
             }
         }
+    }
 
     let mut envp = Vec::new();
     let env_vars_obj = unsafe { jni::objects::JObjectArray::from_raw(env_vars) };
     if !env_vars_obj.is_null()
-        && let Ok(len) = env.get_array_length(&env_vars_obj) {
-            for i in 0..len {
-                if let Ok(env_obj) = env.get_object_array_element(&env_vars_obj, i) {
-                    let env_java: JString = env_obj.into();
-                    if let Ok(s) = env.get_string(&env_java) {
-                        envp.push(String::from(s));
-                    }
+        && let Ok(len) = env.get_array_length(&env_vars_obj)
+    {
+        for i in 0..len {
+            if let Ok(env_obj) = env.get_object_array_element(&env_vars_obj, i) {
+                let env_java: JString = env_obj.into();
+                if let Ok(s) = env.get_string(&env_java) {
+                    envp.push(String::from(s));
                 }
             }
         }
+    }
 
     let pty_res =
         crate::pty::create_subprocess_with_data(cmd_str, cwd_str, argv, envp, rows, cols, cw, ch);

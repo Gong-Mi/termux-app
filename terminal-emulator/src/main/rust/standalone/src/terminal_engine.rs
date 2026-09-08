@@ -300,13 +300,17 @@ impl Perform for TerminalEngine {
             'h' => {
                 // DECSET - 设置模式
                 for param in params.iter().flat_map(|p| p.iter()) {
-                    if param == &1 { self.application_cursor_keys = true }
+                    if param == &1 {
+                        self.application_cursor_keys = true
+                    }
                 }
             }
             'l' => {
                 // DECRST - 重置模式
                 for param in params.iter().flat_map(|p| p.iter()) {
-                    if param == &1 { self.application_cursor_keys = false }
+                    if param == &1 {
+                        self.application_cursor_keys = false
+                    }
                 }
             }
             'm' => {

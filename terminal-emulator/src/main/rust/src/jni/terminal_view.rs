@@ -193,11 +193,12 @@ pub extern "system" fn Java_com_termux_view_TerminalView_nativeGetFontMetrics(
     // 1. 尝试从已存在的 TerminalRenderer 读取真实字体指标
     if let Some(mutex) = crate::render_thread::get_terminal_renderer().get()
         && let Ok(guard) = mutex.lock()
-            && let Some(renderer) = guard.as_ref() {
-                font_width = renderer.font_width;
-                font_height = renderer.font_height;
-                font_ascent = renderer.font_ascent();
-            }
+        && let Some(renderer) = guard.as_ref()
+    {
+        font_width = renderer.font_width;
+        font_height = renderer.font_height;
+        font_ascent = renderer.font_ascent();
+    }
 
     // 2. Renderer 尚未创建时，根据当前 font_size 创建临时 FontCache 计算
     if font_width <= 0.0 {

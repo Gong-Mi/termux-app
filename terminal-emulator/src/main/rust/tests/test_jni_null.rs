@@ -1,4 +1,3 @@
-
 #[test]
 fn test_jni_string_with_nul() {
     // 验证包含 null 字节的字符串在 Rust 侧的基本属性
