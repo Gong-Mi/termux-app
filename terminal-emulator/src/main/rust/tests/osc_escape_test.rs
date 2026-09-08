@@ -48,7 +48,11 @@ fn test_osc_sequence_split_st() {
     engine.process_bytes(b"\\");
 
     let row0 = get_row_text(&engine, 0);
-    assert_eq!(row0.trim(), "", "Split OSC sequence should NOT print backslash");
+    assert_eq!(
+        row0.trim(),
+        "",
+        "Split OSC sequence should NOT print backslash"
+    );
 
     println!("✅ Split OSC sequence handled correctly, screen is clean");
 }
@@ -68,12 +72,12 @@ fn test_osc_title_with_path_prompt() {
     engine.process_bytes(b"$ ");
 
     let row0 = get_row_text(&engine, 0);
-    
+
     // The row should only contain "$ " (plus trailing spaces)
     // It should NOT start with "\/data..." or "\$ "
     assert!(
         row0.starts_with("$ "),
-        "Row should start with '$ ', but got: '{}'", 
+        "Row should start with '$ ', but got: '{}'",
         row0.trim()
     );
     assert!(
@@ -96,7 +100,11 @@ fn test_osc_sequence_split_before_esc() {
     engine.process_bytes(b"\x1b\\");
 
     let row0 = get_row_text(&engine, 0);
-    assert_eq!(row0.trim(), "", "Split before ESC should NOT print backslash");
+    assert_eq!(
+        row0.trim(),
+        "",
+        "Split before ESC should NOT print backslash"
+    );
 
     println!("✅ Split before ESC handled correctly");
 }
@@ -109,7 +117,7 @@ fn test_osc_title_with_special_chars() {
 
     // Title containing slashes and backslashes
     engine.process_bytes(b"\x1b]0;C:\\Windows\\System32\x1b\\");
-    
+
     // Then print something
     engine.process_bytes(b"Hello");
 

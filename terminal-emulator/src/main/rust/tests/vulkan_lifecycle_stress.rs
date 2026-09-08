@@ -8,10 +8,10 @@ fn test_vulkan_lifecycle_stress_simulation() {
     // 模拟 Surface 准备就绪状态
     let surface_ready = Arc::new(AtomicBool::new(false));
     let render_thread_running = Arc::new(AtomicBool::new(true));
-    
+
     let sr_clone = surface_ready.clone();
     let rtr_clone = render_thread_running.clone();
-    
+
     // 启动模拟渲染线程
     let handle = thread::spawn(move || {
         let mut frames = 0;
@@ -21,11 +21,11 @@ fn test_vulkan_lifecycle_stress_simulation() {
                 thread::park();
                 continue;
             }
-            
+
             // 模拟渲染开销
             frames += 1;
             thread::sleep(Duration::from_millis(16));
-            
+
             if frames % 100 == 0 {
                 println!("Simulated Render Thread: rendered {} frames", frames);
             }
@@ -38,14 +38,14 @@ fn test_vulkan_lifecycle_stress_simulation() {
         surface_ready.store(false, Ordering::SeqCst);
         // 不显式通知，看超时还是 park
         // 实际上 handle.thread().unpark() 应该在这里
-        handle.thread().unpark(); 
-        
+        handle.thread().unpark();
+
         thread::sleep(Duration::from_millis(5)); // 模拟随机切走
-        
+
         println!("Stress Cycle {}: Foregrounding...", i);
         surface_ready.store(true, Ordering::SeqCst);
         handle.thread().unpark();
-        
+
         thread::sleep(Duration::from_millis(5));
     }
 

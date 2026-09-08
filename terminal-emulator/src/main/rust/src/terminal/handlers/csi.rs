@@ -1,6 +1,6 @@
-use std::cmp::{max, min};
 use crate::engine::ScreenState;
 use crate::vte_parser::Params;
+use std::cmp::{max, min};
 
 /// 处理 CSI (Control Sequence Introducer) 序列
 /// 参数默认值行为与 Java TerminalEmulator.getArg0()/getArg1() 保持一致
@@ -59,7 +59,10 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
             let row = params.get_arg0(1);
             let col = params.get_arg1(1);
             if state.origin_mode() {
-                state.cursor.y = max(state.top_margin, min(state.bottom_margin - 1, state.top_margin + row - 1));
+                state.cursor.y = max(
+                    state.top_margin,
+                    min(state.bottom_margin - 1, state.top_margin + row - 1),
+                );
             } else {
                 state.cursor.y = max(0, min(state.rows - 1, row - 1));
             }
@@ -68,7 +71,9 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
         'I' => {
             // CHT - Cursor Horizontal Tab (默认 1)
             let n = params.get_arg0(1);
-            for _ in 0..n { state.cursor_forward_tab(); }
+            for _ in 0..n {
+                state.cursor_forward_tab();
+            }
         }
         'J' => {
             if is_private {
@@ -165,13 +170,19 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
         }
         'h' => {
             clear_wrap = false;
-            if is_private { state.handle_decset(params, true); }
-            else { state.handle_set_mode(params, true); }
+            if is_private {
+                state.handle_decset(params, true);
+            } else {
+                state.handle_set_mode(params, true);
+            }
         }
         'l' => {
             clear_wrap = false;
-            if is_private { state.handle_decset(params, false); }
-            else { state.handle_set_mode(params, false); }
+            if is_private {
+                state.handle_decset(params, false);
+            } else {
+                state.handle_set_mode(params, false);
+            }
         }
         'm' => {
             clear_wrap = false;
@@ -189,7 +200,8 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
             if is_private {
                 // DEC-specific DSR
                 match params.get_arg0(-1) {
-                    6 => { // DECXCPR - Extended Cursor Position
+                    6 => {
+                        // DECXCPR - Extended Cursor Position
                         let r = state.cursor.y + 1;
                         let c = state.cursor.x + 1;
                         state.report_terminal_response(&format!("\x1b[?{};{};1R", r, c));
@@ -198,10 +210,15 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
                 }
             } else {
                 // Standard DSR
-                let mode = if params.len == 0 { -1 } else { params.get(0, 0) };
+                let mode = if params.len == 0 {
+                    -1
+                } else {
+                    params.get(0, 0)
+                };
                 match mode {
-                    5 => state.report_terminal_response("\x1b[0n"),  // DSR Status Report
-                    6 => {  // CPR - Cursor Position Report
+                    5 => state.report_terminal_response("\x1b[0n"), // DSR Status Report
+                    6 => {
+                        // CPR - Cursor Position Report
                         let r = state.cursor.y + 1;
                         let c = state.cursor.x + 1;
                         state.report_terminal_response(&format!("\x1b[{};{}R", r, c));
@@ -210,9 +227,9 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
                 }
             }
         }
-        'p' => { 
-            if is_bang { 
-                state.decstr_soft_reset(); 
+        'p' => {
+            if is_bang {
+                state.decstr_soft_reset();
             } else if is_gt {
                 // xterm resource modification, ignore safely
             }
@@ -230,14 +247,14 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
         'r' => {
             // DECSTBM - Set Top and Bottom Margins (默认 top=1, bottom=rows)
             let top = params.get_arg0(1);
-            let bottom = params.get_arg1(state.rows as i32);
+            let bottom = params.get_arg1(state.rows);
             state.set_margins(top, bottom);
         }
         's' => {
             if state.leftright_margin_mode() {
                 // DECSLRM - Set Left and Right Margins (默认 left=1, right=cols)
                 let left = params.get_arg0(1);
-                let right = params.get_arg1(state.cols as i32);
+                let right = params.get_arg1(state.cols);
                 state.set_left_right_margins(left, right);
             } else {
                 state.save_cursor();
@@ -260,7 +277,9 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
                 state.restore_cursor();
             }
         }
-        _ => { clear_wrap = false; }
+        _ => {
+            clear_wrap = false;
+        }
     }
 
     if clear_wrap {

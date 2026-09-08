@@ -1,24 +1,15 @@
 // 测试 skia-safe 是否能正常初始化和绘图
 // 运行：cargo test --test skia_basic_test -- --nocapture
 
-use skia_safe::{
-    surfaces,
-    Color,
-    Paint,
-    PaintStyle,
-    Rect,
-    Font,
-    TextBlob,
-    Point,
-};
+use skia_safe::{Color, Font, Paint, PaintStyle, Point, Rect, TextBlob, surfaces};
 
 #[test]
 fn test_skia_raster_draw() {
     println!("=== 测试 Skia Raster 绘图 ===");
 
     // 1. 创建一个 100x100 的光栅表面 (Raster Surface)
-    let mut surface = surfaces::raster_n32_premul((100, 100))
-        .expect("Failed to create raster surface");
+    let mut surface =
+        surfaces::raster_n32_premul((100, 100)).expect("Failed to create raster surface");
 
     let canvas = surface.canvas();
     canvas.clear(Color::BLACK);
@@ -37,25 +28,25 @@ fn test_skia_raster_draw() {
         let info = pixmap.info();
         assert_eq!(info.width(), 100);
         assert_eq!(info.height(), 100);
-        
+
         // 获取中心点 (50, 50) 的像素地址
         // N32 是 4 bytes per pixel
         let addr = pixmap.addr();
         let row_bytes = pixmap.row_bytes();
-        
+
         // 计算 (50, 50) 的偏移量
         let offset = 50 * 4 + 50 * row_bytes;
         let pixel_ptr = unsafe { addr.add(offset) as *const u8 };
         let pixel_bytes = unsafe { std::slice::from_raw_parts(pixel_ptr, 4) };
-        
+
         // Android 小端序 N32 通常是 BGRA，但这里输出是 [255, 0, 0, 255] -> RGBA
         // Color::RED (0xFFFF0000 ARGB) -> 内存: FF 00 00 FF (R=255, G=0, B=0, A=255)
         println!("Pixel at (50,50): {:?}", pixel_bytes);
-        
+
         // 检查红色分量 (index 0)
         assert_eq!(pixel_bytes[0], 255, "Red channel should be 255");
         assert_eq!(pixel_bytes[3], 255, "Alpha channel should be 255");
-        
+
         println!("✅ Skia Raster 绘图测试通过！");
     } else {
         panic!("Failed to peek pixels");
@@ -66,9 +57,9 @@ fn test_skia_raster_draw() {
 fn test_skia_text_rendering() {
     println!("=== 测试 Skia 文本渲染 ===");
 
-    let mut surface = surfaces::raster_n32_premul((200, 50))
-        .expect("Failed to create text surface");
-    
+    let mut surface =
+        surfaces::raster_n32_premul((200, 50)).expect("Failed to create text surface");
+
     let canvas = surface.canvas();
     canvas.clear(Color::WHITE);
 
@@ -76,7 +67,7 @@ fn test_skia_text_rendering() {
     let mut paint = Paint::default();
     paint.set_color(Color::BLACK);
     paint.set_anti_alias(true);
-    
+
     // 创建字体 (使用默认字体)
     let mut font = Font::default();
     font.set_size(24.0);

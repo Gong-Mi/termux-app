@@ -2,7 +2,7 @@
 use std::ffi::CString;
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
 
 /// 性能监控器：记录吞吐量和延迟
 pub struct PerformanceMetrics {
@@ -23,11 +23,13 @@ impl PerformanceMetrics {
     }
 
     pub fn record_bytes(&self, bytes: u64) {
-        self.total_bytes_processed.fetch_add(bytes, Ordering::Relaxed);
+        self.total_bytes_processed
+            .fetch_add(bytes, Ordering::Relaxed);
     }
 
     pub fn record_render(&self, duration: Duration) {
-        self.total_render_time_ns.fetch_add(duration.as_nanos() as u64, Ordering::Relaxed);
+        self.total_render_time_ns
+            .fetch_add(duration.as_nanos() as u64, Ordering::Relaxed);
         self.frame_count.fetch_add(1, Ordering::Relaxed);
     }
 
@@ -40,19 +42,27 @@ impl PerformanceMetrics {
             let frames = self.frame_count.swap(0, Ordering::Relaxed);
 
             let throughput = (bytes as f64 / 1024.0 / 1024.0) / elapsed_secs;
-            let avg_render = if frames > 0 { (ns as f64 / 1_000_000.0) / frames as f64 } else { 0.0 };
+            let avg_render = if frames > 0 {
+                (ns as f64 / 1_000_000.0) / frames as f64
+            } else {
+                0.0
+            };
 
-            android_log(LogPriority::INFO, &format!(
-                "[PERF] Throughput: {:.2} MB/s | Avg Render: {:.2} ms | Frames: {}",
-                throughput, avg_render, frames
-            ));
-            
+            android_log(
+                LogPriority::INFO,
+                &format!(
+                    "[PERF] Throughput: {:.2} MB/s | Avg Render: {:.2} ms | Frames: {}",
+                    throughput, avg_render, frames
+                ),
+            );
+
             *last = Instant::now();
         }
     }
 }
 
-pub static METRICS: once_cell::sync::Lazy<PerformanceMetrics> = once_cell::sync::Lazy::new(|| PerformanceMetrics::new());
+pub static METRICS: once_cell::sync::Lazy<PerformanceMetrics> =
+    once_cell::sync::Lazy::new(|| PerformanceMetrics::new());
 
 pub enum LogPriority {
     VERBOSE = 2,
@@ -76,7 +86,7 @@ pub fn android_log(prio: LogPriority, msg: &str) {
             __android_log_print(prio as i32, tag.as_ptr(), msg_c.as_ptr());
         }
     }
-    
+
     #[cfg(not(target_os = "android"))]
     {
         let prefix = match prio {
@@ -91,13 +101,40 @@ pub fn android_log(prio: LogPriority, msg: &str) {
 
 pub fn map_line_drawing(c: u8) -> char {
     match c {
-        b'_' => ' ', b'`' => '◆', b'0' => '█', b'a' => '▒', b'b' => '␉',
-        b'c' => '␌', b'd' => '\r', b'e' => '␊', b'f' => '°', b'g' => '±',
-        b'h' => '\n', b'i' => '␋', b'j' => '┘', b'k' => '┐', b'l' => '┌',
-        b'm' => '└', b'n' => '┼', b'o' => '⎺', b'p' => '⎻', b'q' => '─',
-        b'r' => '⎼', b's' => '⎽', b't' => '├', b'u' => '┤', b'v' => '┴',
-        b'w' => '┬', b'x' => '│', b'y' => '≤', b'z' => '≥', b'{' => 'π',
-        b'|' => '≠', b'}' => '£', b'~' => '·', _ => c as char,
+        b'_' => ' ',
+        b'`' => '◆',
+        b'0' => '█',
+        b'a' => '▒',
+        b'b' => '␉',
+        b'c' => '␌',
+        b'd' => '\r',
+        b'e' => '␊',
+        b'f' => '°',
+        b'g' => '±',
+        b'h' => '\n',
+        b'i' => '␋',
+        b'j' => '┘',
+        b'k' => '┐',
+        b'l' => '┌',
+        b'm' => '└',
+        b'n' => '┼',
+        b'o' => '⎺',
+        b'p' => '⎻',
+        b'q' => '─',
+        b'r' => '⎼',
+        b's' => '⎽',
+        b't' => '├',
+        b'u' => '┤',
+        b'v' => '┴',
+        b'w' => '┬',
+        b'x' => '│',
+        b'y' => '≤',
+        b'z' => '≥',
+        b'{' => 'π',
+        b'|' => '≠',
+        b'}' => '£',
+        b'~' => '·',
+        _ => c as char,
     }
 }
 

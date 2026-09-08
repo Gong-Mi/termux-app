@@ -1,14 +1,7 @@
 name: Engine Comparison (Java vs Rust)
 
+# Comparative benchmarks are opt-in, not a per-commit correctness gate.
 on:
-  push:
-    branches:
-      - master
-      - feature/rust-integration
-  pull_request:
-    branches:
-      - master
-      - feature/rust-integration
   workflow_dispatch:
 
 env:
@@ -16,10 +9,15 @@ env:
   ANDROID_NDK_VERSION: 29.0.14206865
   RUST_TOOLCHAIN: stable
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   performance:
     name: ⚡ Performance Benchmark
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
@@ -43,6 +41,9 @@ jobs:
           shared-key: "termux-rust-engine"
           target-dir: false
 
+      - name: Install native test libraries
+        run: sudo apt-get update && sudo apt-get install -y libfreetype6-dev libfontconfig1-dev
+
       # ========== Java Performance Test (Master Branch) ==========
       - name: Checkout Master for Java Baseline
         uses: actions/checkout@v6
@@ -53,11 +54,9 @@ jobs:
       - name: Build & Run Java Baseline
         working-directory: baseline-java
         run: |
+          set -euo pipefail
           echo "=== Running Java Performance Test (Master Branch) ==="
-          # 运行所有单元测试，从日志中提取性能测试结果
-          ./gradlew :terminal-emulator:testDebugUnitTest --info 2>&1 | tee ../java_baseline.log || \
-          ./gradlew :terminal-emulator:test --info 2>&1 | tee ../java_baseline.log || \
-          echo "Java tests could not be executed"
+          ./gradlew :terminal-emulator:testDebugUnitTest --info 2>&1 | tee ../java_baseline.log
 
       # ========== Rust Engine Build ==========
       - name: Build Rust Engine
@@ -70,10 +69,9 @@ jobs:
       # ========== Rust Integrated Test ==========
       - name: Build & Run Rust Integrated
         run: |
+          set -euo pipefail
           echo "=== Running Java Test with Rust Engine ==="
-          ./gradlew :terminal-emulator:testDebugUnitTest --info 2>&1 | tee rust_integrated.log || \
-          ./gradlew :terminal-emulator:test --info 2>&1 | tee rust_integrated.log || \
-          echo "Java tests with Rust engine could not be executed"
+          ./gradlew :terminal-emulator:testDebugUnitTest --info 2>&1 | tee rust_integrated.log
 
       # ========== Rust Native Performance Test ==========
       - name: Run Rust Native Performance Tests
@@ -196,6 +194,7 @@ jobs:
   consistency:
     name: 🛡️ Logic Consistency Test
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
@@ -220,6 +219,7 @@ jobs:
   branch-consistency:
     name: 🔀 Branch Consistency Check
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout Feature Branch
         uses: actions/checkout@v6

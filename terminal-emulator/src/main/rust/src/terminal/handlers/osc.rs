@@ -1,7 +1,14 @@
 use crate::engine::{ScreenState, TerminalEvent};
-use crate::terminal::colors::{TerminalColors, COLOR_INDEX_FOREGROUND, COLOR_INDEX_BACKGROUND, COLOR_INDEX_CURSOR};
+use crate::terminal::colors::{
+    COLOR_INDEX_BACKGROUND, COLOR_INDEX_CURSOR, COLOR_INDEX_FOREGROUND, TerminalColors,
+};
 
-pub fn handle_osc(state: &mut ScreenState, events: &mut Vec<TerminalEvent>, opcode: &str, params: &[&[u8]]) {
+pub fn handle_osc(
+    state: &mut ScreenState,
+    events: &mut Vec<TerminalEvent>,
+    opcode: &str,
+    params: &[&[u8]],
+) {
     // 将除 opcode 外的所有参数拼接成字符串
     let param_text = params[1..]
         .iter()
@@ -13,7 +20,8 @@ pub fn handle_osc(state: &mut ScreenState, events: &mut Vec<TerminalEvent>, opco
         "0" | "2" => {
             if params.len() > 1 {
                 let title = std::str::from_utf8(params[1]).unwrap_or("");
-                let clean_title = title.trim_end_matches(|c| c == '\x07' || c == '\x1b' || c == '\\');
+                let clean_title =
+                    title.trim_end_matches(|c| c == '\x07' || c == '\x1b' || c == '\\');
                 state.set_title(clean_title);
             }
         }
@@ -28,16 +36,28 @@ pub fn handle_osc(state: &mut ScreenState, events: &mut Vec<TerminalEvent>, opco
         }
         "12" => {
             if let Some(color) = TerminalColors::parse_color(&param_text) {
-                state.colors.current_colors[COLOR_INDEX_CURSOR as usize] = color;
+                state.colors.current_colors[COLOR_INDEX_CURSOR] = color;
                 state.report_colors_changed();
             }
         }
-        "13" => { state.handle_osc13(); }
-        "14" => { state.handle_osc14(); }
-        "18" => { state.handle_osc18(); }
-        "19" => { state.handle_osc19(); }
-        "22" => { state.push_title(opcode); }
-        "23" => { state.pop_title(opcode); }
+        "13" => {
+            state.handle_osc13();
+        }
+        "14" => {
+            state.handle_osc14();
+        }
+        "18" => {
+            state.handle_osc18();
+        }
+        "19" => {
+            state.handle_osc19();
+        }
+        "22" => {
+            state.push_title(opcode);
+        }
+        "23" => {
+            state.pop_title(opcode);
+        }
         "52" => {
             if params.len() > 2 {
                 if let Ok(base64_data) = std::str::from_utf8(params[2]) {
@@ -49,15 +69,15 @@ pub fn handle_osc(state: &mut ScreenState, events: &mut Vec<TerminalEvent>, opco
             handle_osc104(state, &param_text);
         }
         "110" => {
-            state.colors.reset_index(COLOR_INDEX_FOREGROUND as usize);
+            state.colors.reset_index(COLOR_INDEX_FOREGROUND);
             state.report_colors_changed();
         }
         "111" => {
-            state.colors.reset_index(COLOR_INDEX_BACKGROUND as usize);
+            state.colors.reset_index(COLOR_INDEX_BACKGROUND);
             state.report_colors_changed();
         }
         "112" => {
-            state.colors.reset_index(COLOR_INDEX_CURSOR as usize);
+            state.colors.reset_index(COLOR_INDEX_CURSOR);
             state.report_colors_changed();
         }
         _ => {}
@@ -85,11 +105,11 @@ fn handle_osc4(state: &mut ScreenState, param_text: &str) {
 
 fn handle_osc10(state: &mut ScreenState, param_text: &str) {
     if param_text == "?" {
-        let report = state.colors.generate_color_report(COLOR_INDEX_FOREGROUND as usize);
+        let report = state.colors.generate_color_report(COLOR_INDEX_FOREGROUND);
         state.report_color_response(&format!("10;{}", report));
     } else {
         if let Some(color) = TerminalColors::parse_color(param_text) {
-            state.colors.current_colors[COLOR_INDEX_FOREGROUND as usize] = color;
+            state.colors.current_colors[COLOR_INDEX_FOREGROUND] = color;
             state.report_colors_changed();
         }
     }
@@ -97,11 +117,11 @@ fn handle_osc10(state: &mut ScreenState, param_text: &str) {
 
 fn handle_osc11(state: &mut ScreenState, param_text: &str) {
     if param_text == "?" {
-        let report = state.colors.generate_color_report(COLOR_INDEX_BACKGROUND as usize);
+        let report = state.colors.generate_color_report(COLOR_INDEX_BACKGROUND);
         state.report_color_response(&format!("11;{}", report));
     } else {
         if let Some(color) = TerminalColors::parse_color(param_text) {
-            state.colors.current_colors[COLOR_INDEX_BACKGROUND as usize] = color;
+            state.colors.current_colors[COLOR_INDEX_BACKGROUND] = color;
             state.report_colors_changed();
         }
     }

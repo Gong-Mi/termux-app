@@ -12,17 +12,22 @@ fn test_reflow_stress_600_lines() {
     // 1. 初始化一个足够大的引擎，总行数 5000
     // 因为 600 个长行在 15 宽时约占 3600 物理行
     let mut engine = TerminalEngine::new(0, 80, 24, 5000, 10, 20);
-    
+
     println!("--- Step 1: Writing 600 lines of numbered content ---");
     for i in 1..=600 {
         // 写入带编号的行，并手动换行
-        let content = format!("Test Content Row {:03} - This is a long line for testing reflow stability.\r\n", i);
+        let content = format!(
+            "Test Content Row {:03} - This is a long line for testing reflow stability.\r\n",
+            i
+        );
         engine.process_bytes(content.as_bytes());
     }
 
     // 2. 检查缩放前的状态
-    println!("Before Resize: Cols={}, Rows={}, Active History={}",
-             engine.state.cols, engine.state.rows, engine.state.main_screen.active_transcript_rows);
+    println!(
+        "Before Resize: Cols={}, Rows={}, Active History={}",
+        engine.state.cols, engine.state.rows, engine.state.main_screen.active_transcript_rows
+    );
 
     // 打印缩小前的历史行样本
     println!("--- Sample rows BEFORE shrink ---");
@@ -35,7 +40,7 @@ fn test_reflow_stress_600_lines() {
             println!("Before[{}]: (empty)", i);
         }
     }
-    
+
     // 3. 执行极端缩小测试 (80 -> 15)
     println!("--- Step 2: Extreme Shrinking (80 -> 15) ---");
     engine.state.resize(15, 50); // 缩小宽度，增加高度
@@ -51,9 +56,11 @@ fn test_reflow_stress_600_lines() {
             println!("After[{}]: (empty)", i);
         }
     }
-    
-    println!("New State: Cols={}, Rows={}, Active History={}", 
-             engine.state.cols, engine.state.rows, engine.state.main_screen.active_transcript_rows);
+
+    println!(
+        "New State: Cols={}, Rows={}, Active History={}",
+        engine.state.cols, engine.state.rows, engine.state.main_screen.active_transcript_rows
+    );
 
     // 打印逻辑行末尾的 10 行 (此时应该在屏幕范围内)
     println!("--- Logic Rows Near End ---");
@@ -70,17 +77,22 @@ fn test_reflow_stress_600_lines() {
     }
 
     let found_600 = all_text.contains("Row 600");
-    assert!(found_600, "Content 'Row 600' must exist somewhere in the combined reflowed text");
+    assert!(
+        found_600,
+        "Content 'Row 600' must exist somewhere in the combined reflowed text"
+    );
     println!("SUCCESS: 'Row 600' found in combined text after extreme shrink.");
 
     // 4. 执行极端放大测试 (15 -> 150)
     println!("--- Step 3: Extreme Expanding (15 -> 150) ---");
-    
+
     // 打印扩大前的状态
     let before_expand_history = engine.state.main_screen.active_transcript_rows as i32;
-    println!("Before Expand: Cols={}, Rows={}, Active History={}",
-             engine.state.cols, engine.state.rows, before_expand_history);
-    
+    println!(
+        "Before Expand: Cols={}, Rows={}, Active History={}",
+        engine.state.cols, engine.state.rows, before_expand_history
+    );
+
     // 打印扩大前最后几行
     println!("--- Rows before expand (last 5) ---");
     for i in (engine.state.rows - 5)..engine.state.rows {
@@ -89,13 +101,15 @@ fn test_reflow_stress_600_lines() {
             println!("Before[{}]: '{}'", i, text.trim());
         }
     }
-    
+
     engine.state.resize(150, 24);
 
     // 打印放大后的状态
-    println!("After Expand: Cols={}, Rows={}, Active History={}",
-             engine.state.cols, engine.state.rows, engine.state.main_screen.active_transcript_rows);
-    
+    println!(
+        "After Expand: Cols={}, Rows={}, Active History={}",
+        engine.state.cols, engine.state.rows, engine.state.main_screen.active_transcript_rows
+    );
+
     // 打印扩大后最后几行
     println!("--- Rows after expand (last 5) ---");
     for i in (engine.state.rows - 5)..engine.state.rows {
@@ -117,8 +131,11 @@ fn test_reflow_stress_600_lines() {
     let has_598 = all_text_expanded.contains("Row 598");
     let has_599 = all_text_expanded.contains("Row 599");
     let has_600 = all_text_expanded.contains("Row 600");
-    println!("Row 598: {}, Row 599: {}, Row 600: {}", has_598, has_599, has_600);
-    
+    println!(
+        "Row 598: {}, Row 599: {}, Row 600: {}",
+        has_598, has_599, has_600
+    );
+
     assert!(has_598, "Content 'Row 598' must exist after expanding");
     assert!(has_599, "Content 'Row 599' must exist after expanding");
     assert!(has_600, "Content 'Row 600' must exist after expanding");
@@ -128,8 +145,11 @@ fn test_reflow_stress_600_lines() {
     // 注意：由于 resize 会导致历史行偏移，我们寻找包含 "Row 100" 的行
     let mut found_100 = false;
     let total_active = engine.state.main_screen.active_transcript_rows as i32;
-    println!("Searching for 'Row 100' in range [{}, {})", -total_active, engine.state.rows);
-    
+    println!(
+        "Searching for 'Row 100' in range [{}, {})",
+        -total_active, engine.state.rows
+    );
+
     // 打印最后 10 行和中间几行用于调试
     println!("--- Last 10 rows ---");
     for i in (engine.state.rows - 10)..engine.state.rows {
@@ -138,7 +158,7 @@ fn test_reflow_stress_600_lines() {
             println!("Row[{}]: '{}'", i, text.trim());
         }
     }
-    
+
     println!("--- Sample rows from history ---");
     for i in (-total_active..0).step_by(300) {
         let text = get_row_text(&engine, i);
@@ -146,7 +166,7 @@ fn test_reflow_stress_600_lines() {
             println!("History[{}]: '{}'", i, text.trim());
         }
     }
-    
+
     for i in -(total_active)..engine.state.rows {
         if get_row_text(&engine, i).contains("Row 100") {
             found_100 = true;
@@ -158,6 +178,6 @@ fn test_reflow_stress_600_lines() {
     if !found_100 {
         println!("Warning: 'Row 100' not found, but this may be OK due to reflow");
     }
-    
+
     println!("Test passed: 600 lines successfully handled during massive screen resize/reflow.");
 }

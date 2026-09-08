@@ -1,59 +1,21 @@
 package com.termux.terminal;
 
+import org.junit.BeforeClass;
+import org.junit.Test;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
 /**
- * Test class for Rust-based KeyHandler
+ * JNI preservation tests for the six groups originally printed by this class.
+ *
+ * Golden strings were checked against KeyHandler.java at df17f03e^ and the
+ * current Rust terminal/key_handler.rs. JNI.kt delegates directly to that Rust
+ * implementation; expected values must not be calculated through the same JNI.
  */
-public class KeyHandlerTest {
+public class KeyHandlerRustTest {
 
-    static {
-        if (!JNI.sNativeLibrariesLoaded) {
-            System.err.println("Native libraries not loaded!");
-        }
-    }
-
-    public static void main(String[] args) {
-        System.out.println("=== KeyHandler Rust Implementation Test ===\n");
-
-        // Test 1: Basic arrow keys
-        System.out.println("Test 1: Arrow keys (no modifiers)");
-        testKey("UP", KEYCODE_DPAD_UP, 0);
-        testKey("DOWN", KEYCODE_DPAD_DOWN, 0);
-        testKey("LEFT", KEYCODE_DPAD_LEFT, 0);
-        testKey("RIGHT", KEYCODE_DPAD_RIGHT, 0);
-
-        // Test 2: Arrow keys with modifiers
-        System.out.println("\nTest 2: Arrow keys with modifiers");
-        testKey("UP+Shift", KEYCODE_DPAD_UP, KEYMOD_SHIFT);
-        testKey("UP+Ctrl", KEYCODE_DPAD_UP, KEYMOD_CTRL);
-        testKey("UP+Alt", KEYCODE_DPAD_UP, KEYMOD_ALT);
-        testKey("UP+Ctrl+Shift", KEYCODE_DPAD_UP, KEYMOD_CTRL | KEYMOD_SHIFT);
-
-        // Test 3: Function keys
-        System.out.println("\nTest 3: Function keys");
-        testKey("F1", KEYCODE_F1, 0);
-        testKey("F2", KEYCODE_F2, 0);
-        testKey("F12", KEYCODE_F12, 0);
-
-        // Test 4: Special keys
-        System.out.println("\nTest 4: Special keys");
-        testKey("Delete", KEYCODE_FORWARD_DEL, 0);
-        testKey("Insert", KEYCODE_INSERT, 0);
-        testKey("PageUp", KEYCODE_PAGE_UP, 0);
-        testKey("PageDown", KEYCODE_PAGE_DOWN, 0);
-
-        // Test 5: Termcap
-        System.out.println("\nTest 5: Termcap mappings");
-        testTermcap("k1 (F1)", "k1");
-        testTermcap("kd (down)", "kd");
-        testTermcap("kb (backspace)", "kb");
-
-        // Test 6: Cursor application mode
-        System.out.println("\nTest 6: Cursor application mode");
-        testKey("UP (app mode)", KEYCODE_DPAD_UP, 0, true);
-
-        System.out.println("\n=== All tests completed ===");
-    }
-
+    // Android key codes and the terminal's modifier ABI, not Android meta-state bits.
     private static final int KEYMOD_SHIFT = 0x20000000;
     private static final int KEYMOD_CTRL = 0x40000000;
     private static final int KEYMOD_ALT = 0x80000000;
@@ -70,38 +32,58 @@ public class KeyHandlerTest {
     private static final int KEYCODE_PAGE_UP = 92;
     private static final int KEYCODE_PAGE_DOWN = 93;
 
-    private static void testKey(String name, int keyCode, int keyMod) {
-        testKey(name, keyCode, keyMod, false);
+    @BeforeClass
+    public static void requireNativeLibrary() {
+        // Missing/wrong-ABI libraries are failures, never assumptions or skips.
+        assertTrue("KeyHandler tests require the real termux_rust JNI library",
+            JNI.sNativeLibrariesLoaded);
     }
 
-    private static void testKey(String name, int keyCode, int keyMod, boolean cursorApp) {
-        String result = JNI.getKeyCode(keyCode, keyMod, cursorApp, false);
-        System.out.printf("  %-20s: %s\n", name, formatEscape(result));
+    @Test
+    public void arrowKeysWithoutModifiers() {
+        assertKey("UP", "\u001b[A", KEYCODE_DPAD_UP, 0);
+        assertKey("DOWN", "\u001b[B", KEYCODE_DPAD_DOWN, 0);
+        assertKey("LEFT", "\u001b[D", KEYCODE_DPAD_LEFT, 0);
+        assertKey("RIGHT", "\u001b[C", KEYCODE_DPAD_RIGHT, 0);
     }
 
-    private static void testTermcap(String name, String termcap) {
-        String result = JNI.getKeyCodeFromTermcap(termcap, false, false);
-        System.out.printf("  %-20s: %s\n", name, formatEscape(result));
+    @Test
+    public void arrowKeysWithModifiers() {
+        assertKey("UP+Shift", "\u001b[1;2A", KEYCODE_DPAD_UP, KEYMOD_SHIFT);
+        assertKey("UP+Ctrl", "\u001b[1;5A", KEYCODE_DPAD_UP, KEYMOD_CTRL);
+        assertKey("UP+Alt", "\u001b[1;3A", KEYCODE_DPAD_UP, KEYMOD_ALT);
+        assertKey("UP+Ctrl+Shift", "\u001b[1;6A", KEYCODE_DPAD_UP, KEYMOD_CTRL | KEYMOD_SHIFT);
     }
 
-    private static String formatEscape(String s) {
-        if (s == null) return "null";
-        StringBuilder sb = new StringBuilder();
-        for (char c : s.toCharArray()) {
-            if (c == 0x1b) {
-                sb.append("\\x1b");
-            } else if (c == '\r') {
-                sb.append("\\r");
-            } else if (c == '\n') {
-                sb.append("\\n");
-            } else if (c == '\t') {
-                sb.append("\\t");
-            } else if (c < 32) {
-                sb.append(String.format("\\x%02x", (int) c));
-            } else {
-                sb.append(c);
-            }
-        }
-        return sb.toString();
+    @Test
+    public void functionKeys() {
+        assertKey("F1", "\u001bOP", KEYCODE_F1, 0);
+        assertKey("F2", "\u001bOQ", KEYCODE_F2, 0);
+        assertKey("F12", "\u001b[24~", KEYCODE_F12, 0);
+    }
+
+    @Test
+    public void specialKeys() {
+        assertKey("Delete", "\u001b[3~", KEYCODE_FORWARD_DEL, 0);
+        assertKey("Insert", "\u001b[2~", KEYCODE_INSERT, 0);
+        assertKey("PageUp", "\u001b[5~", KEYCODE_PAGE_UP, 0);
+        assertKey("PageDown", "\u001b[6~", KEYCODE_PAGE_DOWN, 0);
+    }
+
+    @Test
+    public void termcapMappings() {
+        assertEquals("k1 (F1)", "\u001bOP", JNI.getKeyCodeFromTermcap("k1", false, false));
+        assertEquals("kd (down)", "\u001b[B", JNI.getKeyCodeFromTermcap("kd", false, false));
+        // Backspace is DEL (0x7f), not BS (0x08), without Ctrl.
+        assertEquals("kb (backspace)", "\u007f", JNI.getKeyCodeFromTermcap("kb", false, false));
+    }
+
+    @Test
+    public void cursorApplicationMode() {
+        assertEquals("UP (app mode)", "\u001bOA", JNI.getKeyCode(KEYCODE_DPAD_UP, 0, true, false));
+    }
+
+    private static void assertKey(String name, String expected, int keyCode, int keyMod) {
+        assertEquals(name, expected, JNI.getKeyCode(keyCode, keyMod, false, false));
     }
 }

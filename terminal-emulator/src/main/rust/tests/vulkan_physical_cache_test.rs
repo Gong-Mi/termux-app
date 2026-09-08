@@ -31,11 +31,7 @@ impl PhysicalCacheManager {
     // 模拟读取数据
     fn load(&self) -> Option<Vec<u8>> {
         let p = self.get_cache_file();
-        if p.exists() {
-            fs::read(p).ok()
-        } else {
-            None
-        }
+        if p.exists() { fs::read(p).ok() } else { None }
     }
 }
 
@@ -43,7 +39,9 @@ impl PhysicalCacheManager {
 fn test_cache_location_and_reuse() {
     // 1. 指定一个特定的测试位置
     let custom_path = std::env::temp_dir().join("termux_vulkan_custom_location");
-    if custom_path.exists() { fs::remove_dir_all(&custom_path).unwrap(); }
+    if custom_path.exists() {
+        fs::remove_dir_all(&custom_path).unwrap();
+    }
 
     println!("测试阶段 1: 验证指定位置创建");
     let manager = PhysicalCacheManager::new(&custom_path);
@@ -51,7 +49,7 @@ fn test_cache_location_and_reuse() {
     println!("✅ 成功在指定位置创建缓存目录: {:?}", custom_path);
 
     // 2. 模拟写入 Vulkan 管道数据 (伪造一个 1MB 的 SPIR-V 数据)
-    let mock_vulkan_data = vec![0xAFu8; 1024 * 1024]; 
+    let mock_vulkan_data = vec![0xAFu8; 1024 * 1024];
     println!("测试阶段 2: 验证数据持久化存储");
     let stored = manager.store(&mock_vulkan_data);
     assert!(stored, "数据写入失败");
@@ -62,11 +60,15 @@ fn test_cache_location_and_reuse() {
     println!("测试阶段 3: 模拟重启并验证数据复用");
     let manager_after_reboot = PhysicalCacheManager::new(&custom_path);
     let loaded_data = manager_after_reboot.load().expect("重启后未能读取到旧缓存");
-    
-    assert_eq!(loaded_data.len(), mock_vulkan_data.len(), "读取数据大小不符");
+
+    assert_eq!(
+        loaded_data.len(),
+        mock_vulkan_data.len(),
+        "读取数据大小不符"
+    );
     assert_eq!(loaded_data[0], 0xAF, "数据内容损坏");
     assert_eq!(loaded_data, mock_vulkan_data, "数据一致性校验失败");
-    
+
     println!("✅ 重启后成功读取并校验了旧缓存数据");
     println!("✅ 结论：Vulkan 物理缓存满足“指定位置”与“重复利用”需求。");
 

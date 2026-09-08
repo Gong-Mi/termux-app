@@ -921,6 +921,8 @@ public final class TermuxActivity extends AppCompatActivity implements ServiceCo
     public static void updateTermuxActivityStyling(Context context, boolean recreateActivity) {
         // Make sure that terminal styling is always applied.
         Intent stylingIntent = new Intent(TERMUX_ACTIVITY.ACTION_RELOAD_STYLE);
+        // This action targets our non-exported Activity receiver, not other apps.
+        stylingIntent.setPackage(context.getPackageName());
         stylingIntent.putExtra(TERMUX_ACTIVITY.EXTRA_RECREATE_ACTIVITY, recreateActivity);
         context.sendBroadcast(stylingIntent);
     }

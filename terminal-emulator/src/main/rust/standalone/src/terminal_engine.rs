@@ -24,7 +24,7 @@ pub struct TerminalEngine {
     pub cursor_x: i32,
     pub cursor_y: i32,
     pub cells: Vec<Vec<Cell>>,
-    
+
     // 样式状态
     pub fg_color: Option<(u8, u8, u8)>,
     pub bg_color: Option<(u8, u8, u8)>,
@@ -32,7 +32,7 @@ pub struct TerminalEngine {
     pub underline: bool,
     pub italic: bool,
     pub reverse: bool,
-    
+
     // 模式状态
     pub application_cursor_keys: bool,
 }
@@ -42,9 +42,16 @@ fn default_cell() -> Cell {
 }
 
 impl TerminalEngine {
-    pub fn new(_session_id: i32, cols: i32, rows: i32, _total_rows: i32, _cw: i32, _ch: i32) -> Self {
+    pub fn new(
+        _session_id: i32,
+        cols: i32,
+        rows: i32,
+        _total_rows: i32,
+        _cw: i32,
+        _ch: i32,
+    ) -> Self {
         let cells = vec![vec![default_cell(); cols as usize]; rows as usize];
-        
+
         Self {
             cols,
             rows,
@@ -174,26 +181,52 @@ impl Perform for TerminalEngine {
         // OSC 序列 - 简化处理
     }
 
-    fn csi_dispatch(&mut self, params: &Params, _intermediates: &[u8], _ignore: bool, action: char) {
+    fn csi_dispatch(
+        &mut self,
+        params: &Params,
+        _intermediates: &[u8],
+        _ignore: bool,
+        action: char,
+    ) {
         match action {
             'A' => {
                 // CUU - 光标上移
-                let n = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+                let n = params
+                    .iter()
+                    .next()
+                    .and_then(|p| p.first())
+                    .copied()
+                    .unwrap_or(1) as i32;
                 self.cursor_y = (self.cursor_y - n).max(0);
             }
             'B' => {
                 // CUD - 光标下移
-                let n = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+                let n = params
+                    .iter()
+                    .next()
+                    .and_then(|p| p.first())
+                    .copied()
+                    .unwrap_or(1) as i32;
                 self.cursor_y = (self.cursor_y + n).min(self.rows - 1);
             }
             'C' => {
                 // CUF - 光标右移
-                let n = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+                let n = params
+                    .iter()
+                    .next()
+                    .and_then(|p| p.first())
+                    .copied()
+                    .unwrap_or(1) as i32;
                 self.cursor_x = (self.cursor_x + n).min(self.cols - 1);
             }
             'D' => {
                 // CUB - 光标左移
-                let n = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+                let n = params
+                    .iter()
+                    .next()
+                    .and_then(|p| p.first())
+                    .copied()
+                    .unwrap_or(1) as i32;
                 self.cursor_x = (self.cursor_x - n).max(0);
             }
             'H' | 'f' => {
@@ -206,12 +239,22 @@ impl Perform for TerminalEngine {
             }
             'J' => {
                 // ED - 清屏
-                let mode = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(0);
+                let mode = params
+                    .iter()
+                    .next()
+                    .and_then(|p| p.first())
+                    .copied()
+                    .unwrap_or(0);
                 match mode {
                     0 => {
                         // 从光标到屏幕末尾
                         for row in self.cursor_y as usize..self.rows as usize {
-                            for col in (if row == self.cursor_y as usize { self.cursor_x as usize } else { 0 })..self.cols as usize {
+                            for col in (if row == self.cursor_y as usize {
+                                self.cursor_x as usize
+                            } else {
+                                0
+                            })..self.cols as usize
+                            {
                                 self.cells[row][col] = default_cell();
                             }
                         }
@@ -231,7 +274,12 @@ impl Perform for TerminalEngine {
             }
             'K' => {
                 // EL - 清行
-                let mode = params.iter().next().and_then(|p| p.first()).copied().unwrap_or(0);
+                let mode = params
+                    .iter()
+                    .next()
+                    .and_then(|p| p.first())
+                    .copied()
+                    .unwrap_or(0);
                 let row = self.cursor_y as usize;
                 match mode {
                     0 => {
@@ -285,7 +333,16 @@ impl Perform for TerminalEngine {
                         7 => self.reverse = true,
                         30..=37 => {
                             // 标准前景色
-                            let colors = [(128, 0, 0), (0, 128, 0), (128, 128, 0), (0, 0, 128), (128, 0, 128), (0, 128, 128), (192, 192, 192), (128, 128, 128)];
+                            let colors = [
+                                (128, 0, 0),
+                                (0, 128, 0),
+                                (128, 128, 0),
+                                (0, 0, 128),
+                                (128, 0, 128),
+                                (0, 128, 128),
+                                (192, 192, 192),
+                                (128, 128, 128),
+                            ];
                             self.fg_color = Some(colors[(param - 30) as usize]);
                         }
                         38 => {
@@ -303,7 +360,16 @@ impl Perform for TerminalEngine {
                         39 => self.fg_color = None,
                         40..=47 => {
                             // 标准背景色
-                            let colors = [(128, 0, 0), (0, 128, 0), (128, 128, 0), (0, 0, 128), (128, 0, 128), (0, 128, 128), (192, 192, 192), (128, 128, 128)];
+                            let colors = [
+                                (128, 0, 0),
+                                (0, 128, 0),
+                                (128, 128, 0),
+                                (0, 0, 128),
+                                (128, 0, 128),
+                                (0, 128, 128),
+                                (192, 192, 192),
+                                (128, 128, 128),
+                            ];
                             self.bg_color = Some(colors[(param - 40) as usize]);
                         }
                         48 => {
@@ -321,12 +387,30 @@ impl Perform for TerminalEngine {
                         49 => self.bg_color = None,
                         90..=97 => {
                             // 亮色前景
-                            let colors = [(255, 0, 0), (0, 255, 0), (255, 255, 0), (0, 0, 255), (255, 0, 255), (0, 255, 255), (255, 255, 255), (0, 0, 0)];
+                            let colors = [
+                                (255, 0, 0),
+                                (0, 255, 0),
+                                (255, 255, 0),
+                                (0, 0, 255),
+                                (255, 0, 255),
+                                (0, 255, 255),
+                                (255, 255, 255),
+                                (0, 0, 0),
+                            ];
                             self.fg_color = Some(colors[(param - 90) as usize]);
                         }
                         100..=107 => {
                             // 亮色背景
-                            let colors = [(255, 0, 0), (0, 255, 0), (255, 255, 0), (0, 0, 255), (255, 0, 255), (0, 255, 255), (255, 255, 255), (0, 0, 0)];
+                            let colors = [
+                                (255, 0, 0),
+                                (0, 255, 0),
+                                (255, 255, 0),
+                                (0, 0, 255),
+                                (255, 0, 255),
+                                (0, 255, 255),
+                                (255, 255, 255),
+                                (0, 0, 0),
+                            ];
                             self.bg_color = Some(colors[(param - 100) as usize]);
                         }
                         _ => {}

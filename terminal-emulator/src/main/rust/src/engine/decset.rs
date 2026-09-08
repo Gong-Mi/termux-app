@@ -1,7 +1,7 @@
+use crate::engine::state::ScreenState;
+use crate::terminal::modes::*;
 /// DECSET/DECRST 模式处理
 use crate::vte_parser::Params;
-use crate::terminal::modes::*;
-use crate::engine::state::ScreenState;
 
 impl ScreenState {
     pub fn handle_decset(&mut self, params: &Params, set: bool) {
@@ -9,29 +9,55 @@ impl ScreenState {
             for &p in param.iter() {
                 match p {
                     1 => {
-                        if set { self.modes.set(DECSET_BIT_APPLICATION_CURSOR_KEYS) } else { self.modes.reset(DECSET_BIT_APPLICATION_CURSOR_KEYS) }
+                        if set {
+                            self.modes.set(DECSET_BIT_APPLICATION_CURSOR_KEYS)
+                        } else {
+                            self.modes.reset(DECSET_BIT_APPLICATION_CURSOR_KEYS)
+                        }
                         self.application_cursor_keys = set;
-                    },
-                    3 => { /* DECCOLM - 132列模式，忽略 */ },
+                    }
+                    3 => { /* DECCOLM - 132列模式，忽略 */ }
                     5 => {
-                        if set { self.modes.set(DECSET_BIT_REVERSE_VIDEO) } else { self.modes.reset(DECSET_BIT_REVERSE_VIDEO) }
-                    },
+                        if set {
+                            self.modes.set(DECSET_BIT_REVERSE_VIDEO)
+                        } else {
+                            self.modes.reset(DECSET_BIT_REVERSE_VIDEO)
+                        }
+                    }
                     6 => {
-                        if set { self.modes.set(DECSET_BIT_ORIGIN_MODE) } else { self.modes.reset(DECSET_BIT_ORIGIN_MODE) }
-                    },
+                        if set {
+                            self.modes.set(DECSET_BIT_ORIGIN_MODE)
+                        } else {
+                            self.modes.reset(DECSET_BIT_ORIGIN_MODE)
+                        }
+                    }
                     7 => {
-                        if set { self.modes.set(DECSET_BIT_AUTOWRAP) } else { self.modes.reset(DECSET_BIT_AUTOWRAP) }
-                    },
-                    12 => { /* 光标闪烁，未完全实现 */ },
-                    25 => { self.cursor_enabled = set; },
-                    40 => { /* 132列模式切换，忽略 */ },
-                    45 => { /* 反向换行，忽略 */ },
+                        if set {
+                            self.modes.set(DECSET_BIT_AUTOWRAP)
+                        } else {
+                            self.modes.reset(DECSET_BIT_AUTOWRAP)
+                        }
+                    }
+                    12 => { /* 光标闪烁，未完全实现 */ }
+                    25 => {
+                        self.cursor_enabled = set;
+                    }
+                    40 => { /* 132列模式切换，忽略 */ }
+                    45 => { /* 反向换行，忽略 */ }
                     66 => {
-                        if set { self.modes.set(DECSET_BIT_APPLICATION_KEYPAD) } else { self.modes.reset(DECSET_BIT_APPLICATION_KEYPAD) }
-                    },
+                        if set {
+                            self.modes.set(DECSET_BIT_APPLICATION_KEYPAD)
+                        } else {
+                            self.modes.reset(DECSET_BIT_APPLICATION_KEYPAD)
+                        }
+                    }
                     69 => {
-                        if set { self.modes.set(DECSET_BIT_LEFTRIGHT_MARGIN_MODE) } else { self.modes.reset(DECSET_BIT_LEFTRIGHT_MARGIN_MODE) }
-                    },
+                        if set {
+                            self.modes.set(DECSET_BIT_LEFTRIGHT_MARGIN_MODE)
+                        } else {
+                            self.modes.reset(DECSET_BIT_LEFTRIGHT_MARGIN_MODE)
+                        }
+                    }
                     1000 => {
                         if set {
                             self.modes.set(DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE);
@@ -42,7 +68,7 @@ impl ScreenState {
                             self.modes.reset(DECSET_BIT_MOUSE_TRACKING_PRESS_RELEASE);
                             self.mouse_tracking = false;
                         }
-                    },
+                    }
                     1002 => {
                         if set {
                             self.modes.set(DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT);
@@ -53,17 +79,25 @@ impl ScreenState {
                             self.modes.reset(DECSET_BIT_MOUSE_TRACKING_BUTTON_EVENT);
                             self.mouse_button_event = false;
                         }
-                    },
-                    1003 => { /* 鼠标追踪所有事件，未实现 */ },
+                    }
+                    1003 => { /* 鼠标追踪所有事件，未实现 */ }
                     1004 => {
-                        if set { self.modes.set(DECSET_BIT_SEND_FOCUS_EVENTS) } else { self.modes.reset(DECSET_BIT_SEND_FOCUS_EVENTS) }
+                        if set {
+                            self.modes.set(DECSET_BIT_SEND_FOCUS_EVENTS)
+                        } else {
+                            self.modes.reset(DECSET_BIT_SEND_FOCUS_EVENTS)
+                        }
                         self.send_focus_events = set;
-                    },
+                    }
                     1006 => {
-                        if set { self.modes.set(DECSET_BIT_MOUSE_PROTOCOL_SGR) } else { self.modes.reset(DECSET_BIT_MOUSE_PROTOCOL_SGR) }
+                        if set {
+                            self.modes.set(DECSET_BIT_MOUSE_PROTOCOL_SGR)
+                        } else {
+                            self.modes.reset(DECSET_BIT_MOUSE_PROTOCOL_SGR)
+                        }
                         self.sgr_mouse = set;
-                    },
-                    1034 => { /* 8位输入模式，忽略 */ },
+                    }
+                    1034 => { /* 8位输入模式，忽略 */ }
                     1047 => {
                         if set {
                             self.use_alternate_buffer = true;
@@ -71,10 +105,14 @@ impl ScreenState {
                         } else {
                             self.use_alternate_buffer = false;
                         }
-                    },
+                    }
                     1048 => {
-                        if set { self.save_cursor(); } else { self.restore_cursor(); }
-                    },
+                        if set {
+                            self.save_cursor();
+                        } else {
+                            self.restore_cursor();
+                        }
+                    }
                     1049 => {
                         if set {
                             self.save_cursor();
@@ -84,17 +122,25 @@ impl ScreenState {
                             self.use_alternate_buffer = false;
                             self.restore_cursor();
                         }
-                    },
+                    }
                     2004 => {
-                        if set { self.modes.set(DECSET_BIT_BRACKETED_PASTE_MODE) } else { self.modes.reset(DECSET_BIT_BRACKETED_PASTE_MODE) }
+                        if set {
+                            self.modes.set(DECSET_BIT_BRACKETED_PASTE_MODE)
+                        } else {
+                            self.modes.reset(DECSET_BIT_BRACKETED_PASTE_MODE)
+                        }
                         self.bracketed_paste = set;
-                    },
+                    }
                     20 => {
                         // LNM (Linefeed/Newline Mode) - ANSI mode 20
                         // 标准是 CSI 20 h (非私有)，但某些软件会发送 CSI ? 20 h
                         // 为兼容性在此也处理私有模式版本
-                        if set { self.modes.set(MODE_LNM); } else { self.modes.reset(MODE_LNM); }
-                    },
+                        if set {
+                            self.modes.set(MODE_LNM);
+                        } else {
+                            self.modes.reset(MODE_LNM);
+                        }
+                    }
                     _ => { /* 未知DECSET模式，忽略 */ }
                 }
             }

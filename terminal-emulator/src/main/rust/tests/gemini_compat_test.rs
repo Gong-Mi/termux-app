@@ -1,82 +1,64 @@
-// Gemini 协议异常证明测试 (Bug Reproduction)
-// 运行：cargo test --test gemini_compat_test -- --nocapture
-
+// Protocol contracts for sequences used by Gemini CLI.
+// EL and DA references: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
+// These are engine tests, not evidence of a full Gemini application session.
 use termux_rust::TerminalEngine;
 use termux_rust::terminal::style::EFFECT_UNDERLINE;
 
 fn get_screen_as_text(engine: &TerminalEngine) -> Vec<String> {
-    let mut rows = Vec::new();
-    let cols = engine.state.cols as usize;
-    for r in 0..engine.state.rows {
-        let mut text_buf = vec![0u16; cols];
-        engine.state.copy_row_text(r, &mut text_buf);
-        let row_str: String = text_buf.iter().map(|&c| char::from_u32(c as u32).unwrap_or(' ')).collect();
-        rows.push(row_str.trim_end().to_string());
-    }
-    rows
+    (0..engine.state.rows)
+        .map(|row| {
+            let mut text = vec![0u16; engine.state.cols as usize];
+            engine.state.copy_row_text(row, &mut text);
+            String::from_utf16_lossy(&text).trim_end().to_string()
+        })
+        .collect()
 }
 
-/// 证明问题 1: SGR 样式污染
-/// Gemini 发送 \x1b[>4;2m (键盘协议)，Rust 引擎却把它当成了“下划线”样式
 #[test]
-fn proof_sgr_pollution() {
+fn keyboard_probe_does_not_enable_sgr_underline() {
     let mut engine = TerminalEngine::new(0, 80, 10, 100, 10, 20);
-    
-    // 初始状态下不应有下划线效果
-    assert!((engine.state.effect & EFFECT_UNDERLINE) == 0, "Initial state should not have underline");
-
-    println!("发送探测指令: \\x1b[>4;2m");
+    assert_eq!(engine.state.effect & EFFECT_UNDERLINE, 0);
     engine.process_bytes(b"\x1b[>4;2m");
-
-    // 如果问题存在，这里的 assert 会触发失败
-    let has_underline = (engine.state.effect & EFFECT_UNDERLINE) != 0;
-    
-    if has_underline {
-        println!("❌ 确认异常: 键盘探测序列被错误识别为 SGR 下划线样式！");
-    }
-
-    assert!(!has_underline, "Detection sequence polluted SGR state (Underline effect triggered)");
+    assert_eq!(engine.state.effect & EFFECT_UNDERLINE, 0);
 }
 
-/// 证明问题 2: 内容泄露 (Leak)
-/// Gemini 的清理序列只清除了当前行，导致下方旧内容可见
 #[test]
-fn proof_content_leak() {
+fn erase_line_preserves_other_rows_and_carriage_return_resets_column() {
     let mut engine = TerminalEngine::new(0, 80, 10, 100, 10, 20);
-    
-    // 写入两行旧内容
-    engine.process_bytes(b"OLD LINE 1\r\nOLD LINE 2");
-    
-    // 光标现在在第 2 行。Gemini 发送 2K (清行) + \r (回车)
-    println!("执行 Gemini 启动清理序列: \\x1b[2K\\r");
+    engine.process_bytes(b"OLD LINE 1\r\nOLD LINE 2\r\nOLD LINE 3");
+    // Move to the middle row, away from column zero.
+    engine.process_bytes(b"\x1b[2;5H");
+    let before = get_screen_as_text(&engine);
+    assert_eq!(&before[..3], &["OLD LINE 1", "OLD LINE 2", "OLD LINE 3"]);
+
+    // CSI 2 K erases the current line, not the display or previous rows.
     engine.process_bytes(b"\x1b[2K\r");
-
-    let screen = get_screen_as_text(&engine);
-    
-    // 检查第 1 行是否依然存在
-    let line1_exists = screen[0].contains("OLD LINE 1");
-    
-    if line1_exists {
-        println!("❌ 确认异常: 清理序列后旧内容 'OLD LINE 1' 依然在屏幕上可见！");
+    let after = get_screen_as_text(&engine);
+    assert_eq!(after[1], "");
+    for row in 0..after.len() {
+        if row != 1 {
+            assert_eq!(after[row], before[row], "EL modified row {row}");
+        }
     }
-
-    // 这个断言反映了用户的真实体感：执行完 gemini 后，下面还有旧东西
-    assert!(!line1_exists, "Old content leaked after Gemini startup sequence");
+    engine.process_bytes(b"NEW");
+    assert_eq!(get_screen_as_text(&engine)[1], "NEW");
 }
 
-/// 证明问题 3: DA 响应格式错误
-/// Gemini 请求次级设备属性，我们却给了初级的格式
 #[test]
-fn proof_da_response_invalid() {
-    let mut engine = TerminalEngine::new(0, 80, 10, 100, 10, 20);
-    
-    // 模拟应用请求 CSI > c
-    engine.process_bytes(b"\x1b[>c");
-    
-    // 预期的响应应该以 \x1b[> 开头 (DA2)
-    // 但目前 Rust 引擎返回的是 \x1b[?6c (DA1)
-    
-    // 注意：这里需要检查 engine 产生的 TerminalEvent 或回传数据
-    // 暂时通过打印观察，或假设它逻辑错误
-    println!("发送 DA2 查询: \\x1b[>c");
+fn secondary_device_attributes_produces_exactly_one_da2_response() {
+    for query in [b"\x1b[>c".as_slice(), b"\x1b[>0c".as_slice()] {
+        for chunk_size in 1..=query.len() {
+            let mut engine = TerminalEngine::new(0, 80, 10, 100, 10, 20);
+            assert!(engine.state.pending_responses.is_empty());
+            for chunk in query.chunks(chunk_size) {
+                engine.process_bytes(chunk);
+            }
+            // Characterize the identity currently advertised by this engine;
+            // this does not assert that these version numbers are universal.
+            assert_eq!(engine.state.pending_responses, ["\x1b[>41;320;0c"]);
+            engine.state.pending_responses.clear();
+            engine.process_bytes(b"text");
+            assert!(engine.state.pending_responses.is_empty());
+        }
+    }
 }

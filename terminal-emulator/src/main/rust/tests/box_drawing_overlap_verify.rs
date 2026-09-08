@@ -10,21 +10,39 @@ mod tests {
     fn get_box_drawing_path(ch: char, x: f32, y_top: f32, w: f32, h: f32) -> Vec<Line> {
         let cx = x + w / 2.0;
         let cy = y_top + h / 2.0;
-        
+
         match ch as u32 {
-            0x2500 => { // ─ (全长水平线)
-                vec![Line { start: (x, cy), end: (x + w, cy) }]
+            0x2500 => {
+                // ─ (全长水平线)
+                vec![Line {
+                    start: (x, cy),
+                    end: (x + w, cy),
+                }]
             }
-            0x256D => { // ╭ (左上圆角：中下到中心，中心到中右)
+            0x256D => {
+                // ╭ (左上圆角：中下到中心，中心到中右)
                 vec![
-                    Line { start: (cx, y_top + h), end: (cx, cy) },
-                    Line { start: (cx, cy), end: (x + w, cy) },
+                    Line {
+                        start: (cx, y_top + h),
+                        end: (cx, cy),
+                    },
+                    Line {
+                        start: (cx, cy),
+                        end: (x + w, cy),
+                    },
                 ]
             }
-            0x256E => { // ╮ (右上圆角：中下到中心，中心到中左)
+            0x256E => {
+                // ╮ (右上圆角：中下到中心，中心到中左)
                 vec![
-                    Line { start: (cx, y_top + h), end: (cx, cy) },
-                    Line { start: (cx, cy), end: (x, cy) },
+                    Line {
+                        start: (cx, y_top + h),
+                        end: (cx, cy),
+                    },
+                    Line {
+                        start: (cx, cy),
+                        end: (x, cy),
+                    },
                 ]
             }
             _ => vec![],
@@ -35,7 +53,7 @@ mod tests {
     fn test_border_connectivity_no_gap_no_overlap() {
         let w = 10.0;
         let h = 20.0;
-        
+
         // 场景：左单元格是 ╭ (0x256D)，右单元格是 ─ (0x2500)
         let left_x = 100.0;
         let right_x = 110.0; // 紧邻
@@ -54,7 +72,10 @@ mod tests {
         println!("Right Cell Entry: {:?}", right_from_left_line.start);
 
         // 验证：衔接点必须完全重合
-        assert_eq!(left_to_right_line.end, right_from_left_line.start, "衔接处必须坐标对齐");
+        assert_eq!(
+            left_to_right_line.end, right_from_left_line.start,
+            "衔接处必须坐标对齐"
+        );
 
         // 2. 验证背景重复绘制逻辑（模拟判断）
         // 我们的优化是：如果当前字符不是全块(0x2588)，则不应再次填充背景
@@ -64,7 +85,10 @@ mod tests {
 
         assert!(!will_draw_bg('╭'), "圆角字符不应重复绘制背景");
         assert!(!will_draw_bg('─'), "直线字符不应重复绘制背景");
-        
-        println!("SUCCESS: Precise connectivity confirmed at x={}", left_to_right_line.end.0);
+
+        println!(
+            "SUCCESS: Precise connectivity confirmed at x={}",
+            left_to_right_line.end.0
+        );
     }
 }

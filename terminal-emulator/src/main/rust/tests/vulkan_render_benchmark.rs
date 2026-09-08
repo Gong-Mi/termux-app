@@ -1,9 +1,7 @@
 // Vulkan 渲染管线带宽/吞吐量基准测试
 // 运行：cargo test --test vulkan_render_benchmark -- --nocapture
 
-use skia_safe::{
-    surfaces, Color, Paint, Font, FontMgr, FontStyle, TextBlobBuilder,
-};
+use skia_safe::{Color, Font, FontMgr, FontStyle, Paint, TextBlobBuilder, surfaces};
 use std::time::{Duration, Instant};
 
 // ============================================================
@@ -22,7 +20,9 @@ struct Stats {
 
 impl Stats {
     fn new() -> Self {
-        Self { samples: Vec::with_capacity(100) }
+        Self {
+            samples: Vec::with_capacity(100),
+        }
     }
 
     fn add(&mut self, d: Duration) {
@@ -31,7 +31,13 @@ impl Stats {
 
     fn analyze(&self) -> (Duration, Duration, Duration, Duration, f64) {
         if self.samples.is_empty() {
-            return (Duration::ZERO, Duration::ZERO, Duration::ZERO, Duration::ZERO, 0.0);
+            return (
+                Duration::ZERO,
+                Duration::ZERO,
+                Duration::ZERO,
+                Duration::ZERO,
+                0.0,
+            );
         }
         let mut sorted = self.samples.clone();
         sorted.sort();
@@ -43,12 +49,15 @@ impl Stats {
         let p95 = sorted[(sorted.len() as f32 * 0.95) as usize];
 
         let avg_f = avg.as_secs_f64();
-        let variance: f64 = self.samples.iter()
+        let variance: f64 = self
+            .samples
+            .iter()
             .map(|d| {
                 let diff = d.as_secs_f64() - avg_f;
                 diff * diff
             })
-            .sum::<f64>() / self.samples.len() as f64;
+            .sum::<f64>()
+            / self.samples.len() as f64;
         let std_dev = variance.sqrt();
 
         (min, avg, p95, max, std_dev)
@@ -124,10 +133,15 @@ struct DetailedDuration {
     draw_call: Duration,
 }
 
-fn simulate_detailed_pipeline(canvas: &skia_safe::Canvas, terminal: &TerminalMock, font: &Font, paint: &Paint) -> DetailedDuration {
+fn simulate_detailed_pipeline(
+    canvas: &skia_safe::Canvas,
+    terminal: &TerminalMock,
+    font: &Font,
+    paint: &Paint,
+) -> DetailedDuration {
     let font_width = 10.0;
     let font_height = 20.0;
-    
+
     let mut clear = Duration::ZERO;
     let mut grouping = Duration::ZERO;
     let mut glyph_lookup = Duration::ZERO;
@@ -153,16 +167,26 @@ fn simulate_detailed_pipeline(canvas: &skia_safe::Canvas, terminal: &TerminalMoc
         while c < terminal.cols {
             let start_group = Instant::now();
             let cell_idx = row_start + c;
-            if cell_idx >= terminal.cells.len() { break; }
+            if cell_idx >= terminal.cells.len() {
+                break;
+            }
             let (ch, style) = terminal.cells[cell_idx];
-            if ch == ' ' { c += 1; grouping += start_group.elapsed(); continue; }
+            if ch == ' ' {
+                c += 1;
+                grouping += start_group.elapsed();
+                continue;
+            }
 
             let mut run_chars = Vec::new();
             while c < terminal.cols {
                 let ci = row_start + c;
-                if ci >= terminal.cells.len() { break; }
+                if ci >= terminal.cells.len() {
+                    break;
+                }
                 let (ch2, style2) = terminal.cells[ci];
-                if style2 != style || ch2 == ' ' { break; }
+                if style2 != style || ch2 == ' ' {
+                    break;
+                }
                 run_chars.push((ch2, c as f32 * font_width));
                 c += 1;
             }
@@ -172,7 +196,7 @@ fn simulate_detailed_pipeline(canvas: &skia_safe::Canvas, terminal: &TerminalMoc
                 // 细化 flush_run_to_blob
                 let text: String = run_chars.iter().map(|(ch, _)| *ch).collect();
                 let mut glyphs = vec![skia_safe::GlyphId::default(); run_chars.len()];
-                
+
                 glyph_lookup += measure(|| {
                     font.str_to_glyphs(&text, &mut glyphs);
                 });
@@ -197,7 +221,7 @@ fn simulate_detailed_pipeline(canvas: &skia_safe::Canvas, terminal: &TerminalMoc
             blob_make += measure(|| {
                 blob = builder.make();
             });
-            
+
             if let Some(b) = blob {
                 draw_call += measure(|| {
                     canvas.draw_text_blob(&b, (0.0, y_adj), paint);
@@ -206,10 +230,22 @@ fn simulate_detailed_pipeline(canvas: &skia_safe::Canvas, terminal: &TerminalMoc
         }
     }
 
-    DetailedDuration { clear, grouping, glyph_lookup, blob_alloc, blob_make, draw_call }
+    DetailedDuration {
+        clear,
+        grouping,
+        glyph_lookup,
+        blob_alloc,
+        blob_make,
+        draw_call,
+    }
 }
 
-fn simulate_render_pipeline(canvas: &skia_safe::Canvas, terminal: &TerminalMock, font: &Font, paint: &Paint) -> Duration {
+fn simulate_render_pipeline(
+    canvas: &skia_safe::Canvas,
+    terminal: &TerminalMock,
+    font: &Font,
+    paint: &Paint,
+) -> Duration {
     let d = simulate_detailed_pipeline(canvas, terminal, font, paint);
     d.clear + d.grouping + d.glyph_lookup + d.blob_alloc + d.blob_make + d.draw_call
 }
@@ -222,7 +258,9 @@ fn benchmark_terminal_sizes() {
     println!("\n========== Vulkan 渲染管线吞吐量基准测试 ==========\n");
 
     let font_mgr = FontMgr::new();
-    let tf = font_mgr.match_family_style("monospace", FontStyle::normal()).unwrap();
+    let tf = font_mgr
+        .match_family_style("monospace", FontStyle::normal())
+        .unwrap();
     let mut font = Font::new(tf, Some(12.0));
     font.set_edging(skia_safe::font::Edging::SubpixelAntiAlias);
     font.set_subpixel(true);
@@ -230,10 +268,10 @@ fn benchmark_terminal_sizes() {
     paint.set_anti_alias(false);
 
     let configs = [
-        (80, 24,   "标准终端 80x24"),
-        (120, 40,  "中等终端 120x40"),
-        (200, 60,  "大终端 200x60"),
-        (300, 80,  "超大终端 300x80"),
+        (80, 24, "标准终端 80x24"),
+        (120, 40, "中等终端 120x40"),
+        (200, 60, "大终端 200x60"),
+        (300, 80, "超大终端 300x80"),
         (400, 100, "压力终端 400x100"),
     ];
 
@@ -245,8 +283,10 @@ fn benchmark_terminal_sizes() {
         (FillMode::Stress, "压力"),
     ];
 
-    println!("{:<20} | {:<8} | {:<10} | {:<22} | {:<8} | {:<15}",
-             "终端配置", "内容", "单元格数", "耗时(min/avg/p95)", "FPS", "吞吐量 (像素)");
+    println!(
+        "{:<20} | {:<8} | {:<10} | {:<22} | {:<8} | {:<15}",
+        "终端配置", "内容", "单元格数", "耗时(min/avg/p95)", "FPS", "吞吐量 (像素)"
+    );
     println!("{:-<105}", "");
 
     for (cols, rows, label) in &configs {
@@ -255,8 +295,8 @@ fn benchmark_terminal_sizes() {
             let cell_count = cols * rows;
 
             // Surface 大小模拟屏幕 1200x2400
-            let mut surface = surfaces::raster_n32_premul((1200, 2400))
-                .expect("Failed to create surface");
+            let mut surface =
+                surfaces::raster_n32_premul((1200, 2400)).expect("Failed to create surface");
             let canvas = surface.canvas();
 
             // 预热 3 帧
@@ -276,13 +316,17 @@ fn benchmark_terminal_sizes() {
             // 假设每个单元格 10x20 像素
             let pixel_throughput = (cell_count as f64 * 200.0 / avg_d.as_secs_f64()) / 1_000_000.0;
 
-            let time_combined = format!("{:.1}/{:.1}/{:.1}ms", 
-                min_d.as_secs_f64() * 1000.0, 
-                avg_d.as_secs_f64() * 1000.0, 
-                p95_d.as_secs_f64() * 1000.0);
+            let time_combined = format!(
+                "{:.1}/{:.1}/{:.1}ms",
+                min_d.as_secs_f64() * 1000.0,
+                avg_d.as_secs_f64() * 1000.0,
+                p95_d.as_secs_f64() * 1000.0
+            );
 
-            println!("{:<20} | {:<8} | {:>7} 格 | {:>22} | {:>8.1} | {:>7.2}Mc/s ({:>5.0}MP/s)",
-                     label, fill_label, cell_count, time_combined, fps, throughput, pixel_throughput);
+            println!(
+                "{:<20} | {:<8} | {:>7} 格 | {:>22} | {:>8.1} | {:>7.2}Mc/s ({:>5.0}MP/s)",
+                label, fill_label, cell_count, time_combined, fps, throughput, pixel_throughput
+            );
         }
         println!("{:-<105}", "");
     }
@@ -299,12 +343,13 @@ fn benchmark_pipeline_stages() {
     let rows = 60;
     let terminal = TerminalMock::new(cols, rows, FillMode::Mixed);
 
-    let mut surface = surfaces::raster_n32_premul((1200, 2400))
-        .expect("Failed to create surface");
+    let mut surface = surfaces::raster_n32_premul((1200, 2400)).expect("Failed to create surface");
     let canvas = surface.canvas();
 
     let font_mgr = FontMgr::new();
-    let tf = font_mgr.match_family_style("monospace", FontStyle::normal()).unwrap();
+    let tf = font_mgr
+        .match_family_style("monospace", FontStyle::normal())
+        .unwrap();
     let mut font = Font::new(tf, Some(12.0));
     font.set_edging(skia_safe::font::Edging::SubpixelAntiAlias);
     font.set_subpixel(true);
@@ -313,10 +358,14 @@ fn benchmark_pipeline_stages() {
 
     // 1. 获取详细耗时
     let mut total_d = DetailedDuration {
-        clear: Duration::ZERO, grouping: Duration::ZERO, glyph_lookup: Duration::ZERO,
-        blob_alloc: Duration::ZERO, blob_make: Duration::ZERO, draw_call: Duration::ZERO,
+        clear: Duration::ZERO,
+        grouping: Duration::ZERO,
+        glyph_lookup: Duration::ZERO,
+        blob_alloc: Duration::ZERO,
+        blob_make: Duration::ZERO,
+        draw_call: Duration::ZERO,
     };
-    
+
     let iterations = 20;
     for _ in 0..iterations {
         let d = simulate_detailed_pipeline(canvas, &terminal, &font, &paint);
@@ -359,12 +408,22 @@ fn benchmark_pipeline_stages() {
     }
 
     println!("  {:-<65}", "");
-    println!("  整帧总计           | {:>8.1}μs | 100.0% | {}", total_us, "█".repeat(25));
+    println!(
+        "  整帧总计           | {:>8.1}μs | 100.0% | {}",
+        total_us,
+        "█".repeat(25)
+    );
     println!();
     println!("  性能诊断指标:");
     println!("    理论最大帧率: {:.1} FPS", 1_000_000.0 / total_us);
-    println!("    字体处理开销: {:.1}% (Glyph+Alloc+Make)", (glyph_us + alloc_us + make_us) / total_us * 100.0);
-    println!("    CPU 预处理占比: {:.1}% (Grouping)", group_us / total_us * 100.0);
+    println!(
+        "    字体处理开销: {:.1}% (Glyph+Alloc+Make)",
+        (glyph_us + alloc_us + make_us) / total_us * 100.0
+    );
+    println!(
+        "    CPU 预处理占比: {:.1}% (Grouping)",
+        group_us / total_us * 100.0
+    );
 }
 
 // ============================================================
@@ -378,12 +437,13 @@ fn benchmark_sustained_rendering() {
     let rows = 40;
     let terminal = TerminalMock::new(cols, rows, FillMode::Mixed);
 
-    let mut surface = surfaces::raster_n32_premul((1200, 2400))
-        .expect("Failed to create surface");
+    let mut surface = surfaces::raster_n32_premul((1200, 2400)).expect("Failed to create surface");
     let canvas = surface.canvas();
 
     let font_mgr = FontMgr::new();
-    let tf = font_mgr.match_family_style("monospace", FontStyle::normal()).unwrap();
+    let tf = font_mgr
+        .match_family_style("monospace", FontStyle::normal())
+        .unwrap();
     let mut font = Font::new(tf, Some(12.0));
     font.set_edging(skia_safe::font::Edging::SubpixelAntiAlias);
     font.set_subpixel(true);
@@ -403,7 +463,13 @@ fn benchmark_sustained_rendering() {
         if (i + 1) % 200 == 0 {
             let elapsed = start.elapsed();
             let current_fps = (i + 1) as f64 / elapsed.as_secs_f64();
-            println!("  进度: {:>4}/{} | 累计耗时: {:.2}s | 实时 FPS: {:.1}", i + 1, frames, elapsed.as_secs_f64(), current_fps);
+            println!(
+                "  进度: {:>4}/{} | 累计耗时: {:.2}s | 实时 FPS: {:.1}",
+                i + 1,
+                frames,
+                elapsed.as_secs_f64(),
+                current_fps
+            );
         }
     }
 
@@ -425,8 +491,15 @@ fn benchmark_sustained_rendering() {
     println!("    最大值 (Max): {:>8}", format_duration(max_v));
     println!();
     println!("  吞吐量分析:");
-    println!("    渲染单元格总数: {} ({:.1} M cells)", frames * cols * rows, (frames * cols * rows) as f64 / 1_000_000.0);
-    println!("    渲染吞吐量:     {:.2} M cells/s", (frames * cols * rows) as f64 / total_elapsed.as_secs_f64() / 1_000_000.0);
+    println!(
+        "    渲染单元格总数: {} ({:.1} M cells)",
+        frames * cols * rows,
+        (frames * cols * rows) as f64 / 1_000_000.0
+    );
+    println!(
+        "    渲染吞吐量:     {:.2} M cells/s",
+        (frames * cols * rows) as f64 / total_elapsed.as_secs_f64() / 1_000_000.0
+    );
 }
 
 // ============================================================
@@ -441,12 +514,13 @@ fn benchmark_extreme_stress() {
     let rows = 100;
     let terminal = TerminalMock::new(cols, rows, FillMode::Stress);
 
-    let mut surface = surfaces::raster_n32_premul((4000, 4000))
-        .expect("Failed to create surface");
+    let mut surface = surfaces::raster_n32_premul((4000, 4000)).expect("Failed to create surface");
     let canvas = surface.canvas();
 
     let font_mgr = FontMgr::new();
-    let tf = font_mgr.match_family_style("monospace", FontStyle::normal()).unwrap();
+    let tf = font_mgr
+        .match_family_style("monospace", FontStyle::normal())
+        .unwrap();
     let mut font = Font::new(tf, Some(10.0));
     font.set_edging(skia_safe::font::Edging::SubpixelAntiAlias);
     font.set_subpixel(true);
@@ -464,7 +538,11 @@ fn benchmark_extreme_stress() {
         let frame_time = measure(|| {
             simulate_render_pipeline(canvas, &terminal, &font, &paint);
         });
-        println!("  帧 {:>2}: {:>8.2}ms", i + 1, frame_time.as_secs_f64() * 1000.0);
+        println!(
+            "  帧 {:>2}: {:>8.2}ms",
+            i + 1,
+            frame_time.as_secs_f64() * 1000.0
+        );
     }
 
     let total = start.elapsed();
@@ -472,9 +550,14 @@ fn benchmark_extreme_stress() {
 
     println!();
     println!("  平均 FPS:     {:.2}", avg_fps);
-    println!("  平均帧时间:   {:.2}ms", (total / frames as u32).as_secs_f64() * 1000.0);
-    println!("  渲染吞吐量:   {:.2} M cells/s",
-             (frames * cols * rows) as f64 / total.as_secs_f64() / 1_000_000.0);
+    println!(
+        "  平均帧时间:   {:.2}ms",
+        (total / frames as u32).as_secs_f64() * 1000.0
+    );
+    println!(
+        "  渲染吞吐量:   {:.2} M cells/s",
+        (frames * cols * rows) as f64 / total.as_secs_f64() / 1_000_000.0
+    );
 }
 
 // ============================================================
@@ -487,7 +570,9 @@ fn benchmark_cache_and_styles() {
     let mut surface = surfaces::raster_n32_premul((1200, 2400)).expect("Surface failed");
     let canvas = surface.canvas();
     let font_mgr = FontMgr::new();
-    let tf = font_mgr.match_family_style("monospace", FontStyle::normal()).unwrap();
+    let tf = font_mgr
+        .match_family_style("monospace", FontStyle::normal())
+        .unwrap();
     let font = Font::new(tf, Some(12.0));
     let mut paint = Paint::default();
     paint.set_anti_alias(false);
@@ -516,7 +601,10 @@ fn benchmark_cache_and_styles() {
     println!("  缓存效能:");
     println!("    冷启动 (Cold):   {:>8}", format_duration(cold_time));
     println!("    热启动 (Cached): {:>8}", format_duration(hot_time));
-    println!("    提升倍率:        {:.1}x", cold_time.as_secs_f64() / hot_time.as_secs_f64());
+    println!(
+        "    提升倍率:        {:.1}x",
+        cold_time.as_secs_f64() / hot_time.as_secs_f64()
+    );
     println!();
 
     // 3. 样式密度压力测试 (Style Density)
@@ -539,15 +627,24 @@ fn benchmark_cache_and_styles() {
                 cells.push(('A', style));
             }
         }
-        let terminal = TerminalMock { cols: 100, rows: 30, cells };
-        
+        let terminal = TerminalMock {
+            cols: 100,
+            rows: 30,
+            cells,
+        };
+
         let mut total = Duration::ZERO;
         for _ in 0..20 {
             total += simulate_render_pipeline(canvas, &terminal, &font, &paint);
         }
         let avg = total / 20;
-        
-        println!("    {:<16} | {:>12} | {:>10} | {:>6.1}",
-                 label, runs_per_row * 30, format_duration(avg), 1.0 / avg.as_secs_f64());
+
+        println!(
+            "    {:<16} | {:>12} | {:>10} | {:>6.1}",
+            label,
+            runs_per_row * 30,
+            format_duration(avg),
+            1.0 / avg.as_secs_f64()
+        );
     }
 }

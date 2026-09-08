@@ -15,7 +15,10 @@ macro_rules! safe_write {
         match $lock.write() {
             Ok(g) => g,
             Err(p) => {
-                $crate::utils::android_log($crate::utils::LogPriority::ERROR, "RwLock poisoned! Recovering...");
+                $crate::utils::android_log(
+                    $crate::utils::LogPriority::ERROR,
+                    "RwLock poisoned! Recovering...",
+                );
                 p.into_inner()
             }
         }
@@ -28,7 +31,10 @@ macro_rules! safe_read {
         match $lock.read() {
             Ok(g) => g,
             Err(p) => {
-                $crate::utils::android_log($crate::utils::LogPriority::ERROR, "RwLock poisoned! Recovering...");
+                $crate::utils::android_log(
+                    $crate::utils::LogPriority::ERROR,
+                    "RwLock poisoned! Recovering...",
+                );
                 p.into_inner()
             }
         }
@@ -36,31 +42,30 @@ macro_rules! safe_read {
 }
 
 // 声明子模块
-pub mod wcwidth;
+pub mod bootstrap;
+pub mod coordinator;
+pub mod engine;
+pub mod jni;
+pub mod pty;
+pub mod render_thread;
+pub mod renderer;
 pub mod terminal;
 pub mod utils;
-pub mod engine;
-pub mod bootstrap;
-pub mod pty;
 pub mod vte_parser;
 pub mod vte_sve;
-pub mod coordinator;
-pub mod renderer;
 pub mod vulkan_context;
-pub mod render_thread;
-pub mod jni;
+pub mod wcwidth;
 
 // 重新导出主要类型，保持向后兼容
-pub use crate::engine::{TerminalEngine, TerminalContext, TerminalEvent};
 pub use crate::coordinator::{SessionCoordinator, SessionState};
-pub use crate::terminal::style::*;
-pub use crate::terminal::modes::*;
+pub use crate::engine::{TerminalContext, TerminalEngine, TerminalEvent};
 pub use crate::terminal::colors::*;
-pub use crate::terminal::sixel::{SixelDecoder, SixelState, SixelColor};
+pub use crate::terminal::modes::*;
+pub use crate::terminal::sixel::{SixelColor, SixelDecoder, SixelState};
+pub use crate::terminal::style::*;
 
 pub use ::jni::JavaVM;
 pub static JAVA_VM: OnceCell<JavaVM> = OnceCell::new();
-
 
 #[cfg(test)]
 mod metrics_tests {
@@ -73,10 +78,15 @@ mod metrics_tests {
         METRICS.record_bytes(1024 * 1024);
         // 测试记录渲染耗时
         METRICS.record_render(Duration::from_millis(16));
-        
+
         // 验证不会崩溃
         METRICS.try_report();
-        
-        assert!(METRICS.total_bytes_processed.load(std::sync::atomic::Ordering::Relaxed) >= 0);
+
+        assert!(
+            METRICS
+                .total_bytes_processed
+                .load(std::sync::atomic::Ordering::Relaxed)
+                >= 0
+        );
     }
 }

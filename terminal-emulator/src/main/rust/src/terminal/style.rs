@@ -1,11 +1,15 @@
 // 从 colors.rs 导入颜色索引常量
-use crate::terminal::colors::{COLOR_INDEX_FOREGROUND, COLOR_INDEX_BACKGROUND};
+use crate::terminal::colors::{COLOR_INDEX_BACKGROUND, COLOR_INDEX_FOREGROUND};
 
 /// STYLE_NORMAL: 前景 256, 背景 257, 无效果
-pub const STYLE_NORMAL: u64 = encode_style(COLOR_INDEX_FOREGROUND as u64, COLOR_INDEX_BACKGROUND as u64, 0);
-pub const STYLE_MASK_EFFECT: u64 = 0x7FF;           // 位 0-10 (11 位效果标志)
-pub const STYLE_MASK_BG: u64 = 0xFFFFFF << 16;      // 位 16-39 (24 位背景色)
-pub const STYLE_MASK_FG: u64 = 0xFFFFFF << 40;      // 位 40-63 (24 位前景色)
+pub const STYLE_NORMAL: u64 = encode_style(
+    COLOR_INDEX_FOREGROUND as u64,
+    COLOR_INDEX_BACKGROUND as u64,
+    0,
+);
+pub const STYLE_MASK_EFFECT: u64 = 0x7FF; // 位 0-10 (11 位效果标志)
+pub const STYLE_MASK_BG: u64 = 0xFFFFFF << 16; // 位 16-39 (24 位背景色)
+pub const STYLE_MASK_FG: u64 = 0xFFFFFF << 40; // 位 40-63 (24 位前景色)
 
 // 真彩色标志位
 pub const STYLE_TRUECOLOR_FG: u64 = 1 << 9; // 位 9 - 前景色使用 24 位真彩色
@@ -68,8 +72,14 @@ mod tests {
     #[test]
     fn test_style_normal() {
         assert_eq!(decode_effect(STYLE_NORMAL), 0);
-        assert_eq!(decode_fore_color(STYLE_NORMAL), COLOR_INDEX_FOREGROUND as u64);
-        assert_eq!(decode_back_color(STYLE_NORMAL), COLOR_INDEX_BACKGROUND as u64);
+        assert_eq!(
+            decode_fore_color(STYLE_NORMAL),
+            COLOR_INDEX_FOREGROUND as u64
+        );
+        assert_eq!(
+            decode_back_color(STYLE_NORMAL),
+            COLOR_INDEX_BACKGROUND as u64
+        );
     }
 
     #[test]
@@ -77,19 +87,33 @@ mod tests {
         // 模拟一个潜在的 Bug：如果有人错误地在 effect 中包含了 STYLE_TRUECOLOR_FG 位
         let index_color = 256u64;
         let effect_with_err_flag = EFFECT_DIM | STYLE_TRUECOLOR_FG;
-        
+
         let s = encode_style(index_color, 0, effect_with_err_flag);
         let decoded_fg = decode_fore_color(s);
-        
+
         // 如果 encode_style 足够强壮，它应该强制覆盖 effect 里的真彩色标志位
-        assert_eq!(decoded_fg, index_color, "Color index should not be corrupted by effect flags");
-        assert_eq!(s & STYLE_TRUECOLOR_FG, 0, "TrueColor flag must be cleared for index colors");
+        assert_eq!(
+            decoded_fg, index_color,
+            "Color index should not be corrupted by effect flags"
+        );
+        assert_eq!(
+            s & STYLE_TRUECOLOR_FG,
+            0,
+            "TrueColor flag must be cleared for index colors"
+        );
     }
 
     #[test]
     fn test_all_effect_flags() {
-        let all_effects = EFFECT_BOLD | EFFECT_ITALIC | EFFECT_UNDERLINE | EFFECT_BLINK
-            | EFFECT_REVERSE | EFFECT_INVISIBLE | EFFECT_STRIKETHROUGH | EFFECT_PROTECTED | EFFECT_DIM;
+        let all_effects = EFFECT_BOLD
+            | EFFECT_ITALIC
+            | EFFECT_UNDERLINE
+            | EFFECT_BLINK
+            | EFFECT_REVERSE
+            | EFFECT_INVISIBLE
+            | EFFECT_STRIKETHROUGH
+            | EFFECT_PROTECTED
+            | EFFECT_DIM;
         let s = encode_style(7, 7, all_effects);
         assert_eq!(decode_effect(s), all_effects);
     }

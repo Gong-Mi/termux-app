@@ -26,7 +26,7 @@ fn test_lf_does_not_return_to_origin() {
 
     // Fill first row to trigger about_to_wrap
     engine.process_bytes(b"1234567890");
-    
+
     // Cursor should be at row 0, col 9 (about_to_wrap = true)
     assert_eq!(engine.state.cursor.y, 0);
     assert_eq!(engine.state.cursor.x, 9);
@@ -38,7 +38,10 @@ fn test_lf_does_not_return_to_origin() {
     // Cursor should be at row 1, col 9 (NOT col 0)
     // This matches upstream: doLinefeed() doesn't change column
     assert_eq!(engine.state.cursor.y, 1);
-    assert_eq!(engine.state.cursor.x, 9, "LF should NOT return cursor to column 0");
+    assert_eq!(
+        engine.state.cursor.x, 9,
+        "LF should NOT return cursor to column 0"
+    );
     assert!(!engine.state.cursor.about_to_wrap);
 
     println!("✅ LF does not return to origin (matches upstream)");
@@ -61,7 +64,12 @@ fn test_cr_returns_to_start_without_moving() {
     // Overwrite with new text
     engine.process_bytes(b"World");
     let row0 = get_row_text(&engine, 0);
-    assert_eq!(row0.trim(), "World", "Row 0 should be 'World', got: '{}'", row0.trim());
+    assert_eq!(
+        row0.trim(),
+        "World",
+        "Row 0 should be 'World', got: '{}'",
+        row0.trim()
+    );
 
     println!("✅ CR returns to start without moving down");
 }
@@ -79,7 +87,7 @@ fn test_crlf_sequence() {
 
     let row0 = get_row_text(&engine, 0);
     let row1 = get_row_text(&engine, 1);
-    
+
     assert_eq!(row0.trim(), "Line1", "Row 0 should be 'Line1'");
     assert_eq!(row1.trim(), "Line2", "Row 1 should be 'Line2'");
 
@@ -132,15 +140,25 @@ fn test_lf_then_printable_no_extra_wrap() {
     // Since cursor is already at last column, this overwrites col 9 and sets about_to_wrap
     // It does NOT advance to next line (cursor stays at x=9, about_to_wrap=true)
     engine.process_bytes(b"A");
-    
+
     // Cursor stays at same position, just sets about_to_wrap=true
     assert_eq!(engine.state.cursor.y, 1, "Cursor should stay on row 1");
-    assert_eq!(engine.state.cursor.x, 9, "Cursor should stay at col 9 (last col)");
-    assert!(engine.state.cursor.about_to_wrap, "Should be marked as wrapped");
-    
+    assert_eq!(
+        engine.state.cursor.x, 9,
+        "Cursor should stay at col 9 (last col)"
+    );
+    assert!(
+        engine.state.cursor.about_to_wrap,
+        "Should be marked as wrapped"
+    );
+
     // Verify 'A' is at row 1, col 9 (overwritten the placeholder)
     let row1 = get_row_text(&engine, 1);
-    assert_eq!(row1.chars().nth(9), Some('A'), "'A' should be at row 1, col 9");
+    assert_eq!(
+        row1.chars().nth(9),
+        Some('A'),
+        "'A' should be at row 1, col 9"
+    );
 
     println!("✅ LF then printable does not cause extra wrap");
 }
@@ -151,10 +169,16 @@ fn test_lf_clears_about_to_wrap() {
     let mut engine = TerminalEngine::new(0, 10, 5, 1000, 10, 20);
 
     engine.process_bytes(b"1234567890");
-    assert!(engine.state.cursor.about_to_wrap, "Should be wrapped after filling row");
+    assert!(
+        engine.state.cursor.about_to_wrap,
+        "Should be wrapped after filling row"
+    );
 
     engine.process_bytes(b"\n");
-    assert!(!engine.state.cursor.about_to_wrap, "LF should clear about_to_wrap");
+    assert!(
+        !engine.state.cursor.about_to_wrap,
+        "LF should clear about_to_wrap"
+    );
 
     println!("✅ LF clears about_to_wrap");
 }
