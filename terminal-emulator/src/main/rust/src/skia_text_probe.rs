@@ -83,7 +83,12 @@ pub(crate) fn draw_text_and_readback(context: &mut gpu::DirectContext) -> Result
     if !surface.read_pixels(&info, &mut pixels, width as usize * 4, (0, 0)) {
         return Err("GPU read_pixels failed");
     }
-    verify_text_pixels(&pixels, width as usize, height as usize, renderer.font_height)
+    verify_text_pixels(
+        &pixels,
+        width as usize,
+        height as usize,
+        renderer.font_height,
+    )
 }
 
 fn is_foreground(pixel: &[u8]) -> bool {
@@ -168,7 +173,10 @@ mod tests {
 
     #[test]
     fn oracle_rejects_blank_fill_leak_and_inverted_mass() {
-        assert_eq!(verify_text_pixels(&blank(), W, H, BAND as f32), Err("no glyph pixels in text band"));
+        assert_eq!(
+            verify_text_pixels(&blank(), W, H, BAND as f32),
+            Err("no glyph pixels in text band")
+        );
         let mut solid = blank();
         for y in 0..BAND {
             for x in 0..W {
