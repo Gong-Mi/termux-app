@@ -165,10 +165,7 @@ fn extract_zip_to_dir(
             let mut perms = std::fs::metadata(&out_path)?.permissions();
             perms.set_mode(mode);
             std::fs::set_permissions(&out_path, perms)?;
-            eprintln!(
-                "[Rust Extract] [{}] Set mode {:o}: {}",
-                i, mode, path_str
-            );
+            eprintln!("[Rust Extract] [{}] Set mode {:o}: {}", i, mode, path_str);
         }
 
         file_count += 1;
@@ -238,11 +235,17 @@ mod tests {
         assert_eq!(bootstrap_file_mode("share/tool", Some(0o755)), Some(0o755));
         assert_eq!(bootstrap_file_mode("share/tool", Some(0o644)), Some(0o644));
         assert_eq!(
-            bootstrap_file_mode("etc/termux/bootstrap/termux-bootstrap-second-stage.sh", None),
+            bootstrap_file_mode(
+                "etc/termux/bootstrap/termux-bootstrap-second-stage.sh",
+                None
+            ),
             Some(0o700)
         );
         assert_eq!(bootstrap_file_mode("lib/apt/apt-helper", None), Some(0o700));
-        assert_eq!(bootstrap_file_mode("lib/apt/methods/http", None), Some(0o700));
+        assert_eq!(
+            bootstrap_file_mode("lib/apt/methods/http", None),
+            Some(0o700)
+        );
         assert_eq!(bootstrap_file_mode("share/not-executable", None), None);
     }
 
