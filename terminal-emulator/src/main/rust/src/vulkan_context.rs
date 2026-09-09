@@ -69,15 +69,16 @@ impl VulkanContext {
             "VulkanContext::new: Starting initialization",
         );
 
-        let entry = unsafe { Entry::load().ok() };
-        if entry.is_none() {
-            android_log(
-                LogPriority::ERROR,
-                "VulkanContext::new: Entry::load() failed",
-            );
-            return None;
-        }
-        let entry = entry.unwrap();
+        let entry = match unsafe { Entry::load().ok() } {
+            Some(e) => e,
+            None => {
+                android_log(
+                    LogPriority::ERROR,
+                    "VulkanContext::new: Entry::load() failed",
+                );
+                return None;
+            }
+        };
         android_log(LogPriority::INFO, "VulkanContext::new: Entry loaded");
 
         // 启用 Vulkan 实例级扩展
@@ -194,28 +195,38 @@ impl VulkanContext {
                 None,
             )
         };
-        if surface.is_err() {
-            android_log(
-                LogPriority::ERROR,
-                &format!(
-                    "VulkanContext::new: create_android_surface failed: {:?}",
-                    surface.err()
-                ),
-            );
-            return None;
-        }
-        let surface = surface.unwrap();
+        let surface = match surface {
+            Ok(s) => s,
+            Err(e) => {
+                android_log(
+                    LogPriority::ERROR,
+                    &format!("VulkanContext::new: create_android_surface failed: {:?}", e),
+                );
+                return None;
+            }
+        };
         android_log(LogPriority::INFO, "VulkanContext::new: Surface created");
 
-        let pdevices = unsafe { instance.enumerate_physical_devices() };
-        if pdevices.is_err() || pdevices.as_ref().unwrap().is_empty() {
-            android_log(
-                LogPriority::ERROR,
-                "VulkanContext::new: enumerate_physical_devices failed or returned empty list",
-            );
-            return None;
-        }
-        let pdevices = pdevices.unwrap();
+        let pdevices = match unsafe { instance.enumerate_physical_devices() } {
+            Ok(pdevs) if !pdevs.is_empty() => pdevs,
+            Ok(_) => {
+                android_log(
+                    LogPriority::ERROR,
+                    "VulkanContext::new: enumerate_physical_devices returned empty list",
+                );
+                return None;
+            }
+            Err(e) => {
+                android_log(
+                    LogPriority::ERROR,
+                    &format!(
+                        "VulkanContext::new: enumerate_physical_devices failed: {:?}",
+                        e
+                    ),
+                );
+                return None;
+            }
+        };
         android_log(
             LogPriority::INFO,
             &format!(
@@ -346,17 +357,16 @@ impl VulkanContext {
             ..Default::default()
         };
         let device = unsafe { instance.create_device(pdevice, &device_create_info, None) };
-        if device.is_err() {
-            android_log(
-                LogPriority::ERROR,
-                &format!(
-                    "VulkanContext::new: create_device failed: {:?}",
-                    device.err()
-                ),
-            );
-            return None;
-        }
-        let device = device.unwrap();
+        let device = match device {
+            Ok(d) => d,
+            Err(e) => {
+                android_log(
+                    LogPriority::ERROR,
+                    &format!("VulkanContext::new: create_device failed: {:?}", e),
+                );
+                return None;
+            }
+        };
         android_log(LogPriority::INFO, "VulkanContext::new: Device created");
 
         let queue = unsafe { device.get_device_queue(queue_family_index, 0) };
@@ -372,7 +382,8 @@ impl VulkanContext {
                 };
                 unsafe { device.create_pipeline_cache(&create_info, None) }.unwrap_or_else(|_| {
                     android_log(LogPriority::WARN, "Vulkan: Failed to create pipeline cache from loaded data, creating empty one");
-                    unsafe { device.create_pipeline_cache(&ash_vk::PipelineCacheCreateInfo::default(), None).unwrap() }
+                    unsafe { device.create_pipeline_cache(&ash_vk::PipelineCacheCreateInfo::default(), None) }
+                        .unwrap_or(ash_vk::PipelineCache::null())
                 })
             }
             None => {
@@ -383,24 +394,23 @@ impl VulkanContext {
                 unsafe {
                     device
                         .create_pipeline_cache(&ash_vk::PipelineCacheCreateInfo::default(), None)
-                        .unwrap()
+                        .unwrap_or(ash_vk::PipelineCache::null())
                 }
             }
         };
 
         let caps =
             unsafe { surface_loader.get_physical_device_surface_capabilities(pdevice, surface) };
-        if caps.is_err() {
-            android_log(
-                LogPriority::ERROR,
-                &format!(
-                    "VulkanContext::new: get_capabilities failed: {:?}",
-                    caps.err()
-                ),
-            );
-            return None;
-        }
-        let caps = caps.unwrap();
+        let caps = match caps {
+            Ok(c) => c,
+            Err(e) => {
+                android_log(
+                    LogPriority::ERROR,
+                    &format!("VulkanContext::new: get_capabilities failed: {:?}", e),
+                );
+                return None;
+            }
+        };
         let extent = caps.current_extent;
         android_log(
             LogPriority::INFO,
@@ -411,31 +421,49 @@ impl VulkanContext {
         );
 
         let semaphore_info = ash_vk::SemaphoreCreateInfo::default();
-        let image_available_semaphore = unsafe { device.create_semaphore(&semaphore_info, None) };
-        let render_finished_semaphore = unsafe { device.create_semaphore(&semaphore_info, None) };
-        if image_available_semaphore.is_err() || render_finished_semaphore.is_err() {
-            android_log(
-                LogPriority::ERROR,
-                "VulkanContext::new: create_semaphore failed",
-            );
-            return None;
-        }
-        let image_available_semaphore = image_available_semaphore.unwrap();
-        let render_finished_semaphore = render_finished_semaphore.unwrap();
+        let image_available_semaphore =
+            match unsafe { device.create_semaphore(&semaphore_info, None) } {
+                Ok(s) => s,
+                Err(e) => {
+                    android_log(
+                        LogPriority::ERROR,
+                        &format!(
+                            "VulkanContext::new: create image_available_semaphore failed: {:?}",
+                            e
+                        ),
+                    );
+                    return None;
+                }
+            };
+        let render_finished_semaphore =
+            match unsafe { device.create_semaphore(&semaphore_info, None) } {
+                Ok(s) => s,
+                Err(e) => {
+                    android_log(
+                        LogPriority::ERROR,
+                        &format!(
+                            "VulkanContext::new: create render_finished_semaphore failed: {:?}",
+                            e
+                        ),
+                    );
+                    return None;
+                }
+            };
 
         let fence_info = ash_vk::FenceCreateInfo {
             flags: ash_vk::FenceCreateFlags::SIGNALED,
             ..Default::default()
         };
-        let in_flight_fence = unsafe { device.create_fence(&fence_info, None) };
-        if in_flight_fence.is_err() {
-            android_log(
-                LogPriority::ERROR,
-                "VulkanContext::new: create_fence failed",
-            );
-            return None;
-        }
-        let in_flight_fence = in_flight_fence.unwrap();
+        let in_flight_fence = match unsafe { device.create_fence(&fence_info, None) } {
+            Ok(f) => f,
+            Err(e) => {
+                android_log(
+                    LogPriority::ERROR,
+                    &format!("VulkanContext::new: create in_flight_fence failed: {:?}", e),
+                );
+                return None;
+            }
+        };
 
         let entry_ptr = entry.clone();
         let instance_ptr = instance.clone();
@@ -493,16 +521,19 @@ impl VulkanContext {
         context_options.runtime_program_cache_size = 512;
         context_options.reduced_shader_variations = true;
 
-        let context =
-            skia_safe::gpu::direct_contexts::make_vulkan(&backend_context, Some(&context_options));
-        if context.is_none() {
-            android_log(
-                LogPriority::ERROR,
-                "VulkanContext::new: Skia make_vulkan failed",
-            );
-            return None;
-        }
-        let mut context = context.unwrap();
+        let mut context = match skia_safe::gpu::direct_contexts::make_vulkan(
+            &backend_context,
+            Some(&context_options),
+        ) {
+            Some(ctx) => ctx,
+            None => {
+                android_log(
+                    LogPriority::ERROR,
+                    "VulkanContext::new: Skia make_vulkan failed",
+                );
+                return None;
+            }
+        };
 
         // 设置更大的资源缓存限制 (512MB) 以提高多字体/大数据量下的渲染稳定性
         context.set_resource_cache_limit(512 * 1024 * 1024);

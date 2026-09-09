@@ -13,6 +13,7 @@ on:
       - 'terminal-emulator/src/main/rust/**'
   pull_request:
     branches:
+      - feat/skia-text-readback
       - test/termux-package-python-art
       - fix/pty-environment-contract
       - test/session-completion-art
