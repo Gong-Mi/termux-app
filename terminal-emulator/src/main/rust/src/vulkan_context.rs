@@ -72,7 +72,10 @@ impl VulkanContext {
         let entry = match unsafe { Entry::load().ok() } {
             Some(e) => e,
             None => {
-                android_log(LogPriority::ERROR, "VulkanContext::new: Entry::load() failed");
+                android_log(
+                    LogPriority::ERROR,
+                    "VulkanContext::new: Entry::load() failed",
+                );
                 return None;
             }
         };
@@ -216,7 +219,10 @@ impl VulkanContext {
             Err(e) => {
                 android_log(
                     LogPriority::ERROR,
-                    &format!("VulkanContext::new: enumerate_physical_devices failed: {:?}", e),
+                    &format!(
+                        "VulkanContext::new: enumerate_physical_devices failed: {:?}",
+                        e
+                    ),
                 );
                 return None;
             }
@@ -415,26 +421,34 @@ impl VulkanContext {
         );
 
         let semaphore_info = ash_vk::SemaphoreCreateInfo::default();
-        let image_available_semaphore = match unsafe { device.create_semaphore(&semaphore_info, None) } {
-            Ok(s) => s,
-            Err(e) => {
-                android_log(
-                    LogPriority::ERROR,
-                    &format!("VulkanContext::new: create image_available_semaphore failed: {:?}", e),
-                );
-                return None;
-            }
-        };
-        let render_finished_semaphore = match unsafe { device.create_semaphore(&semaphore_info, None) } {
-            Ok(s) => s,
-            Err(e) => {
-                android_log(
-                    LogPriority::ERROR,
-                    &format!("VulkanContext::new: create render_finished_semaphore failed: {:?}", e),
-                );
-                return None;
-            }
-        };
+        let image_available_semaphore =
+            match unsafe { device.create_semaphore(&semaphore_info, None) } {
+                Ok(s) => s,
+                Err(e) => {
+                    android_log(
+                        LogPriority::ERROR,
+                        &format!(
+                            "VulkanContext::new: create image_available_semaphore failed: {:?}",
+                            e
+                        ),
+                    );
+                    return None;
+                }
+            };
+        let render_finished_semaphore =
+            match unsafe { device.create_semaphore(&semaphore_info, None) } {
+                Ok(s) => s,
+                Err(e) => {
+                    android_log(
+                        LogPriority::ERROR,
+                        &format!(
+                            "VulkanContext::new: create render_finished_semaphore failed: {:?}",
+                            e
+                        ),
+                    );
+                    return None;
+                }
+            };
 
         let fence_info = ash_vk::FenceCreateInfo {
             flags: ash_vk::FenceCreateFlags::SIGNALED,
@@ -507,7 +521,10 @@ impl VulkanContext {
         context_options.runtime_program_cache_size = 512;
         context_options.reduced_shader_variations = true;
 
-        let mut context = match skia_safe::gpu::direct_contexts::make_vulkan(&backend_context, Some(&context_options)) {
+        let mut context = match skia_safe::gpu::direct_contexts::make_vulkan(
+            &backend_context,
+            Some(&context_options),
+        ) {
             Some(ctx) => ctx,
             None => {
                 android_log(
