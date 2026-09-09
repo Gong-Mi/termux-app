@@ -22,6 +22,7 @@ name: Rust correctness tiers
       - 'terminal-emulator/build.gradle*'
   pull_request:
     branches:
+      - fix/vulkan-init-robustness
       - feat/skia-text-readback
       - test/termux-package-python-art
       - fix/pty-environment-contract
