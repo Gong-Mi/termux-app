@@ -141,7 +141,7 @@ fn test_sync_all_rows_to_shared_buffer() {
         .map(|col| {
             let cell_idx = flat_buffer.cell_index(col, 0);
             if cell_idx < flat_buffer.text_data.len() {
-                char::from_u32(flat_buffer.text_data[cell_idx] as u32).unwrap_or('?')
+                char::from_u32(flat_buffer.text_data[cell_idx]).unwrap_or('?')
             } else {
                 '?'
             }
@@ -249,19 +249,37 @@ fn test_unicode_extension_plane_and_emoji_retention_in_shared_buffer() {
     engine.state.sync_screen_to_flat_buffer();
 
     let flat = engine.state.flat_buffer.as_ref().unwrap();
-    let expected_chars: Vec<char> = test_str.chars().collect();
+    // 验证包含非 BMP 字符和 Emoji 的字符串正确写入并保留 32 位码点
+    // 注意：Emoji (😀, 🚀) 与 CJK 扩展字 (𠮷) 宽度为 2 列，占用 (col, col+1)，其中 col+1 存储 '\0'
+    let expected_positions: &[(usize, u32)] = &[
+        (0, 'T' as u32),
+        (1, 'e' as u32),
+        (2, 'r' as u32),
+        (3, 'm' as u32),
+        (4, 'u' as u32),
+        (5, 'x' as u32),
+        (6, ' ' as u32),
+        (7, 0x1F600), // 😀
+        (8, 0),       // 宽字符右侧占位符 '\0'
+        (9, ' ' as u32),
+        (10, 0x1F680), // 🚀
+        (11, 0),       // 宽字符右侧占位符 '\0'
+        (12, ' ' as u32),
+        (13, 0x20BB7), // 𠮷
+        (14, 0),       // 宽字符右侧占位符 '\0'
+        (15, ' ' as u32),
+        (16, 'E' as u32),
+        (17, 'n' as u32),
+        (18, 'd' as u32),
+    ];
 
-    for (c, &expected_ch) in expected_chars.iter().enumerate() {
-        let cell_idx = flat.cell_index(c, 0);
+    for &(col, expected_code) in expected_positions {
+        let cell_idx = flat.cell_index(col, 0);
         let actual_code = flat.text_data[cell_idx];
         assert_eq!(
-            actual_code,
-            expected_ch as u32,
-            "Char at col {} should be U+{:X} ('{}'), got U+{:X}",
-            c,
-            expected_ch as u32,
-            expected_ch,
-            actual_code
+            actual_code, expected_code,
+            "Char at col {} should be U+{:X}, got U+{:X}",
+            col, expected_code, actual_code
         );
     }
 
@@ -277,11 +295,11 @@ fn test_unicode_extension_plane_and_emoji_retention_in_shared_buffer() {
 
         // 验证第一行文字通过 shared.text_data 读出无截断
         let text_slice = std::slice::from_raw_parts(shared.text_data.as_ptr(), cols as usize);
-        for (c, &expected_ch) in expected_chars.iter().enumerate() {
+        for &(col, expected_code) in expected_positions {
             assert_eq!(
-                text_slice[c], expected_ch as u32,
+                text_slice[col], expected_code,
                 "SharedScreenBuffer at col {} should retain 32-bit codepoint U+{:X}",
-                c, expected_ch as u32
+                col, expected_code
             );
         }
 
