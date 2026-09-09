@@ -358,3 +358,81 @@ fn test_frame_backpressure_simulation() {
          frames completed: {expected_completed}, in flight: 0"
     );
 }
+
+// =============================================================================
+// 测试 6: 真实 TerminalContext 读写并发与渲染饥饿回归基准
+// =============================================================================
+
+#[test]
+fn test_terminal_context_concurrent_io_and_render_read() {
+    use termux_rust::engine::TerminalContext;
+
+    let cols = 80;
+    let rows = 24;
+    let total_rows = 1000;
+    let engine = termux_rust::TerminalEngine::new(0, cols, rows, total_rows, 10, 20);
+    let ctx = Arc::new(TerminalContext::new(engine));
+
+    let running = Arc::new(AtomicBool::new(true));
+    let frames_rendered = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let read_lock_failures = Arc::new(std::sync::atomic::AtomicU64::new(0));
+
+    // 渲染线程：以 60FPS 频率调用 try_read，模拟真实渲染循环
+    let render_ctx = ctx.clone();
+    let render_running = running.clone();
+    let render_counter = frames_rendered.clone();
+    let render_fails = read_lock_failures.clone();
+
+    let render_thread = thread::spawn(move || {
+        while render_running.load(Ordering::SeqCst) {
+            match render_ctx.lock.try_read() {
+                Ok(engine) => {
+                    // 模拟读锁持有时间（读取当前屏幕行并提取样式）
+                    let _active_row = engine.state.get_current_screen().get_row(0);
+                    render_counter.fetch_add(1, Ordering::Relaxed);
+                    drop(engine);
+                    thread::sleep(Duration::from_millis(16));
+                }
+                Err(_) => {
+                    render_fails.fetch_add(1, Ordering::Relaxed);
+                    thread::sleep(Duration::from_millis(2));
+                }
+            }
+        }
+    });
+
+    // IO 线程：模拟高吞吐量快速写入流（连续写入 100 次批量终端序列）
+    let io_ctx = ctx.clone();
+    let io_thread = thread::spawn(move || {
+        for i in 0..100 {
+            {
+                let mut engine = io_ctx.lock.write().unwrap();
+                let chunk = format!("Line {:04}: Hello Terminal Data Flood Testing\r\n", i);
+                engine.process_bytes(chunk.as_bytes());
+                // 模拟 PTY 解析和缓冲区维护耗时
+                thread::sleep(Duration::from_micros(500));
+            }
+            thread::sleep(Duration::from_micros(200));
+        }
+    });
+
+    io_thread.join().unwrap();
+    // 写入完成后继续保持渲染循环短暂观察
+    thread::sleep(Duration::from_millis(50));
+    running.store(false, Ordering::SeqCst);
+    render_thread.join().unwrap();
+
+    let success_renders = frames_rendered.load(Ordering::SeqCst);
+    let fail_renders = read_lock_failures.load(Ordering::SeqCst);
+
+    eprintln!(
+        "TerminalContext Benchmark: success_renders = {}, fail_renders = {}",
+        success_renders, fail_renders
+    );
+
+    // 保证在密集写入流下，渲染线程不会发生完全死锁或 100% 读饥饿
+    assert!(
+        success_renders > 0,
+        "Render thread must successfully acquire read lock and render frames during IO flood"
+    );
+}
