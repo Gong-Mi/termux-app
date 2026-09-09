@@ -3,6 +3,7 @@ name: Android emulator experiment
 "on":
   pull_request:
     branches:
+      - fix/shared-screen-buffer-unicode
       - fix/vulkan-init-robustness
       - feat/skia-text-readback
       - test/termux-package-python-art
