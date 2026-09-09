@@ -19,6 +19,8 @@ import com.termux.shared.markdown.MarkdownUtils;
 import com.termux.shared.errors.Error;
 import com.termux.shared.android.PackageUtils;
 import com.termux.shared.android.PermissionUtils;
+import com.termux.shared.shell.command.ExecutionCommand;
+import com.termux.shared.shell.command.runner.app.AppShell;
 import com.termux.shared.termux.TermuxConstants;
 import com.termux.shared.termux.TermuxUtils;
 import com.termux.shared.termux.shell.command.environment.TermuxShellEnvironment;
@@ -238,6 +240,33 @@ final class TermuxInstaller {
                         throw new RuntimeException("Moving termux prefix staging to prefix directory failed");
                     }
                     Logger.logInfo(LOG_TAG, "[OK] Staging moved to PREFIX");
+
+                    // Bootstrap second stage performs package-manager and runtime initialization.
+                    // The producer explicitly marks this script executable; execute it before
+                    // publishing completion so a partially initialized PREFIX is never reported ready.
+                    File secondStage = new File(TERMUX_PREFIX_DIR,
+                        "etc/termux/bootstrap/termux-bootstrap-second-stage.sh");
+                    if (secondStage.isFile()) {
+                        Logger.logInfo(LOG_TAG, "[Step 5.9.1] Running bootstrap second stage: " + secondStage);
+                        ExecutionCommand command = new ExecutionCommand(
+                            -1,
+                            secondStage.getAbsolutePath(),
+                            null,
+                            null,
+                            null,
+                            ExecutionCommand.Runner.APP_SHELL.getName(),
+                            false);
+                        command.commandLabel = "Termux Bootstrap Second Stage Command";
+                        command.backgroundCustomLogLevel = Logger.LOG_LEVEL_NORMAL;
+                        AppShell shell = AppShell.execute(activity, command, null,
+                            new TermuxShellEnvironment(), null, true);
+                        if (shell == null || !command.isSuccessful() || command.resultData.exitCode != 0) {
+                            throw new RuntimeException("Bootstrap second stage failed: " + command);
+                        }
+                        Logger.logInfo(LOG_TAG, "[OK] Bootstrap second stage completed");
+                    } else {
+                        Logger.logWarn(LOG_TAG, "Bootstrap second stage not found: " + secondStage);
+                    }
 
                     // Step 5.10: Verify final PREFIX
                     Logger.logInfo(LOG_TAG, "[Step 5.10] Verifying final PREFIX directory...");
