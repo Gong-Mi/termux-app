@@ -3,7 +3,7 @@
 //
 // 运行：cargo test --test flat_buffer_test -- --nocapture
 
-use termux_rust::engine::{SharedBufferPtr, TerminalEngine};
+use termux_rust::engine::{SharedBufferPtr, SharedScreenBuffer, TerminalEngine};
 
 /// 测试 flat_buffer 的大小是否等于 total_rows
 #[test]
@@ -125,7 +125,7 @@ fn test_sync_all_rows_to_shared_buffer() {
                 for col in 0..cols.min(buffer_row.text.len() as i32) as usize {
                     let cell_idx = flat_buffer.cell_index(col, physical_row);
                     if cell_idx < flat_buffer.text_data.len() {
-                        flat_buffer.text_data[cell_idx] = buffer_row.text[col] as u16;
+                        flat_buffer.text_data[cell_idx] = buffer_row.text[col] as u32;
                         flat_buffer.style_data[cell_idx] = buffer_row.styles[col];
                     }
                 }
@@ -229,4 +229,67 @@ fn test_alternate_buffer_does_not_affect_flat_buffer_size() {
         "✅ alternate buffer test passed: flat_buffer rows = {}",
         alt_flat_buffer_rows
     );
+}
+
+/// 验证包含非 BMP 字符（Emoji 与 Unicode 扩展平面，> 0xFFFF）的整行在同步到
+/// FlatScreenBuffer 与 SharedScreenBuffer 时不会发生 u16 截断
+#[test]
+fn test_unicode_extension_plane_and_emoji_retention_in_shared_buffer() {
+    let cols = 40;
+    let screen_rows = 10;
+    let total_rows = 50;
+
+    let mut engine = TerminalEngine::new(0, cols, screen_rows, total_rows, 10, 20);
+
+    // 写入包含经典 Emoji (😀 U+1F600, 🚀 U+1F680) 和 CJK 扩展平面汉字 (𠮷 U+20BB7) 的内容
+    let test_str = "Termux 😀 🚀 𠮷 End";
+    engine.process_bytes(test_str.as_bytes());
+
+    // 触发同步到 flat_buffer
+    engine.state.sync_screen_to_flat_buffer();
+
+    let flat = engine.state.flat_buffer.as_ref().unwrap();
+    let expected_chars: Vec<char> = test_str.chars().collect();
+
+    for (c, &expected_ch) in expected_chars.iter().enumerate() {
+        let cell_idx = flat.cell_index(c, 0);
+        let actual_code = flat.text_data[cell_idx];
+        assert_eq!(
+            actual_code,
+            expected_ch as u32,
+            "Char at col {} should be U+{:X} ('{}'), got U+{:X}",
+            c,
+            expected_ch as u32,
+            expected_ch,
+            actual_code
+        );
+    }
+
+    // 验证同步到 SharedScreenBuffer 内存块时也正确保留 32 位值与正确 style_offset
+    let shared_ptr = flat.create_shared_buffer();
+    assert!(!shared_ptr.is_null());
+
+    unsafe {
+        flat.sync_to_shared(shared_ptr);
+        let shared = &*shared_ptr;
+        assert_eq!(shared.cols, cols as u32);
+        assert_eq!(shared.rows, total_rows as u32);
+
+        // 验证第一行文字通过 shared.text_data 读出无截断
+        let text_slice = std::slice::from_raw_parts(shared.text_data.as_ptr(), cols as usize);
+        for (c, &expected_ch) in expected_chars.iter().enumerate() {
+            assert_eq!(
+                text_slice[c], expected_ch as u32,
+                "SharedScreenBuffer at col {} should retain 32-bit codepoint U+{:X}",
+                c, expected_ch as u32
+            );
+        }
+
+        // 释放测试分配的 shared_buffer
+        let size = SharedScreenBuffer::required_size(cols as usize, total_rows as usize);
+        let layout = std::alloc::Layout::from_size_align(size, 8).unwrap();
+        std::alloc::dealloc(shared_ptr as *mut u8, layout);
+    }
+
+    println!("✅ Unicode non-BMP and Emoji retention in shared buffer verified");
 }

@@ -222,7 +222,7 @@ impl ScreenState {
                 for c in 0..cols {
                     let idx = r * cols + c;
                     if c < row_data.text.len() {
-                        flat.text_data[idx] = row_data.text[c] as u16;
+                        flat.text_data[idx] = row_data.text[c] as u32;
                         flat.style_data[idx] = row_data.styles[c];
                     }
                 }
