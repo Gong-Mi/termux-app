@@ -18,8 +18,7 @@ fn bootstrap_file_mode(path: &str, archive_mode: Option<u32>) -> Option<u32> {
             || path == "lib/apt/apt-helper"
             || path.starts_with("lib/apt/methods/")
             || path == "etc/termux/bootstrap/termux-bootstrap-second-stage.sh"
-            || path
-                == "etc/termux/termux-bootstrap/second-stage/termux-bootstrap-second-stage.sh";
+            || path == "etc/termux/termux-bootstrap/second-stage/termux-bootstrap-second-stage.sh";
         known_executable.then_some(0o700)
     })
 }
