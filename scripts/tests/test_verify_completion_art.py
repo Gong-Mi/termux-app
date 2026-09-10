@@ -48,17 +48,15 @@ class CompletionArtContracts(unittest.TestCase):
         self.assertIn('actual transcript=', source)
         self.assertIn('actual plugin stdout=', source)
 
-    def test_app_suite_explicitly_defers_package_mutation(self):
-        expected = art.expected_for_suite('app')
-        self.assertNotIn('aptInstallsPythonAndPythonSubprocessRunsInArt', expected)
-        self.assertIn('existingPrefixDirectoryRepairPreservesUserFilesInArt', expected)
-        self.assertEqual(art.EXPECTED - expected, {'aptInstallsPythonAndPythonSubprocessRunsInArt'})
+    def test_ecosystem_suite_runs_package_mutation(self):
+        expected = art.expected_for_suite('ecosystem')
+        self.assertEqual(expected, art.EXPECTED)
+        self.assertEqual(art.EXPECTED - expected, set())
         output = '\n'.join('INSTRUMENTATION_STATUS: test=' + name for name in sorted(expected)) + f'\nOK ({len(expected)} tests)\n'
         self.assertTrue(art.verify_output(output, 0, expected))
-        self.assertFalse(art.verify_output(output, 0))
         flow = yaml.safe_load((ROOT / '.github/workflows/android-emulator-experiment.yml').read_text())
         commands = '\n'.join(step.get('run', '') for step in flow['jobs']['install-startup']['steps'])
-        self.assertIn('--output completion-art --suite app', commands)
+        self.assertIn('--output completion-art --suite ecosystem', commands)
 
     def test_zero_exit_install_log_with_traceback_is_not_clean(self):
         self.assertEqual(art.package_script_errors('Setting up python ...\n'), [])
@@ -72,6 +70,7 @@ class CompletionArtContracts(unittest.TestCase):
         script = (assets / 'package-python-art.sh').read_text()
         subprocess.run(['bash', '-n', str(assets / 'package-python-art.sh')], check=True)
         self.assertIn('APT::Update::Error-Mode=any update', script)
+        self.assertIn('"$PREFIX/bin/pkg" update', script)
         self.assertIn('install python', script)
         self.assertNotIn('--allow-unauthenticated', script)
         self.assertIn('dpkg-query', script)

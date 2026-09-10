@@ -92,7 +92,7 @@ def main():
         print('FAIL:', error)
     finally:
         # Copy actual app-owned package evidence even if installation/tests failed.
-        package_logs = ('apt-update.log', 'apt-install.log', 'python-package.txt', 'python-result.json', 'python-stderr.log') if args.suite == 'ecosystem' else ()
+        package_logs = ('pkg-update.log', 'apt-update.log', 'apt-install.log', 'python-package.txt', 'python-result.json', 'python-stderr.log') if args.suite == 'ecosystem' else ()
         for name in package_logs:
             try:
                 capture = run('package-' + name, ['exec-out', 'run-as', 'com.termux', '/system/bin/cat',
