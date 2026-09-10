@@ -7,6 +7,22 @@ use std::io::Read;
 use std::path::Path;
 use zip::ZipArchive;
 
+#[cfg(unix)]
+fn bootstrap_file_mode(path: &str, archive_mode: Option<u32>) -> Option<u32> {
+    // The producer is authoritative when it stored Unix metadata.  The
+    // fallback preserves the historical Termux bootstrap allowlist for old
+    // archives that have no Unix extra attributes.
+    archive_mode.map(|mode| mode & 0o7777).or_else(|| {
+        let known_executable = path.starts_with("bin/")
+            || path.starts_with("libexec/")
+            || path == "lib/apt/apt-helper"
+            || path.starts_with("lib/apt/methods/")
+            || path == "etc/termux/bootstrap/termux-bootstrap-second-stage.sh"
+            || path == "etc/termux/termux-bootstrap/second-stage/termux-bootstrap-second-stage.sh";
+        known_executable.then_some(0o700)
+    })
+}
+
 /// 从 Java 传入的字节数组解压 bootstrap zip 到指定目录
 ///
 /// # Returns
@@ -143,23 +159,14 @@ fn extract_zip_to_dir(
             i, path_str, bytes_copied
         );
 
-        // 设置执行权限 (bin/, libexec/ 等目录)
-        let path_str = file_path.to_string_lossy();
-        if path_str.starts_with("bin/")
-            || path_str.starts_with("libexec")
-            || path_str.starts_with("lib/apt/")
-        {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let mut perms = std::fs::metadata(&out_path)?.permissions();
-                perms.set_mode(0o700);
-                std::fs::set_permissions(&out_path, perms)?;
-                eprintln!(
-                    "[Rust Extract] [{}] Set executable permission: {}",
-                    i, path_str
-                );
-            }
+        // 设置执行权限：优先恢复 ZIP 的 Unix mode；旧归档使用兼容白名单兜底
+        #[cfg(unix)]
+        if let Some(mode) = bootstrap_file_mode(&path_str, file.unix_mode()) {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&out_path)?.permissions();
+            perms.set_mode(mode);
+            std::fs::set_permissions(&out_path, perms)?;
+            eprintln!("[Rust Extract] [{}] Set mode {:o}: {}", i, mode, path_str);
         }
 
         file_count += 1;
@@ -188,7 +195,7 @@ fn extract_zip_to_dir(
 
 #[cfg(test)]
 mod tests {
-    use super::extract_zip_to_dir;
+    use super::{bootstrap_file_mode, extract_zip_to_dir};
     use std::io::{Cursor, Write};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use zip::write::SimpleFileOptions;
@@ -221,6 +228,33 @@ mod tests {
         zip.start_file("bin/marker", options).unwrap();
         zip.write_all(b"bootstrap-marker").unwrap();
         zip.finish().unwrap().into_inner()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn archive_mode_wins_and_legacy_allowlist_is_preserved() {
+        assert_eq!(bootstrap_file_mode("share/tool", Some(0o755)), Some(0o755));
+        assert_eq!(bootstrap_file_mode("share/tool", Some(0o644)), Some(0o644));
+        assert_eq!(
+            bootstrap_file_mode(
+                "etc/termux/bootstrap/termux-bootstrap-second-stage.sh",
+                None
+            ),
+            Some(0o700)
+        );
+        assert_eq!(
+            bootstrap_file_mode(
+                "etc/termux/termux-bootstrap/second-stage/termux-bootstrap-second-stage.sh",
+                None
+            ),
+            Some(0o700)
+        );
+        assert_eq!(bootstrap_file_mode("lib/apt/apt-helper", None), Some(0o700));
+        assert_eq!(
+            bootstrap_file_mode("lib/apt/methods/http", None),
+            Some(0o700)
+        );
+        assert_eq!(bootstrap_file_mode("share/not-executable", None), None);
     }
 
     #[test]
