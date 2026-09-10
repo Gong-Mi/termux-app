@@ -18,6 +18,7 @@ rustflags = [
 rustflags = [
     "-C", "link-arg=-Wl,-z,max-page-size=16384",
     "-C", "target-feature=+neon",
+    "-L", "native=./.cargo/linker-hacks",
 ]
 
 # Android ARMv7 特定配置

@@ -19,6 +19,8 @@ import com.termux.shared.markdown.MarkdownUtils;
 import com.termux.shared.errors.Error;
 import com.termux.shared.android.PackageUtils;
 import com.termux.shared.android.PermissionUtils;
+import com.termux.shared.shell.command.ExecutionCommand;
+import com.termux.shared.shell.command.runner.app.AppShell;
 import com.termux.shared.termux.TermuxConstants;
 import com.termux.shared.termux.TermuxUtils;
 import com.termux.shared.termux.shell.command.environment.TermuxShellEnvironment;
@@ -68,10 +70,32 @@ final class TermuxInstaller {
         Logger.logInfo(LOG_TAG, "TERMUX_PREFIX_DIR_PATH: " + TERMUX_PREFIX_DIR_PATH);
         Logger.logInfo(LOG_TAG, "TERMUX_STAGING_PREFIX_DIR_PATH: " + TERMUX_STAGING_PREFIX_DIR_PATH);
         
-        if (sIsBootstrapInstallationRunning) {
-            Logger.logWarn(LOG_TAG, "[SKIP] Bootstrap installation is already running, skipping.");
+        if (BootstrapState.isReady()) {
+            Logger.logInfo(LOG_TAG, "[SKIP] Bootstrap already ready; running callback.");
+            whenDone.run();
             return;
         }
+
+        if (sIsBootstrapInstallationRunning || BootstrapState.isRunning()) {
+            Logger.logWarn(LOG_TAG, "[REGISTER] Bootstrap installation is already running, registering callback.");
+            BootstrapState.addCallback(() -> {
+                if (activity != null && !activity.isFinishing()) {
+                    activity.runOnUiThread(whenDone);
+                } else {
+                    whenDone.run();
+                }
+            });
+            return;
+        }
+
+        BootstrapState.addCallback(() -> {
+            if (activity != null && !activity.isFinishing()) {
+                activity.runOnUiThread(whenDone);
+            } else {
+                whenDone.run();
+            }
+        });
+        BootstrapState.setStage(BootstrapState.Stage.PRECONDITIONS);
 
         String bootstrapErrorMessage;
         Error filesDirectoryAccessibleError;
@@ -137,6 +161,7 @@ final class TermuxInstaller {
                 }
                 Logger.logInfo(LOG_TAG, "[SKIP] Existing prefix retained; runtime directories verified.");
                 whenDone.run();
+                BootstrapState.dispatchSuccess();
                 return;
             }
         } else {
@@ -239,6 +264,16 @@ final class TermuxInstaller {
                     }
                     Logger.logInfo(LOG_TAG, "[OK] Staging moved to PREFIX");
 
+                    // Step 5.9.1: Bootstrap second stage performs package-manager and runtime initialization.
+                    BootstrapState.setStage(BootstrapState.Stage.SECOND_STAGE);
+                    Logger.logInfo(LOG_TAG, "[Step 5.9.1] Delegating to BootstrapSecondStageRunner...");
+                    BootstrapSecondStageRunner.Result secondStageResult =
+                        BootstrapSecondStageRunner.run(activity, TERMUX_PREFIX_DIR);
+                    if (!secondStageResult.success) {
+                        throw new RuntimeException("Bootstrap second stage failed: " + secondStageResult.detail);
+                    }
+                    Logger.logInfo(LOG_TAG, "[OK] Bootstrap second stage completed: " + secondStageResult);
+
                     // Step 5.10: Verify final PREFIX
                     Logger.logInfo(LOG_TAG, "[Step 5.10] Verifying final PREFIX directory...");
                     boolean finalPrefixExists = FileUtils.directoryFileExists(TERMUX_PREFIX_DIR_PATH, true);
@@ -260,10 +295,12 @@ final class TermuxInstaller {
                     Logger.logInfo(LOG_TAG, "[OK] Environment file written");
 
                     Logger.logInfo(LOG_TAG, "========== [Bootstrap Installation Complete] ==========");
+                    BootstrapState.dispatchSuccess();
                     activity.runOnUiThread(whenDone);
 
                 } catch (final Exception e) {
                     Logger.logError(LOG_TAG, "[EXCEPTION] Bootstrap installation failed: " + e.getMessage());
+                    BootstrapState.dispatchFailure(BootstrapState.getStage(), e.getMessage());
                     showBootstrapErrorDialog(activity, whenDone, Logger.getStackTracesMarkdownString(null, Logger.getStackTracesStringArray(e)));
 
                 } finally {
@@ -288,6 +325,7 @@ final class TermuxInstaller {
         synchronized (TermuxInstaller.class) {
             sIsBootstrapInstallationRunning = false;
         }
+        BootstrapState.dispatchFailure(BootstrapState.getStage(), message);
         Logger.logErrorExtended(LOG_TAG, "Bootstrap Error:\n" + message);
 
         // Send a notification with the exception so that the user knows why bootstrap setup failed
@@ -302,6 +340,7 @@ final class TermuxInstaller {
                     })
                     .setPositiveButton(R.string.bootstrap_error_try_again, (dialog, which) -> {
                         dialog.dismiss();
+                        BootstrapState.reset();
                         FileUtils.deleteFile("termux prefix directory", TERMUX_PREFIX_DIR_PATH, true);
                         TermuxInstaller.setupBootstrapIfNeeded(activity, whenDone);
                     }).show();
