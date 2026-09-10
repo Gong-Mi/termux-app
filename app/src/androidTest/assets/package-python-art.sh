@@ -12,6 +12,13 @@ if [ "$status" -ne 0 ]; then
     exit 94
 fi
 
+# pkg's termux-exec postinst may retarget the generic compatibility symlink.
+# A shell created after bootstrap must select the linker variant explicitly on
+# Android API 29+; this export models that fresh PTY boundary.
+if [ -f "$PREFIX/lib/libtermux-exec-linker-ld-preload.so" ]; then
+    export LD_PRELOAD="$PREFIX/lib/libtermux-exec-linker-ld-preload.so"
+fi
+
 # Keep the direct apt update evidence as a comparison: pkg update must have
 # selected/configured the same repository before package installation.
 "$PREFIX/bin/apt-get" -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o APT::Update::Error-Mode=any update >"$CASE_DIR/apt-update.log" 2>&1
