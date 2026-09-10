@@ -70,10 +70,32 @@ final class TermuxInstaller {
         Logger.logInfo(LOG_TAG, "TERMUX_PREFIX_DIR_PATH: " + TERMUX_PREFIX_DIR_PATH);
         Logger.logInfo(LOG_TAG, "TERMUX_STAGING_PREFIX_DIR_PATH: " + TERMUX_STAGING_PREFIX_DIR_PATH);
         
-        if (sIsBootstrapInstallationRunning) {
-            Logger.logWarn(LOG_TAG, "[SKIP] Bootstrap installation is already running, skipping.");
+        if (BootstrapState.isReady()) {
+            Logger.logInfo(LOG_TAG, "[SKIP] Bootstrap already ready; running callback.");
+            whenDone.run();
             return;
         }
+
+        if (sIsBootstrapInstallationRunning || BootstrapState.isRunning()) {
+            Logger.logWarn(LOG_TAG, "[REGISTER] Bootstrap installation is already running, registering callback.");
+            BootstrapState.addCallback(() -> {
+                if (activity != null && !activity.isFinishing()) {
+                    activity.runOnUiThread(whenDone);
+                } else {
+                    whenDone.run();
+                }
+            });
+            return;
+        }
+
+        BootstrapState.addCallback(() -> {
+            if (activity != null && !activity.isFinishing()) {
+                activity.runOnUiThread(whenDone);
+            } else {
+                whenDone.run();
+            }
+        });
+        BootstrapState.setStage(BootstrapState.Stage.PRECONDITIONS);
 
         String bootstrapErrorMessage;
         Error filesDirectoryAccessibleError;
@@ -139,6 +161,7 @@ final class TermuxInstaller {
                 }
                 Logger.logInfo(LOG_TAG, "[SKIP] Existing prefix retained; runtime directories verified.");
                 whenDone.run();
+                BootstrapState.dispatchSuccess();
                 return;
             }
         } else {
@@ -241,53 +264,15 @@ final class TermuxInstaller {
                     }
                     Logger.logInfo(LOG_TAG, "[OK] Staging moved to PREFIX");
 
-                    // Bootstrap second stage performs package-manager and runtime initialization.
-                    // The producer explicitly marks this script executable; execute it before
-                    // publishing completion so a partially initialized PREFIX is never reported ready.
-                    File secondStage = new File(TERMUX_PREFIX_DIR,
-                        "etc/termux/termux-bootstrap/second-stage/termux-bootstrap-second-stage.sh");
-                    if (!secondStage.isFile()) {
-                        secondStage = new File(TERMUX_PREFIX_DIR,
-                            "etc/termux/bootstrap/termux-bootstrap-second-stage.sh");
+                    // Step 5.9.1: Bootstrap second stage performs package-manager and runtime initialization.
+                    BootstrapState.setStage(BootstrapState.Stage.SECOND_STAGE);
+                    Logger.logInfo(LOG_TAG, "[Step 5.9.1] Delegating to BootstrapSecondStageRunner...");
+                    BootstrapSecondStageRunner.Result secondStageResult =
+                        BootstrapSecondStageRunner.run(activity, TERMUX_PREFIX_DIR);
+                    if (!secondStageResult.success) {
+                        throw new RuntimeException("Bootstrap second stage failed: " + secondStageResult.detail);
                     }
-                    if (secondStage.isFile()) {
-                        Logger.logInfo(LOG_TAG, "[Step 5.9.1] Running bootstrap second stage: " + secondStage);
-                        String linker = "/system/bin/linker" + (android.os.Process.is64Bit() ? "64" : "");
-                        String bash = new File(TERMUX_PREFIX_DIR, "bin/bash").getAbsolutePath();
-                        ExecutionCommand command = new ExecutionCommand(
-                            -1,
-                            linker,
-                            new String[]{bash, secondStage.getAbsolutePath()},
-                            null,
-                            TERMUX_PREFIX_DIR_PATH,
-                            ExecutionCommand.Runner.APP_SHELL.getName(),
-                            false);
-                        command.commandLabel = "Termux Bootstrap Second Stage Command";
-                        command.backgroundCustomLogLevel = Logger.LOG_LEVEL_NORMAL;
-                        java.util.HashMap<String, String> additionalEnv = new java.util.HashMap<>();
-                        File execPreload = new File(TERMUX_PREFIX_DIR, "lib/libtermux-exec.so");
-                        if (execPreload.exists()) {
-                            additionalEnv.put("LD_PRELOAD", execPreload.getAbsolutePath());
-                        } else {
-                            File nativeExec = new File(activity.getApplicationInfo().nativeLibraryDir, "libtermux-exec.so");
-                            if (nativeExec.exists()) {
-                                additionalEnv.put("LD_PRELOAD", nativeExec.getAbsolutePath());
-                            } else {
-                                File ldPreload = new File(TERMUX_PREFIX_DIR, "lib/libtermux-exec-ld-preload.so");
-                                if (ldPreload.exists()) {
-                                    additionalEnv.put("LD_PRELOAD", ldPreload.getAbsolutePath());
-                                }
-                            }
-                        }
-                        AppShell shell = AppShell.execute(activity, command, null,
-                            new TermuxShellEnvironment(), additionalEnv, true);
-                        if (shell == null || !command.isSuccessful() || command.resultData.exitCode != 0) {
-                            throw new RuntimeException("Bootstrap second stage failed: " + command);
-                        }
-                        Logger.logInfo(LOG_TAG, "[OK] Bootstrap second stage completed");
-                    } else {
-                        Logger.logWarn(LOG_TAG, "Bootstrap second stage not found: " + secondStage);
-                    }
+                    Logger.logInfo(LOG_TAG, "[OK] Bootstrap second stage completed: " + secondStageResult);
 
                     // Step 5.10: Verify final PREFIX
                     Logger.logInfo(LOG_TAG, "[Step 5.10] Verifying final PREFIX directory...");
@@ -310,10 +295,12 @@ final class TermuxInstaller {
                     Logger.logInfo(LOG_TAG, "[OK] Environment file written");
 
                     Logger.logInfo(LOG_TAG, "========== [Bootstrap Installation Complete] ==========");
+                    BootstrapState.dispatchSuccess();
                     activity.runOnUiThread(whenDone);
 
                 } catch (final Exception e) {
                     Logger.logError(LOG_TAG, "[EXCEPTION] Bootstrap installation failed: " + e.getMessage());
+                    BootstrapState.dispatchFailure(BootstrapState.getStage(), e.getMessage());
                     showBootstrapErrorDialog(activity, whenDone, Logger.getStackTracesMarkdownString(null, Logger.getStackTracesStringArray(e)));
 
                 } finally {
@@ -338,6 +325,7 @@ final class TermuxInstaller {
         synchronized (TermuxInstaller.class) {
             sIsBootstrapInstallationRunning = false;
         }
+        BootstrapState.dispatchFailure(BootstrapState.getStage(), message);
         Logger.logErrorExtended(LOG_TAG, "Bootstrap Error:\n" + message);
 
         // Send a notification with the exception so that the user knows why bootstrap setup failed
@@ -352,6 +340,7 @@ final class TermuxInstaller {
                     })
                     .setPositiveButton(R.string.bootstrap_error_try_again, (dialog, which) -> {
                         dialog.dismiss();
+                        BootstrapState.reset();
                         FileUtils.deleteFile("termux prefix directory", TERMUX_PREFIX_DIR_PATH, true);
                         TermuxInstaller.setupBootstrapIfNeeded(activity, whenDone);
                     }).show();
