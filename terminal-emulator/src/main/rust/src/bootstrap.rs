@@ -17,7 +17,9 @@ fn bootstrap_file_mode(path: &str, archive_mode: Option<u32>) -> Option<u32> {
             || path.starts_with("libexec/")
             || path == "lib/apt/apt-helper"
             || path.starts_with("lib/apt/methods/")
-            || path == "etc/termux/bootstrap/termux-bootstrap-second-stage.sh";
+            || path == "etc/termux/bootstrap/termux-bootstrap-second-stage.sh"
+            || path
+                == "etc/termux/termux-bootstrap/second-stage/termux-bootstrap-second-stage.sh";
         known_executable.then_some(0o700)
     })
 }
@@ -237,6 +239,13 @@ mod tests {
         assert_eq!(
             bootstrap_file_mode(
                 "etc/termux/bootstrap/termux-bootstrap-second-stage.sh",
+                None
+            ),
+            Some(0o700)
+        );
+        assert_eq!(
+            bootstrap_file_mode(
+                "etc/termux/termux-bootstrap/second-stage/termux-bootstrap-second-stage.sh",
                 None
             ),
             Some(0o700)

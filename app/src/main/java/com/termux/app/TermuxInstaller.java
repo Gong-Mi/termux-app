@@ -245,21 +245,42 @@ final class TermuxInstaller {
                     // The producer explicitly marks this script executable; execute it before
                     // publishing completion so a partially initialized PREFIX is never reported ready.
                     File secondStage = new File(TERMUX_PREFIX_DIR,
-                        "etc/termux/bootstrap/termux-bootstrap-second-stage.sh");
+                        "etc/termux/termux-bootstrap/second-stage/termux-bootstrap-second-stage.sh");
+                    if (!secondStage.isFile()) {
+                        secondStage = new File(TERMUX_PREFIX_DIR,
+                            "etc/termux/bootstrap/termux-bootstrap-second-stage.sh");
+                    }
                     if (secondStage.isFile()) {
                         Logger.logInfo(LOG_TAG, "[Step 5.9.1] Running bootstrap second stage: " + secondStage);
+                        String linker = "/system/bin/linker" + (android.os.Process.is64Bit() ? "64" : "");
+                        String bash = new File(TERMUX_PREFIX_DIR, "bin/bash").getAbsolutePath();
                         ExecutionCommand command = new ExecutionCommand(
                             -1,
-                            secondStage.getAbsolutePath(),
+                            linker,
+                            new String[]{bash, secondStage.getAbsolutePath()},
                             null,
-                            null,
-                            null,
+                            TERMUX_PREFIX_DIR_PATH,
                             ExecutionCommand.Runner.APP_SHELL.getName(),
                             false);
                         command.commandLabel = "Termux Bootstrap Second Stage Command";
                         command.backgroundCustomLogLevel = Logger.LOG_LEVEL_NORMAL;
+                        java.util.HashMap<String, String> additionalEnv = new java.util.HashMap<>();
+                        File execPreload = new File(TERMUX_PREFIX_DIR, "lib/libtermux-exec.so");
+                        if (execPreload.exists()) {
+                            additionalEnv.put("LD_PRELOAD", execPreload.getAbsolutePath());
+                        } else {
+                            File nativeExec = new File(activity.getApplicationInfo().nativeLibraryDir, "libtermux-exec.so");
+                            if (nativeExec.exists()) {
+                                additionalEnv.put("LD_PRELOAD", nativeExec.getAbsolutePath());
+                            } else {
+                                File ldPreload = new File(TERMUX_PREFIX_DIR, "lib/libtermux-exec-ld-preload.so");
+                                if (ldPreload.exists()) {
+                                    additionalEnv.put("LD_PRELOAD", ldPreload.getAbsolutePath());
+                                }
+                            }
+                        }
                         AppShell shell = AppShell.execute(activity, command, null,
-                            new TermuxShellEnvironment(), null, true);
+                            new TermuxShellEnvironment(), additionalEnv, true);
                         if (shell == null || !command.isSuccessful() || command.resultData.exitCode != 0) {
                             throw new RuntimeException("Bootstrap second stage failed: " + command);
                         }
