@@ -43,12 +43,10 @@ pub fn create_server_socket(path: &[u8], backlog: i32) -> Result<RawFd, Errno> {
     let addr = UnixAddr::new(path)?;
     
     if let Err(e) = bind(fd.as_raw_fd(), &addr) {
-        let _ = close(fd.as_raw_fd());
         return Err(e);
     }
     
     if let Err(e) = listen(&fd, Backlog::new(backlog).unwrap()) {
-        let _ = close(fd.as_raw_fd());
         return Err(e);
     }
     
@@ -132,8 +130,25 @@ mod tests {
     use std::thread;
     
     #[test]
+    fn test_create_server_socket_rejects_missing_parent_without_abort() {
+        let root = std::env::temp_dir().join(format!(
+            "termux-rust-local-socket-missing-parent-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let socket_path = root.join("socket");
+
+        let result = create_server_socket(socket_path.to_str().unwrap().as_bytes(), 5);
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_local_socket_communication() {
-        let socket_path_str = "/data/data/com.termux/files/home/.gemini/tmp/test-socket-rust";
+        let socket_path = std::env::temp_dir().join(format!(
+            "termux-rust-local-socket-{}",
+            std::process::id()
+        ));
+        let socket_path_str = socket_path.to_str().unwrap();
         let _ = std::fs::remove_file(socket_path_str);
         let socket_path = socket_path_str.as_bytes();
         let server_fd = create_server_socket(socket_path, 5).expect("Failed to create server");
@@ -158,5 +173,6 @@ mod tests {
         
         let _ = close(client_fd.into_raw_fd());
         handle.join().unwrap();
+        let _ = std::fs::remove_file(socket_path_str);
     }
 }
