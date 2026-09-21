@@ -10,7 +10,9 @@ pub fn handle_osc(state: &mut ScreenState, events: &mut Vec<TerminalEvent>, opco
         .join(";");
 
     match opcode {
-        "0" | "2" => {
+        // 上游 doOscSetTextParameters(): case 0（图标+标题）、case 1（图标）、case 2（标题）
+        // 三个都落到同一个 setTitle(textParameter) —— Termux 侧没有独立的图标名。
+        "0" | "1" | "2" => {
             if params.len() > 1 {
                 let title = std::str::from_utf8(params[1]).unwrap_or("");
                 let clean_title = title.trim_end_matches(|c| c == '\x07' || c == '\x1b' || c == '\\');
