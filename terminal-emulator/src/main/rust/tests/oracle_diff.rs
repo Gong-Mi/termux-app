@@ -375,19 +375,37 @@ fn compare_snapshot(
 
 #[test]
 fn gate_self_check_projects_wide_characters() {
-    // A gate whose own projection is wrong would report confident nonsense. Guard the two
-    // rules the comparison depends on: wide characters reserve their columns, and zero-width
-    // characters consume none.
+    // A gate whose own projection is wrong would report confident nonsense. Guard the rules the
+    // comparison depends on, using rows shaped the way the engine actually stores them:
+    // one slot per column, with the second column of a wide character holding the '\0' filler
+    // (`terminal/handlers/print.rs`). The continuation marker must come from the base
+    // character's width, never from that filler value.
     let row = TerminalRow {
-        text: vec!['中', 'a', '\u{0301}', 'b'],
-        styles: vec![7; 4],
+        text: vec!['中', '\0', 'a', 'b', ' ', ' '],
+        styles: vec![7; 6],
         line_wrap: false,
     };
     let (cells, zero_width) = project_row(&row, 6);
     assert_eq!(cells[0], '中' as i64, "base column keeps the code point");
     assert_eq!(cells[1], CONTINUATION_CELL as i64, "second column is a continuation");
     assert_eq!(cells[2], 'a' as i64, "next base character starts after the wide glyph");
-    assert_eq!(cells[3], 'b' as i64, "zero-width character must not consume a column");
+    assert_eq!(cells[3], 'b' as i64, "narrow characters keep their own column");
+    assert_eq!(
+        zero_width, 0,
+        "the wide-character filler must not be counted as a zero-width character"
+    );
+
+    // Defensive path: the engine drops width-0 characters before they reach a row, so a row that
+    // carries one is out of spec -- the projection must still skip it instead of turning it into
+    // a cell, and must count it.
+    let row = TerminalRow {
+        text: vec!['a', '\u{0301}', 'b', ' ', ' '],
+        styles: vec![7; 5],
+        line_wrap: false,
+    };
+    let (cells, zero_width) = project_row(&row, 5);
+    assert_eq!(cells[0], 'a' as i64, "base character keeps its column");
+    assert_eq!(cells[1], BLANK_CELL as i64, "a combining mark never becomes a cell");
     assert_eq!(zero_width, 1, "the combining mark must be counted");
 }
 
@@ -418,6 +436,14 @@ fn oracle_diff_matches_upstream_reference() {
 
     let corpus = read_json_lines(&corpus_path);
     let golden = read_json_lines(&golden_path);
+    // The corpus carries the inputs, the golden file carries the reference snapshots. They are
+    // paired by sequence id and then by step order inside the sequence; every snapshot records
+    // its own step index and kind, which the loop below cross-checks so a reordered or truncated
+    // golden file cannot silently shift the comparison.
+    let corpus_by_id: BTreeMap<&str, &Value> = corpus
+        .iter()
+        .map(|entry| (entry["id"].as_str().expect("corpus id"), entry))
+        .collect();
     let corpus_ids: BTreeSet<String> = corpus
         .iter()
         .map(|entry| entry["id"].as_str().expect("corpus id").to_string())
@@ -460,6 +486,21 @@ fn oracle_diff_matches_upstream_reference() {
 
     for golden_entry in &golden {
         let id = golden_entry["id"].as_str().expect("golden id").to_string();
+        let corpus_entry = corpus_by_id
+            .get(id.as_str())
+            .copied()
+            .unwrap_or_else(|| panic!("corpus has no sequence {id}"));
+        let input_steps = corpus_entry["steps"].as_array().expect("corpus steps");
+        let snapshots = golden_entry["snapshots"]
+            .as_array()
+            .expect("golden snapshots");
+        assert_eq!(
+            input_steps.len(),
+            snapshots.len(),
+            "sequence {id}: golden has {} snapshots for {} corpus steps",
+            snapshots.len(),
+            input_steps.len()
+        );
         let cols = golden_entry["cols"].as_u64().expect("cols") as i32;
         let rows = golden_entry["rows"].as_u64().expect("rows") as i32;
         let transcript = golden_entry["transcript"].as_u64().expect("transcript") as i32;
@@ -467,19 +508,33 @@ fn oracle_diff_matches_upstream_reference() {
         let mut engine = TerminalEngine::new(1, cols, rows, transcript, 10, 20);
         let mut diff = EntryDiff::default();
 
-        for (step_index, (step, golden_snapshot)) in golden_entry["steps"]
-            .as_array()
-            .expect("steps")
-            .iter()
-            .zip(golden_entry["snapshots"].as_array().expect("snapshots").iter())
-            .enumerate()
+        for (step_index, (step, golden_snapshot)) in
+            input_steps.iter().zip(snapshots.iter()).enumerate()
         {
+            assert_eq!(
+                golden_snapshot["step"].as_u64(),
+                Some(step_index as u64),
+                "sequence {id}: golden snapshot order does not match the corpus step order"
+            );
+            let kind = golden_snapshot["kind"].as_str().unwrap_or("");
             if let Some(hex) = step.get("send").and_then(|v| v.as_str()) {
+                assert_eq!(
+                    kind, "send",
+                    "sequence {id} step {step_index}: snapshot kind {kind:?} does not match a send step"
+                );
                 engine.process_bytes(&hex_to_bytes(hex));
             } else if let Some(dims) = step.get("resize").and_then(|v| v.as_array()) {
+                assert_eq!(
+                    kind, "resize",
+                    "sequence {id} step {step_index}: snapshot kind {kind:?} does not match a resize step"
+                );
                 let new_cols = dims[0].as_i64().expect("resize cols") as i32;
                 let new_rows = dims[1].as_i64().expect("resize rows") as i32;
                 engine.state.resize(new_cols, new_rows);
+            } else {
+                panic!(
+                    "sequence {id} step {step_index}: corpus step is neither send nor resize: {step}"
+                );
             }
             compare_snapshot(&id, step_index, golden_snapshot, &engine, max_examples, &mut diff);
             compared_cells += golden_snapshot["cells"].as_u64().unwrap_or(0);
@@ -515,7 +570,7 @@ fn oracle_diff_matches_upstream_reference() {
 
         report_entries.push(json!({
             "id": id,
-            "desc": golden_entry["desc"],
+            "desc": corpus_entry["desc"],
             "status": if diff.is_clean() { "match" } else { "divergent" },
             "hard_diff_cells": diff.hard_cells,
             "hard_state": diff.hard_state,
