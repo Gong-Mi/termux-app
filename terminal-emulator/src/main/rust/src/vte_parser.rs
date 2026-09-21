@@ -901,6 +901,12 @@ impl Parser {
     /// DCS 序列处理 (参数收集阶段)
     fn do_dcs<P: Perform>(&mut self, handler: &mut P, byte: u8) {
         match byte {
+            // ESC \ 是 ST：上游 doDeviceControl() 也把 '\\' 当结束
+            // （"End of ESC \ string Terminator"），必须排在 '@'..='~' 最终字节之前。
+            b'\\' => {
+                handler.unhook();
+                self.escape_state = ESC_NONE;
+            }
             b'0'..=b'9' => {
                 self.params.add_digit(byte);
             }
@@ -920,8 +926,9 @@ impl Parser {
                 self.escape_state = ESC_P_DATA;
             }
             _ => {
-                // 异常字符，重置
-                self.escape_state = ESC_NONE;
+                // 上游在 ESC_P 状态下把非 ST 字节全部收进 DCS 字符串后丢弃（不打印、不改变
+                // 屏幕）。这里保持在 DCS 状态即可；原来重置成 ESC_NONE 会把 'q' 之类漏成
+                // 可打印文本（dcs-unknown 的 11 单元格 + 光标分歧就是这么来的）。
             }
         }
     }
