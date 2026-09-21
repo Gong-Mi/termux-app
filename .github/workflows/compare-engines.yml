@@ -388,8 +388,11 @@ jobs:
           fi
           echo "golden file is reproducible from the pinned reference"
 
+      # 刻意不使用 actions-rust-lang/setup-rust-toolchain：该 action 默认加 `-D warnings`，
+      # 会把 lib 里既有的 lint 债变成编译错误，导致功能差分测不了"行为"，只测到"lint"。
+      # lint 政策由 rust-ci.yml 的 fmt/clippy 作业负责，本作业只测功能是否与上游一致。
       - name: Set up Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
 
