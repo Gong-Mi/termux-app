@@ -131,19 +131,28 @@ impl Params {
         }
     }
     
-    /// 标记下一个参数为子参数（冒号分隔）
+    /// 冒号分隔的子参数
+    ///
+    /// 上游 parseArg()：';' 与 ':' 同样把参数槽推进一格，唯一区别是 ':' 会把推进后的新槽
+    /// 标成子参数（`mArgsSubParamsBitSet |= 1 << mArgIndex`）。所以这里必须先收尾当前参数
+    /// （空字段记 0，与上游 mArgs 初值 -1 经 getArg() 取默认值等价），再标记新槽。
     pub fn start_subparam(&mut self) {
+        self.finish_param();
         if self.len < MAX_ESCAPE_PARAMETERS {
-            if !self.has_current {
-                self.values[self.len] = 0;
-                self.len += 1;
-            }
             self.subparams_mask |= 1 << self.len;
-            self.current_param = 0;
-            self.has_current = false;
         }
+        self.current_param = 0;
+        self.has_current = false;
     }
     
+    /// 该槽位是否为冒号分隔的子参数
+    ///
+    /// 上游 `selectGraphicRendition()` 会跳过所有带子参数标记的槽位（"Skip leading sub
+    /// parameters"），所以 SGR 的 `38:2::r:g:b` 尾巴不会被当成独立的 SGR 码执行。
+    pub fn is_subparam(&self, index: usize) -> bool {
+        index < MAX_ESCAPE_PARAMETERS && (self.subparams_mask & (1 << index)) != 0
+    }
+
     /// 获取第 n 个参数的值
     pub fn get(&self, index: usize, default: i32) -> i32 {
         if index < self.len {
