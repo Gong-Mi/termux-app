@@ -5,6 +5,7 @@ use nix::sys::socket::{
     bind, listen, accept, socket, getsockopt,
     AddressFamily, SockFlag, SockType, UnixAddr, sockopt, Backlog,
 };
+#[cfg(test)]
 use nix::unistd::close;
 use nix::errno::Errno;
 use std::time::Instant;
