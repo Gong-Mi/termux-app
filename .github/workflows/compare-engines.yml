@@ -43,6 +43,16 @@ jobs:
           shared-key: "termux-rust-engine"
           target-dir: false
 
+      # skia-safe 的 Linux 预编译库带 -lfreetype/-lfontconfig：runner 不带这两个开发包时
+      # 编译能过、链接必挂（rust-lld: unable to find library）。与本仓库 debug_build.yml /
+      # fast_build.yml 相同的装法；libfreetype-dev 是 noble 起的包名，旧镜像回退 6-dev。
+      - name: Install font link dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev
+          sudo apt-get install -y libfreetype-dev || sudo apt-get install -y libfreetype6-dev
+
       # ========== Java Performance Test (Master Branch) ==========
       - name: Checkout Master for Java Baseline
         uses: actions/checkout@v6
@@ -212,6 +222,13 @@ jobs:
           shared-key: "termux-rust-engine"
           target-dir: false
 
+      - name: Install font link dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev
+          sudo apt-get install -y libfreetype-dev || sudo apt-get install -y libfreetype6-dev
+
       - name: Run Rust Logic Tests
         run: |
           cd terminal-emulator/src/main/rust
@@ -337,3 +354,121 @@ jobs:
           echo "- This check compares test files between feature and master branches" >> $GITHUB_STEP_SUMMARY
           echo "- Use the detailed diff view to understand specific changes" >> $GITHUB_STEP_SUMMARY
           echo "- Run the Performance Benchmark job for actual test execution results" >> $GITHUB_STEP_SUMMARY
+
+  # ========== 差分 oracle 门禁（期望值来自上游参考实现，不来自本仓库作者）==========
+  # 为什么需要它：本仓库其余测试的期望值都由编写引擎的人手写，只能抓笔误，
+  # 抓不到"对终端语义的理解本身就是错的"。这个作业把期望值换成固定 commit 的
+  # 上游 Termux TerminalEmulator 的输出（corpus/golden/upstream-<pin>.jsonl），
+  # 逐列比较码点、宽字符续列与样式位，并给出可施工的差异清单。
+  functional-oracle:
+    name: 🎯 Functional Oracle Diff (upstream reference)
+    runs-on: ubuntu-latest
+    env:
+      UPSTREAM_PIN: e634d8f981f48b6b89202cf0e04533f0889e03b3
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+
+      - name: Fetch pinned upstream reference
+        run: |
+          set -euo pipefail
+          git init "$RUNNER_TEMP/termux-app"
+          cd "$RUNNER_TEMP/termux-app"
+          git remote add origin https://github.com/termux/termux-app
+          if ! git fetch --depth 1 origin "$UPSTREAM_PIN"; then
+            echo "shallow SHA fetch refused, falling back to a blobless clone"
+            git fetch --filter=blob:none origin
+          fi
+          git checkout "$UPSTREAM_PIN"
+          test "$(git rev-parse HEAD)" = "$UPSTREAM_PIN"
+          echo "UPSTREAM_TERMUX_SRC=$RUNNER_TEMP/termux-app" >> "$GITHUB_ENV"
+
+      - name: Regenerate golden snapshots from the reference
+        run: |
+          set -euo pipefail
+          bash tools/oracle/run.sh corpus/sequences/seed.jsonl "$RUNNER_TEMP/golden.jsonl"
+          echo "GENERATED_GOLDEN=$RUNNER_TEMP/golden.jsonl" >> "$GITHUB_ENV"
+
+      - name: Detect reference drift
+        run: |
+          set -euo pipefail
+          if ! diff -u corpus/golden/upstream-e634d8f.jsonl "$GENERATED_GOLDEN"                 > "$RUNNER_TEMP/golden.diff"; then
+            echo "::error::the committed golden file is not reproducible from the pinned reference"
+            head -40 "$RUNNER_TEMP/golden.diff"
+            exit 1
+          fi
+          echo "golden file is reproducible from the pinned reference"
+
+      # 刻意不使用 actions-rust-lang/setup-rust-toolchain：该 action 默认加 `-D warnings`，
+      # 会把 lib 里既有的 lint 债变成编译错误，导致功能差分测不了"行为"，只测到"lint"。
+      # lint 政策由 rust-ci.yml 的 fmt/clippy 作业负责，本作业只测功能是否与上游一致。
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Setup Rust Caching
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: false
+          shared-key: "termux-rust-engine"
+          target-dir: false
+
+      - name: Install font link dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev
+          sudo apt-get install -y libfreetype-dev || sudo apt-get install -y libfreetype6-dev
+
+      - name: Differential gate (no new divergence)
+        run: |
+          set -euo pipefail
+          cd terminal-emulator/src/main/rust
+          cargo test --test oracle_diff -- --nocapture
+
+      - name: Divergence report (informational)
+        if: always()
+        env:
+          ORACLE_MODE: report
+        run: |
+          cd terminal-emulator/src/main/rust
+          cargo test --test oracle_diff -- --nocapture || true
+          REPORT=target/oracle_diff_report.json
+          if [ ! -f "$REPORT" ]; then
+            echo "oracle report was not produced" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+          {
+            echo "### 🎯 Oracle divergence report"
+            echo
+            jq -r '"sequences: \(.sequences)  |  matching upstream: \(.clean_sequences)  |  cells compared: \(.compared_cells)"' "$REPORT"
+            echo
+            echo "#### Divergences (id: differing cells)"
+            echo '```'
+            jq -r '.entries[] | select(.status=="divergent")
+                   | "\(.id): \(.hard_diff_cells) cells"
+                     + (if (.hard_state|length) > 0 then " | " + (.hard_state|join("; ")) else "" end)' "$REPORT" | head -40
+            echo '```'
+            echo "#### First cell-level examples"
+            echo '```'
+            jq -r '.entries[].examples[] | "\(.id) step\(.step) r\(.row)c\(.col): golden cp=\(.golden_cp) style=\(.golden_style) vs engine cp=\(.engine_cp) style=\(.engine_style)"' "$REPORT" | head -25
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload oracle evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-diff-evidence
+          path: |
+            terminal-emulator/src/main/rust/target/oracle_diff_report.json
+            corpus/golden/upstream-e634d8f.jsonl
+          if-no-files-found: warn
+

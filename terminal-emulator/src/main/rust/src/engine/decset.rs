@@ -17,7 +17,14 @@ impl ScreenState {
                         if set { self.modes.set(DECSET_BIT_REVERSE_VIDEO) } else { self.modes.reset(DECSET_BIT_REVERSE_VIDEO) }
                     },
                     6 => {
-                        if set { self.modes.set(DECSET_BIT_ORIGIN_MODE) } else { self.modes.reset(DECSET_BIT_ORIGIN_MODE) }
+                        if set {
+                            self.modes.set(DECSET_BIT_ORIGIN_MODE);
+                            // 上游 case 6: `if (setting) setCursorPosition(0, 0)` —— 打开原点模式时
+                            // 光标回到滚动区原点（此时边距参与定位）。
+                            self.set_cursor_position(1, 1);
+                        } else {
+                            self.modes.reset(DECSET_BIT_ORIGIN_MODE);
+                        }
                     },
                     7 => {
                         if set { self.modes.set(DECSET_BIT_AUTOWRAP) } else { self.modes.reset(DECSET_BIT_AUTOWRAP) }
@@ -30,7 +37,14 @@ impl ScreenState {
                         if set { self.modes.set(DECSET_BIT_APPLICATION_KEYPAD) } else { self.modes.reset(DECSET_BIT_APPLICATION_KEYPAD) }
                     },
                     69 => {
-                        if set { self.modes.set(DECSET_BIT_LEFTRIGHT_MARGIN_MODE) } else { self.modes.reset(DECSET_BIT_LEFTRIGHT_MARGIN_MODE) }
+                        if set {
+                            self.modes.set(DECSET_BIT_LEFTRIGHT_MARGIN_MODE);
+                        } else {
+                            // 上游 case 69: 关闭时左右边距复位成整屏。
+                            self.modes.reset(DECSET_BIT_LEFTRIGHT_MARGIN_MODE);
+                            self.left_margin = 0;
+                            self.right_margin = self.cols;
+                        }
                     },
                     1000 => {
                         if set {
@@ -64,26 +78,23 @@ impl ScreenState {
                         self.sgr_mouse = set;
                     },
                     1034 => { /* 8位输入模式，忽略 */ },
-                    1047 => {
-                        if set {
-                            self.use_alternate_buffer = true;
-                            self.erase_in_display(2);
-                        } else {
-                            self.use_alternate_buffer = false;
+                    // 上游把 47/1047/1049 归成同一段逻辑：set 时 saveCursor() + 切备用屏并清屏，
+                    // reset 时切回主屏 + restoreCursor()；已经在目标屏上时整段跳过。
+                    47 | 1047 | 1049 => {
+                        if set != self.use_alternate_buffer {
+                            if set {
+                                self.save_cursor();
+                            }
+                            self.use_alternate_buffer = set;
+                            if set {
+                                self.erase_in_display(2);
+                            } else {
+                                self.restore_cursor();
+                            }
                         }
                     },
                     1048 => {
                         if set { self.save_cursor(); } else { self.restore_cursor(); }
-                    },
-                    1049 => {
-                        if set {
-                            self.save_cursor();
-                            self.use_alternate_buffer = true;
-                            self.erase_in_display(2);
-                        } else {
-                            self.use_alternate_buffer = false;
-                            self.restore_cursor();
-                        }
                     },
                     2004 => {
                         if set { self.modes.set(DECSET_BIT_BRACKETED_PASTE_MODE) } else { self.modes.reset(DECSET_BIT_BRACKETED_PASTE_MODE) }

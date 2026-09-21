@@ -35,6 +35,8 @@ ndk-sys = "0.6.0"
 android_logger = "0.13"
 
 [dev-dependencies]
+# oracle 差分门禁需要解析 corpus/golden/*.jsonl
+serde_json = "1"
 skia-bindings = "0.93.1"
 md5 = "0.7"
 rusqlite = { version = "0.31.0", features = ["bundled"] }
@@ -110,3 +112,9 @@ path = "tests/vulkan_path_cache_test.rs"
 [[test]]
 name = "vulkan_cache_performance_proof"
 path = "tests/vulkan_cache_performance_proof.rs"
+
+# 与上游参考实现的差分 oracle 门禁（期望值来自 tools/oracle 导出的黄金文件，
+# 而非本仓库作者手写）：tests/oracle_diff.rs
+[[test]]
+name = "oracle_diff"
+path = "tests/oracle_diff.rs"

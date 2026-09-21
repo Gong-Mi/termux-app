@@ -16,6 +16,12 @@ impl ScreenState {
 
         let mut i = 0;
         while i < params.len {
+            // 上游 selectGraphicRendition(): "Skip leading sub parameters" —— 带子参数标记的
+            // 槽位直接跳过。否则 `48:2::1:2:3` 的尾巴 3 会被当成 SGR 3（斜体）执行。
+            if params.is_subparam(i) {
+                i += 1;
+                continue;
+            }
             let p = params.values[i];
             match p {
                 0 => {
@@ -26,7 +32,19 @@ impl ScreenState {
                 1 => self.effect |= EFFECT_BOLD,
                 2 => self.effect |= EFFECT_DIM,
                 3 => self.effect |= EFFECT_ITALIC,
-                4 => self.effect |= EFFECT_UNDERLINE,
+                4 => {
+                    // 上游 case 4：带子参数时是 kitty 下划线变体表单（`4:0` 关闭、`4:n` 打开）。
+                    if i + 1 < params.len && params.is_subparam(i + 1) {
+                        i += 1;
+                        if params.values[i] == 0 {
+                            self.effect &= !EFFECT_UNDERLINE;
+                        } else {
+                            self.effect |= EFFECT_UNDERLINE;
+                        }
+                    } else {
+                        self.effect |= EFFECT_UNDERLINE;
+                    }
+                }
                 5 => self.effect |= EFFECT_BLINK,
                 7 => self.effect |= EFFECT_REVERSE,
                 8 => self.effect |= EFFECT_INVISIBLE,

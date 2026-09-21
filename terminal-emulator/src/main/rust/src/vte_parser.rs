@@ -131,19 +131,28 @@ impl Params {
         }
     }
     
-    /// 标记下一个参数为子参数（冒号分隔）
+    /// 冒号分隔的子参数
+    ///
+    /// 上游 parseArg()：';' 与 ':' 同样把参数槽推进一格，唯一区别是 ':' 会把推进后的新槽
+    /// 标成子参数（`mArgsSubParamsBitSet |= 1 << mArgIndex`）。所以这里必须先收尾当前参数
+    /// （空字段记 0，与上游 mArgs 初值 -1 经 getArg() 取默认值等价），再标记新槽。
     pub fn start_subparam(&mut self) {
+        self.finish_param();
         if self.len < MAX_ESCAPE_PARAMETERS {
-            if !self.has_current {
-                self.values[self.len] = 0;
-                self.len += 1;
-            }
             self.subparams_mask |= 1 << self.len;
-            self.current_param = 0;
-            self.has_current = false;
         }
+        self.current_param = 0;
+        self.has_current = false;
     }
     
+    /// 该槽位是否为冒号分隔的子参数
+    ///
+    /// 上游 `selectGraphicRendition()` 会跳过所有带子参数标记的槽位（"Skip leading sub
+    /// parameters"），所以 SGR 的 `38:2::r:g:b` 尾巴不会被当成独立的 SGR 码执行。
+    pub fn is_subparam(&self, index: usize) -> bool {
+        index < MAX_ESCAPE_PARAMETERS && (self.subparams_mask & (1 << index)) != 0
+    }
+
     /// 获取第 n 个参数的值
     pub fn get(&self, index: usize, default: i32) -> i32 {
         if index < self.len {
@@ -892,6 +901,12 @@ impl Parser {
     /// DCS 序列处理 (参数收集阶段)
     fn do_dcs<P: Perform>(&mut self, handler: &mut P, byte: u8) {
         match byte {
+            // ESC \ 是 ST：上游 doDeviceControl() 也把 '\\' 当结束
+            // （"End of ESC \ string Terminator"），必须排在 '@'..='~' 最终字节之前。
+            b'\\' => {
+                handler.unhook();
+                self.escape_state = ESC_NONE;
+            }
             b'0'..=b'9' => {
                 self.params.add_digit(byte);
             }
@@ -911,8 +926,9 @@ impl Parser {
                 self.escape_state = ESC_P_DATA;
             }
             _ => {
-                // 异常字符，重置
-                self.escape_state = ESC_NONE;
+                // 上游在 ESC_P 状态下把非 ST 字节全部收进 DCS 字符串后丢弃（不打印、不改变
+                // 屏幕）。这里保持在 DCS 状态即可；原来重置成 ESC_NONE 会把 'q' 之类漏成
+                // 可打印文本（dcs-unknown 的 11 单元格 + 光标分歧就是这么来的）。
             }
         }
     }

@@ -56,14 +56,8 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
         }
         'H' | 'f' => {
             // CUP - Cursor Position (默认 row=1, col=1)
-            let row = params.get_arg0(1);
-            let col = params.get_arg1(1);
-            if state.origin_mode() {
-                state.cursor.y = max(state.top_margin, min(state.bottom_margin - 1, state.top_margin + row - 1));
-            } else {
-                state.cursor.y = max(0, min(state.rows - 1, row - 1));
-            }
-            state.cursor.x = max(state.left_margin, min(state.right_margin - 1, col - 1));
+            // 上游走同一个 setCursorPosition：边距只在 origin mode 下参与定位。
+            state.set_cursor_position(params.get_arg0(1), params.get_arg1(1));
         }
         'I' => {
             // CHT - Cursor Horizontal Tab (默认 1)
@@ -232,6 +226,8 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
             let top = params.get_arg0(1);
             let bottom = params.get_arg1(state.rows as i32);
             state.set_margins(top, bottom);
+            // 上游 case 'r' 末尾：DECSTBM 把光标移到页面的第 1 列第 1 行，遵守 origin mode。
+            state.set_cursor_position(1, 1);
         }
         's' => {
             if state.leftright_margin_mode() {
@@ -239,6 +235,8 @@ pub fn handle_csi(state: &mut ScreenState, params: &Params, intermediates: &[u8]
                 let left = params.get_arg0(1);
                 let right = params.get_arg1(state.cols as i32);
                 state.set_left_right_margins(left, right);
+                // 上游 DECSLRM 末尾：光标移到页面的第 1 列第 1 行。
+                state.set_cursor_position(1, 1);
             } else {
                 state.save_cursor();
             }

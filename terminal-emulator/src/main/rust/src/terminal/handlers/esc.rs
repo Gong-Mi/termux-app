@@ -3,15 +3,14 @@ use crate::engine::ScreenState;
 pub fn handle_esc(state: &mut ScreenState, intermediates: &[u8], byte: u8) {
     match (intermediates, byte) {
         (&[b'#'], b'8') => { state.decaln_screen_align(); }
-        (&[b'('], b'0') => {
-            state.use_line_drawing_g0 = true;
-            state.use_line_drawing_uses_g0 = true;
-        }
+        // 上游 ESC_SELECT_LEFT_PAREN / RIGHT_PAREN 只改被指定的那个字符集标志
+        // （`mUseLineDrawingG0 = (b == '0')` / `mUseLineDrawingG1 = (b == '0')`），
+        // 「当前用 G0 还是 G1」只由 SO(0x0E)/SI(0x0F) 决定。这里原来顺手改了
+        // use_line_drawing_uses_g0，导致 `ESC ) 0` 之后连没指定过的 G0 也被当成
+        // 线绘（charset-shift 的 'a' 被画成 '▒'）。
+        (&[b'('], b'0') => { state.use_line_drawing_g0 = true; }
         (&[b'('], b'B') => { state.use_line_drawing_g0 = false; }
-        (&[b')'], b'0') => {
-            state.use_line_drawing_g1 = true;
-            state.use_line_drawing_uses_g0 = false;
-        }
+        (&[b')'], b'0') => { state.use_line_drawing_g1 = true; }
         (&[b')'], b'B') => { state.use_line_drawing_g1 = false; }
         (&[], b'6') => {
             if state.cursor.x > state.left_margin {

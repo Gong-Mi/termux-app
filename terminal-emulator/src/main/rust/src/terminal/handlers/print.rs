@@ -118,13 +118,15 @@ fn handle_print_internal(state: &mut ScreenState, c: char) {
     }
 
     // 5. 更新光标位置
-    if state.cursor.x + char_width >= state.right_margin {
-        // 到达或超过边界：停留在最后一列并标记 about_to_wrap
-        state.cursor.x = state.right_margin - char_width;
-        state.cursor.about_to_wrap = true;
-    } else {
-        state.cursor.x += char_width;
-        state.cursor.about_to_wrap = false;
+    //
+    // 上游 processCodePoint 收尾：
+    //   if (autoWrap && displayWidth > 0) mAboutToAutoWrap = (mCursorCol == mRightMargin - displayWidth);
+    //   mCursorCol = Math.min(mCursorCol + displayWidth, mRightMargin - 1);
+    // 引擎原来把超界情况夹到 right_margin - char_width，宽字符在 10 列屏上于是停在 8
+    // 而不是上游的 9（wide-cjk-narrow 的 (8,0) vs (9,0)）。
+    if state.auto_wrap() {
+        state.cursor.about_to_wrap = state.cursor.x == state.right_margin - char_width;
     }
+    state.cursor.x = (state.cursor.x + char_width).min(state.right_margin - 1);
 }
 
