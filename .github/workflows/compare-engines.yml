@@ -43,6 +43,16 @@ jobs:
           shared-key: "termux-rust-engine"
           target-dir: false
 
+      # skia-safe 的 Linux 预编译库带 -lfreetype/-lfontconfig：runner 不带这两个开发包时
+      # 编译能过、链接必挂（rust-lld: unable to find library）。与本仓库 debug_build.yml /
+      # fast_build.yml 相同的装法；libfreetype-dev 是 noble 起的包名，旧镜像回退 6-dev。
+      - name: Install font link dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev
+          sudo apt-get install -y libfreetype-dev || sudo apt-get install -y libfreetype6-dev
+
       # ========== Java Performance Test (Master Branch) ==========
       - name: Checkout Master for Java Baseline
         uses: actions/checkout@v6
@@ -211,6 +221,13 @@ jobs:
           cache-all-crates: false
           shared-key: "termux-rust-engine"
           target-dir: false
+
+      - name: Install font link dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev
+          sudo apt-get install -y libfreetype-dev || sudo apt-get install -y libfreetype6-dev
 
       - name: Run Rust Logic Tests
         run: |
@@ -402,6 +419,13 @@ jobs:
           cache-all-crates: false
           shared-key: "termux-rust-engine"
           target-dir: false
+
+      - name: Install font link dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev
+          sudo apt-get install -y libfreetype-dev || sudo apt-get install -y libfreetype6-dev
 
       - name: Differential gate (no new divergence)
         run: |
