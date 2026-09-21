@@ -2638,15 +2638,26 @@ fn test_line_drawing_charset_switch() {
         "Should be using G0"
     );
 
-    // ESC ) 0 - 选择行绘图字符集为 G1
+    // ESC ) 0 - 指定 G1 为行绘图字符集
+    //
+    // 「当前用 G0 还是 G1」不受指定影响，只由 SO/SI 决定：上游 ESC_SELECT_RIGHT_PAREN
+    // 只写 mUseLineDrawingG1，不动 mUseLineDrawingUsesG0（差分语料 charset-shift 就是
+    // 以 `ESC ) 0` 之后 'a' 仍是 ASCII 'a' 为基准的）。
     engine.process_bytes(b"\x1b)0");
     assert_eq!(
         engine.state.use_line_drawing_g1, true,
         "Line drawing G1 should be enabled"
     );
     assert_eq!(
+        engine.state.use_line_drawing_uses_g0, true,
+        "Designating G1 must not switch the active charset; only SO does"
+    );
+
+    // SO - 才切到 G1
+    engine.process_bytes(b"\x0e");
+    assert_eq!(
         engine.state.use_line_drawing_uses_g0, false,
-        "Should be using G1"
+        "Should be using G1 after SO"
     );
 }
 

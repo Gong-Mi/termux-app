@@ -113,7 +113,9 @@ impl ScreenState {
             title_stack: Vec::new(),
             use_line_drawing_g0: false,
             use_line_drawing_g1: false,
-            use_line_drawing_uses_g0: false,
+            // 上游字段声明的初值就是 true（`mUseLineDrawingG0, mUseLineDrawingG1,
+            // mUseLineDrawingUsesG0 = true`），只 designate 了 G1 时默认仍按 G0 取字符集。
+            use_line_drawing_uses_g0: true,
             scroll_counter: 0,
             java_callback_obj: None,
             pending_responses: Vec::new(),
