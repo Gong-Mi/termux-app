@@ -78,6 +78,13 @@ jobs:
             terminal-emulator/src/main/rust/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('terminal-emulator/src/main/rust/Cargo.lock') }}
       
+      - name: Install font link dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev
+          sudo apt-get install -y libfreetype-dev || sudo apt-get install -y libfreetype6-dev
+
       - name: Run Tests
         run: |
           cd terminal-emulator/src/main/rust
@@ -140,6 +147,13 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
       
+      - name: Install font link dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev
+          sudo apt-get install -y libfreetype-dev || sudo apt-get install -y libfreetype6-dev
+
       - name: Run Native ARM Tests
         run: |
           cd terminal-emulator/src/main/rust
