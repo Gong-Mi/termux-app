@@ -336,8 +336,25 @@ impl ScreenState {
     }
 
     pub fn set_margins(&mut self, top: i32, bottom: i32) {
-        self.top_margin = max(0, min(top - 1, self.rows - 1));
-        self.bottom_margin = max(self.top_margin + 1, min(bottom, self.rows));
+        // 上游 TerminalEmulator case 'r'：top 调 -1 后上限是 rows-2，bottom 至少比 top 大 2。
+        self.top_margin = max(0, min(top - 1, self.rows - 2));
+        self.bottom_margin = max(self.top_margin + 2, min(bottom, self.rows));
+    }
+
+    /// 上游 `setCursorPosition(x, y)`：x/y 是相对原点的 0 基偏移，边距只在 origin mode 下生效；
+    /// 入参这里保持 CSI 的 1 基语义（row/col 即 getArg0(1)/getArg1(1) 的原始值）。
+    /// 上游落在 `setCursorRowCol`：绝对值再夹一次，并且清掉 about_to_wrap。
+    pub fn set_cursor_position(&mut self, row: i32, col: i32) {
+        let origin_mode = self.origin_mode();
+        let top = if origin_mode { self.top_margin } else { 0 };
+        let bottom = if origin_mode { self.bottom_margin } else { self.rows };
+        let left = if origin_mode { self.left_margin } else { 0 };
+        let right = if origin_mode { self.right_margin } else { self.cols };
+        let new_row = max(top, min(top + row - 1, bottom - 1));
+        let new_col = max(left, min(left + col - 1, right - 1));
+        self.cursor.y = max(0, min(new_row, self.rows - 1));
+        self.cursor.x = max(0, min(new_col, self.cols - 1));
+        self.cursor.about_to_wrap = false;
     }
 
     pub fn set_cursor_style(&mut self, style: i32) {
@@ -536,7 +553,8 @@ impl ScreenState {
     }
 
     pub fn set_left_right_margins(&mut self, left: i32, right: i32) {
-        self.left_margin = max(0, min(left - 1, self.cols - 1));
+        // 上游 DECSLRM：left 调 -1 后上限是 cols-2，right 至少比 left 大 1。
+        self.left_margin = min(max(0, left - 1), self.cols - 2);
         self.right_margin = max(self.left_margin + 1, min(right, self.cols));
     }
 

@@ -34,7 +34,9 @@
 //! that sequence is allowed to carry. Both counters are ratchets: the gate fails when a sequence
 //! introduces a *new* divergence, or makes a recorded one worse in either counter, and reports
 //! when the baseline can shrink. State-only divergences (0 cells) are covered as well, so a
-//! cursor or title mismatch cannot hide behind a baseline entry that only counts cells. Run with
+//! cursor or title mismatch cannot hide behind a baseline entry that only counts cells. A
+//! sequence that starts matching upstream is reported too: keep a stale entry and the same
+//! sequence could later regress all the way back to the recorded numbers unnoticed. Run with
 //! `ORACLE_MODE=report` to list all divergences for adoption without failing,
 //! `ORACLE_WRITE_BASELINE=1` to write the current state as the new baseline.
 //!
@@ -125,22 +127,6 @@ fn decode_rle(rle: &Value) -> Vec<i64> {
         }
     }
     out
-}
-
-fn encode_rle(values: &[i64]) -> Value {
-    let mut flat: Vec<i64> = Vec::new();
-    let mut index = 0;
-    while index < values.len() {
-        let value = values[index];
-        let mut run = 1;
-        while index + run < values.len() && values[index + run] == value {
-            run += 1;
-        }
-        flat.push(run as i64);
-        flat.push(value);
-        index += run;
-    }
-    Value::Array(flat.into_iter().map(Value::from).collect())
 }
 
 /// Project one row of this engine into column space.
@@ -595,8 +581,9 @@ fn oracle_diff_matches_upstream_reference() {
             clean_sequences += 1;
         }
 
+        let state_count = diff.hard_state.len() as u64;
+
         if !diff.is_clean() {
-            let state_count = diff.hard_state.len() as u64;
             current_baseline.insert(
                 id.clone(),
                 KnownDivergence {
@@ -604,30 +591,37 @@ fn oracle_diff_matches_upstream_reference() {
                     state: state_count,
                 },
             );
-            match baseline.get(&id) {
-                Some(known) => {
-                    if known.cells >= diff.hard_cells && known.state >= state_count {
-                        if known.cells > diff.hard_cells || known.state > state_count {
-                            improvements.push(format!(
-                                "{id}: cells {} -> {}, state {} -> {}",
-                                known.cells, diff.hard_cells, known.state, state_count
-                            ));
-                        }
-                    } else {
-                        failures.push(format!(
-                            "{id}: known divergence got worse, cells {} -> {}, state {} -> {}",
-                            known.cells, diff.hard_cells, known.state, state_count
-                        ));
-                    }
+        }
+
+        // 已登记的分歧：只许变小；序列修到与上游一致时提示把登记删掉，否则过期的登记数
+        // 会让同一条序列将来再退化时被静默放行。
+        if let Some(known) = baseline.get(&id) {
+            if diff.is_clean() {
+                improvements.push(format!(
+                    "{id}: now matches upstream, drop the baseline entry ({} cells, {} state)",
+                    known.cells, known.state
+                ));
+            } else if known.cells >= diff.hard_cells && known.state >= state_count {
+                if known.cells > diff.hard_cells || known.state > state_count {
+                    improvements.push(format!(
+                        "{id}: cells {} -> {}, state {} -> {}",
+                        known.cells, diff.hard_cells, known.state, state_count
+                    ));
                 }
-                None => failures.push(format!(
-                    "{id}: new divergence, {} cells, {} state mismatches{}{}",
-                    diff.hard_cells,
-                    state_count,
-                    if diff.hard_state.is_empty() { "" } else { ": " },
-                    diff.hard_state.join(" | ")
-                )),
+            } else {
+                failures.push(format!(
+                    "{id}: known divergence got worse, cells {} -> {}, state {} -> {}",
+                    known.cells, diff.hard_cells, known.state, state_count
+                ));
             }
+        } else if !diff.is_clean() {
+            failures.push(format!(
+                "{id}: new divergence, {} cells, {} state mismatches{}{}",
+                diff.hard_cells,
+                state_count,
+                if diff.hard_state.is_empty() { "" } else { ": " },
+                diff.hard_state.join(" | ")
+            ));
         }
 
         report_entries.push(json!({
