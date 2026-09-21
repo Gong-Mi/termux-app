@@ -1,0 +1,38 @@
+{
+  "altscreen-1047": {
+    "cells": 0,
+    "state": 1
+  },
+  "altscreen-47": {
+    "cells": 11,
+    "state": 3
+  },
+  "charset-shift": {
+    "cells": 1,
+    "state": 0
+  },
+  "dcs-unknown": {
+    "cells": 11,
+    "state": 2
+  },
+  "decstbm-scroll": {
+    "cells": 21,
+    "state": 2
+  },
+  "origin-mode": {
+    "cells": 0,
+    "state": 1
+  },
+  "osc-title-st": {
+    "cells": 0,
+    "state": 1
+  },
+  "sgr-truecolor-colon": {
+    "cells": 7,
+    "state": 0
+  },
+  "wide-cjk-narrow": {
+    "cells": 0,
+    "state": 1
+  }
+}

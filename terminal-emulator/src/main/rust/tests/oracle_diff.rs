@@ -29,10 +29,14 @@
 //! Ratchet
 //! -------
 //! The port is not expected to match upstream on day one, so known divergences are recorded in
-//! `corpus/oracle_baseline.json` (id -> diverging cell count). The gate fails when a sequence
-//! introduces *new* divergence or makes an existing one worse, and notes when the baseline
-//! can shrink. Run with `ORACLE_MODE=report` to list all divergences for adoption without
-//! failing, `ORACLE_WRITE_BASELINE=1` to write the current state as the new baseline.
+//! `corpus/oracle_baseline.json` as `"<sequence>": {"cells": N, "state": M}` -- the number of
+//! differing cells and the number of per-step state mismatches (cursor, title, alternate buffer)
+//! that sequence is allowed to carry. Both counters are ratchets: the gate fails when a sequence
+//! introduces a *new* divergence, or makes a recorded one worse in either counter, and reports
+//! when the baseline can shrink. State-only divergences (0 cells) are covered as well, so a
+//! cursor or title mismatch cannot hide behind a baseline entry that only counts cells. Run with
+//! `ORACLE_MODE=report` to list all divergences for adoption without failing,
+//! `ORACLE_WRITE_BASELINE=1` to write the current state as the new baseline.
 //!
 //! Environment
 //! -----------
@@ -255,6 +259,60 @@ impl EntryDiff {
     }
 }
 
+/// One recorded divergence: how many cells may differ from upstream, and how many per-step state
+/// mismatches (cursor, title, alternate buffer) are tolerated alongside them. Both numbers are
+/// ratchets -- they may only shrink, and anything not in the baseline fails the gate.
+#[derive(Clone, Copy, Default)]
+struct KnownDivergence {
+    cells: u64,
+    state: u64,
+}
+
+/// Read the ratchet baseline. Entries are `"<sequence>": {"cells": N, "state": M}`; a bare number
+/// is still read as `{"cells": N, "state": 0}` so an older baseline keeps working.
+fn read_baseline(path: &Path) -> BTreeMap<String, KnownDivergence> {
+    if !path.exists() {
+        return BTreeMap::new();
+    }
+    let text = fs::read_to_string(path).expect("read baseline");
+    let raw: BTreeMap<String, Value> = match serde_json::from_str(&text) {
+        Ok(raw) => raw,
+        Err(e) => panic!("baseline {} is not valid JSON: {e}", path.display()),
+    };
+    raw.into_iter()
+        .map(|(id, value)| {
+            let entry = match value {
+                Value::Number(number) => KnownDivergence {
+                    cells: number.as_u64().unwrap_or(0),
+                    state: 0,
+                },
+                Value::Object(map) => KnownDivergence {
+                    cells: map.get("cells").and_then(Value::as_u64).unwrap_or(0),
+                    state: map.get("state").and_then(Value::as_u64).unwrap_or(0),
+                },
+                other => panic!("baseline entry {id} must be a number or a cells/state object, got {other}"),
+            };
+            (id, entry)
+        })
+        .collect()
+}
+
+/// Write the divergences observed by this run in the shape `read_baseline` accepts.
+fn write_baseline(path: &Path, entries: &BTreeMap<String, KnownDivergence>) {
+    let object: serde_json::Map<String, Value> = entries
+        .iter()
+        .map(|(id, entry)| {
+            (
+                id.clone(),
+                json!({"cells": entry.cells, "state": entry.state}),
+            )
+        })
+        .collect();
+    let text = serde_json::to_string_pretty(&Value::Object(object)).expect("serialize baseline");
+    fs::write(path, format!("{text}\n"))
+        .unwrap_or_else(|e| panic!("cannot write {}: {e}", path.display()));
+}
+
 #[allow(clippy::needless_range_loop)] // row/column indices are used in the diff report
 fn compare_snapshot(
     id: &str,
@@ -468,20 +526,13 @@ fn oracle_diff_matches_upstream_reference() {
          (regenerate with tools/oracle/run.sh)"
     );
 
-    let baseline: BTreeMap<String, u64> = if baseline_path.exists() {
-        let text = fs::read_to_string(&baseline_path).expect("read baseline");
-        serde_json::from_str(&text).unwrap_or_else(|e| {
-            panic!("baseline {} is not valid JSON: {e}", baseline_path.display())
-        })
-    } else {
-        BTreeMap::new()
-    };
+    let baseline = read_baseline(&baseline_path);
 
     let mut compared_cells: u64 = 0;
     let mut report_entries: Vec<Value> = Vec::new();
     let mut failures: Vec<String> = Vec::new();
     let mut improvements: Vec<String> = Vec::new();
-    let mut current_baseline: BTreeMap<String, u64> = BTreeMap::new();
+    let mut current_baseline: BTreeMap<String, KnownDivergence> = BTreeMap::new();
     let mut clean_sequences = 0usize;
 
     for golden_entry in &golden {
@@ -542,26 +593,37 @@ fn oracle_diff_matches_upstream_reference() {
 
         if diff.is_clean() {
             clean_sequences += 1;
-        } else if diff.hard_cells > 0 {
-            current_baseline.insert(id.clone(), diff.hard_cells);
         }
 
         if !diff.is_clean() {
+            let state_count = diff.hard_state.len() as u64;
+            current_baseline.insert(
+                id.clone(),
+                KnownDivergence {
+                    cells: diff.hard_cells,
+                    state: state_count,
+                },
+            );
             match baseline.get(&id) {
-                Some(known) if *known >= diff.hard_cells => {
-                    if *known > diff.hard_cells {
-                        improvements.push(format!("{id}: {} -> {}", known, diff.hard_cells));
+                Some(known) => {
+                    if known.cells >= diff.hard_cells && known.state >= state_count {
+                        if known.cells > diff.hard_cells || known.state > state_count {
+                            improvements.push(format!(
+                                "{id}: cells {} -> {}, state {} -> {}",
+                                known.cells, diff.hard_cells, known.state, state_count
+                            ));
+                        }
+                    } else {
+                        failures.push(format!(
+                            "{id}: known divergence got worse, cells {} -> {}, state {} -> {}",
+                            known.cells, diff.hard_cells, known.state, state_count
+                        ));
                     }
                 }
-                Some(known) => failures.push(format!(
-                    "{id}: diverging cells grew {known} -> {} ({} state mismatches)",
-                    diff.hard_cells,
-                    diff.hard_state.len()
-                )),
                 None => failures.push(format!(
                     "{id}: new divergence, {} cells, {} state mismatches{}{}",
                     diff.hard_cells,
-                    diff.hard_state.len(),
+                    state_count,
                     if diff.hard_state.is_empty() { "" } else { ": " },
                     diff.hard_state.join(" | ")
                 )),
@@ -617,9 +679,7 @@ fn oracle_diff_matches_upstream_reference() {
     }
 
     if std::env::var("ORACLE_WRITE_BASELINE").is_ok() {
-        let text = serde_json::to_string_pretty(&current_baseline).expect("serialize baseline");
-        fs::write(&baseline_path, format!("{text}\n"))
-            .unwrap_or_else(|e| panic!("cannot write {}: {e}", baseline_path.display()));
+        write_baseline(&baseline_path, &current_baseline);
         println!(
             "oracle-diff: wrote baseline with {} divergent sequences to {}",
             current_baseline.len(),
