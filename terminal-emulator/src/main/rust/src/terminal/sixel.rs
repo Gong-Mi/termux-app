@@ -152,8 +152,8 @@ impl SixelDecoder {
                     // 后续参数取决于颜色空间
                     self.color_params.clear();
                     let mut param_value: i32 = -1;
-                    
-                    i += 1;  // 跳过 '#'
+
+                    i += 1; // 跳过 '#'
                     while i < data.len() {
                         let b = data[i];
                         if b >= b'0' && b <= b'9' {
@@ -178,13 +178,13 @@ impl SixelDecoder {
                             break;
                         }
                     }
-                    
+
                     // 如果到数据末尾还有未处理的参数
                     if param_value >= 0 && i >= data.len() {
                         self.color_params.push(param_value);
                         self.apply_color_select();
                     }
-                    continue;  // 跳过下面的 i += 1
+                    continue; // 跳过下面的 i += 1
                 }
                 48..=63 => {
                     let sixel_value = (byte - 48) as u8;
@@ -216,19 +216,23 @@ impl SixelDecoder {
                         self.pixel_data.push(vec![0u8; self.width.max(1)]);
                     }
                 }
-                b'$' => { self.current_col = 0; }
+                b'$' => {
+                    self.current_col = 0;
+                }
                 b'*' => {
                     // 重复最后一个 sixel 字符
                     if i > 0 {
                         let repeat_count = self.parse_repeat_count(data, &mut i);
                         for _ in 1..repeat_count {
                             // 重复绘制
-                            if self.current_col < self.pixel_data.get(0).map(|r| r.len()).unwrap_or(0) {
+                            if self.current_col
+                                < self.pixel_data.get(0).map(|r| r.len()).unwrap_or(0)
+                            {
                                 let last_col = self.current_col.saturating_sub(1);
                                 for bit in 0..6 {
                                     let pixel_row = self.current_row + bit as usize;
                                     if pixel_row < self.pixel_data.len() {
-                                        self.pixel_data[pixel_row][self.current_col] = 
+                                        self.pixel_data[pixel_row][self.current_col] =
                                             self.pixel_data[pixel_row][last_col];
                                     }
                                 }
@@ -244,16 +248,22 @@ impl SixelDecoder {
                         self.pixel_data[self.current_row][self.current_col] = 0;
                     }
                 }
-                b'\r' => { self.current_col = 0; }
+                b'\r' => {
+                    self.current_col = 0;
+                }
                 b'\n' => {
                     self.current_row += 6;
                     self.current_col = 0;
                 }
                 0x08 => {
-                    if self.current_col > 0 { self.current_col -= 1; }
+                    if self.current_col > 0 {
+                        self.current_col -= 1;
+                    }
                 }
                 0x0C => {
-                    for row in &mut self.pixel_data { row.fill(0); }
+                    for row in &mut self.pixel_data {
+                        row.fill(0);
+                    }
                     self.current_row = 0;
                     self.current_col = 0;
                 }
@@ -278,10 +288,14 @@ impl SixelDecoder {
                 let p1 = self.color_params[2] as u32;
                 let p2 = self.color_params[3] as u32;
                 let p3 = self.color_params.get(4).copied().unwrap_or(0) as u32;
-                
+
                 if color_space == 1 {
                     // RGB 空间：P1=R, P2=G, P3=B (0-100 百分比)
-                    ((p1 * 255 / 100) as u8, (p2 * 255 / 100) as u8, (p3 * 255 / 100) as u8)
+                    (
+                        (p1 * 255 / 100) as u8,
+                        (p2 * 255 / 100) as u8,
+                        (p3 * 255 / 100) as u8,
+                    )
                 } else {
                     // HLS 空间：P1=H(0-360), P2=L(0-100), P3=S(0-100)
                     hls_to_rgb(p1, p2, p3)
@@ -292,7 +306,11 @@ impl SixelDecoder {
             } else {
                 // 部分参数，使用灰色
                 let gray = (self.color_params.get(1).copied().unwrap_or(50) as u32).min(100);
-                ((gray * 255 / 100) as u8, (gray * 255 / 100) as u8, (gray * 255 / 100) as u8)
+                (
+                    (gray * 255 / 100) as u8,
+                    (gray * 255 / 100) as u8,
+                    (gray * 255 / 100) as u8,
+                )
             };
 
             // 设置颜色寄存器
@@ -317,7 +335,9 @@ impl SixelDecoder {
                 break;
             }
         }
-        if count == 0 { count = 1; }
+        if count == 0 {
+            count = 1;
+        }
         count
     }
 
@@ -333,11 +353,15 @@ impl SixelDecoder {
         #[cfg(target_arch = "aarch64")]
         {
             if std::arch::is_aarch64_feature_detected!("sve2") {
-                unsafe { self.get_image_data_sve2(&mut rgba_data); }
+                unsafe {
+                    self.get_image_data_sve2(&mut rgba_data);
+                }
                 return rgba_data;
             }
             if std::arch::is_aarch64_feature_detected!("neon") {
-                unsafe { self.get_image_data_neon(&mut rgba_data); }
+                unsafe {
+                    self.get_image_data_neon(&mut rgba_data);
+                }
                 return rgba_data;
             }
         }
@@ -363,7 +387,7 @@ impl SixelDecoder {
     unsafe fn get_image_data_neon(&self, rgba_data: &mut Vec<u8>) {
         // 预计算颜色表以加速查找
         let color_table = self.build_fast_color_table();
-        
+
         for row in &self.pixel_data {
             let mut chunks = row.chunks_exact(16);
             for chunk in &mut chunks {
@@ -385,7 +409,7 @@ impl SixelDecoder {
     #[target_feature(enable = "sve2")]
     unsafe fn get_image_data_sve2(&self, rgba_data: &mut Vec<u8>) {
         let color_table = self.build_fast_color_table();
-        
+
         for row in &self.pixel_data {
             // 在 SVE2 环境下，编译器会自动识别并应用更宽的向量指令（如 256/512 bit）
             for &idx in row {
@@ -448,33 +472,43 @@ pub fn hls_to_rgb(h: u32, l: u32, s: u32) -> (u8, u8, u8) {
     let h_norm = (h % 360) as f32 / 360.0;
     let l_norm = l as f32 / 100.0;
     let s_norm = s as f32 / 100.0;
-    
+
     if s_norm == 0.0 {
         // 无饱和度，灰色
         let gray = (l_norm * 255.0) as u8;
         return (gray, gray, gray);
     }
-    
+
     let q = if l_norm < 0.5 {
         l_norm * (1.0 + s_norm)
     } else {
         l_norm + s_norm - l_norm * s_norm
     };
     let p = 2.0 * l_norm - q;
-    
+
     let hue_to_rgb = |p: f32, q: f32, mut t: f32| -> f32 {
-        if t < 0.0 { t += 1.0; }
-        if t > 1.0 { t -= 1.0; }
-        if t < 1.0 / 6.0 { return p + (q - p) * 6.0 * t; }
-        if t < 1.0 / 2.0 { return q; }
-        if t < 2.0 / 3.0 { return p + (q - p) * (2.0 / 3.0 - t) * 6.0; }
+        if t < 0.0 {
+            t += 1.0;
+        }
+        if t > 1.0 {
+            t -= 1.0;
+        }
+        if t < 1.0 / 6.0 {
+            return p + (q - p) * 6.0 * t;
+        }
+        if t < 1.0 / 2.0 {
+            return q;
+        }
+        if t < 2.0 / 3.0 {
+            return p + (q - p) * (2.0 / 3.0 - t) * 6.0;
+        }
         p
     };
-    
+
     let r = (hue_to_rgb(p, q, h_norm + 1.0 / 3.0) * 255.0) as u8;
     let g = (hue_to_rgb(p, q, h_norm) * 255.0) as u8;
     let b = (hue_to_rgb(p, q, h_norm - 1.0 / 3.0) * 255.0) as u8;
-    
+
     (r, g, b)
 }
 
@@ -499,7 +533,7 @@ pub fn index_to_default_color(index: usize) -> (u8, u8, u8) {
         (85, 255, 255),  // 14: 亮青
         (255, 255, 255), // 15: 亮白
     ];
-    
+
     if index < 16 {
         DEFAULT_COLORS[index]
     } else {

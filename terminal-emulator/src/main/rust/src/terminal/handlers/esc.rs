@@ -2,17 +2,23 @@ use crate::engine::ScreenState;
 
 pub fn handle_esc(state: &mut ScreenState, intermediates: &[u8], byte: u8) {
     match (intermediates, byte) {
-        (&[b'#'], b'8') => { state.decaln_screen_align(); }
+        (&[b'#'], b'8') => {
+            state.decaln_screen_align();
+        }
         (&[b'('], b'0') => {
             state.use_line_drawing_g0 = true;
             state.use_line_drawing_uses_g0 = true;
         }
-        (&[b'('], b'B') => { state.use_line_drawing_g0 = false; }
+        (&[b'('], b'B') => {
+            state.use_line_drawing_g0 = false;
+        }
         (&[b')'], b'0') => {
             state.use_line_drawing_g1 = true;
             state.use_line_drawing_uses_g0 = false;
         }
-        (&[b')'], b'B') => { state.use_line_drawing_g1 = false; }
+        (&[b')'], b'B') => {
+            state.use_line_drawing_g1 = false;
+        }
         (&[], b'6') => {
             if state.cursor.x > state.left_margin {
                 state.cursor.x -= 1;
@@ -20,8 +26,12 @@ pub fn handle_esc(state: &mut ScreenState, intermediates: &[u8], byte: u8) {
                 state.back_index_scroll();
             }
         }
-        (&[], b'7') => { state.save_cursor(); }
-        (&[], b'8') => { state.restore_cursor(); }
+        (&[], b'7') => {
+            state.save_cursor();
+        }
+        (&[], b'8') => {
+            state.restore_cursor();
+        }
         (&[], b'9') => {
             if state.cursor.x < state.right_margin - 1 {
                 state.cursor.x += 1;
@@ -29,7 +39,9 @@ pub fn handle_esc(state: &mut ScreenState, intermediates: &[u8], byte: u8) {
                 state.forward_index_scroll();
             }
         }
-        (&[], b'c') => { state.reset_to_initial_state(); }
+        (&[], b'c') => {
+            state.reset_to_initial_state();
+        }
         (&[], b'D') => {
             if state.cursor.y < state.bottom_margin - 1 {
                 state.cursor.y += 1;
@@ -62,8 +74,12 @@ pub fn handle_esc(state: &mut ScreenState, intermediates: &[u8], byte: u8) {
                 state.reverse_index_scroll();
             }
         }
-        (&[], b'=') => { state.cursor.saved_state.decset_flags |= 1 << 5; /* DECKPAM */ }
-        (&[], b'>') => { state.cursor.saved_state.decset_flags &= !(1 << 5); /* DECKPNM */ }
+        (&[], b'=') => {
+            state.cursor.saved_state.decset_flags |= 1 << 5; /* DECKPAM */
+        }
+        (&[], b'>') => {
+            state.cursor.saved_state.decset_flags &= !(1 << 5); /* DECKPNM */
+        }
         _ => {}
     }
 }

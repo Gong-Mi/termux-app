@@ -47,10 +47,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
+use termux_rust::TerminalEngine;
 use termux_rust::terminal::screen::TerminalRow;
 use termux_rust::wcwidth::wcwidth;
-use termux_rust::TerminalEngine;
 
 /// Cell value used when nothing starts at a column.
 const BLANK_CELL: i32 = ' ' as i32;
@@ -77,16 +77,15 @@ fn env_path(key: &str, default: PathBuf) -> PathBuf {
 }
 
 fn read_json_lines(path: &Path) -> Vec<Value> {
-    let text = fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    let text =
+        fs::read_to_string(path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
     let mut out = Vec::new();
     for (index, line) in text.lines().enumerate() {
         if line.trim().is_empty() {
             continue;
         }
-        let value: Value = serde_json::from_str(line).unwrap_or_else(|e| {
-            panic!("{}:{} is not valid JSON: {e}", path.display(), index + 1)
-        });
+        let value: Value = serde_json::from_str(line)
+            .unwrap_or_else(|e| panic!("{}:{} is not valid JSON: {e}", path.display(), index + 1));
         out.push(value);
     }
     out
@@ -188,7 +187,11 @@ fn transcript_hash(engine: &TerminalEngine, cols: usize) -> String {
             if cell == CONTINUATION_CELL as i64 {
                 continue;
             }
-            line.push(if cell == 0 { ' ' } else { char::from_u32(cell as u32).unwrap_or(' ') });
+            line.push(if cell == 0 {
+                ' '
+            } else {
+                char::from_u32(cell as u32).unwrap_or(' ')
+            });
         }
         let trimmed = line.trim_end();
         text.push_str(trimmed);
@@ -343,14 +346,18 @@ fn compare_snapshot(
 
     let golden_title = golden["title"].as_str().unwrap_or("");
     if golden_title != actual.title {
-        diff.hard_state
-            .push(format!("step {step}: title {golden_title:?} vs {:?}", actual.title));
+        diff.hard_state.push(format!(
+            "step {step}: title {golden_title:?} vs {:?}",
+            actual.title
+        ));
     }
 
     let golden_alt = golden["alt"].as_bool().unwrap_or(false);
     if golden_alt != actual.alt {
-        diff.hard_state
-            .push(format!("step {step}: alternate buffer {golden_alt} vs {}", actual.alt));
+        diff.hard_state.push(format!(
+            "step {step}: alternate buffer {golden_alt} vs {}",
+            actual.alt
+        ));
     }
 
     let golden_transcript = golden["transcript_rows"].as_u64().unwrap_or(0);
@@ -369,7 +376,8 @@ fn compare_snapshot(
     }
     let golden_hash = golden["transcript_hash"].as_str().unwrap_or("");
     if golden_hash != actual.transcript_hash {
-        diff.soft.push(format!("step {step}: transcript hash differs (soft)"));
+        diff.soft
+            .push(format!("step {step}: transcript hash differs (soft)"));
     }
 }
 
@@ -387,9 +395,18 @@ fn gate_self_check_projects_wide_characters() {
     };
     let (cells, zero_width) = project_row(&row, 6);
     assert_eq!(cells[0], '中' as i64, "base column keeps the code point");
-    assert_eq!(cells[1], CONTINUATION_CELL as i64, "second column is a continuation");
-    assert_eq!(cells[2], 'a' as i64, "next base character starts after the wide glyph");
-    assert_eq!(cells[3], 'b' as i64, "narrow characters keep their own column");
+    assert_eq!(
+        cells[1], CONTINUATION_CELL as i64,
+        "second column is a continuation"
+    );
+    assert_eq!(
+        cells[2], 'a' as i64,
+        "next base character starts after the wide glyph"
+    );
+    assert_eq!(
+        cells[3], 'b' as i64,
+        "narrow characters keep their own column"
+    );
     assert_eq!(
         zero_width, 0,
         "the wide-character filler must not be counted as a zero-width character"
@@ -405,7 +422,10 @@ fn gate_self_check_projects_wide_characters() {
     };
     let (cells, zero_width) = project_row(&row, 5);
     assert_eq!(cells[0], 'a' as i64, "base character keeps its column");
-    assert_eq!(cells[1], BLANK_CELL as i64, "a combining mark never becomes a cell");
+    assert_eq!(
+        cells[1], BLANK_CELL as i64,
+        "a combining mark never becomes a cell"
+    );
     assert_eq!(zero_width, 1, "the combining mark must be counted");
 }
 
@@ -471,7 +491,10 @@ fn oracle_diff_matches_upstream_reference() {
     let baseline: BTreeMap<String, u64> = if baseline_path.exists() {
         let text = fs::read_to_string(&baseline_path).expect("read baseline");
         serde_json::from_str(&text).unwrap_or_else(|e| {
-            panic!("baseline {} is not valid JSON: {e}", baseline_path.display())
+            panic!(
+                "baseline {} is not valid JSON: {e}",
+                baseline_path.display()
+            )
         })
     } else {
         BTreeMap::new()
@@ -536,7 +559,14 @@ fn oracle_diff_matches_upstream_reference() {
                     "sequence {id} step {step_index}: corpus step is neither send nor resize: {step}"
                 );
             }
-            compare_snapshot(&id, step_index, golden_snapshot, &engine, max_examples, &mut diff);
+            compare_snapshot(
+                &id,
+                step_index,
+                golden_snapshot,
+                &engine,
+                max_examples,
+                &mut diff,
+            );
             compared_cells += golden_snapshot["cells"].as_u64().unwrap_or(0);
         }
 
@@ -596,8 +626,11 @@ fn oracle_diff_matches_upstream_reference() {
     if let Some(parent) = report_path.parent() {
         let _ = fs::create_dir_all(parent);
     }
-    fs::write(&report_path, serde_json::to_string_pretty(&report).expect("serialize report"))
-        .unwrap_or_else(|e| panic!("cannot write {}: {e}", report_path.display()));
+    fs::write(
+        &report_path,
+        serde_json::to_string_pretty(&report).expect("serialize report"),
+    )
+    .unwrap_or_else(|e| panic!("cannot write {}: {e}", report_path.display()));
 
     println!(
         "oracle-diff: {} sequences ({} matching upstream), {} cells compared, report {}",
@@ -610,7 +643,10 @@ fn oracle_diff_matches_upstream_reference() {
         println!("oracle-diff: DIVERGENCE {failure}");
     }
     if failures.len() > 30 {
-        println!("oracle-diff: ... {} more divergences in the report", failures.len() - 30);
+        println!(
+            "oracle-diff: ... {} more divergences in the report",
+            failures.len() - 30
+        );
     }
     for improvement in &improvements {
         println!("oracle-diff: baseline can shrink: {improvement}");

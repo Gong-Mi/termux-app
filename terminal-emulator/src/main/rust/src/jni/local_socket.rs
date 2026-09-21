@@ -1,8 +1,8 @@
-use jni::JNIEnv;
-use jni::objects::{JClass, JObject, JString, JByteArray, JValue};
-use jni::sys::{jint, jlong, jobject};
 use crate::utils::local_socket as ls;
-use crate::utils::{android_log, LogPriority};
+use crate::utils::{LogPriority, android_log};
+use jni::JNIEnv;
+use jni::objects::{JByteArray, JClass, JObject, JString, JValue};
+use jni::sys::{jint, jlong, jobject};
 use std::os::unix::io::RawFd;
 
 /// Helper to create JniResult object
@@ -22,8 +22,10 @@ fn get_jni_result<'a>(
         }
     };
 
-    let errmsg_j = env.new_string(errmsg).unwrap_or_else(|_| env.new_string("").unwrap());
-    
+    let errmsg_j = env
+        .new_string(errmsg)
+        .unwrap_or_else(|_| env.new_string("").unwrap());
+
     let args = [
         JValue::Int(retval),
         JValue::Int(errno),
@@ -34,7 +36,10 @@ fn get_jni_result<'a>(
     match env.new_object(clazz, "(IILjava/lang/String;I)V", &args) {
         Ok(obj) => obj,
         Err(e) => {
-            android_log(LogPriority::ERROR, &format!("Failed to create JniResult object: {:?}", e));
+            android_log(
+                LogPriority::ERROR,
+                &format!("Failed to create JniResult object: {:?}", e),
+            );
             JObject::null()
         }
     }
@@ -50,12 +55,30 @@ pub unsafe extern "system" fn Java_com_termux_shared_net_socket_local_LocalSocke
 ) -> jobject {
     let path = match env.convert_byte_array(&path_array) {
         Ok(p) => p,
-        Err(_) => return get_jni_result(&mut env, &log_title, -1, 0, "Failed to convert path array", 0).into_raw(),
+        Err(_) => {
+            return get_jni_result(
+                &mut env,
+                &log_title,
+                -1,
+                0,
+                "Failed to convert path array",
+                0,
+            )
+            .into_raw();
+        }
     };
 
     match ls::create_server_socket(&path, backlog) {
         Ok(fd) => get_jni_result(&mut env, &log_title, 0, 0, "", fd as i32).into_raw(),
-        Err(e) => get_jni_result(&mut env, &log_title, -1, e as i32, &format!("Create server socket failed: {}", e), 0).into_raw(),
+        Err(e) => get_jni_result(
+            &mut env,
+            &log_title,
+            -1,
+            e as i32,
+            &format!("Create server socket failed: {}", e),
+            0,
+        )
+        .into_raw(),
     }
 }
 
@@ -78,8 +101,18 @@ pub unsafe extern "system" fn Java_com_termux_shared_net_socket_local_LocalSocke
     fd: jint,
 ) -> jobject {
     match ls::accept_client(fd as RawFd) {
-        Ok(client_fd) => get_jni_result(&mut env, &log_title, 0, 0, "", client_fd as i32).into_raw(),
-        Err(e) => get_jni_result(&mut env, &log_title, -1, e as i32, &format!("Accept failed: {}", e), 0).into_raw(),
+        Ok(client_fd) => {
+            get_jni_result(&mut env, &log_title, 0, 0, "", client_fd as i32).into_raw()
+        }
+        Err(e) => get_jni_result(
+            &mut env,
+            &log_title,
+            -1,
+            e as i32,
+            &format!("Accept failed: {}", e),
+            0,
+        )
+        .into_raw(),
     }
 }
 
@@ -94,13 +127,21 @@ pub unsafe extern "system" fn Java_com_termux_shared_net_socket_local_LocalSocke
 ) -> jobject {
     let len = env.get_array_length(&data_array).unwrap_or(0) as usize;
     let mut buf = vec![0u8; len];
-    
+
     match ls::read_socket(fd as RawFd, &mut buf, deadline) {
         Ok(n) => {
             let _ = env.set_byte_array_region(&data_array, 0, bytemuck::cast_slice(&buf[..n]));
             get_jni_result(&mut env, &log_title, 0, 0, "", n as i32).into_raw()
         }
-        Err(e) => get_jni_result(&mut env, &log_title, -1, e as i32, &format!("Read failed: {}", e), 0).into_raw(),
+        Err(e) => get_jni_result(
+            &mut env,
+            &log_title,
+            -1,
+            e as i32,
+            &format!("Read failed: {}", e),
+            0,
+        )
+        .into_raw(),
     }
 }
 
@@ -115,12 +156,30 @@ pub unsafe extern "system" fn Java_com_termux_shared_net_socket_local_LocalSocke
 ) -> jobject {
     let data = match env.convert_byte_array(&data_array) {
         Ok(d) => d,
-        Err(_) => return get_jni_result(&mut env, &log_title, -1, 0, "Failed to convert data array", 0).into_raw(),
+        Err(_) => {
+            return get_jni_result(
+                &mut env,
+                &log_title,
+                -1,
+                0,
+                "Failed to convert data array",
+                0,
+            )
+            .into_raw();
+        }
     };
 
     match ls::send_socket(fd as RawFd, &data, deadline) {
         Ok(_) => get_jni_result(&mut env, &log_title, 0, 0, "", 0).into_raw(),
-        Err(e) => get_jni_result(&mut env, &log_title, -1, e as i32, &format!("Send failed: {}", e), 0).into_raw(),
+        Err(e) => get_jni_result(
+            &mut env,
+            &log_title,
+            -1,
+            e as i32,
+            &format!("Send failed: {}", e),
+            0,
+        )
+        .into_raw(),
     }
 }
 
@@ -142,7 +201,8 @@ pub unsafe extern "system" fn Java_com_termux_shared_net_socket_local_LocalSocke
 
         if libc::ioctl(fd, request as _, &mut available) == -1 {
             let e = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
-            return get_jni_result(&mut env, &log_title, -1, e, "ioctl FIONREAD failed", 0).into_raw();
+            return get_jni_result(&mut env, &log_title, -1, e, "ioctl FIONREAD failed", 0)
+                .into_raw();
         }
     }
     get_jni_result(&mut env, &log_title, 0, 0, "", available).into_raw()
@@ -171,7 +231,15 @@ pub unsafe extern "system" fn Java_com_termux_shared_net_socket_local_LocalSocke
     };
     if res == -1 {
         let e = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
-        return get_jni_result(&mut env, &log_title, -1, e, "setsockopt SO_RCVTIMEO failed", 0).into_raw();
+        return get_jni_result(
+            &mut env,
+            &log_title,
+            -1,
+            e,
+            "setsockopt SO_RCVTIMEO failed",
+            0,
+        )
+        .into_raw();
     }
     get_jni_result(&mut env, &log_title, 0, 0, "", 0).into_raw()
 }
@@ -199,7 +267,15 @@ pub unsafe extern "system" fn Java_com_termux_shared_net_socket_local_LocalSocke
     };
     if res == -1 {
         let e = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
-        return get_jni_result(&mut env, &log_title, -1, e, "setsockopt SO_SNDTIMEO failed", 0).into_raw();
+        return get_jni_result(
+            &mut env,
+            &log_title,
+            -1,
+            e,
+            "setsockopt SO_SNDTIMEO failed",
+            0,
+        )
+        .into_raw();
     }
     get_jni_result(&mut env, &log_title, 0, 0, "", 0).into_raw()
 }
@@ -217,17 +293,35 @@ pub unsafe extern "system" fn Java_com_termux_shared_net_socket_local_LocalSocke
             let _ = env.set_field(&peer_cred_obj, "pid", "I", JValue::Int(cred.pid));
             let _ = env.set_field(&peer_cred_obj, "uid", "I", JValue::Int(cred.uid));
             let _ = env.set_field(&peer_cred_obj, "gid", "I", JValue::Int(cred.gid));
-            
+
             if let Ok(pname_j) = env.new_string(cred.pname) {
-                let _ = env.set_field(&peer_cred_obj, "pname", "Ljava/lang/String;", JValue::Object(pname_j.as_ref()));
+                let _ = env.set_field(
+                    &peer_cred_obj,
+                    "pname",
+                    "Ljava/lang/String;",
+                    JValue::Object(pname_j.as_ref()),
+                );
             }
-            
+
             if let Ok(cmdline_j) = env.new_string(cred.cmdline) {
-                let _ = env.set_field(&peer_cred_obj, "cmdline", "Ljava/lang/String;", JValue::Object(cmdline_j.as_ref()));
+                let _ = env.set_field(
+                    &peer_cred_obj,
+                    "cmdline",
+                    "Ljava/lang/String;",
+                    JValue::Object(cmdline_j.as_ref()),
+                );
             }
-            
+
             get_jni_result(&mut env, &log_title, 0, 0, "", 0).into_raw()
         }
-        Err(e) => get_jni_result(&mut env, &log_title, -1, e as i32, &format!("Get peer cred failed: {}", e), 0).into_raw(),
+        Err(e) => get_jni_result(
+            &mut env,
+            &log_title,
+            -1,
+            e as i32,
+            &format!("Get peer cred failed: {}", e),
+            0,
+        )
+        .into_raw(),
     }
 }
