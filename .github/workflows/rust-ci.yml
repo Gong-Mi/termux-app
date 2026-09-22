@@ -140,7 +140,9 @@ jobs:
   # 真正的 ARM64 运行环境测试
   arm64-native-test:
     name: Native ARM64 Tests
-    runs-on: ubuntu-24.04-arm64
+    # GitHub 公开仓库的 arm64 托管 runner 标签是 ubuntu-24.04-arm / ubuntu-22.04-arm；
+    # 原来写的 ubuntu-24.04-arm64 不存在，作业会永远排队（历史上从未跑起来过）。
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v6
       
