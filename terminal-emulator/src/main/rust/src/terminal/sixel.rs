@@ -159,7 +159,7 @@ impl SixelDecoder {
                     i += 1; // 跳过 '#'
                     while i < data.len() {
                         let b = data[i];
-                        if (b'0'..=b'9').contains(&b) {
+                        if b.is_ascii_digit() {
                             if param_value < 0 {
                                 param_value = 0;
                             }
@@ -331,7 +331,7 @@ impl SixelDecoder {
         *pos += 1;
         while *pos < data.len() {
             let b = data[*pos];
-            if (b'0'..=b'9').contains(&b) {
+            if b.is_ascii_digit() {
                 count = count * 10 + (b - b'0') as usize;
                 *pos += 1;
             } else {
