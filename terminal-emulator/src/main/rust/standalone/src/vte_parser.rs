@@ -1,5 +1,5 @@
 //! VTE (Virtual Terminal Emulator) Parser
-//! 
+//!
 //! 基于 Java TerminalEmulator 逻辑移植的 VT100/ANSI 转义序列解析器
 //! 参考：termux-app-upstream/terminal-emulator/src/main/java/com/termux/terminal/TerminalEmulator.java
 
@@ -116,7 +116,7 @@ impl Params {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// 重置所有参数
     pub fn reset(&mut self) {
         self.values = [0; MAX_ESCAPE_PARAMETERS];
@@ -125,7 +125,7 @@ impl Params {
         self.current_param = 0;
         self.has_current = false;
     }
-    
+
     /// 添加/更新当前参数值
     pub fn add_digit(&mut self, digit: u8) {
         let d = digit as i32 - '0' as i32;
@@ -134,17 +134,21 @@ impl Params {
         }
         self.has_current = true;
     }
-    
+
     /// 标记当前参数结束，准备下一个参数
     pub fn finish_param(&mut self) {
         if self.len < MAX_ESCAPE_PARAMETERS {
-            self.values[self.len] = if self.has_current { self.current_param } else { 0 };
+            self.values[self.len] = if self.has_current {
+                self.current_param
+            } else {
+                0
+            };
             self.len += 1;
             self.current_param = 0;
             self.has_current = false;
         }
     }
-    
+
     /// 标记下一个参数为子参数（冒号分隔）
     pub fn start_subparam(&mut self) {
         if self.len < MAX_ESCAPE_PARAMETERS {
@@ -157,7 +161,7 @@ impl Params {
             self.has_current = false;
         }
     }
-    
+
     /// 获取第 n 个参数的值
     pub fn get(&self, index: usize, default: i32) -> i32 {
         if index < self.len {
@@ -166,17 +170,20 @@ impl Params {
             default
         }
     }
-    
+
     /// 迭代器 - 返回参数组（主参数 + 子参数）
     pub fn iter(&self) -> ParamsIter<'_> {
-        ParamsIter { params: self, index: 0 }
+        ParamsIter {
+            params: self,
+            index: 0,
+        }
     }
 }
 
 impl<'a> IntoIterator for &'a Params {
     type Item = &'a [i32];
     type IntoIter = ParamsIter<'a>;
-    
+
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
     }
@@ -189,15 +196,16 @@ pub struct ParamsIter<'a> {
 
 impl<'a> Iterator for ParamsIter<'a> {
     type Item = &'a [i32];
-    
+
     fn next(&mut self) -> Option<Self::Item> {
         if self.index >= self.params.len {
             return None;
         }
         let start = self.index;
         // 跳过子参数
-        while self.index < self.params.len - 1 
-            && (self.params.subparams_mask & (1 << (self.index + 1))) != 0 {
+        while self.index < self.params.len - 1
+            && (self.params.subparams_mask & (1 << (self.index + 1))) != 0
+        {
             self.index += 1;
         }
         self.index += 1;
@@ -221,7 +229,6 @@ pub trait Perform {
         }
     }
 
-    
     /// 执行控制字符
     fn execute(&mut self, byte: u8) {
         match byte {
@@ -235,48 +242,54 @@ pub trait Perform {
             _ => {}
         }
     }
-    
+
     /// BEL - 响铃
     fn bell(&mut self) {}
-    
+
     /// BS - 退格
     fn backspace(&mut self) {}
-    
+
     /// HT - 制表符
     fn tab(&mut self) {}
-    
+
     /// LF/NL/VT - 换行
     fn linefeed(&mut self) {}
-    
+
     /// CR - 回车
     fn carriage_return(&mut self) {}
-    
+
     /// SO - Shift Out
     fn shift_out(&mut self) {}
-    
+
     /// SI - Shift In
     fn shift_in(&mut self) {}
-    
+
     /// ESC 序列调度
     fn esc_dispatch(&mut self, intermediates: &[u8], ignore: bool, byte: u8);
-    
+
     /// CSI 序列调度
-    fn csi_dispatch(&mut self, _params: &Params, _intermediates: &[u8], _ignore: bool, _action: char);
-    
+    fn csi_dispatch(
+        &mut self,
+        _params: &Params,
+        _intermediates: &[u8],
+        _ignore: bool,
+        _action: char,
+    );
+
     /// OSC 序列调度
     fn osc_dispatch(&mut self, _params: &[&[u8]], _bell_terminated: bool);
-    
+
     /// DCS 序列钩子
     #[allow(dead_code)]
     fn hook(&mut self, _params: &Params, _intermediates: &[u8], _ignore: bool, _action: char) {}
-    
+
     /// DCS 数据
     #[allow(dead_code)]
     fn put(&mut self, _byte: u8) {}
-    
+
     /// DCS 结束
     fn unhook(&mut self) {}
-    
+
     /// APC 序列
     fn apc_dispatch(&mut self, _data: &[u8]) {}
 }
@@ -312,7 +325,7 @@ impl Parser {
             continue_sequence: false,
         }
     }
-    
+
     /// 处理输入字节 - 具备 SVE2/NEON 硬件加速
     pub fn advance<P: Perform>(&mut self, handler: &mut P, data: &[u8]) {
         let mut pos = 0;
@@ -323,7 +336,7 @@ impl Parser {
             if self.escape_state == ESC_NONE {
                 #[allow(unused_mut)]
                 let mut chunk_end = pos;
-                
+
                 // 查找当前可见字符块的末尾（不包含控制字符 0x00..0x1F 和 0x7F）
                 #[cfg(target_arch = "aarch64")]
                 {
@@ -331,14 +344,18 @@ impl Parser {
                         // SVE2 优化：探测可见字符边界
                         while chunk_end < len {
                             let b = data[chunk_end];
-                            if b < 0x20 || b == 0x7F { break; }
+                            if b < 0x20 || b == 0x7F {
+                                break;
+                            }
                             chunk_end += 1;
                         }
                     } else if std::arch::is_aarch64_feature_detected!("neon") {
                         // NEON 优化：类似逻辑
                         while chunk_end < len {
                             let b = data[chunk_end];
-                            if b < 0x20 || b == 0x7F { break; }
+                            if b < 0x20 || b == 0x7F {
+                                break;
+                            }
                             chunk_end += 1;
                         }
                     }
@@ -349,7 +366,9 @@ impl Parser {
                     if let Ok(s) = std::str::from_utf8(&data[pos..chunk_end]) {
                         handler.print_str(s);
                         pos = chunk_end;
-                        if pos >= len { break; }
+                        if pos >= len {
+                            break;
+                        }
                     }
                 }
             }
@@ -359,7 +378,7 @@ impl Parser {
             pos += 1;
         }
     }
-    
+
     /// 处理单个字节
     fn process_byte<P: Perform>(&mut self, handler: &mut P, byte: u8) {
         self.continue_sequence = false;
@@ -409,7 +428,7 @@ impl Parser {
             }
             _ => {}
         }
-        
+
         // 状态机处理
         match self.escape_state {
             ESC_NONE => {
@@ -439,8 +458,7 @@ impl Parser {
             ESC_CSI => {
                 self.do_csi(handler, byte);
             }
-            ESC_CSI_UNSUPPORTED_PARAMETER_BYTE
-            | ESC_CSI_UNSUPPORTED_INTERMEDIATE_BYTE => {
+            ESC_CSI_UNSUPPORTED_PARAMETER_BYTE | ESC_CSI_UNSUPPORTED_INTERMEDIATE_BYTE => {
                 self.do_csi_unsupported(handler, byte);
             }
             ESC_CSI_EXCLAMATION => {
@@ -494,7 +512,7 @@ impl Parser {
             }
         }
     }
-    
+
     /// ESC 序列处理
     fn do_esc<P: Perform>(&mut self, handler: &mut P, byte: u8) {
         match byte {
@@ -664,7 +682,7 @@ impl Parser {
             }
         }
     }
-    
+
     /// CSI ? 处理
     fn do_csi_questionmark<P: Perform>(&mut self, handler: &mut P, byte: u8) {
         match byte {
@@ -690,7 +708,7 @@ impl Parser {
             }
         }
     }
-    
+
     /// CSI > 处理
     fn do_csi_biggerthan<P: Perform>(&mut self, handler: &mut P, byte: u8) {
         match byte {
@@ -710,7 +728,7 @@ impl Parser {
             }
         }
     }
-    
+
     /// CSI $ 处理
     fn do_csi_dollar<P: Perform>(&mut self, handler: &mut P, byte: u8) {
         match byte {
@@ -730,7 +748,7 @@ impl Parser {
             }
         }
     }
-    
+
     /// CSI args space 处理
     fn do_csi_args_space<P: Perform>(&mut self, handler: &mut P, byte: u8) {
         match byte {
@@ -750,7 +768,7 @@ impl Parser {
             }
         }
     }
-    
+
     /// CSI args asterix 处理
     fn do_csi_args_asterix<P: Perform>(&mut self, _handler: &mut P, byte: u8) {
         // 矩形区域操作
@@ -761,7 +779,7 @@ impl Parser {
             _ => {}
         }
     }
-    
+
     /// CSI ? $ 处理
     fn do_csi_questionmark_dollar<P: Perform>(&mut self, handler: &mut P, byte: u8) {
         match byte {
@@ -774,7 +792,7 @@ impl Parser {
             }
         }
     }
-    
+
     /// CSI 不支持的参数/中间字节处理
     fn do_csi_unsupported<P: Perform>(&mut self, _handler: &mut P, byte: u8) {
         if (0x30..=0x3F).contains(&byte) {
@@ -786,7 +804,7 @@ impl Parser {
             self.escape_state = ESC_NONE;
         }
     }
-    
+
     /// OSC 序列处理
     fn do_osc<P: Perform>(&mut self, handler: &mut P, byte: u8) {
         match byte {
@@ -812,18 +830,16 @@ impl Parser {
             _ => {}
         }
     }
-    
+
     /// OSC 调度和重置
     fn osc_dispatch_and_reset<P: Perform>(&mut self, handler: &mut P) {
         let osc_data = self.osc_buffer.as_bytes().to_vec();
-        let params: Vec<&[u8]> = osc_data
-            .split(|&b| b == b';')
-            .collect();
+        let params: Vec<&[u8]> = osc_data.split(|&b| b == b';').collect();
         handler.osc_dispatch(&params, true);
         self.osc_buffer.clear();
         self.escape_state = ESC_NONE;
     }
-    
+
     /// DCS 序列处理
     fn do_dcs<P: Perform>(&mut self, handler: &mut P, byte: u8) {
         match byte {
@@ -850,7 +866,7 @@ impl Parser {
             _ => {}
         }
     }
-    
+
     /// APC 序列处理
     fn do_apc<P: Perform>(&mut self, handler: &mut P, byte: u8) {
         match byte {
@@ -894,13 +910,13 @@ impl Default for Parser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     struct TestHandler {
         printed: Vec<char>,
         executed: Vec<u8>,
         csi_calls: Vec<(String, Vec<i32>)>,
     }
-    
+
     impl TestHandler {
         fn new() -> Self {
             Self {
@@ -910,25 +926,32 @@ mod tests {
             }
         }
     }
-    
+
     impl Perform for TestHandler {
         fn print(&mut self, c: char) {
             self.printed.push(c);
         }
-        
+
         fn execute(&mut self, byte: u8) {
             self.executed.push(byte);
         }
-        
+
         fn esc_dispatch(&mut self, _intermediates: &[u8], _ignore: bool, _byte: u8) {}
-        
-        fn csi_dispatch(&mut self, params: &Params, _intermediates: &[u8], _ignore: bool, action: char) {
-            self.csi_calls.push((action.to_string(), params.values[..params.len].to_vec()));
+
+        fn csi_dispatch(
+            &mut self,
+            params: &Params,
+            _intermediates: &[u8],
+            _ignore: bool,
+            action: char,
+        ) {
+            self.csi_calls
+                .push((action.to_string(), params.values[..params.len].to_vec()));
         }
-        
+
         fn osc_dispatch(&mut self, _params: &[&[u8]], _bell_terminated: bool) {}
     }
-    
+
     #[test]
     fn test_plain_text() {
         let mut parser = Parser::new();
@@ -936,7 +959,7 @@ mod tests {
         parser.advance(&mut handler, b"Hello");
         assert_eq!(handler.printed, vec!['H', 'e', 'l', 'l', 'o']);
     }
-    
+
     #[test]
     fn test_cursor_up() {
         let mut parser = Parser::new();
@@ -945,7 +968,7 @@ mod tests {
         assert_eq!(handler.csi_calls.len(), 1);
         assert_eq!(handler.csi_calls[0], ("A".to_string(), vec![2]));
     }
-    
+
     #[test]
     fn test_multiple_params() {
         let mut parser = Parser::new();

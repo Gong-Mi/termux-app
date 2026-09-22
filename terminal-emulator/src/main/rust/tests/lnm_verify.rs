@@ -7,7 +7,10 @@ fn get_row_text(engine: &TerminalEngine, row: i32) -> String {
     let cols = engine.state.cols as usize;
     let mut text = vec![0u16; cols];
     engine.state.copy_row_text(row, &mut text);
-    String::from_utf16_lossy(&text).replace('\0', " ").trim_end().to_string()
+    String::from_utf16_lossy(&text)
+        .replace('\0', " ")
+        .trim_end()
+        .to_string()
 }
 
 // =============================================================================
@@ -26,15 +29,20 @@ fn test_decstr_resets_lnm() {
     engine.process_bytes(b"\x1b[!p");
 
     // LNM 应该被重置
-    assert!(!engine.state.modes.is_enabled(1 << 13),
-        "DECSTR should reset LNM");
+    assert!(
+        !engine.state.modes.is_enabled(1 << 13),
+        "DECSTR should reset LNM"
+    );
 
     // 功能验证：\n 不应该重置 x
     engine.process_bytes(b"ABCDEFGHIJ");
     assert_eq!(engine.state.cursor.x, 10);
     engine.process_bytes(b"\n");
     assert_eq!(engine.state.cursor.y, 1);
-    assert_eq!(engine.state.cursor.x, 10, "After DECSTR, LF should NOT reset x");
+    assert_eq!(
+        engine.state.cursor.x, 10,
+        "After DECSTR, LF should NOT reset x"
+    );
 
     println!("✅ DECSTR resets LNM");
 }
@@ -44,34 +52,46 @@ fn test_decstr_resets_all_modes() {
     let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 启用各种模式
-    engine.process_bytes(b"\x1b[?1h");    // application cursor keys
-    engine.process_bytes(b"\x1b[?6h");    // origin mode
-    engine.process_bytes(b"\x1b[20h");    // LNM
-    engine.process_bytes(b"\x1b[4h");     // insert mode
+    engine.process_bytes(b"\x1b[?1h"); // application cursor keys
+    engine.process_bytes(b"\x1b[?6h"); // origin mode
+    engine.process_bytes(b"\x1b[20h"); // LNM
+    engine.process_bytes(b"\x1b[4h"); // insert mode
     engine.process_bytes(b"\x1b[?2004h"); // bracketed paste
 
     // 确认都开了
     assert!(engine.state.application_cursor_keys);
-    assert!(engine.state.modes.is_enabled(1 << 2));   // ORIGIN
-    assert!(engine.state.modes.is_enabled(1 << 13));  // LNM
-    assert!(engine.state.modes.is_enabled(1 << 12));  // INSERT
+    assert!(engine.state.modes.is_enabled(1 << 2)); // ORIGIN
+    assert!(engine.state.modes.is_enabled(1 << 13)); // LNM
+    assert!(engine.state.modes.is_enabled(1 << 12)); // INSERT
     assert!(engine.state.bracketed_paste);
 
     // DECSTR
     engine.process_bytes(b"\x1b[!p");
 
     // 确认都关了
-    assert!(!engine.state.application_cursor_keys, "DECSTR: app cursor keys");
-    assert!(!engine.state.modes.is_enabled(1 << 2), "DECSTR: origin mode");
+    assert!(
+        !engine.state.application_cursor_keys,
+        "DECSTR: app cursor keys"
+    );
+    assert!(
+        !engine.state.modes.is_enabled(1 << 2),
+        "DECSTR: origin mode"
+    );
     assert!(!engine.state.modes.is_enabled(1 << 13), "DECSTR: LNM");
-    assert!(!engine.state.modes.is_enabled(1 << 12), "DECSTR: insert mode");
+    assert!(
+        !engine.state.modes.is_enabled(1 << 12),
+        "DECSTR: insert mode"
+    );
     assert!(!engine.state.bracketed_paste, "DECSTR: bracketed paste");
     assert!(!engine.state.send_focus_events, "DECSTR: focus events");
     assert!(!engine.state.mouse_tracking, "DECSTR: mouse tracking");
     assert!(!engine.state.sgr_mouse, "DECSTR: SGR mouse");
 
     // AUTOWRAP 应该保持开启
-    assert!(engine.state.modes.is_enabled(1 << 3), "DECSTR: autowrap should stay ON");
+    assert!(
+        engine.state.modes.is_enabled(1 << 3),
+        "DECSTR: autowrap should stay ON"
+    );
 
     // margins 应该被重置
     assert_eq!(engine.state.top_margin, 0);
@@ -117,11 +137,16 @@ fn test_lnm_private_mode_compatibility() {
     engine.process_bytes(b"\x1b[?20h");
 
     // 现在应该生效了（修复后）
-    assert!(engine.state.modes.is_enabled(1 << 13),
-        "CSI ? 20 h should enable LNM (compatibility mode)");
+    assert!(
+        engine.state.modes.is_enabled(1 << 13),
+        "CSI ? 20 h should enable LNM (compatibility mode)"
+    );
 
     engine.process_bytes(b"\n");
-    assert_eq!(engine.state.cursor.x, 0, "LNM via ?20h: x should reset to 0");
+    assert_eq!(
+        engine.state.cursor.x, 0,
+        "LNM via ?20h: x should reset to 0"
+    );
 
     // 关闭
     engine.process_bytes(b"\x1b[?20l");
@@ -251,7 +276,11 @@ fn test_insert_mode_single_char() {
     // 行内容: "ABCXDEFGHIJ" (X 插入到 D 前面，D 及后面右移)
     let row0 = get_row_text(&engine, 0);
     // 因为插入，原 D 应该在 x=4
-    assert!(row0.starts_with("ABCX"), "Insert: row starts with ABCX, got '{}'", row0);
+    assert!(
+        row0.starts_with("ABCX"),
+        "Insert: row starts with ABCX, got '{}'",
+        row0
+    );
 
     println!("✅ Insert mode single char: '{}'", row0);
 }
@@ -273,7 +302,11 @@ fn test_insert_mode_multiple_chars() {
     engine.process_bytes(b"AB");
 
     let row0 = get_row_text(&engine, 0);
-    assert!(row0.starts_with("12AB"), "Insert multiple: row starts with 12AB, got '{}'", row0);
+    assert!(
+        row0.starts_with("12AB"),
+        "Insert multiple: row starts with 12AB, got '{}'",
+        row0
+    );
 
     println!("✅ Insert mode multiple chars: '{}'", row0);
 }
@@ -296,9 +329,16 @@ fn test_insert_mode_off_overwrites() {
     engine.process_bytes(b"X");
 
     let row0 = get_row_text(&engine, 0);
-    assert!(row0.starts_with("ABCX"), "Overwrite: row starts with ABCX, got '{}'", row0);
+    assert!(
+        row0.starts_with("ABCX"),
+        "Overwrite: row starts with ABCX, got '{}'",
+        row0
+    );
     // D 应该被覆盖，不再在 x=4
-    assert!(!row0.starts_with("ABCXD"), "Overwrite: D should be replaced");
+    assert!(
+        !row0.starts_with("ABCXD"),
+        "Overwrite: D should be replaced"
+    );
 
     println!("✅ Insert mode off (overwrite): '{}'", row0);
 }
@@ -316,15 +356,21 @@ fn test_insert_mode_disabled_by_decstr() {
     engine.process_bytes(b"\x1b[!p");
 
     // Insert 应该被关闭
-    assert!(!engine.state.modes.is_enabled(1 << 12),
-        "DECSTR should reset insert mode");
+    assert!(
+        !engine.state.modes.is_enabled(1 << 12),
+        "DECSTR should reset insert mode"
+    );
 
     // 现在写入应该覆盖
     engine.process_bytes(b"\x1b[1;4H");
     engine.process_bytes(b"X");
 
     let row0 = get_row_text(&engine, 0);
-    assert!(row0.starts_with("ABCX"), "After DECSTR, overwrite mode, got '{}'", row0);
+    assert!(
+        row0.starts_with("ABCX"),
+        "After DECSTR, overwrite mode, got '{}'",
+        row0
+    );
 
     println!("✅ Insert mode disabled by DECSTR: '{}'", row0);
 }
@@ -386,15 +432,15 @@ fn test_decstr_full_cycle() {
     let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 设置一个复杂的终端状态
-    engine.process_bytes(b"\x1b[?1h");    // cursor app mode
-    engine.process_bytes(b"\x1b[?6h");    // origin mode
-    engine.process_bytes(b"\x1b[20h");    // LNM
-    engine.process_bytes(b"\x1b[4h");     // insert
+    engine.process_bytes(b"\x1b[?1h"); // cursor app mode
+    engine.process_bytes(b"\x1b[?6h"); // origin mode
+    engine.process_bytes(b"\x1b[20h"); // LNM
+    engine.process_bytes(b"\x1b[4h"); // insert
     engine.process_bytes(b"\x1b[?2004h"); // bracketed paste
     engine.process_bytes(b"\x1b[?1000h"); // mouse tracking
     engine.process_bytes(b"\x1b[?1006h"); // SGR mouse
     engine.process_bytes(b"\x1b[?1004h"); // focus events
-    engine.process_bytes(b"\x1b[2;10r");  // margins
+    engine.process_bytes(b"\x1b[2;10r"); // margins
 
     // 写入一些内容
     engine.process_bytes(b"Line 1\r\n");
@@ -405,15 +451,15 @@ fn test_decstr_full_cycle() {
 
     // 验证状态
     assert!(!engine.state.application_cursor_keys);
-    assert!(!engine.state.modes.is_enabled(1 << 2));   // origin
-    assert!(!engine.state.modes.is_enabled(1 << 13));  // LNM
-    assert!(!engine.state.modes.is_enabled(1 << 12));  // insert
+    assert!(!engine.state.modes.is_enabled(1 << 2)); // origin
+    assert!(!engine.state.modes.is_enabled(1 << 13)); // LNM
+    assert!(!engine.state.modes.is_enabled(1 << 12)); // insert
     assert!(!engine.state.bracketed_paste);
     assert!(!engine.state.mouse_tracking);
     assert!(!engine.state.sgr_mouse);
     assert!(!engine.state.send_focus_events);
     assert!(engine.state.cursor_enabled);
-    assert!(engine.state.modes.is_enabled(1 << 3));   // autowrap
+    assert!(engine.state.modes.is_enabled(1 << 3)); // autowrap
 
     // margins 应该被重置
     assert_eq!(engine.state.top_margin, 0);
@@ -423,7 +469,10 @@ fn test_decstr_full_cycle() {
     engine.process_bytes(b"TEST");
     assert_eq!(engine.state.cursor.x, 4);
     engine.process_bytes(b"\n");
-    assert_eq!(engine.state.cursor.x, 4, "After DECSTR, LNM is off: x stays");
+    assert_eq!(
+        engine.state.cursor.x, 4,
+        "After DECSTR, LNM is off: x stays"
+    );
 
     println!("✅ DECSTR full cycle verified");
 }
@@ -474,11 +523,21 @@ fn test_key_event_modifier_encoding() {
     assert_eq!(seq, Some("\x1b[1;5A".to_string()));
 
     // Ctrl+Shift + Up → \x1b[1;6A
-    let seq = key_handler::get_code(19, key_handler::KEYMOD_CTRL | key_handler::KEYMOD_SHIFT, false, false);
+    let seq = key_handler::get_code(
+        19,
+        key_handler::KEYMOD_CTRL | key_handler::KEYMOD_SHIFT,
+        false,
+        false,
+    );
     assert_eq!(seq, Some("\x1b[1;6A".to_string()));
 
     // Alt+Ctrl+Shift + Up → \x1b[1;8A
-    let seq = key_handler::get_code(19, key_handler::KEYMOD_ALT | key_handler::KEYMOD_CTRL | key_handler::KEYMOD_SHIFT, false, false);
+    let seq = key_handler::get_code(
+        19,
+        key_handler::KEYMOD_ALT | key_handler::KEYMOD_CTRL | key_handler::KEYMOD_SHIFT,
+        false,
+        false,
+    );
     assert_eq!(seq, Some("\x1b[1;8A".to_string()));
 
     println!("✅ Key event modifier encoding is correct");
@@ -501,11 +560,21 @@ fn test_key_event_f1_f4_with_modifiers() {
     assert_eq!(seq, Some("\x1b[1;5Q".to_string()));
 
     // F3 + Alt+Ctrl → \x1b[1;7R
-    let seq = key_handler::get_code(133, key_handler::KEYMOD_ALT | key_handler::KEYMOD_CTRL, false, false);
+    let seq = key_handler::get_code(
+        133,
+        key_handler::KEYMOD_ALT | key_handler::KEYMOD_CTRL,
+        false,
+        false,
+    );
     assert_eq!(seq, Some("\x1b[1;7R".to_string()));
 
     // F4 + Alt+Ctrl+Shift → \x1b[1;8S
-    let seq = key_handler::get_code(134, key_handler::KEYMOD_ALT | key_handler::KEYMOD_CTRL | key_handler::KEYMOD_SHIFT, false, false);
+    let seq = key_handler::get_code(
+        134,
+        key_handler::KEYMOD_ALT | key_handler::KEYMOD_CTRL | key_handler::KEYMOD_SHIFT,
+        false,
+        false,
+    );
     assert_eq!(seq, Some("\x1b[1;8S".to_string()));
 
     println!("✅ F1-F4 modifier sequences are correct");
@@ -554,12 +623,12 @@ fn test_full_terminal_session() {
     let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 模拟真实 shell 会话
-    engine.process_bytes(b"\x1b[?1h");        // vim 启用 cursor app mode
-    engine.process_bytes(b"\x1b[?2004h");     // bracketed paste
-    engine.process_bytes(b"\x1b[?1000h");     // mouse tracking
-    engine.process_bytes(b"\x1b[?1006h");     // SGR mouse
-    engine.process_bytes(b"\x1b[20h");        // LNM
-    engine.process_bytes(b"\x1b[?6h");        // origin mode
+    engine.process_bytes(b"\x1b[?1h"); // vim 启用 cursor app mode
+    engine.process_bytes(b"\x1b[?2004h"); // bracketed paste
+    engine.process_bytes(b"\x1b[?1000h"); // mouse tracking
+    engine.process_bytes(b"\x1b[?1006h"); // SGR mouse
+    engine.process_bytes(b"\x1b[20h"); // LNM
+    engine.process_bytes(b"\x1b[?6h"); // origin mode
 
     // 写入一些内容
     engine.process_bytes(b"$ echo hello\r\n");
@@ -597,11 +666,11 @@ fn test_nvim_like_sequence() {
     let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 模拟 nvim 启动时的序列
-    engine.process_bytes(b"\x1b[?1h");     // cursor app
-    engine.process_bytes(b"\x1b[?25l");    // hide cursor
-    engine.process_bytes(b"\x1b[?1000h");  // mouse
-    engine.process_bytes(b"\x1b[?1006h");  // SGR mouse
-    engine.process_bytes(b"\x1b[?2004h");  // bracketed paste
+    engine.process_bytes(b"\x1b[?1h"); // cursor app
+    engine.process_bytes(b"\x1b[?25l"); // hide cursor
+    engine.process_bytes(b"\x1b[?1000h"); // mouse
+    engine.process_bytes(b"\x1b[?1006h"); // SGR mouse
+    engine.process_bytes(b"\x1b[?2004h"); // bracketed paste
 
     // nvim 清屏
     engine.process_bytes(b"\x1b[H\x1b[2J");
@@ -610,15 +679,15 @@ fn test_nvim_like_sequence() {
     engine.process_bytes(b"Hello, World!");
 
     // 退出 nvim (ESC + :q! + Enter)
-    engine.process_bytes(b"\x1b");         // ESC
+    engine.process_bytes(b"\x1b"); // ESC
     engine.process_bytes(b":q!\r");
 
     // 终端重置
     engine.process_bytes(b"\x1b[!p");
-    engine.process_bytes(b"\x1b[?25h");    // show cursor
-    engine.process_bytes(b"\x1b[?1l");     // cursor normal
-    engine.process_bytes(b"\x1b[?1000l");  // mouse off
-    engine.process_bytes(b"\x1b[?2004l");  // bracketed paste off
+    engine.process_bytes(b"\x1b[?25h"); // show cursor
+    engine.process_bytes(b"\x1b[?1l"); // cursor normal
+    engine.process_bytes(b"\x1b[?1000l"); // mouse off
+    engine.process_bytes(b"\x1b[?2004l"); // bracketed paste off
 
     // 验证状态
     assert!(!engine.state.application_cursor_keys);
@@ -671,7 +740,10 @@ fn test_alternate_buffer_with_decstr() {
 
     // DECSTR 不应该切换缓冲区
     engine.process_bytes(b"\x1b[!p");
-    assert!(engine.state.use_alternate_buffer, "DECSTR should not switch buffer");
+    assert!(
+        engine.state.use_alternate_buffer,
+        "DECSTR should not switch buffer"
+    );
 
     // 但应该重置模式
     assert!(!engine.state.modes.is_enabled(1 << 13)); // LNM
