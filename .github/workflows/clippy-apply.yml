@@ -46,7 +46,14 @@ jobs:
         run: |
           set -euo pipefail
           cd terminal-emulator/src/main/rust
-          cargo clippy --fix --all-targets --all-features --allow-dirty --allow-staged 2>&1 | tail -40
+          # `--cap-lints warn` 很关键：rustfix 不会为"整轮编译报错"的 target 应用建议
+          # （deny-by-default 的 lint，如 clippy::absurd_extreme_comparisons，会让 lib
+          # 这一轮直接报 error）。把 lint 上限压到 warn，所有目标都能编完，
+          # 机器可应用的建议才会真的落盘。
+          # `|| true` 是必须的：清不掉全部 lint 时 cargo 会以非 0 退出，
+          # 但不能因此跳过后面的提交步骤与残差门禁。
+          cargo clippy --fix --all-targets --all-features --allow-dirty --allow-staged \
+            -- --cap-lints warn 2>&1 | tail -40 || true
 
       - name: Re-run the gate and report residual count
         if: always()
