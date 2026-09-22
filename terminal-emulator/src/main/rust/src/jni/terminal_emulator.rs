@@ -101,11 +101,10 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_createEngine(
         &format!("JNI: createEngine ({}x{})", cols, rows),
     );
     let mut engine = TerminalEngine::new(0, cols, rows, total_rows, cw, ch);
-    if !callback.is_null() {
-        if let Ok(global_ref) = env.new_global_ref(callback) {
+    if !callback.is_null()
+        && let Ok(global_ref) = env.new_global_ref(callback) {
             engine.state.java_callback_obj = Some(global_ref);
         }
-    }
     let context = Arc::new(TerminalContext::new(engine));
     Arc::into_raw(context) as jlong
 }
@@ -389,7 +388,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_setCursorStyle(
     let context = unsafe { Arc::from_raw(ptr as *const TerminalContext) };
     let (events, cb) = {
         let mut engine = crate::safe_write!(context.lock);
-        engine.state.cursor.style = cursor_style as i32;
+        engine.state.cursor.style = cursor_style;
         (engine.take_events(), engine.state.java_callback_obj.clone())
     };
     render_thread::request_render();
@@ -867,7 +866,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_sendKeyCode(
         let j_str = unsafe { JString::from_raw(char_str) };
         env.get_string(&j_str)
             .ok()
-            .map(|s| String::from(s))
+            .map(String::from)
             .unwrap_or_default()
     } else {
         String::new()
@@ -904,7 +903,7 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_pasteText(
     }
     let rust_str = if !text.is_null() {
         let j_str = unsafe { JString::from_raw(text) };
-        env.get_string(&j_str).ok().map(|s| String::from(s))
+        env.get_string(&j_str).ok().map(String::from)
     } else {
         None
     };
@@ -1015,12 +1014,10 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_updateColors(
 
         if let Ok(entry_set) =
             env.call_method(&properties_obj, "entrySet", "()Ljava/util/Set;", &[])
-        {
-            if let Ok(entry_set_obj) = entry_set.l() {
-                if let Ok(iterator) =
+            && let Ok(entry_set_obj) = entry_set.l()
+                && let Ok(iterator) =
                     env.call_method(&entry_set_obj, "iterator", "()Ljava/util/Iterator;", &[])
-                {
-                    if let Ok(iter_obj) = iterator.l() {
+                    && let Ok(iter_obj) = iterator.l() {
                         loop {
                             if let Ok(has_next) = env.call_method(&iter_obj, "hasNext", "()Z", &[])
                             {
@@ -1037,22 +1034,21 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_updateColors(
 
                             if let Ok(entry) =
                                 env.call_method(&iter_obj, "next", "()Ljava/lang/Object;", &[])
-                            {
-                                if let Ok(entry_obj) = entry.l() {
-                                    if let Ok(key) = env.call_method(
+                                && let Ok(entry_obj) = entry.l()
+                                    && let Ok(key) = env.call_method(
                                         &entry_obj,
                                         "getKey",
                                         "()Ljava/lang/Object;",
                                         &[],
-                                    ) {
-                                        if let Ok(key_obj) = key.l() {
-                                            if let Ok(value) = env.call_method(
+                                    )
+                                        && let Ok(key_obj) = key.l()
+                                            && let Ok(value) = env.call_method(
                                                 &entry_obj,
                                                 "getValue",
                                                 "()Ljava/lang/Object;",
                                                 &[],
-                                            ) {
-                                                if let Ok(value_obj) = value.l() {
+                                            )
+                                                && let Ok(value_obj) = value.l() {
                                                     let key_jstring =
                                                         jni::objects::JString::from(key_obj);
                                                     let value_jstring =
@@ -1070,16 +1066,8 @@ pub extern "system" fn Java_com_termux_terminal_RustTerminal_updateColors(
                                                         );
                                                     }
                                                 }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
                         }
                     }
-                }
-            }
-        }
 
         map
     };
@@ -1286,8 +1274,8 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
 
     let mut argv = Vec::new();
     let args_obj = unsafe { jni::objects::JObjectArray::from_raw(args) };
-    if !args_obj.is_null() {
-        if let Ok(len) = env.get_array_length(&args_obj) {
+    if !args_obj.is_null()
+        && let Ok(len) = env.get_array_length(&args_obj) {
             for i in 0..len {
                 if let Ok(arg_obj) = env.get_object_array_element(&args_obj, i) {
                     let arg_java: JString = arg_obj.into();
@@ -1297,12 +1285,11 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
                 }
             }
         }
-    }
 
     let mut envp = Vec::new();
     let env_vars_obj = unsafe { jni::objects::JObjectArray::from_raw(env_vars) };
-    if !env_vars_obj.is_null() {
-        if let Ok(len) = env.get_array_length(&env_vars_obj) {
+    if !env_vars_obj.is_null()
+        && let Ok(len) = env.get_array_length(&env_vars_obj) {
             for i in 0..len {
                 if let Ok(env_obj) = env.get_object_array_element(&env_vars_obj, i) {
                     let env_java: JString = env_obj.into();
@@ -1312,7 +1299,6 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
                 }
             }
         }
-    }
 
     let callback_ref = if !callback.is_null() {
         env.new_global_ref(callback).ok()
@@ -1368,7 +1354,7 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
             let context_ptr = Arc::into_raw(context.clone());
 
             // 关键修复：必须存储 pty_fd，否则 processInput 无法写入输入
-            context.pty_fd.store(pty_fd as i32, Ordering::SeqCst);
+            context.pty_fd.store(pty_fd, Ordering::SeqCst);
 
             crate::utils::android_log(
                 crate::utils::LogPriority::DEBUG,
@@ -1382,8 +1368,8 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
                 session_id,
                 crate::coordinator::SessionEngineData {
                     ptr: context_ptr as jlong,
-                    pty_fd: pty_fd as i32,
-                    pid: pid as i32,
+                    pty_fd,
+                    pid,
                 },
             );
             crate::utils::android_log(
@@ -1395,17 +1381,17 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
             );
 
             // 主动回调 Java 通知初始化完成
-            if let Some(ref cb) = callback_ref {
-                if let Some(vm) = crate::JAVA_VM.get() {
-                    if let Ok(mut env) = vm.attach_current_thread() {
+            if let Some(ref cb) = callback_ref
+                && let Some(vm) = crate::JAVA_VM.get()
+                    && let Ok(mut env) = vm.attach_current_thread() {
                         let _ = env.call_method(
                             cb.as_obj(),
                             "onEngineInitialized",
                             "(JII)V",
                             &[
                                 jni::objects::JValue::Long(context_ptr as jlong),
-                                jni::objects::JValue::Int(pty_fd as i32),
-                                jni::objects::JValue::Int(pid as i32),
+                                jni::objects::JValue::Int(pty_fd),
+                                jni::objects::JValue::Int(pid),
                             ],
                         );
                         crate::utils::android_log(
@@ -1413,8 +1399,6 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSessionAsync(
                             "[TRACE_SESSION] 5.6. Java onEngineInitialized callback executed.",
                         );
                     }
-                }
-            }
         });
 
         if let Err(e) = result {
@@ -1459,8 +1443,8 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
 
     let mut argv = Vec::new();
     let args_obj = unsafe { jni::objects::JObjectArray::from_raw(args) };
-    if !args_obj.is_null() {
-        if let Ok(len) = env.get_array_length(&args_obj) {
+    if !args_obj.is_null()
+        && let Ok(len) = env.get_array_length(&args_obj) {
             for i in 0..len {
                 if let Ok(arg_obj) = env.get_object_array_element(&args_obj, i) {
                     let arg_java: JString = arg_obj.into();
@@ -1470,12 +1454,11 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
                 }
             }
         }
-    }
 
     let mut envp = Vec::new();
     let env_vars_obj = unsafe { jni::objects::JObjectArray::from_raw(env_vars) };
-    if !env_vars_obj.is_null() {
-        if let Ok(len) = env.get_array_length(&env_vars_obj) {
+    if !env_vars_obj.is_null()
+        && let Ok(len) = env.get_array_length(&env_vars_obj) {
             for i in 0..len {
                 if let Ok(env_obj) = env.get_object_array_element(&env_vars_obj, i) {
                     let env_java: JString = env_obj.into();
@@ -1485,7 +1468,6 @@ pub unsafe extern "system" fn Java_com_termux_terminal_JNI_createSubprocess(
                 }
             }
         }
-    }
 
     let pty_res =
         crate::pty::create_subprocess_with_data(cmd_str, cwd_str, argv, envp, rows, cols, cw, ch);

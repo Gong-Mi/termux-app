@@ -47,7 +47,7 @@ impl TerminalEngine {
         if !self.state.shared_buffer_ptr.0.is_null() {
             unsafe {
                 if let Some(flat) = &self.state.flat_buffer {
-                    let _ = flat.sync_to_shared(self.state.shared_buffer_ptr.0);
+                    flat.sync_to_shared(self.state.shared_buffer_ptr.0);
                 }
             }
         }
@@ -63,8 +63,8 @@ impl TerminalEngine {
     }
 
     pub fn notify_screen_updated(&self) {
-        if let Some(obj) = &self.state.java_callback_obj {
-            if let Some(vm) = crate::JAVA_VM.get() {
+        if let Some(obj) = &self.state.java_callback_obj
+            && let Some(vm) = crate::JAVA_VM.get() {
                 let env_res = vm
                     .get_env()
                     .or_else(|_| vm.attach_current_thread_as_daemon());
@@ -73,7 +73,6 @@ impl TerminalEngine {
                     let _ = env.call_method(obj.as_obj(), "onScreenUpdated", "()V", &[]);
                 }
             }
-        }
     }
 }
 
@@ -159,7 +158,7 @@ impl TerminalContext {
                             };
                             engine.process_bytes(&buffer[..n]);
                             let resps =
-                                std::mem::replace(&mut engine.state.pending_responses, Vec::new());
+                                std::mem::take(&mut engine.state.pending_responses);
                             let cb = engine.state.java_callback_obj.clone();
                             (engine.take_events(), resps, cb)
                         };
@@ -179,25 +178,22 @@ impl TerminalContext {
                         }
 
                         for event in &events {
-                            match event {
-                                crate::engine::events::TerminalEvent::ScreenUpdated => {
-                                    crate::render_thread::request_render();
-                                    // 必须通知 Java 层屏幕已更新，否则 ScrollBar 和选区不会刷新
-                                    if let Some(obj) = &callback_obj {
-                                        let _ = env.call_method(
-                                            obj.as_obj(),
-                                            "onScreenUpdated",
-                                            "()V",
-                                            &[],
-                                        );
-                                    }
+                            if let crate::engine::events::TerminalEvent::ScreenUpdated = event {
+                                crate::render_thread::request_render();
+                                // 必须通知 Java 层屏幕已更新，否则 ScrollBar 和选区不会刷新
+                                if let Some(obj) = &callback_obj {
+                                    let _ = env.call_method(
+                                        obj.as_obj(),
+                                        "onScreenUpdated",
+                                        "()V",
+                                        &[],
+                                    );
                                 }
-                                _ => {}
                             }
                         }
 
-                        if let Some(obj) = callback_obj as Option<jni::objects::GlobalRef> {
-                            if !obj.as_obj().is_null() {
+                        if let Some(obj) = callback_obj as Option<jni::objects::GlobalRef>
+                            && !obj.as_obj().is_null() {
                                 let _ = env.with_local_frame(16, |env: &mut jni::JNIEnv| -> Result<(), jni::errors::Error> {
                                     for event in events {
                                         match event {
@@ -216,7 +212,6 @@ impl TerminalContext {
                                     Ok(())
                                 });
                             }
-                        }
                     }
                     Err(_) => break,
                 }

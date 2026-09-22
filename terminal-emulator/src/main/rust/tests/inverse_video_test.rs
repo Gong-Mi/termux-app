@@ -104,7 +104,7 @@ fn test_inverse_video_in_text() {
     let has_reverse_style = style_buffer
         .iter()
         .take(30)
-        .any(|&s| (s as u64 & EFFECT_REVERSE as u64) != 0);
+        .any(|&s| (s as u64 & EFFECT_REVERSE) != 0);
     println!(
         "  存在反色样式：{}",
         if has_reverse_style { "是" } else { "否" }

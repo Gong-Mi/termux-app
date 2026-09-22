@@ -28,6 +28,12 @@ pub struct Cursor {
     pub saved_state: CursorState,
 }
 
+impl Default for Cursor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Cursor {
     pub fn new() -> Self {
         let default_state = CursorState {
