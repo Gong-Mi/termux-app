@@ -132,7 +132,10 @@ impl SixelDecoder {
         self.state = SixelState::Data;
         if self.pixel_data.is_empty() {
             let default_width = self.width.max(100);
-            let default_height = 100;
+            // 显式标注 usize：clippy 的 manual_div_ceil 自动改写把 `(h + 5) / 6` 变成
+            // `h.div_ceil(6)`，而字面量 `100` 的类型会因此变成歧义（E0689）。
+            // 这里与上面 self.height 那条分支保持一致，都用 usize。
+            let default_height: usize = 100;
             let sixel_rows = default_height.div_ceil(6);
             self.pixel_data = vec![vec![0u8; default_width]; sixel_rows];
             if self.width == 0 {

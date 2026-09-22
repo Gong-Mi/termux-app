@@ -84,6 +84,20 @@ jobs:
           tail -60 /tmp/clippy_after.log
           exit 0
 
+      - name: "Verification: run the repo's consistency test suite"
+        if: always()
+        env:
+          CARGO_TERM_COLOR: never
+        run: |
+          cd terminal-emulator/src/main/rust
+          set +e
+          cargo test --test consistency -- --test-threads=1 > /tmp/consistency.log 2>&1
+          STATUS=$?
+          echo "consistency exit=$STATUS"
+          grep -E '^test result|^running ' /tmp/consistency.log
+          grep -E 'FAILED|panicked' /tmp/consistency.log | head -20
+          exit 0
+
       - name: Commit and push if changed
         run: |
           if git diff --quiet; then
