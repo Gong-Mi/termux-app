@@ -196,7 +196,7 @@ impl Perform for TerminalEngine {
                     .next()
                     .and_then(|p| p.first())
                     .copied()
-                    .unwrap_or(1) as i32;
+                    .unwrap_or(1);
                 self.cursor_y = (self.cursor_y - n).max(0);
             }
             'B' => {
@@ -206,7 +206,7 @@ impl Perform for TerminalEngine {
                     .next()
                     .and_then(|p| p.first())
                     .copied()
-                    .unwrap_or(1) as i32;
+                    .unwrap_or(1);
                 self.cursor_y = (self.cursor_y + n).min(self.rows - 1);
             }
             'C' => {
@@ -216,7 +216,7 @@ impl Perform for TerminalEngine {
                     .next()
                     .and_then(|p| p.first())
                     .copied()
-                    .unwrap_or(1) as i32;
+                    .unwrap_or(1);
                 self.cursor_x = (self.cursor_x + n).min(self.cols - 1);
             }
             'D' => {
@@ -226,14 +226,14 @@ impl Perform for TerminalEngine {
                     .next()
                     .and_then(|p| p.first())
                     .copied()
-                    .unwrap_or(1) as i32;
+                    .unwrap_or(1);
                 self.cursor_x = (self.cursor_x - n).max(0);
             }
             'H' | 'f' => {
                 // CUP - 光标定位
                 let mut iter = params.iter();
-                let row = iter.next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
-                let col = iter.next().and_then(|p| p.first()).copied().unwrap_or(1) as i32;
+                let row = iter.next().and_then(|p| p.first()).copied().unwrap_or(1);
+                let col = iter.next().and_then(|p| p.first()).copied().unwrap_or(1);
                 self.cursor_y = (row - 1).max(0).min(self.rows - 1);
                 self.cursor_x = (col - 1).max(0).min(self.cols - 1);
             }
@@ -300,19 +300,13 @@ impl Perform for TerminalEngine {
             'h' => {
                 // DECSET - 设置模式
                 for param in params.iter().flat_map(|p| p.iter()) {
-                    match param {
-                        1 => self.application_cursor_keys = true,
-                        _ => {}
-                    }
+                    if param == &1 { self.application_cursor_keys = true }
                 }
             }
             'l' => {
                 // DECRST - 重置模式
                 for param in params.iter().flat_map(|p| p.iter()) {
-                    match param {
-                        1 => self.application_cursor_keys = false,
-                        _ => {}
-                    }
+                    if param == &1 { self.application_cursor_keys = false }
                 }
             }
             'm' => {
