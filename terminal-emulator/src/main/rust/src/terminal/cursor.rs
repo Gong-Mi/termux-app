@@ -1,5 +1,5 @@
+use crate::terminal::colors::{COLOR_INDEX_BACKGROUND, COLOR_INDEX_FOREGROUND};
 use crate::terminal::style::STYLE_NORMAL;
-use crate::terminal::colors::{COLOR_INDEX_FOREGROUND, COLOR_INDEX_BACKGROUND};
 use std::cmp::{max, min};
 
 #[derive(Clone, Copy)]
@@ -23,7 +23,7 @@ pub struct Cursor {
     pub style: i32, // 0=block, 1=underline, 2=bar
     pub blinking_enabled: bool,
     pub blink_state: bool,
-    
+
     // 保存的状态栈（对应 DECSC/DECRC）
     pub saved_state: CursorState,
 }
@@ -31,7 +31,8 @@ pub struct Cursor {
 impl Cursor {
     pub fn new() -> Self {
         let default_state = CursorState {
-            x: 0, y: 0,
+            x: 0,
+            y: 0,
             style: STYLE_NORMAL,
             about_to_wrap: false,
             decset_flags: 0,
@@ -70,7 +71,16 @@ impl Cursor {
         self.about_to_wrap = false;
     }
 
-    pub fn save_state(&mut self, current_style: u64, decset_flags: i32, g0: bool, g1: bool, uses_g0: bool, fg: u64, bg: u64) {
+    pub fn save_state(
+        &mut self,
+        current_style: u64,
+        decset_flags: i32,
+        g0: bool,
+        g1: bool,
+        uses_g0: bool,
+        fg: u64,
+        bg: u64,
+    ) {
         self.saved_state = CursorState {
             x: self.x,
             y: self.y,
@@ -94,8 +104,14 @@ impl Cursor {
     }
 
     pub fn should_be_visible(&self, cursor_enabled: bool) -> bool {
-        if !cursor_enabled { return false; }
-        if self.blinking_enabled { self.blink_state } else { true }
+        if !cursor_enabled {
+            return false;
+        }
+        if self.blinking_enabled {
+            self.blink_state
+        } else {
+            true
+        }
     }
 }
 
@@ -128,7 +144,8 @@ mod tests {
     #[test]
     fn test_clamp_within_bounds() {
         let mut c = Cursor::new();
-        c.x = 5; c.y = 3;
+        c.x = 5;
+        c.y = 3;
         c.clamp(80, 24);
         assert_eq!(c.x, 5);
         assert_eq!(c.y, 3);
@@ -137,7 +154,8 @@ mod tests {
     #[test]
     fn test_clamp_out_of_bounds() {
         let mut c = Cursor::new();
-        c.x = 100; c.y = 50;
+        c.x = 100;
+        c.y = 50;
         c.clamp(80, 24);
         assert_eq!(c.x, 79);
         assert_eq!(c.y, 23);
@@ -146,7 +164,8 @@ mod tests {
     #[test]
     fn test_clamp_negative() {
         let mut c = Cursor::new();
-        c.x = -5; c.y = -3;
+        c.x = -5;
+        c.y = -3;
         c.clamp(80, 24);
         assert_eq!(c.x, 0);
         assert_eq!(c.y, 0);
@@ -155,7 +174,8 @@ mod tests {
     #[test]
     fn test_move_relative() {
         let mut c = Cursor::new();
-        c.x = 10; c.y = 5;
+        c.x = 10;
+        c.y = 5;
         c.move_relative(3, 2, 80, 24);
         assert_eq!(c.x, 13);
         assert_eq!(c.y, 7);
@@ -165,7 +185,8 @@ mod tests {
     #[test]
     fn test_move_relative_clamped() {
         let mut c = Cursor::new();
-        c.x = 78; c.y = 23;
+        c.x = 78;
+        c.y = 23;
         c.move_relative(10, 10, 80, 24);
         assert_eq!(c.x, 79);
         assert_eq!(c.y, 23);
@@ -174,11 +195,15 @@ mod tests {
     #[test]
     fn test_save_restore_state() {
         let mut c = Cursor::new();
-        c.x = 20; c.y = 10; c.about_to_wrap = true;
+        c.x = 20;
+        c.y = 10;
+        c.about_to_wrap = true;
 
         c.save_state(0x1234, 0xFF, true, false, true, 100, 200);
 
-        c.x = 0; c.y = 0; c.about_to_wrap = false;
+        c.x = 0;
+        c.y = 0;
+        c.about_to_wrap = false;
 
         let restored = c.restore_state();
         assert_eq!(c.x, 20);

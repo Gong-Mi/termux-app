@@ -9,7 +9,11 @@ use termux_rust::TerminalEngine;
 fn test_all_block_elements_in_buffer() {
     // U+2580 to U+259F = 32 characters
     let block_chars: Vec<char> = (0x2580..=0x259F).filter_map(char::from_u32).collect();
-    assert_eq!(block_chars.len(), 32, "Should have 32 block element characters");
+    assert_eq!(
+        block_chars.len(),
+        32,
+        "Should have 32 block element characters"
+    );
 
     let mut engine = TerminalEngine::new(0, 40, 24, 1000, 10, 20);
 
@@ -21,9 +25,11 @@ fn test_all_block_elements_in_buffer() {
 
     // Verify each character is stored at the correct position
     for (i, &ch) in block_chars.iter().enumerate() {
-        assert_eq!(row.text[i] as char, ch,
+        assert_eq!(
+            row.text[i] as char, ch,
             "Position {} should be '{}' (U+{:04X}), got U+{:04X}",
-            i, ch, ch as u32, row.text[i] as u32);
+            i, ch, ch as u32, row.text[i] as u32
+        );
     }
 
     println!("✅ All 32 block elements (U+2580-U+259F) stored correctly in screen buffer");
@@ -51,16 +57,28 @@ fn test_quadrant_block_mapping() {
         let has_bit = |mask: u8, bit: u8| (expected_mask & bit) != 0;
 
         // Verify character properties
-        assert!(termux_rust::renderer::is_block_element(ch),
+        assert!(
+            termux_rust::renderer::is_block_element(ch),
             "'{}' (U+{:04X}) should be classified as block element: {}",
-            ch, codepoint, name);
+            ch,
+            codepoint,
+            name
+        );
 
         // Verify wcwidth = 1
-        assert_eq!(unicode_width::UnicodeWidthChar::width(ch).unwrap(), 1,
+        assert_eq!(
+            unicode_width::UnicodeWidthChar::width(ch).unwrap(),
+            1,
             "'{}' (U+{:04X}) should have width 1: {}",
-            ch, codepoint, name);
+            ch,
+            codepoint,
+            name
+        );
 
-        println!("  ✅ {} (U+{:04X}) mask=0b{:04b}", name, codepoint, expected_mask);
+        println!(
+            "  ✅ {} (U+{:04X}) mask=0b{:04b}",
+            name, codepoint, expected_mask
+        );
     }
 
     println!("✅ All quadrant block mappings verified");
@@ -78,8 +96,11 @@ fn test_half_blocks() {
 
     for (cp, name) in tests {
         let ch = char::from_u32(cp).unwrap();
-        assert!(termux_rust::renderer::is_block_element(ch),
-            "{} should be block element", name);
+        assert!(
+            termux_rust::renderer::is_block_element(ch),
+            "{} should be block element",
+            name
+        );
         println!("  ✅ {}", name);
     }
 
@@ -102,8 +123,11 @@ fn test_eighth_blocks() {
 
     for (cp, name) in tests {
         let ch = char::from_u32(cp).unwrap();
-        assert!(termux_rust::renderer::is_block_element(ch),
-            "{} should be block element", name);
+        assert!(
+            termux_rust::renderer::is_block_element(ch),
+            "{} should be block element",
+            name
+        );
         println!("  ✅ {}", name);
     }
 
@@ -121,8 +145,11 @@ fn test_shade_blocks() {
 
     for (cp, name) in tests {
         let ch = char::from_u32(cp).unwrap();
-        assert!(termux_rust::renderer::is_block_element(ch),
-            "{} should be block element", name);
+        assert!(
+            termux_rust::renderer::is_block_element(ch),
+            "{} should be block element",
+            name
+        );
         println!("  ✅ {}", name);
     }
 
@@ -149,13 +176,14 @@ fn test_quadrant_pattern() {
     engine.process_bytes(pattern.as_bytes());
 
     let row = engine.state.main_screen.get_row(0);
-    let text: String = row.text.iter()
+    let text: String = row
+        .text
+        .iter()
         .take(pattern.chars().count())
         .map(|&c| c as char)
         .collect();
 
-    assert_eq!(text, pattern,
-        "Pattern should be stored exactly as input");
+    assert_eq!(text, pattern, "Pattern should be stored exactly as input");
 
     println!("✅ Quadrant block pattern stored correctly: '{}'", pattern);
 }

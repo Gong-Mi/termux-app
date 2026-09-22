@@ -1,4 +1,3 @@
-
 pub const ZERO_WIDTH: &[(u32, u32)] = &[
     (0x00300, 0x0036f),
     (0x00483, 0x00489),
@@ -470,13 +469,14 @@ pub const WIDE_EASTASIAN: &[(u32, u32)] = &[
 ];
 
 pub fn wcwidth(ucs: u32) -> usize {
-    if ucs == 0 ||
-        ucs == 0x034F ||
-        (ucs >= 0x200B && ucs <= 0x200F) ||
-        ucs == 0x2028 ||
-        ucs == 0x2029 ||
-        (ucs >= 0x202A && ucs <= 0x202E) ||
-        (ucs >= 0x2060 && ucs <= 0x2063) {
+    if ucs == 0
+        || ucs == 0x034F
+        || (ucs >= 0x200B && ucs <= 0x200F)
+        || ucs == 0x2028
+        || ucs == 0x2029
+        || (ucs >= 0x202A && ucs <= 0x202E)
+        || (ucs >= 0x2060 && ucs <= 0x2063)
+    {
         return 0;
     }
 
@@ -484,20 +484,26 @@ pub fn wcwidth(ucs: u32) -> usize {
         return 0;
     }
 
-    if in_table(ZERO_WIDTH, ucs) { return 0; }
-    if in_table(WIDE_EASTASIAN, ucs) { return 2; }
+    if in_table(ZERO_WIDTH, ucs) {
+        return 0;
+    }
+    if in_table(WIDE_EASTASIAN, ucs) {
+        return 2;
+    }
 
     1
 }
 
 fn in_table(table: &[(u32, u32)], ucs: u32) -> bool {
-    table.binary_search_by(|&(start, end)| {
-        if ucs < start {
-            std::cmp::Ordering::Greater
-        } else if ucs > end {
-            std::cmp::Ordering::Less
-        } else {
-            std::cmp::Ordering::Equal
-        }
-    }).is_ok()
+    table
+        .binary_search_by(|&(start, end)| {
+            if ucs < start {
+                std::cmp::Ordering::Greater
+            } else if ucs > end {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        })
+        .is_ok()
 }
