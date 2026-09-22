@@ -1,4 +1,3 @@
-use jni::JNIEnv;
 
 #[test]
 fn test_jni_string_with_nul() {

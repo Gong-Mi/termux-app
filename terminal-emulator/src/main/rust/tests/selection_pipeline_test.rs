@@ -54,7 +54,7 @@ fn test_selection_in_render_frame() {
     assert!(!renderer.is_cell_selected(11, abs_row_0)); // 超出 sel_x2
 
     // 测试可见行 0 (绝对行 -3) 的单元格不在选择区内
-    let abs_row_neg3 = top_row + 0; // -3
+    let abs_row_neg3 = top_row; // -3
     assert!(!renderer.is_cell_selected(5, abs_row_neg3));
 
     // 测试可见行 4 (绝对行 1) 的单元格不在选择区内
@@ -65,7 +65,7 @@ fn test_selection_in_render_frame() {
 /// 测试实际终端场景：不滚动时 (top_row = 0)
 #[test]
 fn test_selection_no_scroll() {
-    let mut engine = TerminalEngine::new(0, 80, 24, 1000, 8, 16);
+    let engine = TerminalEngine::new(0, 80, 24, 1000, 8, 16);
 
     let top_row: i32 = 0;
     let _frame = RenderFrame::from_engine(&engine, 24, 80, top_row);

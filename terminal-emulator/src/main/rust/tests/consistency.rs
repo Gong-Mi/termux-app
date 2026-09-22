@@ -850,8 +850,8 @@ fn test_auto_wrap() {
         engine.state.cursor.x, 9,
         "Cursor X should be 9 (last column)"
     );
-    assert_eq!(
-        engine.state.cursor.about_to_wrap, true,
+    assert!(
+        engine.state.cursor.about_to_wrap,
         "Should be about to wrap"
     );
     // 光标位置取决于具体实现，我们只验证 Y
@@ -868,15 +868,15 @@ fn test_decset_cursor_visible() {
 
     // 隐藏光标
     engine.process_bytes(b"\x1b[?25l");
-    assert_eq!(
-        engine.state.cursor_enabled, false,
+    assert!(
+        !engine.state.cursor_enabled,
         "Cursor should be hidden"
     );
 
     // 显示光标
     engine.process_bytes(b"\x1b[?25h");
-    assert_eq!(
-        engine.state.cursor_enabled, true,
+    assert!(
+        engine.state.cursor_enabled,
         "Cursor should be visible"
     );
 }
@@ -887,14 +887,14 @@ fn test_decset_application_cursor_keys() {
     let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     engine.process_bytes(b"\x1b[?1h");
-    assert_eq!(
-        engine.state.application_cursor_keys, true,
+    assert!(
+        engine.state.application_cursor_keys,
         "Application cursor keys should be enabled"
     );
 
     engine.process_bytes(b"\x1b[?1l");
-    assert_eq!(
-        engine.state.application_cursor_keys, false,
+    assert!(
+        !engine.state.application_cursor_keys,
         "Application cursor keys should be disabled"
     );
 }
@@ -905,16 +905,14 @@ fn test_decset_auto_wrap() {
     let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     engine.process_bytes(b"\x1b[?7l");
-    assert_eq!(
-        engine.state.auto_wrap(),
-        false,
+    assert!(
+        !engine.state.auto_wrap(),
         "Auto wrap should be disabled"
     );
 
     engine.process_bytes(b"\x1b[?7h");
-    assert_eq!(
+    assert!(
         engine.state.auto_wrap(),
-        true,
         "Auto wrap should be enabled"
     );
 }
@@ -925,16 +923,14 @@ fn test_decset_origin_mode() {
     let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     engine.process_bytes(b"\x1b[?6h");
-    assert_eq!(
+    assert!(
         engine.state.origin_mode(),
-        true,
         "Origin mode should be enabled"
     );
 
     engine.process_bytes(b"\x1b[?6l");
-    assert_eq!(
-        engine.state.origin_mode(),
-        false,
+    assert!(
+        !engine.state.origin_mode(),
         "Origin mode should be disabled"
     );
 }
@@ -945,14 +941,14 @@ fn test_decset_bracketed_paste() {
     let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     engine.process_bytes(b"\x1b[?2004h");
-    assert_eq!(
-        engine.state.bracketed_paste, true,
+    assert!(
+        engine.state.bracketed_paste,
         "Bracketed paste should be enabled"
     );
 
     engine.process_bytes(b"\x1b[?2004l");
-    assert_eq!(
-        engine.state.bracketed_paste, false,
+    assert!(
+        !engine.state.bracketed_paste,
         "Bracketed paste should be disabled"
     );
 }
@@ -970,9 +966,8 @@ fn test_decset_leftright_margin_mode() {
 
     // 启用 DECLRMM
     engine.process_bytes(b"\x1b[?69h");
-    assert_eq!(
+    assert!(
         engine.state.leftright_margin_mode(),
-        true,
         "Left-right margin mode should be enabled"
     );
     assert_ne!(
@@ -991,9 +986,8 @@ fn test_decset_leftright_margin_mode() {
 
     // 禁用 DECLRMM
     engine.process_bytes(b"\x1b[?69l");
-    assert_eq!(
-        engine.state.leftright_margin_mode(),
-        false,
+    assert!(
+        !engine.state.leftright_margin_mode(),
         "Left-right margin mode should be disabled"
     );
 }
@@ -1004,14 +998,14 @@ fn test_decset_send_focus_events() {
     let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     engine.process_bytes(b"\x1b[?1004h");
-    assert_eq!(
-        engine.state.send_focus_events, true,
+    assert!(
+        engine.state.send_focus_events,
         "Send focus events should be enabled"
     );
 
     engine.process_bytes(b"\x1b[?1004l");
-    assert_eq!(
-        engine.state.send_focus_events, false,
+    assert!(
+        !engine.state.send_focus_events,
         "Send focus events should be disabled"
     );
 }
@@ -1023,41 +1017,41 @@ fn test_mouse_mode_exclusive() {
 
     // 启用 1000（鼠标跟踪按下&释放）
     engine.process_bytes(b"\x1b[?1000h");
-    assert_eq!(
-        engine.state.mouse_tracking, true,
+    assert!(
+        engine.state.mouse_tracking,
         "Mouse tracking should be enabled"
     );
-    assert_eq!(
-        engine.state.mouse_button_event, false,
+    assert!(
+        !engine.state.mouse_button_event,
         "Mouse button event should be disabled"
     );
 
     // 启用 1002（鼠标按钮事件跟踪）应该禁用 1000
     engine.process_bytes(b"\x1b[?1002h");
-    assert_eq!(
-        engine.state.mouse_tracking, false,
+    assert!(
+        !engine.state.mouse_tracking,
         "Mouse tracking should be disabled after enabling 1002"
     );
-    assert_eq!(
-        engine.state.mouse_button_event, true,
+    assert!(
+        engine.state.mouse_button_event,
         "Mouse button event should be enabled"
     );
 
     // 再次启用 1000 应该禁用 1002
     engine.process_bytes(b"\x1b[?1000h");
-    assert_eq!(
-        engine.state.mouse_tracking, true,
+    assert!(
+        engine.state.mouse_tracking,
         "Mouse tracking should be re-enabled"
     );
-    assert_eq!(
-        engine.state.mouse_button_event, false,
+    assert!(
+        !engine.state.mouse_button_event,
         "Mouse button event should be disabled"
     );
 
     // 禁用 1000
     engine.process_bytes(b"\x1b[?1000l");
-    assert_eq!(
-        engine.state.mouse_tracking, false,
+    assert!(
+        !engine.state.mouse_tracking,
         "Mouse tracking should be disabled"
     );
 }
@@ -1082,14 +1076,12 @@ fn test_decset_flags_save_restore() {
     // 恢复光标应该恢复 DECSET 标志
     engine.process_bytes(b"\x1b8");
 
-    assert_eq!(
+    assert!(
         engine.state.auto_wrap(),
-        true,
         "Auto wrap should be restored"
     );
-    assert_eq!(
+    assert!(
         engine.state.origin_mode(),
-        true,
         "Origin mode should be restored"
     );
 }
@@ -1112,8 +1104,8 @@ fn test_mouse_event_sgr() {
     // 验证输出格式：CSI < button ; x ; y M
     // 实际输出会通过 write_to_session 发送到会话
     // 这里我们验证状态
-    assert_eq!(
-        engine.state.sgr_mouse, true,
+    assert!(
+        engine.state.sgr_mouse,
         "SGR mouse mode should be enabled"
     );
 }
@@ -1126,12 +1118,12 @@ fn test_mouse_event_legacy() {
     // 启用旧格式鼠标跟踪 (DECSET 1000)
     engine.process_bytes(b"\x1b[?1000h");
 
-    assert_eq!(
-        engine.state.mouse_tracking, true,
+    assert!(
+        engine.state.mouse_tracking,
         "Mouse tracking should be enabled"
     );
-    assert_eq!(
-        engine.state.sgr_mouse, false,
+    assert!(
+        !engine.state.sgr_mouse,
         "SGR mouse should be disabled"
     );
 
@@ -1141,7 +1133,7 @@ fn test_mouse_event_legacy() {
     // 旧格式应该发送：CSI M Cb Cx Cy
     // Cb = 32 + 0 = 32, Cx = 32 + 10 = 42, Cy = 32 + 20 = 52
     // 验证状态
-    assert_eq!(engine.state.mouse_tracking, true);
+    assert!(engine.state.mouse_tracking);
 }
 
 /// 验证鼠标移动事件 (DECSET 1002) - ✅ PASS
@@ -1152,12 +1144,12 @@ fn test_mouse_event_button_tracking() {
     // 启用按钮事件跟踪 (DECSET 1002)
     engine.process_bytes(b"\x1b[?1002h");
 
-    assert_eq!(
-        engine.state.mouse_button_event, true,
+    assert!(
+        engine.state.mouse_button_event,
         "Mouse button event should be enabled"
     );
-    assert_eq!(
-        engine.state.mouse_tracking, false,
+    assert!(
+        !engine.state.mouse_tracking,
         "Mouse tracking should be disabled"
     );
 
@@ -1165,7 +1157,7 @@ fn test_mouse_event_button_tracking() {
     engine.state.send_mouse_event(32, 15, 25, true);
 
     // 验证状态
-    assert_eq!(engine.state.mouse_button_event, true);
+    assert!(engine.state.mouse_button_event);
 }
 
 /// 验证中键和右键事件 - ✅ PASS
@@ -1296,11 +1288,11 @@ fn test_decset_1049_alternate_screen() {
     engine.process_bytes(b"\x1b[?1049h");
 
     // 验证切换到备用缓冲区
-    assert_eq!(
-        engine.state.use_alternate_buffer, true,
+    assert!(
+        engine.state.use_alternate_buffer,
         "Should use alternate buffer"
     );
-    assert_eq!(engine.state.is_alternate_buffer_active(), true);
+    assert!(engine.state.is_alternate_buffer_active());
 
     // 在备用缓冲区写内容
     engine.process_bytes(b"Alternate Buffer Content");
@@ -1309,11 +1301,11 @@ fn test_decset_1049_alternate_screen() {
     engine.process_bytes(b"\x1b[?1049l");
 
     // 验证切换回主缓冲区
-    assert_eq!(
-        engine.state.use_alternate_buffer, false,
+    assert!(
+        !engine.state.use_alternate_buffer,
         "Should use main buffer"
     );
-    assert_eq!(engine.state.is_alternate_buffer_active(), false);
+    assert!(!engine.state.is_alternate_buffer_active());
 }
 
 /// 验证备用缓冲区清除 - ⚠️ PARTIAL (备用缓冲区切换待完善)
@@ -1322,9 +1314,8 @@ fn test_alternate_buffer_clear() {
     let mut engine = TerminalEngine::new(0, 80, 24, 100, 10, 20);
 
     // 验证备用缓冲区状态
-    assert_eq!(
-        engine.state.is_alternate_buffer_active(),
-        false,
+    assert!(
+        !engine.state.is_alternate_buffer_active(),
         "Should start with main buffer"
     );
 
@@ -1332,9 +1323,8 @@ fn test_alternate_buffer_clear() {
     engine.process_bytes(b"\x1b[?1049h");
 
     // 验证切换到备用缓冲区
-    assert_eq!(
+    assert!(
         engine.state.is_alternate_buffer_active(),
-        true,
         "Should switch to alternate buffer"
     );
 
@@ -1345,9 +1335,8 @@ fn test_alternate_buffer_clear() {
     engine.process_bytes(b"\x1b[?1049l");
 
     // 验证切换回主缓冲区
-    assert_eq!(
-        engine.state.is_alternate_buffer_active(),
-        false,
+    assert!(
+        !engine.state.is_alternate_buffer_active(),
         "Should switch back to main buffer"
     );
 }
@@ -1466,7 +1455,7 @@ fn test_focus_event_reporting() {
 
     // 启用焦点事件
     engine.process_bytes(b"\x1b[?1004h");
-    assert_eq!(engine.state.send_focus_events, true);
+    assert!(engine.state.send_focus_events);
 
     // 报告焦点获得
     engine.state.report_focus_gain();
@@ -1488,7 +1477,7 @@ fn test_bracketed_paste_mode() {
 
     // 启用括号粘贴模式
     engine.process_bytes(b"\x1b[?2004h");
-    assert_eq!(engine.state.bracketed_paste, true);
+    assert!(engine.state.bracketed_paste);
 
     // 粘贴文本
     engine.state.paste("Hello Paste");
@@ -1496,7 +1485,7 @@ fn test_bracketed_paste_mode() {
 
     // 禁用括号粘贴模式
     engine.process_bytes(b"\x1b[?2004l");
-    assert_eq!(engine.state.bracketed_paste, false);
+    assert!(!engine.state.bracketed_paste);
 
     // 粘贴文本（无括号）
     engine.state.paste("Hello Direct");
@@ -1609,9 +1598,8 @@ fn test_ris_reset() {
         engine.state.bottom_margin, 24,
         "Bottom margin should be 24 after RIS"
     );
-    assert_eq!(
+    assert!(
         engine.state.auto_wrap(),
-        true,
         "Auto wrap should be enabled after RIS"
     );
 }
@@ -1700,8 +1688,8 @@ fn test_clear_tab_stop() {
 
     // 清除当前位置的制表位
     engine.process_bytes(b"\x1b[8G\x1b[0g");
-    assert_eq!(
-        engine.state.tab_stops[7], false,
+    assert!(
+        !engine.state.tab_stops[7],
         "Tab stop at position 7 should be cleared"
     );
 }
@@ -2559,8 +2547,8 @@ fn test_wide_char_at_line_end_with_background() {
         engine.state.cursor.y, 0,
         "Cursor should still be on row 0 (fits exactly)"
     );
-    assert_eq!(
-        engine.state.cursor.about_to_wrap, true,
+    assert!(
+        engine.state.cursor.about_to_wrap,
         "Should be about to wrap"
     );
 }
@@ -2679,23 +2667,23 @@ fn test_line_drawing_charset_switch() {
 
     // ESC ( 0 - 选择行绘图字符集为 G0
     engine.process_bytes(b"\x1b(0");
-    assert_eq!(
-        engine.state.use_line_drawing_g0, true,
+    assert!(
+        engine.state.use_line_drawing_g0,
         "Line drawing G0 should be enabled"
     );
-    assert_eq!(
-        engine.state.use_line_drawing_uses_g0, true,
+    assert!(
+        engine.state.use_line_drawing_uses_g0,
         "Should be using G0"
     );
 
     // ESC ) 0 - 选择行绘图字符集为 G1
     engine.process_bytes(b"\x1b)0");
-    assert_eq!(
-        engine.state.use_line_drawing_g1, true,
+    assert!(
+        engine.state.use_line_drawing_g1,
         "Line drawing G1 should be enabled"
     );
-    assert_eq!(
-        engine.state.use_line_drawing_uses_g0, false,
+    assert!(
+        !engine.state.use_line_drawing_uses_g0,
         "Should be using G1"
     );
 }
@@ -2710,15 +2698,15 @@ fn test_so_si_charset_switch() {
 
     // SO (0x0e) - 切换到 G1
     engine.process_bytes(b"\x0e");
-    assert_eq!(
-        engine.state.use_line_drawing_uses_g0, false,
+    assert!(
+        !engine.state.use_line_drawing_uses_g0,
         "Should switch to G1 with SO"
     );
 
     // SI (0x0f) - 切换到 G0
     engine.process_bytes(b"\x0f");
-    assert_eq!(
-        engine.state.use_line_drawing_uses_g0, true,
+    assert!(
+        engine.state.use_line_drawing_uses_g0,
         "Should switch to G0 with SI"
     );
 }
@@ -2738,7 +2726,7 @@ fn test_ris_full_reset() {
     engine.process_bytes(b"\x1bc");
 
     // 验证所有状态已重置
-    assert_eq!(engine.state.auto_wrap(), true, "Auto wrap should be reset");
+    assert!(engine.state.auto_wrap(), "Auto wrap should be reset");
     assert_eq!(engine.state.top_margin, 0, "Top margin should be reset");
     assert_eq!(
         engine.state.bottom_margin, 24,
@@ -2841,8 +2829,8 @@ fn test_save_restore_cursor_line_drawing() {
     engine.process_bytes(b"\x1b8");
 
     // 验证行绘图状态已恢复
-    assert_eq!(
-        engine.state.use_line_drawing_uses_g0, true,
+    assert!(
+        engine.state.use_line_drawing_uses_g0,
         "Should restore to using G0"
     );
 }
@@ -3022,7 +3010,7 @@ fn test_sixel_delete() {
     decoder.process_data(b"~");
 
     // 验证删除（简化测试）
-    assert!(decoder.pixel_data.len() > 0, "Should still have pixel data");
+    assert!(!decoder.pixel_data.is_empty(), "Should still have pixel data");
 }
 
 /// 验证 Sixel 完整序列 - ⚠️ PARTIAL
@@ -3077,7 +3065,7 @@ fn test_resize_shrink_reflow() {
     engine.process_bytes(&data);
 
     // 验证初始状态：Row 0 是满的，Wrap 为 true
-    assert_eq!(engine.state.main_screen.buffer[0].line_wrap, true);
+    assert!(engine.state.main_screen.buffer[0].line_wrap);
     assert_eq!(engine.state.main_screen.buffer[0].text[0], 'A');
     assert_eq!(engine.state.main_screen.buffer[0].text[79], 'A');
     assert_eq!(engine.state.main_screen.buffer[1].text[0], 'B');
