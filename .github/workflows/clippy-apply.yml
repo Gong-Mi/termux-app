@@ -41,20 +41,28 @@ jobs:
           sudo apt-get install -y libfreetype-dev || sudo apt-get install -y libfreetype6-dev
 
       - name: Apply clippy machine-applicable fixes
+        env:
+          CARGO_TERM_COLOR: never
         run: |
+          set -euo pipefail
           cd terminal-emulator/src/main/rust
           cargo clippy --fix --all-targets --all-features --allow-dirty --allow-staged 2>&1 | tail -40
 
       - name: Re-run the gate and report residual count
         if: always()
+        env:
+          CARGO_TERM_COLOR: never
         run: |
           cd terminal-emulator/src/main/rust
           set +e
           cargo clippy --all-targets --all-features -- -D warnings > /tmp/clippy_after.log 2>&1
           STATUS=$?
+          RESIDUAL=$(grep -cE '^error' /tmp/clippy_after.log)
           echo "clippy gate exit=$STATUS"
-          echo "residual errors: $(grep -cE '^error' /tmp/clippy_after.log)"
+          echo "residual errors: $RESIDUAL"
           grep -E '^error' /tmp/clippy_after.log | sort | uniq -c | sort -rn | head -30
+          echo "---- tail of gate log ----"
+          tail -60 /tmp/clippy_after.log
           exit 0
 
       - name: Commit and push if changed

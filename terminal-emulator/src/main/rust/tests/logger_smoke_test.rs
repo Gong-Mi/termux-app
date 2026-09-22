@@ -1,3 +1,11 @@
+// android_logger 是 Android 专属依赖（见 Cargo.toml 的
+// [target.'cfg(target_os = "android")'.dependencies]）。非 Android 目标上这个文件
+// 编不过（E0432: unresolved import `android_logger`），而 `cargo clippy --all-targets`
+// / `cargo test --all-targets` 会把每个 tests/*.rs 都当独立 target 编译，于是整条
+// 宿主侧门禁都会被这一个文件卡住。这里用 cfg 门把整个测试文件在非 Android 上关掉，
+// 而不是把 android_logger 提升成跨平台依赖（它在 Linux 上没有可用的后端）。
+#![cfg(target_os = "android")]
+
 use android_logger::Config;
 use log::LevelFilter;
 
