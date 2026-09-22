@@ -1,0 +1,70 @@
+name: Apply clippy fixes
+
+# One-shot fixup workflow, 与 fmt-apply.yml 同一套路：`cargo clippy --fix` 只能应用
+# 机器可应用（machine-applicable）的建议，因此它清掉的都是编译器已经确认过的等价改写；
+# 需要人判断的 lint（缺 `# Safety` 文档、参数过多、缺 Default 等）不会被它改动，
+# 剩下的部分由后续提交手工处理。运行结束后作业日志里会打印残差条数。
+#
+# 触发方式说明：`workflow_dispatch` 要求工作流文件已存在于默认分支（本仓库是
+# feature/rust-integration），而这份一次性工具在落地前不在默认分支上，所以这里
+# 额外挂了 push 触发，只对 `clippy-fix/**` 分支生效。落地后可直接用 workflow_dispatch。
+
+on:
+  push:
+    branches:
+      - 'clippy-fix/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  clippy-fix:
+    name: cargo clippy --fix + push
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      # skia-safe 的 Linux 预编译库带 -lfreetype/-lfontconfig：--all-targets 会把测试
+      # 目标也 build+link 一遍，runner 不带这两个开发包时会在链接阶段断掉。
+      - name: Install font link dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev
+          sudo apt-get install -y libfreetype-dev || sudo apt-get install -y libfreetype6-dev
+
+      - name: Apply clippy machine-applicable fixes
+        run: |
+          cd terminal-emulator/src/main/rust
+          cargo clippy --fix --all-targets --all-features --allow-dirty --allow-staged 2>&1 | tail -40
+
+      - name: Re-run the gate and report residual count
+        if: always()
+        run: |
+          cd terminal-emulator/src/main/rust
+          set +e
+          cargo clippy --all-targets --all-features -- -D warnings > /tmp/clippy_after.log 2>&1
+          STATUS=$?
+          echo "clippy gate exit=$STATUS"
+          echo "residual errors: $(grep -cE '^error' /tmp/clippy_after.log)"
+          grep -E '^error' /tmp/clippy_after.log | sort | uniq -c | sort -rn | head -30
+          exit 0
+
+      - name: Commit and push if changed
+        run: |
+          if git diff --quiet; then
+            echo "no clippy-applicable change"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add terminal-emulator/src/main/rust
+          git commit -m "style(rust): apply clippy machine-applicable fixes (automated)"
+          git push
