@@ -22,7 +22,7 @@ pub fn get_process_cmdline(pid: i32) -> String {
     let path = format!("/proc/{}/cmdline", pid);
     if let Ok(mut file) = File::open(path) {
         let mut buf = Vec::new();
-        if let Ok(_) = file.read_to_end(&mut buf) {
+        if file.read_to_end(&mut buf).is_ok() {
             return String::from_utf8_lossy(&buf).to_string();
         }
     }
@@ -78,7 +78,7 @@ pub fn read_socket(fd: RawFd, buf: &mut [u8], deadline_ms: i64) -> Result<usize,
             }
         }
 
-        match nix::unistd::read(&b_fd, &mut buf[total_read..]) {
+        match nix::unistd::read(b_fd, &mut buf[total_read..]) {
             Ok(0) => break, // EOF
             Ok(n) => total_read += n,
             Err(Errno::EAGAIN) | Err(Errno::EINTR) => continue,

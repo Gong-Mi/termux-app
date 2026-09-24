@@ -2,7 +2,7 @@
 // 运行：cargo test --test vulkan_path_cache_test -- --nocapture
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// 模拟 vulkan_context.rs 中的路径逻辑
 fn get_target_cache_path() -> PathBuf {

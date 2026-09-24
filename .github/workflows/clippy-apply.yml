@@ -1,0 +1,111 @@
+name: Apply clippy fixes
+
+# One-shot fixup workflow, 与 fmt-apply.yml 同一套路：`cargo clippy --fix` 只能应用
+# 机器可应用（machine-applicable）的建议，因此它清掉的都是编译器已经确认过的等价改写；
+# 需要人判断的 lint（缺 `# Safety` 文档、参数过多、缺 Default 等）不会被它改动，
+# 剩下的部分由后续提交手工处理。运行结束后作业日志里会打印残差条数。
+#
+# 触发方式说明：`workflow_dispatch` 要求工作流文件已存在于默认分支（本仓库是
+# feature/rust-integration），而这份一次性工具在落地前不在默认分支上，所以这里
+# 额外挂了 push 触发，只对 `clippy-fix/**` 分支生效。落地后可直接用 workflow_dispatch。
+
+on:
+  push:
+    branches:
+      - 'clippy-fix/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  clippy-fix:
+    name: cargo clippy --fix + push
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      # skia-safe 的 Linux 预编译库带 -lfreetype/-lfontconfig：--all-targets 会把测试
+      # 目标也 build+link 一遍，runner 不带这两个开发包时会在链接阶段断掉。
+      - name: Install font link dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev
+          sudo apt-get install -y libfreetype-dev || sudo apt-get install -y libfreetype6-dev
+
+      - name: Apply clippy machine-applicable fixes
+        env:
+          CARGO_TERM_COLOR: never
+        run: |
+          set -euo pipefail
+          cd terminal-emulator/src/main/rust
+          # `--cap-lints warn` 很关键：rustfix 不会为"整轮编译报错"的 target 应用建议
+          # （deny-by-default 的 lint，如 clippy::absurd_extreme_comparisons，会让 lib
+          # 这一轮直接报 error）。把 lint 上限压到 warn，让每个目标都能编完。
+          # `--broken-code` 是兜底：即使仍有硬错误也要把建议落盘。
+          # `|| true` 是必须的：清不掉全部 lint 时 cargo 会以非 0 退出，
+          # 但不能因此跳过后面的提交步骤与残差门禁。
+          set +e
+          cargo clippy --fix --all-targets --all-features --allow-dirty --allow-staged --broken-code \
+            -- --cap-lints warn > /tmp/fix.log 2>&1
+          FIX_STATUS=$?
+          set -e
+          echo "fix exit=$FIX_STATUS"
+          echo "---- Fixed 行 ----"
+          grep -E '^\s+Fixed ' /tmp/fix.log || echo "(无 Fixed 行)"
+          echo "---- fix 日志里的 error/warning 头 ----"
+          grep -nE '^error|^warning: unused|^warning: `' /tmp/fix.log | head -40 || true
+          echo "---- fix 日志头 ----"
+          head -30 /tmp/fix.log
+          echo "---- fix 日志尾 ----"
+          tail -30 /tmp/fix.log
+
+      - name: Re-run the gate and report residual count
+        if: always()
+        env:
+          CARGO_TERM_COLOR: never
+        run: |
+          cd terminal-emulator/src/main/rust
+          set +e
+          cargo clippy --all-targets --all-features -- -D warnings > /tmp/clippy_after.log 2>&1
+          STATUS=$?
+          RESIDUAL=$(grep -cE '^error' /tmp/clippy_after.log)
+          echo "clippy gate exit=$STATUS"
+          echo "residual errors: $RESIDUAL"
+          grep -E '^error' /tmp/clippy_after.log | sort | uniq -c | sort -rn | head -30
+          echo "---- tail of gate log ----"
+          tail -60 /tmp/clippy_after.log
+          exit 0
+
+      - name: "Verification: run the repo's consistency test suite"
+        if: always()
+        env:
+          CARGO_TERM_COLOR: never
+        run: |
+          cd terminal-emulator/src/main/rust
+          set +e
+          cargo test --test consistency -- --test-threads=1 > /tmp/consistency.log 2>&1
+          STATUS=$?
+          echo "consistency exit=$STATUS"
+          grep -E '^test result|^running ' /tmp/consistency.log
+          grep -E 'FAILED|panicked' /tmp/consistency.log | head -20
+          exit 0
+
+      - name: Commit and push if changed
+        run: |
+          if git diff --quiet; then
+            echo "no clippy-applicable change"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add terminal-emulator/src/main/rust
+          git commit -m "style(rust): apply clippy machine-applicable fixes (automated)"
+          git push

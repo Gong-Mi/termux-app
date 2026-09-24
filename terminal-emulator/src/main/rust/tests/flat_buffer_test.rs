@@ -116,8 +116,8 @@ fn test_sync_all_rows_to_shared_buffer() {
     engine.state.shared_buffer_ptr = SharedBufferPtr(shared_ptr);
 
     // 手动同步数据（模拟 syncToSharedBufferRust 的行为）
-    if let Some(ref mut flat_buffer) = engine.state.flat_buffer {
-        if !engine.state.shared_buffer_ptr.0.is_null() {
+    if let Some(ref mut flat_buffer) = engine.state.flat_buffer
+        && !engine.state.shared_buffer_ptr.0.is_null() {
             let buffer_len = engine.state.main_screen.buffer.len();
             for physical_row in 0..buffer_len {
                 if let Some(buffer_row) = engine.state.main_screen.buffer.get(physical_row) {
@@ -133,7 +133,6 @@ fn test_sync_all_rows_to_shared_buffer() {
             // 不直接调用 sync_to_shared，而是验证 flat_buffer 中的数据
             // 因为共享内存操作需要更复杂的测试设置
         }
-    }
 
     // 验证 flat_buffer 包含第一行的数据
     let flat_buffer = engine.state.flat_buffer.as_ref().unwrap();

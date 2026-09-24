@@ -2,7 +2,6 @@
 // 运行：cargo test --test vulkan_cache_performance_proof -- --nocapture
 
 use std::fs;
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 /// 模拟 Vulkan 管道编译过程

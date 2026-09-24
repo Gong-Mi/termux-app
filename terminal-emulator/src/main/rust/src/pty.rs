@@ -3,7 +3,7 @@ use jni::objects::{JIntArray, JObjectArray, JString};
 use jni::sys::{JNINativeInterface_, jint, jintArray, jobjectArray, jstring};
 use nix::fcntl::{OFlag, open};
 use nix::sys::stat::Mode;
-use nix::unistd::{ForkResult, chdir, close, fork, setsid};
+use nix::unistd::{ForkResult, close, fork, setsid};
 use std::ffi::{CStr, CString};
 use std::sync::atomic::{AtomicI32, Ordering};
 
@@ -58,8 +58,8 @@ pub unsafe fn create_subprocess(
 
     let mut argv = Vec::new();
     let args_obj = unsafe { JObjectArray::from_raw(args) };
-    if !args_obj.is_null() {
-        if let Ok(len) = env.get_array_length(&args_obj) {
+    if !args_obj.is_null()
+        && let Ok(len) = env.get_array_length(&args_obj) {
             for i in 0..len {
                 if let Ok(arg_obj) = env.get_object_array_element(&args_obj, i) {
                     let arg_java: JString = arg_obj.into();
@@ -69,12 +69,11 @@ pub unsafe fn create_subprocess(
                 }
             }
         }
-    }
 
     let mut envp = Vec::new();
     let env_vars_obj = unsafe { JObjectArray::from_raw(env_vars) };
-    if !env_vars_obj.is_null() {
-        if let Ok(len) = env.get_array_length(&env_vars_obj) {
+    if !env_vars_obj.is_null()
+        && let Ok(len) = env.get_array_length(&env_vars_obj) {
             for i in 0..len {
                 if let Ok(env_obj) = env.get_object_array_element(&env_vars_obj, i) {
                     let env_java: JString = env_obj.into();
@@ -84,7 +83,6 @@ pub unsafe fn create_subprocess(
                 }
             }
         }
-    }
 
     let (ptm, pid) = match create_subprocess_with_data(
         cmd_str,
@@ -112,16 +110,14 @@ fn get_total_uid_process_count() -> i32 {
     if let Ok(entries) = std::fs::read_dir("/proc") {
         let my_uid = unsafe { libc::getuid() };
         for entry in entries.flatten() {
-            if let Ok(file_name) = entry.file_name().into_string() {
-                if file_name.chars().all(|c| c.is_ascii_digit()) {
-                    if let Ok(metadata) = std::fs::metadata(entry.path()) {
+            if let Ok(file_name) = entry.file_name().into_string()
+                && file_name.chars().all(|c| c.is_ascii_digit())
+                    && let Ok(metadata) = std::fs::metadata(entry.path()) {
                         use std::os::unix::fs::MetadataExt;
                         if metadata.uid() == my_uid {
                             count += 1;
                         }
                     }
-                }
-            }
         }
     }
     count
@@ -213,27 +209,23 @@ pub fn create_subprocess_with_data(
 
                 // === 深度修复：彻底解除 fdsan 保护 ===
                 // 我们直接在子进程中清除 FD 0, 1, 2 的所有权标签，防止触发父进程的 fdsan 检查。
-                unsafe {
-                    unsafe extern "C" {
-                        fn android_fdsan_set_error_level(new_level: i32) -> i32;
-                        fn android_fdsan_exchange_owner_tag(
-                            fd: i32,
-                            expected_tag: u64,
-                            new_tag: u64,
-                        );
-                    }
-                    // 1. 彻底禁用当前进程的 fdsan 报错
-                    android_fdsan_set_error_level(0);
-                    // 2. 强行重置标准流的 tag (0 = FDSAN_OWNER_TAG_NONE)
-                    android_fdsan_exchange_owner_tag(0, u64::MAX, 0);
-                    android_fdsan_exchange_owner_tag(1, u64::MAX, 0);
-                    android_fdsan_exchange_owner_tag(2, u64::MAX, 0);
+                // 这一段本来套了一层多余的 `unsafe {}`：外层 fork 分支已经在 `unsafe` 块里，
+                // rustc 的 unused_unsafe 因此报错。移除嵌套块，语句与顺序一字未改。
+                unsafe extern "C" {
+                    fn android_fdsan_set_error_level(new_level: i32) -> i32;
+                    fn android_fdsan_exchange_owner_tag(fd: i32, expected_tag: u64, new_tag: u64);
+                }
+                // 1. 彻底禁用当前进程的 fdsan 报错
+                android_fdsan_set_error_level(0);
+                // 2. 强行重置标准流的 tag (0 = FDSAN_OWNER_TAG_NONE)
+                android_fdsan_exchange_owner_tag(0, u64::MAX, 0);
+                android_fdsan_exchange_owner_tag(1, u64::MAX, 0);
+                android_fdsan_exchange_owner_tag(2, u64::MAX, 0);
 
-                    // 3. 关闭所有继承自 JVM 的多余 FD (非常重要)
-                    for i in 3..1024 {
-                        if i != pts && i != ptm {
-                            libc::close(i);
-                        }
+                // 3. 关闭所有继承自 JVM 的多余 FD (非常重要)
+                for i in 3..1024 {
+                    if i != pts && i != ptm {
+                        libc::close(i);
                     }
                 }
 
@@ -257,11 +249,10 @@ pub fn create_subprocess_with_data(
                     if let Some(pos) = cmd_str.find("/com.termux") {
                         termux_data = cmd_str[..pos + 11].to_string();
                     }
-                } else if cwd_str.contains("/data/user/") {
-                    if let Some(pos) = cwd_str.find("/com.termux") {
+                } else if cwd_str.contains("/data/user/")
+                    && let Some(pos) = cwd_str.find("/com.termux") {
                         termux_data = cwd_str[..pos + 11].to_string();
                     }
-                }
 
                 let termux_files = format!("{}/files", termux_data);
                 let termux_prefix = format!("{}/usr", termux_files);
@@ -300,7 +291,7 @@ pub fn create_subprocess_with_data(
 
                 // PATH 清洗与注入
                 if let Some(pos) = final_envp.iter().position(|s| s.starts_with("PATH=")) {
-                    let old_path = final_envp[pos].splitn(2, '=').nth(1).unwrap_or("");
+                    let old_path = final_envp[pos].split_once('=').map(|x| x.1).unwrap_or("");
                     // 彻底移除旧 PATH 中所有包含 /data/data/ 的条目
                     let clean_path: Vec<&str> = old_path
                         .split(':')

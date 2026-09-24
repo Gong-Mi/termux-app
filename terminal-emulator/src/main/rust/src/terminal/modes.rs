@@ -21,6 +21,12 @@ pub struct TerminalModes {
     pub flags: i32,
 }
 
+impl Default for TerminalModes {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TerminalModes {
     pub fn new() -> Self {
         Self { flags: 0 }

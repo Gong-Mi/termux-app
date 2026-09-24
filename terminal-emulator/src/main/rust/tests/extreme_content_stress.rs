@@ -1,4 +1,3 @@
-use std::cmp::max;
 use std::time::Instant;
 use termux_rust::TerminalEngine;
 

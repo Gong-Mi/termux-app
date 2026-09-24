@@ -17,7 +17,7 @@ fn get_row_text(engine: &TerminalEngine, row: i32) -> String {
 fn print_screen(engine: &TerminalEngine, label: &str) {
     println!("\n=== {} ===", label);
     for row in 0..engine.state.rows {
-        let text = get_row_text(engine, row as i32);
+        let text = get_row_text(engine, row);
         if !text.is_empty() {
             println!("  [{:2}] '{}'", row, text.replace('\0', " "));
         }
@@ -258,7 +258,7 @@ fn test_unicode_width() {
         );
 
         // 注意：某些字符的宽度可能因实现而异，这里只做记录
-        if actual_width != expected_width as i32 {
+        if actual_width != expected_width {
             println!("    ⚠️  MISMATCH! Check unicode-width crate behavior");
         }
     }
@@ -347,11 +347,11 @@ fn test_cursor_after_resize() {
 
     // 验证光标在有效范围内
     assert!(
-        engine.state.cursor.x < engine.state.cols as i32,
+        engine.state.cursor.x < engine.state.cols,
         "Cursor X should be within new columns"
     );
     assert!(
-        engine.state.cursor.y < engine.state.rows as i32,
+        engine.state.cursor.y < engine.state.rows,
         "Cursor Y should be within new rows"
     );
 }
@@ -474,7 +474,7 @@ fn test_stress_comprehensive() {
 
     // 验证基本状态
     assert!(engine.state.cursor.y >= 0);
-    assert!(engine.state.cursor.y < engine.state.rows as i32);
+    assert!(engine.state.cursor.y < engine.state.rows);
 }
 
 /// Resize 压力测试：多次调整大小
@@ -510,8 +510,8 @@ fn test_resize_stress() {
         );
 
         // 验证光标在有效范围内
-        assert!(engine.state.cursor.x < cols as i32);
-        assert!(engine.state.cursor.y < rows as i32);
+        assert!(engine.state.cursor.x < cols);
+        assert!(engine.state.cursor.y < rows);
     }
 
     print_screen(&engine, "After resize stress");
@@ -556,7 +556,7 @@ fn test_resize_fast_path_rows_only() {
     );
 
     // 验证：光标应该在有效范围内
-    assert!(cursor_after_y >= 0 && cursor_after_y < 12);
+    assert!((0..12).contains(&cursor_after_y));
 
     // 验证：内容没有丢失（通过检查第一行）
     let row0_text = get_row_text(&engine, 0);

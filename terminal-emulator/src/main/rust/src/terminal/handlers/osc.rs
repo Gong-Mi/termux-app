@@ -21,7 +21,7 @@ pub fn handle_osc(
             if params.len() > 1 {
                 let title = std::str::from_utf8(params[1]).unwrap_or("");
                 let clean_title =
-                    title.trim_end_matches(|c| c == '\x07' || c == '\x1b' || c == '\\');
+                    title.trim_end_matches(['\x07', '\x1b', '\\']);
                 state.set_title(clean_title);
             }
         }
@@ -36,7 +36,7 @@ pub fn handle_osc(
         }
         "12" => {
             if let Some(color) = TerminalColors::parse_color(&param_text) {
-                state.colors.current_colors[COLOR_INDEX_CURSOR as usize] = color;
+                state.colors.current_colors[COLOR_INDEX_CURSOR] = color;
                 state.report_colors_changed();
             }
         }
@@ -59,25 +59,24 @@ pub fn handle_osc(
             state.pop_title(opcode);
         }
         "52" => {
-            if params.len() > 2 {
-                if let Ok(base64_data) = std::str::from_utf8(params[2]) {
+            if params.len() > 2
+                && let Ok(base64_data) = std::str::from_utf8(params[2]) {
                     state.handle_osc52(events, base64_data);
                 }
-            }
         }
         "104" => {
             handle_osc104(state, &param_text);
         }
         "110" => {
-            state.colors.reset_index(COLOR_INDEX_FOREGROUND as usize);
+            state.colors.reset_index(COLOR_INDEX_FOREGROUND);
             state.report_colors_changed();
         }
         "111" => {
-            state.colors.reset_index(COLOR_INDEX_BACKGROUND as usize);
+            state.colors.reset_index(COLOR_INDEX_BACKGROUND);
             state.report_colors_changed();
         }
         "112" => {
-            state.colors.reset_index(COLOR_INDEX_CURSOR as usize);
+            state.colors.reset_index(COLOR_INDEX_CURSOR);
             state.report_colors_changed();
         }
         _ => {}
@@ -107,11 +106,11 @@ fn handle_osc10(state: &mut ScreenState, param_text: &str) {
     if param_text == "?" {
         let report = state
             .colors
-            .generate_color_report(COLOR_INDEX_FOREGROUND as usize);
+            .generate_color_report(COLOR_INDEX_FOREGROUND);
         state.report_color_response(&format!("10;{}", report));
     } else {
         if let Some(color) = TerminalColors::parse_color(param_text) {
-            state.colors.current_colors[COLOR_INDEX_FOREGROUND as usize] = color;
+            state.colors.current_colors[COLOR_INDEX_FOREGROUND] = color;
             state.report_colors_changed();
         }
     }
@@ -121,11 +120,11 @@ fn handle_osc11(state: &mut ScreenState, param_text: &str) {
     if param_text == "?" {
         let report = state
             .colors
-            .generate_color_report(COLOR_INDEX_BACKGROUND as usize);
+            .generate_color_report(COLOR_INDEX_BACKGROUND);
         state.report_color_response(&format!("11;{}", report));
     } else {
         if let Some(color) = TerminalColors::parse_color(param_text) {
-            state.colors.current_colors[COLOR_INDEX_BACKGROUND as usize] = color;
+            state.colors.current_colors[COLOR_INDEX_BACKGROUND] = color;
             state.report_colors_changed();
         }
     }
